@@ -1,0 +1,8 @@
+[package]
+name = "op_browser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+op_engine = { path = "../op_engine" }
+op_platform_win = { path = "../op_platform_win" }

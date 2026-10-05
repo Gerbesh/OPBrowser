@@ -1,0 +1,28 @@
+[workspace]
+members = [
+    "crates/op_browser",
+    "crates/op_engine",
+    "crates/op_dom",
+    "crates/op_html",
+    "crates/op_css",
+    "crates/op_js",
+    "crates/op_net",
+    "crates/op_platform_win",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+authors = ["OPBrowser contributors"]
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

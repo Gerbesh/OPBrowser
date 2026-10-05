@@ -1,0 +1,11 @@
+[package]
+name = "op_engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+op_dom = { path = "../op_dom" }
+op_html = { path = "../op_html" }
+op_css = { path = "../op_css" }
+op_js = { path = "../op_js" }
+op_net = { path = "../op_net" }
