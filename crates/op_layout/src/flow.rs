@@ -1,6 +1,9 @@
 use super::inline::{InlineChar, InlineStyle, Item, Lines};
 use super::*;
-use op_css::{ComputedFontWeight, ComputedStyle, ComputedStyleMap, Display};
+use op_css::{
+    BorderEdges, BorderStyle, BoxSizing, ComputedFontWeight, ComputedStyle, ComputedStyleMap,
+    Display, LengthPercentage, MarginEdges, MarginValue, PaddingEdges,
+};
 
 pub(super) fn layout(
     document: &Document,
@@ -27,6 +30,7 @@ pub(super) fn layout(
         measurer,
         width: (viewport_width - 64).max(160),
         y: 28,
+        pending_margin: None,
         decorations: Vec::new(),
         text: Vec::new(),
         images_out: Vec::new(),
@@ -42,6 +46,7 @@ pub(super) fn layout(
         context.element_display(root, element.tag_name.as_str()) != Display::None
     }) {
         context.block(root, None, root_style, 32, context.width);
+        context.flush_pending_margin();
     }
 
     LayoutTree {
@@ -61,6 +66,7 @@ struct Context<'a, 'm> {
     measurer: &'m mut dyn TextMeasurer,
     width: i32,
     y: i32,
+    pending_margin: Option<i32>,
     decorations: Vec<BoxDecoration>,
     text: Vec<TextBox>,
     images_out: Vec<ImageBox>,
@@ -75,27 +81,57 @@ struct Edges {
     left: i32,
 }
 
-impl Edges {
-    const ZERO: Self = Self {
-        top: 0,
-        right: 0,
-        bottom: 0,
-        left: 0,
-    };
+#[derive(Clone, Copy)]
+struct UsedBorderSide {
+    width: i32,
+    color: TextColor,
+}
+
+#[derive(Clone, Copy)]
+struct UsedBorderEdges {
+    top: UsedBorderSide,
+    right: UsedBorderSide,
+    bottom: UsedBorderSide,
+    left: UsedBorderSide,
+}
+
+#[derive(Clone, Copy)]
+struct UsedBlockHorizontal {
+    margin_left: i32,
+    padding: Edges,
+    border: UsedBorderEdges,
+    content_width: i32,
+    border_width: i32,
 }
 
 #[derive(Clone, Copy)]
 struct Style {
     inline: InlineStyle,
-    margin: Edges,
-    padding: Edges,
+    margin: MarginEdges,
+    padding: PaddingEdges,
     background: TextColor,
-    border_width: i32,
-    border_color: TextColor,
+    border: BorderEdges,
+    width: Option<LengthPercentage>,
+    min_width: LengthPercentage,
+    max_width: Option<LengthPercentage>,
+    height: Option<LengthPercentage>,
+    min_height: LengthPercentage,
+    max_height: Option<LengthPercentage>,
+    box_sizing: BoxSizing,
 }
 
 impl<'a> Context<'a, '_> {
     fn emit(&mut self, items: &mut Vec<Item<'a>>, style: Style, x: i32, width: i32) {
+        if items.iter().all(|item| {
+            matches!(
+                item,
+                Item::Char(ch) if matches!(ch.ch, ' ' | '\t' | '\n' | '\r' | '\u{c}')
+            )
+        }) {
+            items.clear();
+            return;
+        }
+        self.flush_pending_margin();
         let lines = Lines::new(self.measurer, style.inline, x, self.y, width.max(1))
             .layout(std::mem::take(items));
         self.y = lines.bottom();
@@ -116,33 +152,48 @@ impl<'a> Context<'a, '_> {
         containing_x: i32,
         containing_width: i32,
     ) {
-        self.y = self.y.saturating_add(style.margin.top);
-        let border_x = containing_x.saturating_add(style.margin.left);
-        let border_width = containing_width
-            .saturating_sub(style.margin.left)
-            .saturating_sub(style.margin.right)
-            .max(1);
-        let border = style.border_width.clamp(0, border_width / 2);
+        let used = resolve_block_horizontal(style, containing_width);
+        let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
+        let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
+        let padding_top = used.padding.top;
+        let padding_bottom = used.padding.bottom;
+
+        self.apply_collapsed_margin(margin_top);
+        let border_x = containing_x.saturating_add(used.margin_left);
         let border_y = self.y;
         let content_x = border_x
-            .saturating_add(border)
-            .saturating_add(style.padding.left);
-        let content_width = border_width
-            .saturating_sub(border.saturating_mul(2))
-            .saturating_sub(style.padding.left)
-            .saturating_sub(style.padding.right)
-            .max(1);
+            .saturating_add(used.border.left.width)
+            .saturating_add(used.padding.left);
+        let content_width = used.content_width.max(1);
 
-        let decoration = if style.background.alpha > 0 || border > 0 {
+        let has_border = used.border.top.width > 0
+            || used.border.right.width > 0
+            || used.border.bottom.width > 0
+            || used.border.left.width > 0;
+        let decoration = if style.background.alpha > 0 || has_border {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
                 x: border_x,
                 y: border_y,
-                width: border_width,
+                width: used.border_width,
                 height: 0,
                 background: style.background,
-                border_width: border,
-                border_color: style.border_color,
+                border_top: DecorationBorder {
+                    width: used.border.top.width,
+                    color: used.border.top.color,
+                },
+                border_right: DecorationBorder {
+                    width: used.border.right.width,
+                    color: used.border.right.color,
+                },
+                border_bottom: DecorationBorder {
+                    width: used.border.bottom.width,
+                    color: used.border.bottom.color,
+                },
+                border_left: DecorationBorder {
+                    width: used.border.left.width,
+                    color: used.border.left.color,
+                },
             });
             Some(index)
         } else {
@@ -151,22 +202,56 @@ impl<'a> Context<'a, '_> {
 
         self.y = self
             .y
-            .saturating_add(border)
-            .saturating_add(style.padding.top);
+            .saturating_add(used.border.top.width)
+            .saturating_add(padding_top);
+        let content_top = self.y;
+
         let mut items = Vec::new();
         for child in self.document.children(id) {
             self.collect(*child, href, style, content_x, content_width, &mut items);
         }
         self.emit(&mut items, style, content_x, content_width);
+        // Parent/child margin collapse is intentionally deferred; consume the final
+        // child margin before this block's padding/border boundary.
+        self.flush_pending_margin();
+
+        let natural_content_height = self.y.saturating_sub(content_top).max(0);
+        let target_content_height = resolve_block_content_height(
+            style,
+            natural_content_height,
+            padding_top,
+            padding_bottom,
+            used.border,
+        );
+        if target_content_height > natural_content_height {
+            self.y = self
+                .y
+                .saturating_add(target_content_height - natural_content_height);
+        }
+
         self.y = self
             .y
-            .saturating_add(style.padding.bottom)
-            .saturating_add(border);
+            .saturating_add(padding_bottom)
+            .saturating_add(used.border.bottom.width);
 
         if let Some(index) = decoration {
             self.decorations[index].height = self.y.saturating_sub(border_y).max(0);
         }
-        self.y = self.y.saturating_add(style.margin.bottom);
+        self.pending_margin = Some(margin_bottom);
+    }
+
+    fn apply_collapsed_margin(&mut self, next: i32) {
+        let used = self
+            .pending_margin
+            .take()
+            .map_or(next, |previous| collapse_margins(previous, next));
+        self.y = self.y.saturating_add(used);
+    }
+
+    fn flush_pending_margin(&mut self) {
+        if let Some(margin) = self.pending_margin.take() {
+            self.y = self.y.saturating_add(margin);
+        }
     }
 
     fn collect(
@@ -322,6 +407,181 @@ impl<'a> Context<'a, '_> {
     }
 }
 
+fn resolve_block_horizontal(style: Style, containing_width: i32) -> UsedBlockHorizontal {
+    let containing_width = containing_width.max(1);
+    let padding = Edges {
+        top: resolve_length(style.padding.top, containing_width).max(0),
+        right: resolve_length(style.padding.right, containing_width).max(0),
+        bottom: resolve_length(style.padding.bottom, containing_width).max(0),
+        left: resolve_length(style.padding.left, containing_width).max(0),
+    };
+    let border = resolve_border_edges(style.border);
+    let horizontal_extras = padding
+        .left
+        .saturating_add(padding.right)
+        .saturating_add(border.left.width)
+        .saturating_add(border.right.width);
+
+    let margin_left = resolve_margin(style.margin.left, containing_width);
+    let margin_right = resolve_margin(style.margin.right, containing_width);
+    let specified_width = style.width.map(|value| {
+        size_to_content_width(value, style.box_sizing, containing_width, horizontal_extras)
+    });
+
+    let mut content_width = specified_width.unwrap_or_else(|| {
+        containing_width
+            .saturating_sub(margin_left.unwrap_or(0))
+            .saturating_sub(margin_right.unwrap_or(0))
+            .saturating_sub(horizontal_extras)
+    });
+    let min_width = size_to_content_width(
+        style.min_width,
+        style.box_sizing,
+        containing_width,
+        horizontal_extras,
+    );
+    content_width = content_width.max(min_width);
+    if let Some(max_width) = style.max_width {
+        let max_width = size_to_content_width(
+            max_width,
+            style.box_sizing,
+            containing_width,
+            horizontal_extras,
+        );
+        content_width = content_width.min(max_width.max(0));
+    }
+    content_width = content_width.max(0);
+
+    let border_width = content_width.saturating_add(horizontal_extras).max(1);
+    let (margin_left, margin_right) = if specified_width.is_none() {
+        (margin_left.unwrap_or(0), margin_right.unwrap_or(0))
+    } else {
+        distribute_auto_margins(
+            margin_left,
+            margin_right,
+            containing_width.saturating_sub(border_width),
+        )
+    };
+
+    let _ = margin_right;
+    UsedBlockHorizontal {
+        margin_left,
+        padding,
+        border,
+        content_width,
+        border_width,
+    }
+}
+
+fn distribute_auto_margins(
+    left: Option<i32>,
+    right: Option<i32>,
+    available_for_margins: i32,
+) -> (i32, i32) {
+    match (left, right) {
+        (None, None) => {
+            let left = available_for_margins / 2;
+            (left, available_for_margins - left)
+        }
+        (None, Some(right)) => (available_for_margins.saturating_sub(right), right),
+        (Some(left), None) => (left, available_for_margins.saturating_sub(left)),
+        (Some(left), Some(right)) => (left, right),
+    }
+}
+
+fn resolve_margin(value: MarginValue, basis: i32) -> Option<i32> {
+    match value {
+        MarginValue::Auto => None,
+        MarginValue::Length(value) => Some(resolve_length(value, basis)),
+    }
+}
+
+fn resolve_vertical_margin(value: MarginValue, basis: i32) -> i32 {
+    resolve_margin(value, basis).unwrap_or(0)
+}
+
+fn resolve_length(value: LengthPercentage, basis: i32) -> i32 {
+    match value {
+        LengthPercentage::Px(value) => bounded_round(value),
+        LengthPercentage::Percent(value) => bounded_round(value * basis as f32),
+    }
+}
+
+fn bounded_round(value: f32) -> i32 {
+    value.round().clamp(-1_000_000.0, 1_000_000.0) as i32
+}
+
+pub(super) fn collapse_margins(first: i32, second: i32) -> i32 {
+    let positive = first.max(second).max(0);
+    let negative = first.min(second).min(0);
+    positive.saturating_add(negative)
+}
+
+fn size_to_content_width(
+    value: LengthPercentage,
+    box_sizing: BoxSizing,
+    basis: i32,
+    horizontal_extras: i32,
+) -> i32 {
+    let resolved = resolve_length(value, basis).max(0);
+    match box_sizing {
+        BoxSizing::ContentBox => resolved,
+        BoxSizing::BorderBox => resolved.saturating_sub(horizontal_extras).max(0),
+    }
+}
+
+fn resolve_border_edges(border: BorderEdges) -> UsedBorderEdges {
+    UsedBorderEdges {
+        top: resolve_border_side(border.top),
+        right: resolve_border_side(border.right),
+        bottom: resolve_border_side(border.bottom),
+        left: resolve_border_side(border.left),
+    }
+}
+
+fn resolve_border_side(border: op_css::ComputedBorder) -> UsedBorderSide {
+    UsedBorderSide {
+        width: if border.style == BorderStyle::Solid {
+            bounded_round(border.width_px).clamp(0, 4096)
+        } else {
+            0
+        },
+        color: border.color.into(),
+    }
+}
+
+fn resolve_block_content_height(
+    style: Style,
+    natural_height: i32,
+    padding_top: i32,
+    padding_bottom: i32,
+    border: UsedBorderEdges,
+) -> i32 {
+    let vertical_extras = padding_top
+        .saturating_add(padding_bottom)
+        .saturating_add(border.top.width)
+        .saturating_add(border.bottom.width);
+    let to_content = |value: LengthPercentage| -> Option<i32> {
+        let LengthPercentage::Px(value) = value else {
+            return None;
+        };
+        let resolved = bounded_round(value).max(0);
+        Some(match style.box_sizing {
+            BoxSizing::ContentBox => resolved,
+            BoxSizing::BorderBox => resolved.saturating_sub(vertical_extras).max(0),
+        })
+    };
+
+    let mut target = style.height.and_then(to_content).unwrap_or(natural_height);
+    if let Some(min_height) = to_content(style.min_height) {
+        target = target.max(min_height);
+    }
+    if let Some(max_height) = style.max_height.and_then(to_content) {
+        target = target.min(max_height);
+    }
+    target.max(0)
+}
+
 fn computed_style(style: ComputedStyle) -> Style {
     Style {
         inline: InlineStyle {
@@ -332,25 +592,17 @@ fn computed_style(style: ComputedStyle) -> Style {
             },
             color: style.color.into(),
         },
-        margin: computed_edges(style.margin),
-        padding: computed_edges(style.padding),
+        margin: style.margin,
+        padding: style.padding,
         background: style.background_color.into(),
-        border_width: if style.border.solid {
-            style.border.width_px.round().clamp(0.0, 4096.0) as i32
-        } else {
-            0
-        },
-        border_color: style.border.color.into(),
-    }
-}
-
-fn computed_edges(edges: op_css::BoxEdges) -> Edges {
-    let px = |value: f32| value.round().clamp(0.0, 4096.0) as i32;
-    Edges {
-        top: px(edges.top),
-        right: px(edges.right),
-        bottom: px(edges.bottom),
-        left: px(edges.left),
+        border: style.border,
+        width: style.width,
+        min_width: style.min_width,
+        max_width: style.max_width,
+        height: style.height,
+        min_height: style.min_height,
+        max_height: style.max_height,
+        box_sizing: style.box_sizing,
     }
 }
 
@@ -402,21 +654,22 @@ fn default_style() -> Style {
                 alpha: 255,
             },
         },
-        margin: Edges::ZERO,
-        padding: Edges::ZERO,
+        margin: MarginEdges::ZERO,
+        padding: PaddingEdges::ZERO,
         background: TextColor {
             red: 0,
             green: 0,
             blue: 0,
             alpha: 0,
         },
-        border_width: 0,
-        border_color: TextColor {
-            red: 0,
-            green: 0,
-            blue: 0,
-            alpha: 255,
-        },
+        border: BorderEdges::NONE,
+        width: None,
+        min_width: LengthPercentage::ZERO,
+        max_width: None,
+        height: None,
+        min_height: LengthPercentage::ZERO,
+        max_height: None,
+        box_sizing: BoxSizing::ContentBox,
     }
 }
 
@@ -431,16 +684,22 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
     };
     Style {
         inline: fallback_inline_style(tag, inherited.inline),
-        margin: Edges {
-            top,
-            right: 0,
-            bottom,
-            left: 0,
+        margin: MarginEdges {
+            top: MarginValue::Length(LengthPercentage::Px(top as f32)),
+            right: MarginValue::ZERO,
+            bottom: MarginValue::Length(LengthPercentage::Px(bottom as f32)),
+            left: MarginValue::ZERO,
         },
-        padding: Edges::ZERO,
+        padding: PaddingEdges::ZERO,
         background: default_style().background,
-        border_width: 0,
-        border_color: default_style().border_color,
+        border: BorderEdges::NONE,
+        width: None,
+        min_width: LengthPercentage::ZERO,
+        max_width: None,
+        height: None,
+        min_height: LengthPercentage::ZERO,
+        max_height: None,
+        box_sizing: BoxSizing::ContentBox,
     }
 }
 

@@ -7,5 +7,7 @@ h1 { color: #6d28d9; font-size: 42px; }
 .hidden { display: none; }
 #specific { color: #123456; font-size: 28px; font-weight: 700; }
 .source-order { color: red; }
-.box-model { margin: 16px 24px; padding: 14px 18px; background-color: #eef2ff; border: 2px solid #4338ca; color: #312e81; font-weight: bold; }
-.nested-box { margin: 10px 8px; padding: 8px 10px; background-color: #ffffff; border: 1px solid #7c3aed; color: #5b21b6; }
+.box-model { width: 72%; min-width: 320px; max-width: 640px; margin: 20px auto 28px; padding: 3% 1.5em; box-sizing: border-box; background-color: #eef2ff; border-top: thin solid #4338ca; border-right: 6px solid #7c3aed; border-bottom: thick solid #4338ca; border-left: 6px solid #2563eb; color: #312e81; font-weight: bold; }
+.nested-box { width: 80%; margin: 14px auto -6px; padding: 0.75em 5%; box-sizing: border-box; background-color: #ffffff; border-width: 1px 3px 4px 2px; border-style: solid; border-color: #7c3aed #2563eb #4338ca #b42318; color: #5b21b6; }
+.collapse-a { margin: 24px 0 30px; padding: 6px; background-color: #ffffff; border-left: 4px solid #087a35; }
+.collapse-b { margin: 12px 0 18px; padding: 6px; background-color: #eef2ff; border-left: 4px solid #b42318; }

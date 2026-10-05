@@ -85,13 +85,15 @@ share measured lines with text; GIF shows the first frame. Line layout supports
 baseline alignment, wrapping, `<br>` and HTML whitespace. Initial CSS supports embedded
 `<style>`, `style=""`, and bounded `<link rel="stylesheet">` from local/file/data/HTTP(S),
 type/class/ID/universal selectors, descendant/child combinators, cascade/inheritance,
-`display` inline/block/none, text color, px font size and normal/bold font weight. The
-initial block box model adds nonnegative px/zero `margin` and `padding` shorthands,
-`background-color`, and `border: <px> solid <color>`/`none`. External CSS is merged with
-embedded rules in DOM source order and retained across resize reflow. Margin collapsing,
-side longhands, width/height, inline box decorations, `@import`, general media queries,
-CSS `url(...)` resources and JavaScript are not implemented yet; link glyphs still use the
-native default blue. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),
+`display` inline/block/none, text color, relative/absolute font-size lengths and normal/bold
+font weight. The block box model includes margin/padding shorthands and side longhands,
+auto/negative/percentage margins, background color, independent solid/none border sides,
+width/height with min/max, `box-sizing`, percentages, em/rem and CSS absolute length units.
+Adjacent sibling vertical margins collapse. External CSS is merged with embedded rules in
+DOM source order and retained across resize reflow. Parent/child margin collapse, definite
+percentage-height propagation, inline box decorations, broader selectors/colors, `@import`,
+general media queries, CSS `url(...)` resources and JavaScript are not implemented yet;
+link glyphs still use the native default blue. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),
 [CSS box model](wiki/CSS-Box-Model.md), [stylesheet loading](wiki/Stylesheet-Loading.md),
 [inline layout](wiki/Inline-Layout.md) and [image loading](wiki/Image-Loading.md).
 

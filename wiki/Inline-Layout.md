@@ -61,8 +61,9 @@ a click through to the linked destination.
 
 This is still an initial left-to-right subset. Mixed computed inline size/weight/color
 is supported, but inline padding/background/border fragments are not. Block-level box-model
-support is described in [CSS Block Box Model](CSS-Box-Model.md). Margin collapsing,
-CSS line-height, font families/styles, advanced
+support, including adjacent sibling margin collapse, is described in
+[CSS Block Box Model](CSS-Box-Model.md). Parent/child margin collapse, CSS line-height,
+font families/styles, advanced
 shaping/font fallback, bidi, grapheme-aware/full Unicode line breaking, preformatted
 whitespace modes, floats/tables/flex/grid remain future work. Hyperlink glyph color is
 still the native default blue. These tests do not claim complete CSS conformance.

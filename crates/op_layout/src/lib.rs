@@ -41,6 +41,12 @@ impl From<CssColor> for TextColor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecorationBorder {
+    pub width: i32,
+    pub color: TextColor,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoxDecoration {
     pub x: i32,
@@ -48,8 +54,10 @@ pub struct BoxDecoration {
     pub width: i32,
     pub height: i32,
     pub background: TextColor,
-    pub border_width: i32,
-    pub border_color: TextColor,
+    pub border_top: DecorationBorder,
+    pub border_right: DecorationBorder,
+    pub border_bottom: DecorationBorder,
+    pub border_left: DecorationBorder,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -287,7 +295,10 @@ mod tests {
         let decoration = &layout.box_decorations[0];
         assert_eq!(decoration.x, 52);
         assert_eq!(decoration.width, 696);
-        assert_eq!(decoration.border_width, 2);
+        assert_eq!(decoration.border_top.width, 2);
+        assert_eq!(decoration.border_right.width, 2);
+        assert_eq!(decoration.border_bottom.width, 2);
+        assert_eq!(decoration.border_left.width, 2);
         assert_eq!(
             decoration.background,
             TextColor {
@@ -310,6 +321,89 @@ mod tests {
         assert_eq!(inside.x, 66);
         assert!(inside.y >= decoration.y + 10);
         assert!(after.y >= decoration.y + decoration.height + 10);
+    }
+
+    #[test]
+    fn resolves_percent_width_auto_margins_box_sizing_and_per_side_borders() {
+        let document = op_html::parse_document(
+            "<style>
+                .card {
+                    width:50%; min-width:300px; max-width:500px;
+                    margin:10px auto; padding:10%;
+                    box-sizing:border-box;
+                    background-color:#eee;
+                    border-left:4px solid red;
+                    border-right:6px solid blue;
+                }
+             </style>
+             <div class='card'>centered</div>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = &layout.box_decorations[0];
+        assert_eq!(decoration.x, 216);
+        assert_eq!(decoration.width, 368);
+        assert_eq!(decoration.border_left.width, 4);
+        assert_eq!(decoration.border_right.width, 6);
+        assert_eq!(decoration.border_top.width, 0);
+        let text = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "centered")
+            .unwrap();
+        assert_eq!(text.x, 294);
+    }
+
+    #[test]
+    fn border_box_height_includes_padding_and_border() {
+        let document = op_html::parse_document(
+            "<div style='height:100px; padding:10px; border:2px solid red; box-sizing:border-box; background-color:white'>height</div>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        assert_eq!(layout.box_decorations[0].height, 100);
+    }
+
+    #[test]
+    fn collapses_adjacent_sibling_vertical_margins() {
+        assert_eq!(flow::collapse_margins(20, 12), 20);
+        assert_eq!(flow::collapse_margins(20, -8), 12);
+        assert_eq!(flow::collapse_margins(-20, -8), -20);
+
+        let document = op_html::parse_document(
+            "<div style='height:20px; margin-bottom:30px; background-color:red'></div>
+             <div style='height:20px; margin-top:10px; background-color:blue'></div>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        assert_eq!(layout.box_decorations.len(), 2);
+        let first = &layout.box_decorations[0];
+        let second = &layout.box_decorations[1];
+        assert_eq!(second.y - (first.y + first.height), 30);
     }
 
     #[test]

@@ -439,3 +439,34 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 117 workspace tests,
   normal startup smoke, the 26-command CSS box demo smoke and optimized release build.
 - Rebuilt `target/release/op_browser.exe`; this build is 528,384 bytes.
+
+## 2026-10-06 - Expanded CSS block sizing and margin collapse
+
+- Replaced the initial px-only uniform box representation with owned CSS used-value types
+  for length/percentage, auto margins, independent margin/padding edges, independent border
+  edges and content-box/border-box sizing.
+- Added margin/padding side longhands, border side shorthands, border-width/style/color and
+  all corresponding side longhands. Shorthand and longhand candidates compete through the
+  normal cascade key instead of a fixed application order.
+- Added width/height, min/max width/height and box-sizing values. Used block width now handles
+  percentages, auto horizontal margins, min/max constraints, negative margins and centered
+  fixed/percentage-width blocks.
+- Expanded length parsing to px, percent, em/rem and CSS absolute units (in/cm/mm/Q/pt/pc),
+  plus font-size percentage/absolute/relative keywords. Current rem uses the initial root
+  baseline; percentage heights remain auto-like without a definite containing height.
+- Added border width keywords thin/medium/thick, currentColor, per-side widths/colors and
+  side-specific display-list FillRect painting. Border styles currently support none/solid.
+- Added adjacent sibling vertical margin collapsing with CSS positive/negative arithmetic.
+  Whitespace-only text between block siblings no longer creates an anonymous line that would
+  break collapse. Parent/child and empty-block collapsing remain explicit later work.
+- Added deterministic CSS, layout, paint and engine regressions for cascade competition,
+  unit conversion, percent/min/max width, auto centering, border-box height, per-side paint,
+  negative margins and sibling margin collapse.
+- Updated the built-in start page and CSS demo with centered percentage boxes, min/max width,
+  percent/em padding, box-sizing, independent border sides and a visible margin-collapse case.
+  The CSS demo smoke now produces 35 paint commands.
+- Updated project plan, code graph/slices, README, development docs and CSS/rendering/layout
+  wiki pages to describe the expanded behavior and remaining limits precisely.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 123 workspace tests,
+  normal startup smoke, the 35-command expanded CSS demo smoke and optimized release build.
+- Rebuilt `target/release/op_browser.exe`; this build is 548,352 bytes.

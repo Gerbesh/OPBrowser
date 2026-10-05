@@ -219,15 +219,17 @@ classDiagram
         font_size_px
         font_weight
         background_color
-        margin
-        padding
-        border
+        margin_edges
+        padding_edges
+        border_edges
+        width / min_width / max_width
+        height / min_height / max_height
+        box_sizing
     }
     class BoxDecoration {
         bounds
         background
-        border_width
-        border_color
+        border_top/right/bottom/left
     }
     class LayoutTree {
         box_decorations
@@ -373,10 +375,11 @@ classDiagram
   Initial raw-text/RCDATA context keeps
   references and markup from being incorrectly parsed inside script/style/title.
 - op_dom owns document/node storage, element attributes, and DOM invariants.
-- op_layout owns text-flow and initial block-box geometry, structural-container traversal
+- op_layout owns text-flow and block-box used-value geometry, structural-container traversal
   and UTF-8 LinkSpan ranges preserved across whitespace normalization and line wrapping.
-  It consumes ComputedStyleMap for display flow, mixed text runs and block margin/border/
-  padding geometry, emitting BoxDecoration records for backgrounds/solid borders.
+  It resolves percent/auto/min/max/content-vs-border-box widths, independent border sides,
+  block height minima/maxima and adjacent-sibling vertical margin collapse. Whitespace-only
+  text between block siblings is suppressed before it can create anonymous line geometry.
 - op_paint owns platform-neutral paint commands/display lists, CSS color conversion and
   BoxDecoration -> FillRect expansion for backgrounds/four border sides, plus the temporary
   default link color. Alpha text/box colors currently composite over the white page.
@@ -391,10 +394,12 @@ classDiagram
   supported selector subset right-to-left and builds per-NodeId MatchedDeclaration
   candidates. compute_styles resolves supported values using !important, inline source,
   specificity and source order, then applies inheritance/global keywords into a
-  ComputedStyleMap. Initial properties now include display, color, font-size/font-weight,
-  background-color, margin/padding edges and one solid-border shorthand result. UA defaults
-  mirror M1 block/hidden tags and heading typography; heading/paragraph/list spacing is now
-  represented as computed margins instead of a separate layout spacing table.
+  ComputedStyleMap. Properties now include display, color, font-size/font-weight,
+  background-color, margin/padding edges, independent border edges, width/height min/max and
+  box-sizing. Box shorthand/longhand candidates are compared by normal cascade priority;
+  length parsing covers percent, em/rem and CSS absolute units. UA defaults mirror M1
+  block/hidden tags and heading typography; heading/paragraph/list spacing is represented
+  as computed margins instead of a separate layout spacing table.
 - op_engine::styles walks link nodes during page preparation, applies the initial
   stylesheet-link activation subset, resolves against the effective document address,
   and owns per-document request/text budgets plus duplicate-source reuse. Load failures
@@ -445,5 +450,6 @@ Engine preparation now connects parsed DOM -> bounded external stylesheet loadin
 DOM-order linked/embedded CSS collection -> selector matching -> cascade/inheritance ->
 retained ComputedStyleMap -> CSS-aware layout -> display-list text styling -> Win32 pixels.
 Reflow reuses author candidates and computed values without refetching/reparsing CSS.
-The first block-box path now continues into BoxDecoration/background-border FillRects.
-Next: side longhands, width/height, margin collapsing and inline box fragments.
+The block-box path now includes used width/min/max/auto-margin geometry, per-side borders
+and adjacent sibling margin collapse before BoxDecoration/background-border FillRects.
+Next: selector/value expansion and inline box fragments/decorations.

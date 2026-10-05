@@ -132,41 +132,54 @@ fn push_box_decoration(commands: &mut Vec<PaintCommand>, decoration: &BoxDecorat
         });
     }
 
-    let border = decoration
-        .border_width
-        .clamp(0, decoration.width.min(decoration.height) / 2);
-    if border == 0 {
-        return;
+    let top = decoration.border_top.width.clamp(0, decoration.height);
+    let bottom = decoration
+        .border_bottom
+        .width
+        .clamp(0, decoration.height.saturating_sub(top));
+    let middle_height = decoration.height.saturating_sub(top).saturating_sub(bottom);
+    let left = decoration.border_left.width.clamp(0, decoration.width);
+    let right = decoration
+        .border_right
+        .width
+        .clamp(0, decoration.width.saturating_sub(left));
+
+    if top > 0 {
+        commands.push(PaintCommand::FillRect {
+            x: decoration.x,
+            y: decoration.y,
+            width: decoration.width,
+            height: top,
+            color: composite_color(decoration.border_top.color),
+        });
     }
-    let color = composite_color(decoration.border_color);
-    commands.push(PaintCommand::FillRect {
-        x: decoration.x,
-        y: decoration.y,
-        width: decoration.width,
-        height: border,
-        color,
-    });
-    commands.push(PaintCommand::FillRect {
-        x: decoration.x,
-        y: decoration.y + decoration.height - border,
-        width: decoration.width,
-        height: border,
-        color,
-    });
-    commands.push(PaintCommand::FillRect {
-        x: decoration.x,
-        y: decoration.y + border,
-        width: border,
-        height: decoration.height - border * 2,
-        color,
-    });
-    commands.push(PaintCommand::FillRect {
-        x: decoration.x + decoration.width - border,
-        y: decoration.y + border,
-        width: border,
-        height: decoration.height - border * 2,
-        color,
-    });
+    if bottom > 0 {
+        commands.push(PaintCommand::FillRect {
+            x: decoration.x,
+            y: decoration.y + decoration.height - bottom,
+            width: decoration.width,
+            height: bottom,
+            color: composite_color(decoration.border_bottom.color),
+        });
+    }
+    if left > 0 && middle_height > 0 {
+        commands.push(PaintCommand::FillRect {
+            x: decoration.x,
+            y: decoration.y + top,
+            width: left,
+            height: middle_height,
+            color: composite_color(decoration.border_left.color),
+        });
+    }
+    if right > 0 && middle_height > 0 {
+        commands.push(PaintCommand::FillRect {
+            x: decoration.x + decoration.width - right,
+            y: decoration.y + top,
+            width: right,
+            height: middle_height,
+            color: composite_color(decoration.border_right.color),
+        });
+    }
 }
 
 fn composite_text_color(color: TextColor) -> Color {
@@ -190,7 +203,7 @@ fn composite_color(color: TextColor) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use op_layout::{FontWeight, LayoutTree, TextBox};
+    use op_layout::{DecorationBorder, FontWeight, LayoutTree, TextBox};
 
     #[test]
     fn composites_css_text_alpha_over_white_page_background() {
@@ -234,12 +247,41 @@ mod tests {
                     blue: 255,
                     alpha: 255,
                 },
-                border_width: 2,
-                border_color: TextColor {
-                    red: 12,
-                    green: 34,
-                    blue: 56,
-                    alpha: 255,
+                border_top: DecorationBorder {
+                    width: 2,
+                    color: TextColor {
+                        red: 12,
+                        green: 34,
+                        blue: 56,
+                        alpha: 255,
+                    },
+                },
+                border_right: DecorationBorder {
+                    width: 3,
+                    color: TextColor {
+                        red: 34,
+                        green: 56,
+                        blue: 78,
+                        alpha: 255,
+                    },
+                },
+                border_bottom: DecorationBorder {
+                    width: 4,
+                    color: TextColor {
+                        red: 56,
+                        green: 78,
+                        blue: 90,
+                        alpha: 255,
+                    },
+                },
+                border_left: DecorationBorder {
+                    width: 5,
+                    color: TextColor {
+                        red: 78,
+                        green: 90,
+                        blue: 12,
+                        alpha: 255,
+                    },
                 },
             }],
             text_boxes: vec![],
@@ -263,17 +305,62 @@ mod tests {
                 },
             }
         );
-        assert!(display_list.commands[2..].iter().all(|command| matches!(
-            command,
+        assert_eq!(
+            display_list.commands[2],
             PaintCommand::FillRect {
+                x: 20,
+                y: 30,
+                width: 200,
+                height: 2,
                 color: Color {
                     r: 12,
                     g: 34,
-                    b: 56
+                    b: 56,
                 },
-                ..
             }
-        )));
+        );
+        assert_eq!(
+            display_list.commands[3],
+            PaintCommand::FillRect {
+                x: 20,
+                y: 86,
+                width: 200,
+                height: 4,
+                color: Color {
+                    r: 56,
+                    g: 78,
+                    b: 90,
+                },
+            }
+        );
+        assert_eq!(
+            display_list.commands[4],
+            PaintCommand::FillRect {
+                x: 20,
+                y: 32,
+                width: 5,
+                height: 54,
+                color: Color {
+                    r: 78,
+                    g: 90,
+                    b: 12,
+                },
+            }
+        );
+        assert_eq!(
+            display_list.commands[5],
+            PaintCommand::FillRect {
+                x: 217,
+                y: 32,
+                width: 3,
+                height: 54,
+                color: Color {
+                    r: 34,
+                    g: 56,
+                    b: 78,
+                },
+            }
+        );
     }
 
     #[test]

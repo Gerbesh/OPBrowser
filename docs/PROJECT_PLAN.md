@@ -118,13 +118,17 @@ Status: IN PROGRESS.
 - DONE load bounded external `<link rel="stylesheet">` resources from local/file/data/HTTP(S)
   through op_net, preserve their DOM source order with embedded styles, and retain the result
   across reflow; failed stylesheet subresources are nonfatal.
-- DONE initial block-level box model: nonnegative px/zero `margin` and `padding`
-  shorthands (1-4 values), `background-color`, and `border: <px> solid <color>`/`none`
-  now reach computed style, layout geometry, display-list fills and native paint.
+- DONE initial block-level box model: `margin`/`padding`, `background-color` and solid/none
+  borders reach computed style, layout geometry, display-list fills and native paint.
+- DONE expanded block sizing/value layer: margin/padding side longhands, border side and
+  width/style/color shorthands/longhands, `width`/`height` + min/max, `box-sizing`, auto
+  horizontal margins, negative margins, percentages, em/rem and CSS absolute length units.
+- DONE adjacent sibling vertical margin collapsing (positive/negative combinations) and
+  block-boundary whitespace suppression; parent/child/empty-block collapsing remains later.
 - DONE move the previous temporary heading/paragraph/list spacing into computed UA margins
   so normal flow consumes one box-model spacing path instead of separate semantic offsets.
-- NEXT broaden the box model with side longhands, width/height, margin collapsing and inline
-  box fragments/decorations.
+- NEXT broaden selectors/value syntax and add inline box fragments/decorations.
+- LATER fuller parent/child margin collapsing and definite percentage-height propagation.
 - LATER broader computed values.
 - LATER normal flow block layout.
 - LATER full CSS inline formatting and Unicode line breaking (initial M1 subset exists).

@@ -149,9 +149,10 @@ CSS rendering example:
     cargo run -p op_browser -- examples/css/index.html
     target\release\op_browser.exe examples\css\index.html
 
-The CSS example links `examples/css/theme.css`, so it exercises the external local
-stylesheet loader, document-order cascade, nested block margin/padding/background/border
-geometry and native paint path. The built-in start page also renders one box-model panel.
+The CSS example links `examples/css/theme.css`, so it exercises external local stylesheet
+loading, document-order cascade, percentage/min/max sizing, auto/negative margins,
+box-sizing, per-side borders, sibling margin collapse and native paint. The built-in start
+page also renders a centered percentage-sized box-model panel.
 
 ## Image support
 

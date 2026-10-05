@@ -549,6 +549,51 @@ mod tests {
     }
 
     #[test]
+    fn expanded_box_model_reaches_native_display_list() {
+        let display_list = Engine::new().render_html(
+            "<div style='width:50%; margin:10px auto; padding:10%; box-sizing:border-box; background-color:#eef2ff; border-left:4px solid red; border-right:6px solid blue'>wide</div>",
+            800,
+            600,
+        );
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::FillRect {
+                x: 216,
+                width: 368,
+                color: op_paint::Color {
+                    r: 0xee,
+                    g: 0xf2,
+                    b: 0xff
+                },
+                ..
+            }
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::FillRect {
+                x: 216,
+                width: 4,
+                color: op_paint::Color { r: 255, g: 0, b: 0 },
+                ..
+            }
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::FillRect {
+                x: 578,
+                width: 6,
+                color: op_paint::Color { r: 0, g: 0, b: 255 },
+                ..
+            }
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, x: 294, .. } if text == "wide"
+        )));
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,

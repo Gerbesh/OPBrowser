@@ -213,7 +213,8 @@ HTML
   -> cascade: !important -> inline source -> specificity -> source order
   -> inheritance + initial/inherit/unset
   -> ComputedStyleMap { display, color, font-size, font-weight,
-                        background-color, margin, padding, border }
+                        background-color, margin/padding edges, border edges,
+                        width/height min/max, box-sizing }
   -> retained in PreparedDocument
   -> op_layout display/block/inline decisions + mixed inline style runs
        + block margin/border/padding content geometry
@@ -243,21 +244,33 @@ requests, 1 MiB per stylesheet and 2 MiB decoded CSS per document. The current a
 subset accepts normal screen/all stylesheets and skips alternate/disabled/print links.
 Resize reflow reuses retained author/computed styles without refetching CSS.
 
-Initial block-box values accept `margin`/`padding` shorthands with 1-4 nonnegative px
-(or zero) values, `background-color` from the existing color subset, and `border: none` or
-three-component solid borders. These properties are non-inherited by default but support
-inherit/initial/unset. Author box geometry currently applies to non-replaced block boxes;
-inline element boxes and block images do not yet receive CSS padding/background/border.
-There is no margin collapsing, auto/percent/em sizing, width/height, box-sizing or side
-longhand support yet.
+Block sizing now accepts `margin`/`padding` shorthands and side longhands; margin supports
+`auto`, negatives and percentages while padding rejects negatives. Width/height and min/max
+accept px/%, em/rem and CSS absolute units; horizontal percentages resolve against the
+containing-block width. `box-sizing: content-box|border-box` affects used sizing. Percentage
+height values are parsed but remain auto-like when no definite containing height is available.
+The current rem conversion uses OPBrowser's initial root font-size baseline rather than a
+recomputed author-modified root rem basis.
+
+Borders support `border`, per-side shorthands, `border-width/style/color`, and their side
+longhands. Width keywords thin/medium/thick and `currentColor` work; styles are currently
+`none` and `solid`. Shorthand and longhand candidates compete through the normal cascade
+rather than by hard-coded application order. Painting carries independent widths/colors
+for all four sides.
+
+Adjacent sibling block margins collapse using CSS positive/negative margin arithmetic.
+Whitespace-only inline text between block siblings no longer creates a line or breaks that
+collapse. Parent/child and empty-block margin collapsing are deliberately not implemented
+in this slice. Author box geometry still applies to ordinary non-replaced block boxes;
+inline box fragments and replaced-element CSS decorations remain later work.
 
 Planned next path:
 
 ```text
-ComputedStyleMap
-  -> margin-*/padding-*/border-* + width/height
-  -> margin collapsing / richer normal block flow
-  -> inline box fragments and decorations
+Selector/value expansion
+  -> attribute + sibling selectors / useful pseudo-classes
+  -> richer colors/functions and typography values
+  -> inline box fragments/decorations
 ```
 
 Broader property/value coverage, `@import`, media queries and CSS `url(...)` resources

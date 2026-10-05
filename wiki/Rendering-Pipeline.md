@@ -96,10 +96,10 @@ properties. PreparedDocument retains author/computed style data beside DOM/image
 reflow neither refetches nor reparses external CSS.
 
 op_layout consumes that map for display:none/block/inline, mixed inline text runs and the
-first [block box model](CSS-Box-Model.md). Block margin/border/padding changes content
-geometry and produces BoxDecoration records for background/solid-border paint. op_paint
-expands those into FillRect commands before text/images, while Win32 remains only the native
-drawing backend. Former M1 heading/paragraph/list spacing now enters this path as UA margins.
+expanded [block box model](CSS-Box-Model.md). It resolves used widths/min/max/auto margins,
+box-sizing, padding, independent border edges, fixed height constraints and sibling margin
+collapse, then emits BoxDecoration records. op_paint expands those into side-specific
+FillRect commands before text/images; Win32 remains only the native drawing backend.
 
 ## Paint smoke verification
 

@@ -1,76 +1,95 @@
 # CSS Block Box Model
 
-OPBrowser now has an initial owned CSS box-model path for ordinary block-level elements.
-The geometry is computed in `op_layout`; the Windows backend only draws platform-neutral
-display-list rectangles and text.
+OPBrowser owns the current block box-model pipeline from specified CSS through used layout
+geometry. Windows remains only a drawing backend for platform-neutral display-list commands.
 
-## Supported properties
+## Supported properties and values
 
-The current computed subset adds:
+The current block subset includes:
 
-- `background-color` using the existing named/hex color subset;
-- `margin` shorthand with 1 to 4 values;
-- `padding` shorthand with 1 to 4 values;
-- `border: none`;
-- `border: <length> solid <color>` with the three components accepted in any order.
+- `background-color` using the current color parser;
+- `margin` plus `margin-top/right/bottom/left`;
+- `padding` plus `padding-top/right/bottom/left`;
+- `width`, `min-width`, `max-width`;
+- `height`, `min-height`, `max-height`;
+- `box-sizing: content-box | border-box`;
+- `border` and `border-top/right/bottom/left`;
+- `border-width`, `border-style`, `border-color` and all side longhands.
 
-`margin` and `padding` accept nonnegative `px` lengths or unitless zero. Values are bounded
-to 4096 px. These box properties are non-inherited by default, but `inherit`, `initial`
-and `unset` follow the current global-keyword rules.
+Margin accepts `auto`, negative values and percentages. Padding and box sizes reject negative
+used lengths. Supported dimensions include px, em, rem, in, cm, mm, Q, pt and pc; percentage
+horizontal sizing resolves from the containing-block width. Unitless zero is accepted.
+`font-size` additionally accepts percentages and the current absolute/relative size keywords.
 
-## Geometry
+Border styles currently implement only `none` and `solid`. Border widths accept lengths and
+`thin`/`medium`/`thick`; border color accepts the normal color subset plus `currentColor`.
+Shorthand and longhand declarations do not run in a hard-coded order: each affected side or
+subproperty chooses its winner using the normal importance/source/specificity/source-order
+cascade key.
 
-For an ordinary block element, layout now computes, in order:
+## Used block geometry
+
+For an ordinary non-replaced block, `op_layout` resolves:
 
     containing block
-      -> margin box offset
-      -> border box
-      -> padding box
-      -> content box / available inline width
+      -> percentage / auto / negative margins
+      -> width + min/max constraints
+      -> content-box or border-box interpretation
+      -> independent border edges
+      -> percentage / absolute padding
+      -> content box and available inline width
 
-Child inline lines and nested blocks use that content-box width and x position. This also
-means images inside a padded block are fitted against the reduced available content width.
+A specified width with both horizontal margins `auto` is centered. Auto width fills the
+remaining containing width. Nested blocks, inline lines and images receive the resulting
+content-box x/width. `height` and min/max height work for definite absolute values; a
+percentage height is parsed but currently behaves auto-like when no definite containing
+height is available, avoiding invented geometry.
 
-The older heading/paragraph/list vertical spacing is no longer a separate semantic-layout
-table on the normal computed path. It is represented as temporary UA computed margins, so
-author `margin` can override the same geometry path.
+The current rem conversion uses OPBrowser's initial root font-size baseline. Recomputing rem
+from an author-modified root font size remains later computed-value work.
+
+## Margin collapsing
+
+Adjacent sibling block margins collapse. Two positive margins use the larger; two negative
+margins use the more negative; mixed signs combine the largest positive with the most
+negative. Whitespace-only DOM text between block siblings is discarded at the block-flow
+boundary so indentation/newlines do not create a fake anonymous line and break collapse.
+
+Parent/child collapse and empty-block self-collapse are not implemented yet. A final child
+margin is currently consumed before the parent's padding/border boundary instead of escaping
+through a margin-transparent parent.
 
 ## Painting
 
-`op_layout` emits `BoxDecoration` records containing border-box bounds, background color
-and the current uniform solid-border width/color. `op_paint` expands one decoration into
-a background `FillRect` plus up to four border-side `FillRect` commands. The Win32 painter
-therefore does not implement CSS itself.
+`op_layout` emits `BoxDecoration` records with border-box bounds, background color and four
+independent border width/color pairs. `op_paint` expands them into one background `FillRect`
+and up to four side-specific border `FillRect` commands. This keeps CSS knowledge out of the
+Win32 painter.
 
-RGBA box colors currently composite over the white page background, matching the existing
-text-color behavior. Proper stacking/background propagation and alpha composition are
-later rendering work.
+RGBA box colors currently composite over the white page background. Proper stacking,
+background propagation and general alpha composition remain later rendering work.
 
 ## Deliberate current limits
 
-This first slice only applies CSS box geometry/decorations to ordinary non-replaced block
-boxes. It does not yet implement:
+- block geometry/decorations apply to ordinary non-replaced block boxes, not inline fragments;
+- replaced/block images do not yet receive CSS box decorations;
+- no parent/child or empty-block margin collapse;
+- no `border-radius`, outlines, shadows, background images or multiple backgrounds;
+- percentage height needs a definite-height containing-block propagation pass;
+- no floats, positioning, tables, flexbox or grid yet;
+- no complete stacking-context/background-propagation model.
 
-- margin collapsing;
-- `margin-*`, `padding-*`, `border-*` side longhands;
-- `width`, `height`, min/max sizing or `box-sizing`;
-- `auto`, percentages, em/rem or negative margins;
-- separate border widths/colors/styles per side;
-- inline box fragments, inline padding/background/borders;
-- CSS box decorations on block images/replaced elements;
-- border radius, outlines, shadows, background images or multiple backgrounds;
-- stacking contexts and full background propagation.
-
-Unsupported/invalid values are ignored before cascade winner selection, so a lower-priority
-valid declaration can still win under the existing computed-style rules.
+Unsupported or invalid values are ignored before cascade winner selection, so a valid lower
+priority declaration can still win for the currently recognized properties.
 
 ## Verification
 
-The checked-in demo exercises nested block boxes:
+The checked-in demo now exercises centered percentage-sized boxes, auto margins, min/max
+width, negative margin, em/percentage padding, border-box sizing, independent border sides
+and sibling margin collapsing:
 
     target\release\op_browser.exe examples\css\index.html
 
-`examples/css/theme.css` gives the outer and nested blocks different margin, padding,
-background and solid borders. Deterministic CSS/layout/paint/engine tests separately verify
-computed shorthand expansion, UA-margin override, content geometry, BoxDecoration output,
-four-side border painting and the final display-list coordinates.
+Deterministic CSS/layout/paint/engine tests separately verify shorthand/longhand cascade,
+unit conversion, used coordinates, per-side paint commands, fixed border-box height and
+positive/negative sibling margin-collapse arithmetic.
