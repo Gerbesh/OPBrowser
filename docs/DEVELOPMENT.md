@@ -99,6 +99,24 @@ Verify links from the same legacy-encoded page:
 The fixture intentionally contains Windows-1251 bytes, not UTF-8. Preserve its
 declared encoding when editing it; all Rust source and documentation remain UTF-8.
 
+Verify the full named-reference page and its decoded Unicode query link:
+
+    cargo run -p op_browser -- --link-smoke-test examples/encoding/named-references.html
+
+The named-reference table is checked into Rust source; normal Cargo builds need
+neither Python nor internet access. When changing the table representation, run:
+
+    python tools/generate_html_entities.py
+    python tools/generate_html_entities.py --check
+
+The script uses only the Python 3 standard library and the pinned
+crates/op_html/data/entities.tsv snapshot. CI checks generated output, and Cargo
+tests independently decode all 2231 snapshot spellings through tokenizer states.
+For an intentional source refresh, download https://html.spec.whatwg.org/entities.json
+to a local file, then use `python tools/generate_html_entities.py --import-json PATH`.
+The import validates codepoints against source characters and retains the source
+SHA-256. Preserve third_party/WHATWG-HTML-LICENSE.txt with derived data and binaries.
+
 Open an external site interactively:
 
     cargo run -p op_browser -- https://example.com

@@ -105,17 +105,21 @@ clicks the first link in examples/navigation/index.html and paints its destinati
 CI runs this with no external network dependency.
 
 The text decoding slice now accepts Windows-1251/1252 and UTF-16 alongside UTF-8,
-with BOM/transport/early-meta precedence. Common named and numeric references are
+with BOM/transport/early-meta precedence. All standard named and numeric references are
 consumed in the tokenizer, so `&amp;` in hrefs becomes the actual query separator,
 and escaped `<` remains text rather than becoming markup. Raw-text/RCDATA contexts
 keep script/style source literal and decode references in title/textarea text.
 HTTP regression fixtures and examples/encoding/windows-1251.html verify Cyrillic,
 link metadata, loaded bytes -> pixels and subsequent link navigation in CI.
+The full named-reference path also handles two-scalar replacements, longest matches
+and legacy prefix/attribute ambiguity. All 2231 source spellings are verified in
+text, three attribute-value states and RCDATA against the pinned WHATWG snapshot.
+examples/encoding/named-references.html verifies exact painted text, Unicode link
+byte ranges, decoded query values and subsequent native hyperlink navigation.
 
 Limits: initial URL/encoding subsets; no CSS, images or scripts yet.
 Links open in the current window. Fragment links reload the document without anchor
-scrolling; HTML base elements, target/download behavior, the complete named-reference
-table, other legacy encodings and full
+scrolling; HTML base elements, target/download behavior, other legacy encodings and full
 WHATWG URL processing remain future work. Resizing moves controls but text reflow
 occurs on next navigation.
 

@@ -286,6 +286,50 @@ mod tests {
     }
 
     #[test]
+    fn full_named_reference_fixture_reaches_paint_links_and_history() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/encoding/named-references.html");
+        let mut engine = Engine::new();
+        let page = engine.navigate(path.to_str().unwrap(), 800, 600).unwrap();
+        assert!(contains_text(
+            &page.display_list,
+            "Latin: Á ä ß. Greek: α Ω. Cyrillic: Я я."
+        ));
+        assert!(contains_text(
+            &page.display_list,
+            "Math: ∉ \u{2242}\u{338}. Ligature: fj. Arrow: →."
+        ));
+        assert!(contains_text(
+            &page.display_list,
+            "Legacy without semicolon: ¬in / © 2026."
+        ));
+        assert!(contains_text(
+            &page.display_list,
+            "Escaped markup: <b>literal text</b>."
+        ));
+        let (text, link) = page
+            .display_list
+            .commands
+            .iter()
+            .find_map(|command| {
+                if let PaintCommand::Text { text, links, .. } = command {
+                    links.first().map(|link| (text, link))
+                } else {
+                    None
+                }
+            })
+            .expect("fixture link must reach paint");
+        assert_eq!(&text[link.start..link.end], "Перейти → fj");
+        assert_eq!(
+            link.href,
+            "../navigation/destination.html?source=entities&word=Á"
+        );
+        let next = engine.follow_link(&link.href, 800, 600).unwrap();
+        assert!(contains_text(&next.display_list, "Link destination"));
+        assert_eq!(engine.navigation().entries().len(), 2);
+    }
+
+    #[test]
     fn local_windows1251_fixture_renders_cyrillic_and_decoded_query_link() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../examples/encoding/windows-1251.html");

@@ -63,7 +63,8 @@ Initial network support requires Windows, an ASCII hostname (or an IPv4/brackete
 IPv6 literal) and an explicit `http://` or `https://` scheme. Documents support
 UTF-8, Windows-1251, Windows-1252 and UTF-16. Encoding selection checks BOM,
 transport charset and early HTML meta declarations; no declaration defaults to
-strict UTF-8. Common named and numeric HTML references decode in text and hrefs.
+strict UTF-8. The full HTML named-reference table and numeric references decode
+in text and hrefs, including results containing two Unicode characters.
 See [HTML text decoding](wiki/HTML-Text-Decoding.md) for exact limits. Requests
 use system proxy/TLS settings, keep certificate validation enabled, follow at most
 five redirects, reject HTTPS-to-HTTP redirects, and limit decompressed response bytes to 2 MiB.
@@ -79,3 +80,7 @@ See:
 - [Development log](docs/DEV_LOG.md)
 - [Local wiki source](wiki/Home.md)
 - [Language/platform ADR](docs/ADR-0001-language-and-platform.md)
+
+The HTML named-reference data is derived from WHATWG and incorporated under
+BSD-3-Clause; see [the third-party notice](third_party/WHATWG-HTML-LICENSE.txt).
+Include this notice when distributing browser binaries.

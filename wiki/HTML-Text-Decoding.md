@@ -38,10 +38,23 @@ input to the engine's UTF-8 String can expand the text size.
 
 op_html::references implements numeric decimal/hexadecimal references, optional
 numeric semicolons, invalid-scalar recovery and HTML's legacy C1 numeric mapping.
-Named-reference support is a deliberate common subset: amp/lt/gt/quot/apos/nbsp,
-copy/reg/euro/trade, ndash/mdash/hellip, laquo/raquo/times/divide/bull and selected
-standard uppercase variants. Unknown names are preserved. The full named table
-and multi-character named results remain future work.
+Named-reference support includes the complete [WHATWG table](https://html.spec.whatwg.org/multipage/named-characters.html#named-character-references):
+2125 case-sensitive names and 106 legacy spellings without a semicolon. Results
+contain one or two Unicode scalars, including `&NotEqualTilde;` (U+2242 U+0338),
+`&fjlig;` (f j) and `&ThickSpace;` (U+205F U+200A). The longest matching spelling
+wins. `&notin;` becomes ∉, while `&notin` in text uses the legacy `not` prefix and
+becomes ¬in. In attributes that prefix stays literal when followed by an ASCII
+letter, digit or `=`. When no standard spelling/prefix matches, input stays literal.
+
+The runtime uses OPBrowser-owned prefix-range lookup over a sorted compact table:
+eight-byte entries, packed ASCII names and deduplicated UTF-8 results total 35,378
+static bytes. It allocates no lookup strings and examines at most 31 input characters.
+The pinned source spellings/codepoints are in crates/op_html/data/entities.tsv,
+normalized from [entities.json](https://html.spec.whatwg.org/entities.json) with its
+source SHA-256 retained. tools/generate_html_entities.py uses Python's standard
+library to regenerate/check references/named.rs offline. Normal Cargo builds need
+no Python or network. This is standard data incorporated under BSD-3-Clause, with
+attribution/license retained in third_party/WHATWG-HTML-LICENSE.txt.
 
 The original tokenizer consumes references in text and all attribute-value states.
 It respects legacy attribute ambiguity for names without semicolons and does not
@@ -69,3 +82,18 @@ metadata. CI renders it through the native address/worker/repaint smoke path:
 To verify its link as well:
 
     cargo run -p op_browser -- --link-smoke-test examples/encoding/windows-1251.html
+
+Exhaustive tokenizer tests verify all 2231 exact source spellings at EOF, before
+punctuation, in single/double/unquoted attribute values and title/textarea RCDATA.
+An independent longest-prefix oracle over the source snapshot checks suffix recovery
+and attribute ambiguity. Additional tests cover two-scalar results, unknown/case
+variants, bounded lookup and raw-text/nonrecursive decoding.
+
+examples/encoding/named-references.html covers Latin/Greek/Cyrillic names, arrows,
+math and legacy fallback. Engine tests assert exact paint text and UTF-8 link spans,
+then follow its decoded Unicode query link. CI also runs the native click smoke:
+
+    cargo run -p op_browser -- --link-smoke-test examples/encoding/named-references.html
+
+The GDI text backend's existing font/shaping limits still apply; scalar preservation
+does not imply complete typography or complete HTML parser conformance.

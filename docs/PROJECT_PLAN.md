@@ -73,7 +73,9 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE common named and numeric references in HTML text/attributes, including hrefs.
 - DONE initial raw-text/RCDATA tokenizer handling to preserve script/style text.
 - DONE Windows-1251 source -> Cyrillic pixels -> decoded hyperlink smoke coverage.
-- NEXT remaining named-reference table and broader encoding/URL conformance.
+- DONE full HTML named-reference table, two-scalar results and longest-match lookup.
+- DONE exhaustive named-reference text/attribute/RCDATA tests and native link smoke.
+- NEXT broader encoding/URL conformance.
 - NEXT basic image loading.
 - NEXT richer block/inline layout behavior.
 

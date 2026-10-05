@@ -24,6 +24,14 @@ click, relative-file loading, history and destination repaint using local fixtur
 External network verification is separate:
 `cargo run -p op_browser -- --navigation-smoke-test https://example.com`.
 
+The complete named-reference source is pinned in crates/op_html/data/entities.tsv.
+`python tools/generate_html_entities.py --check` verifies the committed compact Rust
+table in CI; normal builds do not run a generator or access the network. Exhaustive
+Cargo tests cover every source spelling in text/attributes/RCDATA and prefix recovery.
+`cargo run -p op_browser -- --link-smoke-test examples/encoding/named-references.html`
+checks Unicode text and decoded links through native painting and click dispatch.
+See [HTML Text Decoding](HTML-Text-Decoding.md) for provenance and supported rules.
+
 ## Current GitHub Actions status
 
 The Windows CI workflow is committed and GitHub discovers it correctly, but remote

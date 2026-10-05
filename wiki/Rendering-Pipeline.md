@@ -49,9 +49,11 @@ for the precise initial URL/encoding/timeout limits.
 
 All document loaders share owned byte decoding for UTF-8, UTF-16, Windows-1251 and
 Windows-1252. BOM/header/early-meta selection happens before HTML tokenization.
-The tokenizer decodes common named and numeric references in text/attributes while
+The tokenizer decodes the full named-reference table and numeric references in text/attributes while
 keeping escaped markup as text; raw-text/RCDATA context preserves script/style
-content. See [HTML Text Decoding](HTML-Text-Decoding.md) for the subset boundaries.
+content. One- and two-scalar replacements reach the DOM and UTF-8 link ranges without
+being reparsed as markup. See [HTML Text Decoding](HTML-Text-Decoding.md) for supported
+rules and the remaining tokenizer/encoding limits.
 
 ## Current layout subset
 

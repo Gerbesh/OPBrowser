@@ -21,6 +21,9 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
 
+      - name: Verify generated HTML reference table
+        run: python tools/generate_html_entities.py --check
+
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
@@ -38,6 +41,9 @@ jobs:
 
       - name: Legacy HTML encoding smoke test
         run: cargo run -p op_browser -- --navigation-smoke-test examples/encoding/windows-1251.html
+
+      - name: Full named-reference hyperlink smoke test
+        run: cargo run -p op_browser -- --link-smoke-test examples/encoding/named-references.html
 
       - name: Release build
         run: cargo build -p op_browser --release

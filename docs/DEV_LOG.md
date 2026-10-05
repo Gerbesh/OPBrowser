@@ -205,3 +205,24 @@ This file is append-only project history.
   Release EXE: 317,440 bytes, an increase of 10,240 bytes; no dependency packages
   were added. The reported site's URL was not supplied; verification used controlled
   HTTP fixtures and the checked-in Cyrillic example.
+
+## 2026-10-05 - Complete HTML named character references
+
+- Replaced the common-name subset with all 2125 WHATWG names and 106 legacy
+  spellings, so real pages decode accented letters, Greek/Cyrillic, arrows and math.
+- Added one-/two-scalar results throughout text, RCDATA and all attribute-value
+  states. Decoded markup remains literal and raw script/style source stays intact.
+- Implemented original bounded prefix-range lookup with longest-match selection,
+  legacy fallback and historical attribute ambiguity, without lookup allocation.
+- Packed names/deduplicated UTF-8 results and eight-byte entries occupy 35,378 static
+  bytes; lookup examines at most 31 input characters. No crate dependencies were added.
+- Pinned normalized WHATWG source data with original SHA-256 and BSD-3-Clause notice;
+  added an offline Python standard-library generator and CI freshness verification.
+- Added exhaustive tests against all 2231 source spellings in text/attributes/RCDATA,
+  an independent prefix oracle, and an example covering Unicode paint text/link spans
+  and decoded query navigation, including a native hyperlink smoke check in CI.
+- Final verification passed: rustfmt check, generated-table freshness check,
+  warning-free workspace Clippy, all 56 workspace tests, startup/address smoke,
+  full-table and Windows-1251 native hyperlink smoke tests, release build and
+  release full-table hyperlink smoke. Release EXE: 353,280 bytes, an increase of
+  35,840 bytes from 317,440; dependency packages are unchanged.

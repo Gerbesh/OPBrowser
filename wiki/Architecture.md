@@ -50,6 +50,10 @@ Multi-process isolation remains a planned architectural requirement.
 Document decoding is owned by op_net::encoding: compact Windows-1251/1252 tables,
 strict Unicode conversion, charset aliases and a bounded byte-level meta prescan.
 HTTP, local-file and data loaders pass decoded Unicode to the original HTML parser.
-op_html::references consumes common named and numeric character references inside
+op_html::references consumes all standard named and numeric character references inside
 tokenizer text/attribute states; initial raw-text/RCDATA handling preserves the
-context rules. No new package or ready-made parsing/browser engine is involved.
+context rules. Its Characters result carries one or two Unicode scalars. A sorted
+eight-byte NamedEntry table and packed strings replace per-name pointers; prefix
+ranges limit lookup to 31 input characters without allocation. A Python standard
+library tool generates the table offline from pinned WHATWG data; Cargo builds use
+the committed Rust output. No new package or ready-made parsing/browser engine is involved.

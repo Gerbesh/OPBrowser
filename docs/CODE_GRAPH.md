@@ -134,6 +134,19 @@ classDiagram
     }
 
     class Document
+    class Tokenizer
+    class Characters {
+        first
+        second
+        +iter()
+    }
+    class NamedEntry {
+        name_offset
+        value_offset
+        name_length
+        value_length
+        legacy
+    }
     class LayoutTree
     class LinkSpan {
         start_byte
@@ -154,6 +167,9 @@ classDiagram
     NetworkContext --> Encoding : decode_html / BOM-header-meta selection
     Engine --> RenderedPage
     LoadedDocument --> Engine : render
+    Tokenizer --> Characters : consume references
+    Characters --> NamedEntry : bounded prefix lookup
+    Tokenizer --> Document : tree builder
     Document --> LayoutTree : layout_document
     LayoutTree --> DisplayList : build_display_list
     LayoutTree --> LinkSpan : TextBox links
@@ -193,8 +209,14 @@ classDiagram
   tables and a bounded initial HTML meta prescan. HTTP/file/data loaders share it;
   unsupported labels and malformed Unicode remain typed errors.
 - op_html owns HTML tokenization and tree construction rules. Its private
-  references module consumes a common named-reference subset and numeric references
-  before text/attribute tokens enter the DOM. Initial raw-text/RCDATA context keeps
+  references module consumes the full named-reference table and numeric references
+  before text/attribute tokens enter the DOM. Characters carries one or two Unicode
+  scalars. references::named contains a generated sorted table of eight-byte
+  NamedEntry records plus packed names/deduplicated UTF-8 values (35,378 static bytes).
+  Prefix range searches require no allocation and examine at most 31 input characters.
+  tools/generate_html_entities.py regenerates/verifies it offline from the pinned
+  WHATWG data/entities.tsv; no new crate or runtime/build dependency is involved.
+  Initial raw-text/RCDATA context keeps
   references and markup from being incorrectly parsed inside script/style/title.
 - op_dom owns document/node storage, element attributes, and DOM invariants.
 - op_layout owns text-flow geometry, structural-container traversal and UTF-8

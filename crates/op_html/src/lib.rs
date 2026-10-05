@@ -91,8 +91,9 @@ impl Tokenizer {
                     let decode_references = *decode_references;
                     match self.next_char() {
                         Some('&') if decode_references => {
-                            let ch = self.character_reference(false).unwrap_or('&');
-                            output.push(Token::Character(ch));
+                            output.extend(
+                                self.character_reference(false).iter().map(Token::Character),
+                            );
                         }
                         Some(ch) => output.push(Token::Character(ch)),
                         None => {
@@ -107,8 +108,7 @@ impl Tokenizer {
                 State::Data => match self.next_char() {
                     Some('<') => self.state = State::TagOpen,
                     Some('&') => {
-                        let ch = self.character_reference(false).unwrap_or('&');
-                        output.push(Token::Character(ch));
+                        output.extend(self.character_reference(false).iter().map(Token::Character));
                     }
                     Some(character) => output.push(Token::Character(character)),
                     None => {
@@ -258,10 +258,7 @@ impl Tokenizer {
                 },
                 State::AttributeValueDoubleQuoted => match self.next_char() {
                     Some('"') => self.state = State::AfterAttributeValueQuoted,
-                    Some('&') => {
-                        let ch = self.character_reference(true).unwrap_or('&');
-                        self.push_attribute_value(ch);
-                    }
+                    Some('&') => self.attribute_reference(),
                     Some('\0') => self.push_attribute_value('\u{fffd}'),
                     Some(character) => self.push_attribute_value(character),
                     None => {
@@ -271,10 +268,7 @@ impl Tokenizer {
                 },
                 State::AttributeValueSingleQuoted => match self.next_char() {
                     Some('\'') => self.state = State::AfterAttributeValueQuoted,
-                    Some('&') => {
-                        let ch = self.character_reference(true).unwrap_or('&');
-                        self.push_attribute_value(ch);
-                    }
+                    Some('&') => self.attribute_reference(),
                     Some('\0') => self.push_attribute_value('\u{fffd}'),
                     Some(character) => self.push_attribute_value(character),
                     None => {
@@ -283,10 +277,7 @@ impl Tokenizer {
                     }
                 },
                 State::AttributeValueUnquoted => match self.next_char() {
-                    Some('&') => {
-                        let ch = self.character_reference(true).unwrap_or('&');
-                        self.push_attribute_value(ch);
-                    }
+                    Some('&') => self.attribute_reference(),
                     Some(character) if character.is_ascii_whitespace() => {
                         self.finish_attribute();
                         self.state = State::BeforeAttributeName;
@@ -386,10 +377,21 @@ impl Tokenizer {
         }
     }
 
-    fn character_reference(&mut self, attribute: bool) -> Option<char> {
-        let (character, consumed) = references::consume(&self.input[self.cursor..], attribute)?;
-        self.cursor += consumed;
-        Some(character)
+    fn character_reference(&mut self, attribute: bool) -> references::Characters {
+        if let Some((characters, consumed)) =
+            references::consume(&self.input[self.cursor..], attribute)
+        {
+            self.cursor += consumed;
+            characters
+        } else {
+            references::Characters::single('&')
+        }
+    }
+
+    fn attribute_reference(&mut self) {
+        for character in self.character_reference(true).iter() {
+            self.push_attribute_value(character);
+        }
     }
 
     fn finish_attribute(&mut self) {
