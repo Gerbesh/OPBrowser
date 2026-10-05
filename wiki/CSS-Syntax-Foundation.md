@@ -107,9 +107,15 @@ the white page background before GDI drawing. The existing hyperlink glyph/under
 path still paints native link blue, so author color on links is an explicit temporary
 limitation rather than silently changing hit-testing representation.
 
-The local demonstration page is `examples/css/index.html`, and the built-in start page
-also uses the supported CSS subset so a release build shows the feature immediately.
+External `<link rel="stylesheet">` resources now join embedded rules at their actual DOM
+positions before selector matching, so stylesheet source order crosses file boundaries.
+The loader supports bounded local/file/data/HTTP(S) CSS and retains the resulting author
+and computed styles across resize reflow. See [Stylesheet Loading](Stylesheet-Loading.md)
+for activation rules, decoding, security policy and budgets.
 
-The next S3 work is linked stylesheet loading through op_net and then the first box-model
-properties (background/border, margin and padding). Broader selectors, values, at-rules
-and full CSS conformance remain later work.
+The local demonstration page is `examples/css/index.html`; it now links a real
+`examples/css/theme.css` and uses a later embedded override to expose source order.
+The built-in start page also describes the supported subset in a normal release launch.
+
+The next S3 work is the first box-model properties (background/border, margin and padding).
+Broader selectors, values, at-rules, media queries and full CSS conformance remain later.

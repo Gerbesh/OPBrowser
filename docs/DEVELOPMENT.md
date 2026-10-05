@@ -149,7 +149,9 @@ CSS rendering example:
     cargo run -p op_browser -- examples/css/index.html
     target\release\op_browser.exe examples\css\index.html
 
-The built-in start page also exercises the currently supported author-CSS subset.
+The CSS example links `examples/css/theme.css`, so it exercises the external local
+stylesheet loader, document-order cascade and native paint path. The built-in start page
+also describes the currently supported author-CSS subset.
 
 ## Image support
 

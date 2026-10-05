@@ -387,3 +387,29 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 104 workspace
   tests, normal startup smoke and a CSS-demo smoke producing 13 paint commands.
 - Rebuilt `target/release/op_browser.exe`; this build is 495,616 bytes.
+
+## 2026-10-06 - External author stylesheet loading
+
+- Added bounded `<link rel="stylesheet">` discovery during page preparation and connected
+  loaded external CSS to the existing author cascade at each link node's DOM source order.
+- Added local/file/data/HTTP(S) stylesheet loading in op_net with a dedicated Stylesheet
+  resource kind, CSS Accept header, MIME validation, redirect/source policy and byte errors.
+- Added CSS text decoding with BOM -> transport/data charset -> initial `@charset` -> UTF-8
+  selection using the owned UTF-8/UTF-16/Windows-1251/Windows-1252 decoder.
+- External stylesheet failures are nonfatal; duplicate resolved sources reuse fetched CSS.
+  Current document bounds are 32 link nodes, 8 requests, 1 MiB per stylesheet, 2 MiB
+  decoded CSS total and a 10 second stylesheet-discovery guard.
+- The initial link activation subset accepts normal stylesheet rels for empty/all/screen
+  media, skips alternate/disabled/print and rejects non-CSS type attributes.
+- Added local and loopback-HTTP end-to-end regressions proving external CSS reaches native
+  paint, later embedded rules override linked CSS, and resize reflow retains styles after
+  the original local HTML/CSS files have been deleted.
+- Updated `examples/css/index.html` to load the new `examples/css/theme.css` fixture and
+  demonstrate source-order override behavior; the start page now advertises external CSS.
+- Added `wiki/Stylesheet-Loading.md` and updated project plan, code graph/slices, README,
+  development instructions, CSS foundation, rendering pipeline and wiki navigation.
+- Deliberate limits remain: no `@import`, general media queries, `<base>` stylesheet URL
+  semantics, CSS `url(...)` resources, integrity/CORS/CSP handling or cross-document cache.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 112 workspace tests,
+  normal startup smoke and the external-CSS demo smoke with 14 paint commands.
+- Rebuilt `target/release/op_browser.exe`; this build is 518,144 bytes.

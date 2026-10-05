@@ -268,6 +268,11 @@ classDiagram
     NetworkContext --> Encoding : decode_html / BOM-header-meta selection
     Engine --> RenderedPage
     LoadedDocument --> Engine : render
+    Document --> EngineStyles : discover active stylesheet links
+    EngineStyles --> NetworkContext : bounded stylesheet requests
+    NetworkContext --> LoadedStylesheet
+    LoadedStylesheet --> Encoding : decode_css / BOM-header-charset selection
+    EngineStyles --> StyleCollection : linked CSS keyed by link NodeId
     Tokenizer --> Characters : consume references
     Characters --> NamedEntry : bounded prefix lookup
     Tokenizer --> Document : tree builder
@@ -276,7 +281,7 @@ classDiagram
     StyleRule --> Selector
     StyleRule --> Declaration
     Selector --> Specificity
-    Document --> StyleMap : collect_author_styles / selector matching
+    Document --> StyleMap : DOM-order linked/embedded collection / selector matching
     StyleMap --> MatchedDeclaration
     MatchedDeclaration --> Declaration
     MatchedDeclaration --> Specificity
@@ -367,13 +372,21 @@ classDiagram
   The current GDI backend measures painted glyph ranges for native hit testing;
   network addresses are resolved only by the worker/engine, not by the painter.
 - op_css owns CSS tokenization/parsing, author-style matching and the initial cascade.
-  It traverses op_dom, collects CSS from style elements/style attributes, matches the
+  It traverses op_dom, interleaves loaded link stylesheets with style elements at their
+  actual DOM positions, collects inline style attributes, and matches the
   supported selector subset right-to-left and builds per-NodeId MatchedDeclaration
   candidates. compute_styles resolves supported values using !important, inline source,
   specificity and source order, then applies inheritance/global keywords into a
   ComputedStyleMap. Initial properties are display, color, font-size and font-weight.
   Temporary UA defaults mirror M1 block/hidden tags and heading typography; the computed
   map now feeds op_layout/op_paint instead of stopping at page preparation.
+- op_engine::styles walks link nodes during page preparation, applies the initial
+  stylesheet-link activation subset, resolves against the effective document address,
+  and owns per-document request/text budgets plus duplicate-source reuse. Load failures
+  are nonfatal and successful CSS is keyed by the link NodeId for source-order collection.
+- op_net::stylesheets resolves and loads bounded local/file/data/HTTP(S) CSS, blocks
+  network-to-file access and HTTPS-to-HTTP downgrade, validates HTTP CSS MIME, and decodes
+  BOM/transport-charset/@charset/UTF-8 before handing source text to op_css.
 - op_engine::images walks visible DOM img nodes, resolves against the effective
   loaded address, serializes loads/decode on the worker and owns page budgets/cache.
   Image failure does not fail document history. Arc pixels are reused across nodes.
@@ -413,8 +426,8 @@ Connected: Win32 navigation events -> op_browser command channel -> worker-owned
 Engine -> op_net/WinHTTP -> own document pipeline -> result channel -> UI-thread
 NativeBrowserWindow::present -> WM_PAINT. Also connected: painted LinkSpan -> measured
 LinkRegion -> scroll-aware mouse click -> FollowLink -> resolve_link -> same worker.
-Engine preparation now connects parsed DOM -> author CSS collection -> selector
-matching -> cascade/inheritance -> retained ComputedStyleMap -> CSS-aware layout ->
-display-list text styling -> Win32 pixels. Reflow reuses author candidates and computed
-values without reparsing CSS. Next: feed linked stylesheets into the same cascade, then
-replace temporary semantic spacing with the first CSS box-model geometry.
+Engine preparation now connects parsed DOM -> bounded external stylesheet loading ->
+DOM-order linked/embedded CSS collection -> selector matching -> cascade/inheritance ->
+retained ComputedStyleMap -> CSS-aware layout -> display-list text styling -> Win32 pixels.
+Reflow reuses author candidates and computed values without refetching/reparsing CSS.
+Next: replace temporary semantic spacing with the first CSS box-model geometry.

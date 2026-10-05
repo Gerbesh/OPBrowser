@@ -3,20 +3,16 @@
 <head>
 <meta charset="utf-8">
 <title>OPBrowser CSS demo</title>
+<link rel="stylesheet" href="theme.css">
 <style>
-body { color: #20232a; font-size: 18px; }
-h1 { color: #6d28d9; font-size: 42px; }
-.lead { color: #087a35; font-size: 22px; font-weight: bold; }
-.accent { color: #b42318; font-weight: bold; }
-.block { display: block; color: #075985; font-size: 24px; }
-.inline { display: inline; color: #7c2d12; }
-.hidden { display: none; }
-#specific { color: #123456; font-size: 28px; font-weight: 700; }
+.lead { color: #087a35; }
+.source-order { color: #166534; font-weight: bold; }
 </style>
 </head>
 <body>
 <h1>OPBrowser CSS demo</h1>
-<p class="lead">Embedded author CSS now reaches layout and Win32 paint.</p>
+<p class="lead">External theme.css now loads through op_net and reaches Win32 paint.</p>
+<p class="source-order">This is green because the later embedded rule overrides theme.css red.</p>
 <p>Normal text, <span class="accent">bold red inline span</span>, then normal text again.</p>
 <p>Before block span. <span class="block">This span is display:block and 24px.</span> After block span.</p>
 <p><span class="inline">This span stays inline and has its own color.</span></p>

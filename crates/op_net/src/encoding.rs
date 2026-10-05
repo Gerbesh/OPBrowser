@@ -35,20 +35,69 @@ pub(crate) fn decode_html(
     label: Option<&str>,
     source: &str,
 ) -> Result<String, LoadError> {
-    let (encoding, bytes) = if let Some(bytes) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
-        (Encoding::Utf8, bytes)
-    } else if let Some(bytes) = bytes.strip_prefix(&[0xff, 0xfe]) {
-        (Encoding::Utf16Le, bytes)
-    } else if let Some(bytes) = bytes.strip_prefix(&[0xfe, 0xff]) {
-        (Encoding::Utf16Be, bytes)
+    if let Some((encoding, bytes)) = select_bom(bytes) {
+        return decode_selected(bytes, encoding, source);
+    }
+    let encoding = if let Some(label) = label {
+        from_label(label).ok_or_else(|| LoadError::UnsupportedCharset(label.into()))?
+    } else {
+        sniff_meta(bytes).unwrap_or(Encoding::Utf8)
+    };
+    decode_selected(bytes, encoding, source)
+}
+
+pub(crate) fn decode_css(
+    bytes: &[u8],
+    label: Option<&str>,
+    source: &str,
+) -> Result<String, LoadError> {
+    let bom = select_bom(bytes);
+    let (encoding, bytes) = if let Some(selected) = bom {
+        selected
     } else {
         let encoding = if let Some(label) = label {
             from_label(label).ok_or_else(|| LoadError::UnsupportedCharset(label.into()))?
         } else {
-            sniff_meta(bytes).unwrap_or(Encoding::Utf8)
+            sniff_css_charset(bytes).unwrap_or(Encoding::Utf8)
         };
         (encoding, bytes)
     };
+    decode_selected(bytes, encoding, source).map(strip_css_charset_rule)
+}
+
+fn strip_css_charset_rule(text: String) -> String {
+    let Some(rest) = text.strip_prefix("@charset \"") else {
+        return text;
+    };
+    let Some(end) = rest.find("\";") else {
+        return text;
+    };
+    rest[end + 2..].to_owned()
+}
+
+fn select_bom(bytes: &[u8]) -> Option<(Encoding, &[u8])> {
+    if let Some(bytes) = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]) {
+        Some((Encoding::Utf8, bytes))
+    } else if let Some(bytes) = bytes.strip_prefix(&[0xff, 0xfe]) {
+        Some((Encoding::Utf16Le, bytes))
+    } else {
+        bytes
+            .strip_prefix(&[0xfe, 0xff])
+            .map(|bytes| (Encoding::Utf16Be, bytes))
+    }
+}
+
+fn sniff_css_charset(bytes: &[u8]) -> Option<Encoding> {
+    let prefix = b"@charset \"";
+    let rest = bytes.strip_prefix(prefix)?;
+    let end = rest.iter().position(|byte| *byte == b'"')?;
+    if rest.get(end + 1) != Some(&b';') {
+        return None;
+    }
+    std::str::from_utf8(&rest[..end]).ok().and_then(from_label)
+}
+
+fn decode_selected(bytes: &[u8], encoding: Encoding, source: &str) -> Result<String, LoadError> {
     match encoding {
         Encoding::Utf8 => String::from_utf8(bytes.to_vec()).map_err(|_| LoadError::InvalidUtf8 {
             source: source.into(),
@@ -275,6 +324,35 @@ mod tests {
                 "€ “é”"
             );
         }
+    }
+
+    #[test]
+    fn decodes_css_transport_or_charset_and_strips_charset_rule() {
+        let mut css = b"@charset \"windows-1251\";p{content:\"".to_vec();
+        css.extend_from_slice(&[0xcf, 0xf0]);
+        css.extend_from_slice(b"\"}");
+        assert_eq!(
+            decode_css(&css, None, "test.css").unwrap(),
+            "p{content:\"Пр\"}"
+        );
+        assert_eq!(
+            decode_css(
+                b"@charset \"windows-1251\";p{color:red}",
+                Some("utf-8"),
+                "test.css"
+            )
+            .unwrap(),
+            "p{color:red}"
+        );
+        assert_eq!(
+            decode_css(
+                b"\xef\xbb\xbf@charset \"unsupported\";p{color:blue}",
+                Some("unsupported"),
+                "test.css"
+            )
+            .unwrap(),
+            "p{color:blue}"
+        );
     }
 
     #[test]

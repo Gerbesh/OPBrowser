@@ -1,0 +1,9 @@
+body { color: #20232a; font-size: 18px; }
+h1 { color: #6d28d9; font-size: 42px; }
+.lead { color: #0369a1; font-size: 22px; font-weight: bold; }
+.accent { color: #b42318; font-weight: bold; }
+.block { display: block; color: #075985; font-size: 24px; }
+.inline { display: inline; color: #7c2d12; }
+.hidden { display: none; }
+#specific { color: #123456; font-size: 28px; font-weight: 700; }
+.source-order { color: red; }

@@ -14,7 +14,7 @@ pub use computed::{
 pub use parser::{parse_declaration_list, parse_stylesheet};
 pub use style::{
     MatchedDeclaration, StyleCollection, StyleError, StyleMap, StyleSource, collect_author_styles,
-    selector_matches,
+    collect_author_styles_with_linked, selector_matches,
 };
 pub use tokenizer::tokenize;
 

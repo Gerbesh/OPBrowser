@@ -6,8 +6,10 @@ mod encoding;
 mod http;
 mod images;
 mod links;
+mod stylesheets;
 pub use images::resolve_image_source;
 pub use links::resolve_link;
+pub use stylesheets::resolve_stylesheet_source;
 
 use std::fmt;
 use std::fs;
@@ -22,6 +24,14 @@ pub enum SourceKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedDocument {
+    pub address: String,
+    pub mime_type: String,
+    pub text: String,
+    pub source_kind: SourceKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedStylesheet {
     pub address: String,
     pub mime_type: String,
     pub text: String,
@@ -45,6 +55,7 @@ pub enum LoadError {
     UnsupportedCharset(String),
     DocumentTooLarge,
     ImageTooLarge,
+    StylesheetTooLarge,
     InvalidLink(String),
 }
 
@@ -73,13 +84,14 @@ impl fmt::Display for LoadError {
             Self::Network(message) => write!(formatter, "network request failed: {message}"),
             Self::HttpStatus(status) => write!(formatter, "server returned HTTP {status}"),
             Self::UnsupportedContentType(mime) => {
-                write!(formatter, "unsupported document type: {mime}")
+                write!(formatter, "unsupported content type: {mime}")
             }
             Self::UnsupportedCharset(charset) => {
-                write!(formatter, "unsupported document charset: {charset}")
+                write!(formatter, "unsupported charset: {charset}")
             }
             Self::DocumentTooLarge => write!(formatter, "document exceeds the 2 MiB limit"),
             Self::ImageTooLarge => write!(formatter, "image exceeds the byte budget"),
+            Self::StylesheetTooLarge => write!(formatter, "stylesheet exceeds the byte budget"),
             Self::InvalidLink(message) => write!(formatter, "cannot open link: {message}"),
         }
     }
@@ -97,6 +109,14 @@ impl NetworkContext {
 
     pub fn load_document(&self, source: &str) -> Result<LoadedDocument, LoadError> {
         load_document(source)
+    }
+
+    pub fn load_stylesheet(
+        &self,
+        source: &str,
+        byte_limit: usize,
+    ) -> Result<LoadedStylesheet, LoadError> {
+        stylesheets::load(source, byte_limit)
     }
 }
 

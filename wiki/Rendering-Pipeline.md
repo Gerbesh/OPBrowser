@@ -87,11 +87,13 @@ Successful navigation retains the DOM and shared images for
 [Page Reflow](Page-Reflow.md). WM_SIZE triggers a debounced worker layout rebuild;
 only results matching the current viewport reach present_reflow and native paint.
 
-The [CSS foundation](CSS-Syntax-Foundation.md) now participates in page preparation:
-embedded/inline author CSS is parsed and matched, then the initial cascade/inheritance
-stage produces a per-node ComputedStyleMap for display, color, font-size and font-weight.
-PreparedDocument retains author and computed style data beside DOM/images, and resize
-reflow reuses it without reparsing or recascading CSS.
+The [CSS foundation](CSS-Syntax-Foundation.md) now participates in page preparation.
+After HTML parsing, [stylesheet loading](Stylesheet-Loading.md) fetches eligible external
+CSS on the navigation worker. Loaded link CSS and embedded style rules are collected in
+DOM source order, inline declarations join the author cascade, and inheritance produces a
+per-node ComputedStyleMap for display, color, font-size and font-weight. PreparedDocument
+retains author/computed style data beside DOM/images; resize reflow neither refetches nor
+reparses external CSS.
 
 op_layout now consumes that ComputedStyleMap for display:none/block/inline and mixed
 inline font-size/font-weight/color runs. Styled text becomes colored TextBox records,

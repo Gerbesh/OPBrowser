@@ -115,7 +115,9 @@ Status: IN PROGRESS.
   mixed inline style runs sharing one line/baseline and display:none/block/inline flow.
 - DONE render CSS text color through the platform-neutral display list; alpha colors are
   composited against the current white page background.
-- NEXT load linked stylesheets through op_net and fold them into document source order.
+- DONE load bounded external `<link rel="stylesheet">` resources from local/file/data/HTTP(S)
+  through op_net, preserve their DOM source order with embedded styles, and retain the result
+  across reflow; failed stylesheet subresources are nonfatal.
 - NEXT begin the CSS box model with background/border and margin/padding geometry.
 - LATER broader computed values.
 - LATER normal flow block layout.

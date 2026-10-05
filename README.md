@@ -8,7 +8,7 @@ Its own tokenizer, tree builder, DOM, text layout and display list render the pa
 into a Win32 window. Text hyperlinks support current-window navigation, including
 relative HTTP(S) and local-file links. PNG/JPEG/GIF/BMP images load from HTTP(S),
 local files and data URLs, with dimensions, transparency, alt fallback and image links.
-Initial embedded/inline author CSS now reaches native pixels; JavaScript remains future work.
+Initial embedded, inline and external author CSS now reaches native pixels; JavaScript remains future work.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 
@@ -36,7 +36,8 @@ HTTP(S) URL / local path / file: URL / data:text/html URL
   -> op_net source loader (WinHTTP for transport/TLS only)
   -> op_html tokenizer/tree builder
   -> op_dom
-  -> op_css selector matching / cascade / computed style
+  -> op_net bounded external stylesheet subresources
+  -> op_css DOM-order author rules / selector matching / cascade / computed style
   -> op_layout CSS-aware flow + inline runs
   -> op_paint styled display list
   -> op_platform_win
@@ -63,7 +64,8 @@ Resizing the window rewraps the current page from retained DOM/image data withou
 refetching it. See [page reflow](wiki/Page-Reflow.md) for behavior and verification.
 The start page is now styled with OPBrowser's supported CSS subset, so the release binary
 shows color, font size/weight and display behavior immediately. `examples\css\index.html`
-is a focused CSS fixture. Links remain blue/underlined with a hand cursor; clicking uses
+is a focused CSS fixture that loads a real external `theme.css` and demonstrates a later
+embedded rule overriding it in source order. Links remain blue/underlined with a hand cursor; clicking uses
 the same loading/history path. The navigation example demonstrates a relative local link.
 
 Initial network support requires Windows, an ASCII hostname (or an IPv4/bracketed
@@ -81,10 +83,13 @@ Image subrequests follow that document load on the same worker. Windows WIC perf
 only raster decoding; OPBrowser owns resource policy, layout and painting. Images
 share measured lines with text; GIF shows the first frame. Line layout supports
 baseline alignment, wrapping, `<br>` and HTML whitespace. Initial CSS supports embedded
-`<style>` and `style=""`, type/class/ID/universal selectors, descendant/child combinators,
-cascade/inheritance, `display` inline/block/none, text color, px font size and normal/bold
-font weight. External stylesheets, the box model and JavaScript are not implemented yet;
-link glyphs still use the native default blue. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),
+`<style>`, `style=""`, and bounded `<link rel="stylesheet">` from local/file/data/HTTP(S),
+type/class/ID/universal selectors, descendant/child combinators, cascade/inheritance,
+`display` inline/block/none, text color, px font size and normal/bold font weight. External
+CSS is merged with embedded rules in DOM source order and retained across resize reflow.
+The box model, `@import`, general media queries, CSS `url(...)` resources and JavaScript
+are not implemented yet; link glyphs still use the native default blue. See
+[CSS foundation](wiki/CSS-Syntax-Foundation.md), [stylesheet loading](wiki/Stylesheet-Loading.md),
 [inline layout](wiki/Inline-Layout.md) and [image loading](wiki/Image-Loading.md).
 
 See:

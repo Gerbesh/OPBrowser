@@ -1,6 +1,13 @@
-use crate::{LoadError, LoadedDocument, SourceKind};
+use crate::{LoadError, LoadedDocument, LoadedStylesheet, SourceKind};
 
 pub(crate) const MAX_DOCUMENT_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResourceKind {
+    Document,
+    Image,
+    Stylesheet,
+}
 
 pub(crate) fn validate_url(source: &str) -> Result<(), LoadError> {
     HttpUrl::parse(source).map(|_| ())
@@ -134,7 +141,7 @@ pub(crate) fn load(source: &str) -> Result<LoadedDocument, LoadError> {
     let url = HttpUrl::parse(source)?;
     #[cfg(windows)]
     {
-        let response = windows::load(url, false, MAX_DOCUMENT_BYTES)?;
+        let response = windows::load(url, ResourceKind::Document, MAX_DOCUMENT_BYTES)?;
         decode_document(response.address, &response.content_type, response.bytes)
     }
     #[cfg(not(windows))]
@@ -144,11 +151,43 @@ pub(crate) fn load(source: &str) -> Result<LoadedDocument, LoadError> {
     }
 }
 
+pub(crate) fn load_stylesheet(source: &str, limit: usize) -> Result<LoadedStylesheet, LoadError> {
+    let url = HttpUrl::parse(source)?;
+    #[cfg(windows)]
+    {
+        let response = windows::load(url, ResourceKind::Stylesheet, limit)?;
+        let mime = response
+            .content_type
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        if !mime.is_empty() && mime != "text/css" {
+            return Err(LoadError::UnsupportedContentType(mime));
+        }
+        let charset = crate::encoding::charset_parameter(&response.content_type);
+        let text =
+            crate::encoding::decode_css(&response.bytes, charset.as_deref(), &response.address)?;
+        Ok(LoadedStylesheet {
+            address: response.address,
+            mime_type: "text/css".into(),
+            text,
+            source_kind: SourceKind::Http,
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (url, limit);
+        Err(LoadError::Network("HTTP transport requires Windows".into()))
+    }
+}
+
 pub(crate) fn load_image(source: &str, limit: usize) -> Result<Vec<u8>, LoadError> {
     let url = HttpUrl::parse(source)?;
     #[cfg(windows)]
     {
-        let response = windows::load(url, true, limit)?;
+        let response = windows::load(url, ResourceKind::Image, limit)?;
         let mime = response
             .content_type
             .split(';')
@@ -231,7 +270,7 @@ mod windows {
 
     pub(super) fn load(
         url: HttpUrl,
-        image: bool,
+        resource: ResourceKind,
         byte_limit: usize,
     ) -> Result<Response, LoadError> {
         // WinHTTP handles only transport/TLS/proxy/framing, never HTML or rendering.
@@ -250,7 +289,11 @@ mod windows {
         )?;
         check(
             unsafe {
-                let timeout = if image { 2000 } else { 10_000 };
+                let timeout = if resource == ResourceKind::Document {
+                    10_000
+                } else {
+                    2_000
+                };
                 WinHttpSetTimeouts(session.0, timeout, timeout, timeout, timeout)
             },
             "set timeouts",
@@ -262,10 +305,10 @@ mod windows {
         )?;
         let verb = wide("GET");
         let target = wide(&url.target);
-        let accept = wide(if image {
-            "image/png,image/jpeg,image/gif,image/bmp"
-        } else {
-            "text/html"
+        let accept = wide(match resource {
+            ResourceKind::Document => "text/html",
+            ResourceKind::Image => "image/png,image/jpeg,image/gif,image/bmp",
+            ResourceKind::Stylesheet => "text/css,*/*;q=0.1",
         });
         let accept_types = [accept.as_ptr(), null()];
         let request = Handle::checked(
@@ -327,7 +370,13 @@ mod windows {
         let mut bytes = Vec::new();
         let mut buffer = [0u8; 16 * 1024];
         loop {
-            if started.elapsed() > Duration::from_secs(if image { 5 } else { 30 }) {
+            if started.elapsed()
+                > Duration::from_secs(if resource == ResourceKind::Document {
+                    30
+                } else {
+                    5
+                })
+            {
                 return Err(LoadError::Network("resource read deadline exceeded".into()));
             }
             let mut read = 0;
@@ -346,10 +395,10 @@ mod windows {
                 break;
             }
             if bytes.len() + read as usize > byte_limit {
-                return Err(if image {
-                    LoadError::ImageTooLarge
-                } else {
-                    LoadError::DocumentTooLarge
+                return Err(match resource {
+                    ResourceKind::Document => LoadError::DocumentTooLarge,
+                    ResourceKind::Image => LoadError::ImageTooLarge,
+                    ResourceKind::Stylesheet => LoadError::StylesheetTooLarge,
                 });
             }
             bytes.extend_from_slice(&buffer[..read as usize]);
@@ -468,6 +517,43 @@ mod tests {
         let requests = server.join().unwrap();
         assert!(requests[0].starts_with("GET /page?x=1 HTTP/1.1\r\n"));
         assert!(requests[0].contains("OPBrowser/0.1"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn fetches_stylesheet_with_css_accept_mime_charset_and_limit() {
+        let (address, server) = serve(vec![response(
+            "200 OK",
+            "Content-Type: text/css; charset=windows-1251\r\n",
+            b"p{content:'\xcf\xf0'}",
+        )]);
+        let loaded = load_stylesheet(&format!("{address}/theme.css"), 1024).unwrap();
+        assert_eq!(loaded.text, "p{content:'Пр'}");
+        assert_eq!(loaded.mime_type, "text/css");
+        let requests = server.join().unwrap();
+        assert!(requests[0].contains("text/css"));
+
+        let (address, server) = serve(vec![response(
+            "200 OK",
+            "Content-Type: text/html\r\n",
+            b"p{color:red}",
+        )]);
+        assert_eq!(
+            load_stylesheet(&address, 1024),
+            Err(LoadError::UnsupportedContentType("text/html".into()))
+        );
+        server.join().unwrap();
+
+        let (address, server) = serve(vec![response(
+            "200 OK",
+            "Content-Type: text/css\r\n",
+            b"12345",
+        )]);
+        assert_eq!(
+            load_stylesheet(&address, 4),
+            Err(LoadError::StylesheetTooLarge)
+        );
+        server.join().unwrap();
     }
 
     #[test]

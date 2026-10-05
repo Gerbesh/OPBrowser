@@ -54,13 +54,21 @@ pub struct StyleCollection {
 }
 
 pub fn collect_author_styles(document: &Document) -> StyleCollection {
+    collect_author_styles_with_linked(document, &HashMap::new())
+}
+
+pub fn collect_author_styles_with_linked(
+    document: &Document,
+    linked_stylesheets: &HashMap<NodeId, String>,
+) -> StyleCollection {
     let mut errors = Vec::new();
     let mut rules = Vec::new();
     let mut next_source_order = 0;
 
-    collect_embedded_rules(
+    collect_stylesheet_rules(
         document,
         document.root(),
+        linked_stylesheets,
         &mut rules,
         &mut errors,
         &mut next_source_order,
@@ -97,43 +105,65 @@ struct CollectedRule {
     declaration_orders: Vec<usize>,
 }
 
-fn collect_embedded_rules(
+fn collect_stylesheet_rules(
     document: &Document,
     node: NodeId,
+    linked_stylesheets: &HashMap<NodeId, String>,
     rules: &mut Vec<CollectedRule>,
     errors: &mut Vec<StyleError>,
     next_source_order: &mut usize,
 ) {
-    if let Some(element) = document.element(node)
-        && element.tag_name.eq_ignore_ascii_case("style")
-        && is_css_style_element(element)
-    {
-        let text = descendant_text(document, node);
-        let parsed = parse_stylesheet(&text);
-        errors.extend(
-            parsed
-                .errors
-                .into_iter()
-                .map(|error| StyleError { node, error }),
-        );
-
-        for rule in parsed.value.rules {
-            let declaration_orders = (0..rule.declarations.len())
-                .map(|_| {
-                    let order = *next_source_order;
-                    *next_source_order = next_source_order.saturating_add(1);
-                    order
-                })
-                .collect();
-            rules.push(CollectedRule {
-                rule,
-                declaration_orders,
-            });
+    let css = document.element(node).and_then(|element| {
+        if element.tag_name.eq_ignore_ascii_case("style") && is_css_style_element(element) {
+            Some(descendant_text(document, node))
+        } else {
+            linked_stylesheets.get(&node).cloned()
         }
+    });
+
+    if let Some(css) = css {
+        append_parsed_rules(node, &css, rules, errors, next_source_order);
     }
 
     for child in document.children(node) {
-        collect_embedded_rules(document, *child, rules, errors, next_source_order);
+        collect_stylesheet_rules(
+            document,
+            *child,
+            linked_stylesheets,
+            rules,
+            errors,
+            next_source_order,
+        );
+    }
+}
+
+fn append_parsed_rules(
+    node: NodeId,
+    css: &str,
+    rules: &mut Vec<CollectedRule>,
+    errors: &mut Vec<StyleError>,
+    next_source_order: &mut usize,
+) {
+    let parsed = parse_stylesheet(css);
+    errors.extend(
+        parsed
+            .errors
+            .into_iter()
+            .map(|error| StyleError { node, error }),
+    );
+
+    for rule in parsed.value.rules {
+        let declaration_orders = (0..rule.declarations.len())
+            .map(|_| {
+                let order = *next_source_order;
+                *next_source_order = next_source_order.saturating_add(1);
+                order
+            })
+            .collect();
+        rules.push(CollectedRule {
+            rule,
+            declaration_orders,
+        });
     }
 }
 
@@ -383,6 +413,39 @@ mod tests {
                 types: 0,
             }
         );
+    }
+
+    #[test]
+    fn interleaves_linked_and_embedded_stylesheets_in_document_order() {
+        let document = parse_document(
+            "<link rel='stylesheet' href='first.css'><style>p { color: green }</style><link rel='stylesheet' href='last.css'><p>x</p>",
+        );
+        let mut links = Vec::new();
+        let mut stack = vec![document.root()];
+        while let Some(node) = stack.pop() {
+            if document
+                .element(node)
+                .is_some_and(|element| element.tag_name == "link")
+            {
+                links.push(node);
+            }
+            stack.extend(document.children(node).iter().rev());
+        }
+        let mut linked = HashMap::new();
+        linked.insert(links[0], "p { color: red }".to_owned());
+        linked.insert(links[1], "p { color: blue }".to_owned());
+        let p = first_element_by_tag(&document, "p");
+        let collected = collect_author_styles_with_linked(&document, &linked);
+        let colors: Vec<_> = collected
+            .styles
+            .declarations_for(p)
+            .iter()
+            .filter(|matched| matched.declaration.name == "color")
+            .collect();
+
+        assert_eq!(colors.len(), 3);
+        assert!(colors[0].source_order < colors[1].source_order);
+        assert!(colors[1].source_order < colors[2].source_order);
     }
 
     #[test]

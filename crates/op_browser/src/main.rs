@@ -14,7 +14,8 @@ h1 { color: #6d28d9; font-size: 42px; }
 a { font-weight: bold; }
 </style></head><body>
 <h1>OPBrowser</h1>
-<p class="status">CSS теперь проходит через cascade → computed style → layout → Win32.</p>
+<p class="status">CSS теперь проходит через resource loading → cascade → computed style → layout → Win32.</p>
+<p>Поддерживаются встроенные стили, style="" и внешние link rel=stylesheet для local/file/HTTP(S).</p>
 <p><a href="https://example.com">Открыть Example Domain</a></p>
 <p>Работают <span class="accent">color, font-size, font-weight</span> и <span class="demo-block">display: block / inline / none.</span></p>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
@@ -22,7 +23,7 @@ a { font-weight: bold; }
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>
 <p>Колесо мыши — прокрутка страницы.</p>
 <p>Работают HTTP, HTTPS, локальные HTML-файлы, data:text/html и PNG/JPEG/GIF/BMP.</p>
-<p>Собственный движок: HTML → DOM → CSS → layout → display list → Win32.</p>
+<p>Собственный движок: HTML → DOM → CSS resources/cascade → layout → display list → Win32.</p>
 </body></html>
 "#;
 

@@ -194,15 +194,18 @@ scroll anchoring or history page cache. Current single-window ownership still ap
 
 ## S3 - CSS-styled document
 
-Status: IN PROGRESS. The initial local author-CSS path is end-to-end through native
-pixels; broader CSS syntax, external stylesheets and box-model properties remain.
+Status: IN PROGRESS. Embedded, inline and initial external author CSS are end-to-end
+through native pixels; broader CSS syntax and box-model properties remain.
 
 Current path:
 
 ```text
 HTML
   -> op_html DOM
-  -> collect <style> text + style="" declarations
+  -> op_engine stylesheet discovery
+       -> op_net local/file/data/HTTP(S) CSS loading
+       -> loaded CSS attached to each <link rel=stylesheet> NodeId
+  -> collect linked + <style> rules in DOM order + style="" declarations
   -> op_css tokenizer/parser
   -> supported Selector AST + Specificity
   -> right-to-left selector matching against op_dom
@@ -230,18 +233,22 @@ painting. Existing hyperlink glyphs/underlines still use the native default link
 author link color is deferred until link styling is represented without breaking the
 current LinkSpan hit-testing model.
 
+External stylesheet loads are bounded and nonfatal: up to 32 link nodes, 8 distinct
+requests, 1 MiB per stylesheet and 2 MiB decoded CSS per document. The current activation
+subset accepts normal screen/all stylesheets and skips alternate/disabled/print links.
+Resize reflow reuses retained author/computed styles without refetching CSS.
+
 Planned next path:
 
 ```text
-<link rel=stylesheet>
-  -> op_net stylesheet load
-  -> document source order
-  -> existing cascade/computed/layout/paint path
-
-then background/border + margin/padding box geometry
+ComputedStyleMap
+  -> background/border paint data
+  -> margin/padding box geometry
+  -> replace temporary semantic spacing with CSS box-model flow
 ```
 
-Broader property/value coverage remains later work.
+Broader property/value coverage, `@import`, media queries and CSS `url(...)` resources
+remain later work.
 
 ## S4 - Scripted page
 

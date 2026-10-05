@@ -1,11 +1,13 @@
 use op_css::{
-    ComputedStyleMap, StyleCollection, StyleError, StyleMap, collect_author_styles, compute_styles,
+    ComputedStyleMap, StyleCollection, StyleError, StyleMap, collect_author_styles,
+    collect_author_styles_with_linked, compute_styles,
 };
 use op_html::parse_document;
 use op_layout::{ImageResources, layout_document_with_computed_styles_and_metrics};
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link};
 use op_paint::{DisplayList, build_display_list};
 mod images;
+mod styles;
 mod text;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -300,7 +302,8 @@ impl Engine {
     fn prepare_source(&self, source: &str) -> Result<PreparedDocument, LoadError> {
         let loaded: LoadedDocument = self.network.load_document(source)?;
         let document = parse_document(&loaded.text);
-        let style_collection = collect_author_styles(&document);
+        let linked_stylesheets = styles::load(&self.network, &document, &loaded.address);
+        let style_collection = collect_author_styles_with_linked(&document, &linked_stylesheets);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let images = images::load(&self.network, &document, &loaded.address);
         Ok(PreparedDocument {
@@ -592,6 +595,118 @@ mod tests {
             "OPBrowser link navigation"
         ));
         assert!(engine.navigation().can_go_back());
+    }
+
+    #[test]
+    fn local_linked_stylesheet_reaches_paint_in_document_order() {
+        let root =
+            std::env::temp_dir().join(format!("opbrowser-linked-css-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("theme.css"),
+            ".target { color: red } .external { color: #123456; font-size: 30px; font-weight: bold }",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("index.html"),
+            "<link rel='stylesheet' href='missing.css'><link rel='stylesheet' href='theme.css'><style>.target { color: green }</style><p class='target'>Later embedded</p><p class='external'>External style</p>",
+        )
+        .unwrap();
+
+        let mut engine = Engine::new();
+        let page = engine
+            .navigate(root.join("index.html").to_str().unwrap(), 800, 600)
+            .unwrap();
+
+        let assert_styles = |page: &RenderedPage| {
+            assert!(page.display_list.commands.iter().any(|command| matches!(
+                command,
+                PaintCommand::Text { text, color, .. }
+                    if text == "Later embedded" && *color == op_paint::Color { r: 0, g: 128, b: 0 }
+            )));
+            assert!(page.display_list.commands.iter().any(|command| matches!(
+                command,
+                PaintCommand::Text { text, color, font_size: 30, bold: true, .. }
+                    if text == "External style" && *color == op_paint::Color { r: 0x12, g: 0x34, b: 0x56 }
+            )));
+        };
+        assert_styles(&page);
+
+        std::fs::remove_dir_all(&root).unwrap();
+        let reflowed = engine.reflow(420, 480).unwrap();
+        assert_styles(&reflowed);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn http_linked_stylesheet_reaches_native_display_list() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::time::{Duration, Instant};
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for index in 0..2 {
+                let started = Instant::now();
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(started.elapsed() < Duration::from_secs(5));
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("{error}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut request = String::new();
+                while !request.ends_with("\r\n\r\n") {
+                    let mut buffer = [0; 1024];
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0 && request.len() < 32 * 1024);
+                    request.push_str(std::str::from_utf8(&buffer[..count]).unwrap());
+                }
+                requests.push(request.clone());
+
+                let (content_type, body) = if index == 0 {
+                    (
+                        "text/html; charset=utf-8",
+                        "<link rel='stylesheet' href='/theme.css'><p class='remote'>Remote CSS</p>",
+                    )
+                } else {
+                    (
+                        "text/css; charset=utf-8",
+                        ".remote { color: #7c3aed; font-size: 31px; font-weight: bold }",
+                    )
+                };
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            }
+            requests
+        });
+
+        let page = Engine::new()
+            .render_source(&format!("{address}/index.html"), 800, 600)
+            .unwrap();
+        assert!(page.display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, color, font_size: 31, bold: true, .. }
+                if text == "Remote CSS" && *color == op_paint::Color { r: 0x7c, g: 0x3a, b: 0xed }
+        )));
+        let requests = server.join().unwrap();
+        assert!(requests[0].starts_with("GET /index.html "));
+        assert!(requests[1].starts_with("GET /theme.css "));
+        assert!(requests[1].contains("text/css"));
     }
 
     #[test]
