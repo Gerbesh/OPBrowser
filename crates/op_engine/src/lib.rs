@@ -1,4 +1,6 @@
-use op_css::{StyleCollection, StyleError, StyleMap, collect_author_styles};
+use op_css::{
+    ComputedStyleMap, StyleCollection, StyleError, StyleMap, collect_author_styles, compute_styles,
+};
 use op_html::parse_document;
 use op_layout::{ImageResources, layout_document_with_metrics};
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link};
@@ -94,6 +96,7 @@ struct PreparedDocument {
     document: op_dom::Document,
     images: ImageResources,
     style_collection: StyleCollection,
+    computed_styles: ComputedStyleMap,
 }
 
 impl PreparedDocument {
@@ -152,6 +155,10 @@ impl Engine {
         Some(&self.active_document.as_ref()?.style_collection.errors)
     }
 
+    pub fn active_computed_styles(&self) -> Option<&ComputedStyleMap> {
+        Some(&self.active_document.as_ref()?.computed_styles)
+    }
+
     pub fn render_html(
         &self,
         html: &str,
@@ -183,12 +190,14 @@ impl Engine {
     pub fn set_html_page(&mut self, html: &str, width: i32, height: i32) -> DisplayList {
         let document = parse_document(html);
         let style_collection = collect_author_styles(&document);
+        let computed_styles = compute_styles(&document, &style_collection.styles);
         let prepared = PreparedDocument {
             address: String::new(),
             mime_type: "text/html".into(),
             document,
             images: ImageResources::new(),
             style_collection,
+            computed_styles,
         };
         let page = prepared.render(width, height);
         self.active_document = Some(prepared);
@@ -288,6 +297,7 @@ impl Engine {
         let loaded: LoadedDocument = self.network.load_document(source)?;
         let document = parse_document(&loaded.text);
         let style_collection = collect_author_styles(&document);
+        let computed_styles = compute_styles(&document, &style_collection.styles);
         let images = images::load(&self.network, &document, &loaded.address);
         Ok(PreparedDocument {
             address: loaded.address,
@@ -295,6 +305,7 @@ impl Engine {
             document,
             images,
             style_collection,
+            computed_styles,
         })
     }
 }
@@ -362,9 +373,21 @@ mod tests {
         }));
         assert_eq!(engine.active_style_errors().unwrap().len(), 1);
 
+        let computed = engine
+            .active_computed_styles()
+            .unwrap()
+            .style_for(paragraph)
+            .copied()
+            .unwrap();
+        assert_eq!(computed.color, op_css::CssColor::BLUE);
+        assert_eq!(computed.font_size_px, 18.0);
+        assert_eq!(computed.display, op_css::Display::Block);
+
         let retained = engine.active_styles().unwrap().clone();
+        let retained_computed = engine.active_computed_styles().unwrap().clone();
         engine.reflow(320, 300).unwrap();
         assert_eq!(engine.active_styles().unwrap(), &retained);
+        assert_eq!(engine.active_computed_styles().unwrap(), &retained_computed);
     }
 
     #[test]

@@ -209,6 +209,16 @@ classDiagram
         styles
         errors
     }
+    class ComputedStyleMap {
+        NodeId -> ComputedStyle
+        +style_for(node)
+    }
+    class ComputedStyle {
+        display
+        color
+        font_size_px
+        font_weight
+    }
     class LayoutTree {
         text_boxes
         image_boxes
@@ -271,7 +281,10 @@ classDiagram
     MatchedDeclaration --> Declaration
     MatchedDeclaration --> Specificity
     StyleCollection --> StyleMap
+    StyleMap --> ComputedStyleMap : cascade / inheritance / value parsing
+    ComputedStyleMap --> ComputedStyle
     Engine --> StyleCollection : retained author style candidates/errors
+    Engine --> ComputedStyleMap : retained resolved initial CSS properties
     Engine --> PreparedDocument : one retained successful page
     PreparedDocument --> Document : DOM snapshot
     PreparedDocument --> RasterImage : shared Arc image resources
@@ -319,8 +332,9 @@ classDiagram
 - op_engine currently owns per-page navigation state plus orchestration between loading
   and web-engine subsystems. This state will later become per-tab.
 - Engine.active_document retains one PreparedDocument with parsed DOM, address,
-  MIME type and shared image resources after successful navigation/back/forward/reload.
-  Stateless render_source remains uncached; set_html_page initializes the start page.
+  MIME type, shared image resources, author StyleCollection and ComputedStyleMap after
+  successful navigation/back/forward/reload. Stateless render_source remains uncached;
+  set_html_page initializes the start page.
 - op_net owns document-source interpretation, initial link-reference resolution,
   an initial HTTP URL parser, owned document byte decoding and bounded
   HTTP(S) loading, response validation and errors. Its private http::windows module
@@ -348,12 +362,14 @@ classDiagram
   per operation; networking and original layout do not hold this gate.
   The current GDI backend measures painted glyph ranges for native hit testing;
   network addresses are resolved only by the worker/engine, not by the painter.
-- op_css owns CSS tokenization/parsing plus the first author-style collection layer.
-  It traverses op_dom, collects CSS from style elements and style attributes, matches
-  type/universal/class/ID compounds with descendant/child combinators right-to-left,
-  and builds a per-NodeId StyleMap of MatchedDeclaration candidates. Candidates retain
-  specificity, source order and stylesheet-vs-inline source; CSS errors retain NodeId.
-  Cascade, inheritance and computed values remain the next M2 work.
+- op_css owns CSS tokenization/parsing, author-style matching and the initial cascade.
+  It traverses op_dom, collects CSS from style elements/style attributes, matches the
+  supported selector subset right-to-left and builds per-NodeId MatchedDeclaration
+  candidates. compute_styles resolves supported values using !important, inline source,
+  specificity and source order, then applies inheritance/global keywords into a
+  ComputedStyleMap. Initial properties are display, color, font-size and font-weight.
+  Temporary UA defaults mirror M1 block/hidden tags and heading typography so later
+  layout integration can preserve the no-author-CSS appearance.
 - op_engine::images walks visible DOM img nodes, resolves against the effective
   loaded address, serializes loads/decode on the worker and owns page budgets/cache.
   Image failure does not fail document history. Arc pixels are reused across nodes.
@@ -394,6 +410,7 @@ Engine -> op_net/WinHTTP -> own document pipeline -> result channel -> UI-thread
 NativeBrowserWindow::present -> WM_PAINT. Also connected: painted LinkSpan -> measured
 LinkRegion -> scroll-aware mouse click -> FollowLink -> resolve_link -> same worker.
 Engine preparation now connects parsed DOM -> author CSS collection -> selector
-matching -> retained StyleCollection beside DOM/images. Reflow reuses that collection
-without reparsing CSS. Layout still consumes the M1 defaults. Next: cascade,
-inheritance and the first computed style values feeding layout.
+matching -> cascade/inheritance -> retained ComputedStyleMap beside DOM/images/styles.
+Reflow reuses both author candidates and computed values without reparsing CSS. Layout
+still consumes the M1 defaults. Next: make layout/paint consume computed display,
+font-size, font-weight and color.

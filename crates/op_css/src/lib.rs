@@ -1,12 +1,16 @@
-//! CSS syntax primitives owned by OPBrowser.
+//! CSS syntax, author matching and initial computed-style primitives owned by OPBrowser.
 //!
-//! This crate deliberately starts with syntax and data modelling only. Matching,
-//! cascade, computed values and layout integration are separate milestones.
+//! Parsing, selector matching, the first author cascade and inheritance live here.
+//! Layout integration and broader CSS coverage remain separate milestones.
 
+mod computed;
 mod parser;
 mod style;
 mod tokenizer;
 
+pub use computed::{
+    ComputedFontWeight, ComputedStyle, ComputedStyleMap, CssColor, Display, compute_styles,
+};
 pub use parser::{parse_declaration_list, parse_stylesheet};
 pub use style::{
     MatchedDeclaration, StyleCollection, StyleError, StyleMap, StyleSource, collect_author_styles,
@@ -100,7 +104,7 @@ pub enum TokenKind {
     Whitespace,
     Ident(String),
     AtKeyword(String),
-    Hash(String),
+    Hash { value: String, id: bool },
     String(String),
     BadString,
     Number(String),

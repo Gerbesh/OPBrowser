@@ -106,7 +106,13 @@ Status: IN PROGRESS.
 - DONE match the supported selector subset against op_dom and retain per-node StyleMap
   candidates with specificity, source order, stylesheet/inline source and parse errors.
 - DONE Engine retains the author StyleMap beside DOM/images across resize reflow.
-- NEXT implement author cascade/inheritance and the first computed style values.
+- DONE initial author cascade over !important, inline-vs-stylesheet source, specificity
+  and source order; invalid supported-property values are ignored before winner choice.
+- DONE initial inheritance/global keywords plus ComputedStyleMap for display, color,
+  font-size and font-weight, with temporary UA defaults matching the M1 layout baseline.
+- DONE Engine retains computed styles across resize reflow.
+- NEXT feed computed display/font-size/font-weight/color into layout/paint without
+  changing the existing default appearance when author CSS is absent.
 - LATER linked stylesheet loading.
 - LATER broader computed values.
 - LATER box model.

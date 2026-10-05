@@ -88,13 +88,13 @@ Successful navigation retains the DOM and shared images for
 only results matching the current viewport reach present_reflow and native paint.
 
 The [CSS foundation](CSS-Syntax-Foundation.md) now participates in page preparation:
-embedded style elements and inline style attributes are parsed, supported selectors are
-matched against the DOM, and a per-node StyleCollection is retained beside DOM/images.
-Resize reflow reuses those style candidates without reparsing them.
+embedded/inline author CSS is parsed and matched, then the initial cascade/inheritance
+stage produces a per-node ComputedStyleMap for display, color, font-size and font-weight.
+PreparedDocument retains author and computed style data beside DOM/images, and resize
+reflow reuses it without reparsing or recascading CSS.
 
-The candidates are not cascaded or converted to computed values yet, so layout and paint
-still use the M1 HTML defaults. This keeps the rendering slice honest while CSS behavior
-is added in explicit stages.
+Layout and paint still use the M1 HTML defaults directly. The next rendering step is to
+consume ComputedStyleMap while preserving the same appearance when no author CSS exists.
 
 ## Paint smoke verification
 

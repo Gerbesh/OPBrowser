@@ -312,8 +312,8 @@ fn parse_compound(
 
     while let Some(token) = tokens.get(index) {
         match &token.kind {
-            TokenKind::Hash(name) => {
-                let selector = SimpleSelector::Id(name.clone());
+            TokenKind::Hash { value, id: true } => {
+                let selector = SimpleSelector::Id(value.clone());
                 specificity.add_simple(&selector);
                 simple.push(selector);
                 index += 1;
@@ -506,6 +506,21 @@ mod tests {
         assert_eq!(parsed.value.rules.len(), 1);
         assert_eq!(parsed.errors.len(), 1);
         assert!(parsed.errors[0].message.contains("at-rules"));
+    }
+
+    #[test]
+    fn rejects_non_identifier_hash_as_id_selector() {
+        let parsed = parse_stylesheet("#123 { color: red } #hero { color: blue }");
+        assert_eq!(parsed.value.rules.len(), 1);
+        assert_eq!(parsed.errors.len(), 1);
+        assert_eq!(
+            parsed.value.rules[0].selectors[0].specificity,
+            Specificity {
+                ids: 1,
+                classes: 0,
+                types: 0,
+            }
+        );
     }
 
     #[test]

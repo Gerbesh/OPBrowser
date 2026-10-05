@@ -341,3 +341,27 @@ This file is append-only project history.
   CSS still does not affect layout or pixels; cascade/computed values are the next step.
 - Final verification passed workspace rustfmt, warning-free workspace Clippy, all 94
   workspace tests and the native browser startup/paint smoke.
+
+## 2026-10-06 - Initial cascade, inheritance and computed styles
+
+- Added ComputedStyleMap and ComputedStyle for the first resolved property subset:
+  display, color, font-size and font-weight.
+- Added author cascade precedence across !important, inline-vs-stylesheet source,
+  specificity and source order. Invalid/unsupported values for a supported property are
+  filtered before winner selection so lower-priority valid declarations remain usable.
+- Added inheritance for color/font-size/font-weight and global inherit/initial/unset
+  handling; display remains non-inherited unless explicitly set to inherit.
+- Added initial value parsing for inline/block/none, bounded px font sizes,
+  normal/bold/400/700 weights, a small named-color set and #RGB(A)/#RRGGBB(AA).
+- Refined CSS hash tokenization so digit-leading values such as #123456 are accepted
+  for hexadecimal colors while an ID-type flag keeps non-identifier hashes such as #123
+  from being accepted as ID selectors.
+- Added temporary UA defaults matching current M1 block/hidden behavior and heading
+  typography so the next layout integration can preserve pages without author CSS.
+- PreparedDocument now retains ComputedStyleMap beside DOM/images/author styles and
+  resize reflow reuses it without reparsing, rematching or recascading CSS.
+- Added six focused computed-style tests, two hash/selector conformance regressions and
+  extended the engine retention test. CSS still does not change pixels until layout/paint
+  consume ComputedStyleMap.
+- Final verification passed workspace rustfmt, warning-free workspace Clippy, all 102
+  workspace tests and the native browser startup/paint smoke.

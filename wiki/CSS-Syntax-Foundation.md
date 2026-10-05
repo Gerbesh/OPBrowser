@@ -69,19 +69,41 @@ A style element with a non-CSS type is ignored in this initial collection layer.
 Resize reflow reuses the retained StyleCollection together with the DOM and image
 resources, so CSS is not reparsed merely because the window changed size.
 
+## Cascade, inheritance and computed values
+
+Author candidates now resolve into a ComputedStyleMap. For supported declarations the
+cascade key is, from strongest dimension to weakest: !important, inline-style source,
+specificity, then source order. Invalid values for a supported property are filtered
+before choosing the winner, allowing a lower-priority valid declaration to apply.
+
+The initial computed subset is:
+
+- display: inline, block, none;
+- color: black/white/red/green/blue/transparent and #RGB(A)/#RRGGBB(AA);
+- font-size: bounded px values;
+- font-weight: normal, bold, 400, 700;
+- global keywords: inherit, initial, unset.
+
+color, font-size and font-weight inherit through the element tree. display uses its
+initial value unless explicitly inherited. Temporary UA defaults mirror the existing M1
+block/hidden tag rules and heading font sizes/weights, avoiding an unrelated visual
+regression when layout begins consuming computed styles. The CSS hash tokenizer also
+accepts digit-leading hash values required by hexadecimal colors.
+
+PreparedDocument retains both the author StyleCollection and ComputedStyleMap. Resize
+reflow therefore does not reparse, rematch or recascade CSS.
+
 ## What is not connected yet
 
-Cascade, inheritance, computed values and the box model are not implemented yet.
-Therefore pages still render with the M1 HTML/layout defaults even though their author
-style candidates are now parsed, matched and retained.
-
-The next S3 slice is:
+Layout and paint still use the M1 style heuristics directly, so author CSS does not yet
+change pixels. The next S3 slice is:
 
 ```text
-StyleMap candidates
-  -> cascade / inheritance
-  -> initial computed values
-  -> CSS-aware layout
+ComputedStyleMap
+  -> display/block/inline decisions
+  -> text size/weight/color
+  -> layout
+  -> paint
 ```
 
-Linked stylesheets follow after the local author-style/cascade path is working and tested.
+Linked stylesheets, broader values/properties and the box model remain later work.

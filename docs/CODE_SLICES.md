@@ -194,8 +194,8 @@ scroll anchoring or history page cache. Current single-window ownership still ap
 
 ## S3 - CSS-styled document
 
-Status: IN PROGRESS. Author style collection/matching is connected to loaded DOM;
-computed styles are not connected to pixels yet.
+Status: IN PROGRESS. Author cascade and initial computed styles are connected to page
+preparation; layout/paint do not consume them yet.
 
 Current path:
 
@@ -207,28 +207,30 @@ HTML
   -> supported Selector AST + Specificity
   -> right-to-left selector matching against op_dom
   -> per-NodeId StyleMap<MatchedDeclaration>
-  -> retained StyleCollection in PreparedDocument
-  -> resize reflow reuses retained DOM/images/styles
+  -> cascade: !important -> inline source -> specificity -> source order
+  -> inheritance + initial/inherit/unset
+  -> ComputedStyleMap { display, color, font-size, font-weight }
+  -> retained in PreparedDocument
+  -> resize reflow reuses retained DOM/images/author/computed styles
 ```
 
-Matched declarations retain specificity, source order, !important and whether they
-came from a stylesheet or inline attribute. If multiple selectors from one selector
-list match the same element, the declaration is stored once with the highest matching
-specificity. Parser errors are retained with the source NodeId. Non-CSS style types
-are skipped. At-rules and unsupported selector forms remain explicit limitations.
+The first value subset accepts display inline/block/none, font-size in bounded px,
+font-weight normal/bold/400/700, a small named-color set plus #RGB(A)/#RRGGBB(AA), and
+the global keywords inherit/initial/unset. color/font-size/font-weight inherit; display
+does not unless explicitly set to inherit. Unsupported/invalid values are discarded
+before cascade winner selection so a lower-priority valid declaration may still win.
+Temporary UA defaults preserve M1 block/hidden behavior and heading typography.
 
 Planned next path:
 
 ```text
-StyleMap candidates
-  -> cascade + inheritance
-  -> computed style
-  -> CSS-aware layout
+ComputedStyleMap
+  -> CSS-aware block/inline choice and display:none
+  -> CSS-aware text size/weight/color
   -> paint
 ```
 
-Linked stylesheet loading remains later work after the local author-style/cascade
-path is established.
+Linked stylesheet loading and broader property/value coverage remain later work.
 
 ## S4 - Scripted page
 

@@ -45,10 +45,11 @@ impl<'a> Tokenizer<'a> {
                     let kind = self.consume_string(ch, start);
                     self.push(kind, start);
                 }
-                '#' if self.would_start_ident_at(self.pos + 1) => {
+                '#' if self.would_start_name_at(self.pos + 1) => {
+                    let id = self.would_start_ident_at(self.pos + 1);
                     self.advance_char();
-                    let name = self.consume_name();
-                    self.push(TokenKind::Hash(name), start);
+                    let value = self.consume_name();
+                    self.push(TokenKind::Hash { value, id }, start);
                 }
                 '@' if self.would_start_ident_at(self.pos + 1) => {
                     self.advance_char();
@@ -304,6 +305,14 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    fn would_start_name_at(&self, pos: usize) -> bool {
+        match self.char_at(pos) {
+            Some(ch) if is_name_char(ch) => true,
+            Some('\\') => self.valid_escape_at(pos),
+            _ => false,
+        }
+    }
+
     fn would_start_ident_at(&self, pos: usize) -> bool {
         let first = self.char_at(pos);
         let second_pos = self.next_offset(pos);
@@ -369,7 +378,9 @@ mod tests {
 
     #[test]
     fn tokenizes_comments_dimensions_percentages_and_functions() {
-        let result = tokenize("/*x*/ .card { width: 12.5px; opacity: 50%; color: rgb(1, 2, 3) }");
+        let result = tokenize(
+            "/*x*/ .card { width: 12.5px; opacity: 50%; color: rgb(1, 2, 3); border-color: #123abc }",
+        );
         assert!(result.errors.is_empty());
         assert!(result.tokens.iter().any(|token| {
             token.kind
@@ -390,6 +401,26 @@ mod tests {
                 .iter()
                 .any(|token| token.kind == TokenKind::Function("rgb".into()))
         );
+    }
+
+    #[test]
+    fn classifies_selector_and_value_hash_tokens() {
+        let result = tokenize("#hero { color: #123abc }");
+        assert!(result.errors.is_empty());
+        assert!(result.tokens.iter().any(|token| {
+            token.kind
+                == TokenKind::Hash {
+                    value: "hero".into(),
+                    id: true,
+                }
+        }));
+        assert!(result.tokens.iter().any(|token| {
+            token.kind
+                == TokenKind::Hash {
+                    value: "123abc".into(),
+                    id: false,
+                }
+        }));
     }
 
     #[test]
