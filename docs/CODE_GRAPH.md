@@ -1,6 +1,6 @@
 # OPBrowser Code Graph
 
-Last updated: 2026-10-05
+Last updated: 2026-10-06
 
 This document is the maintained human-readable code/dependency graph. It is updated
 whenever crates, important types, or ownership boundaries change.
@@ -168,6 +168,33 @@ classDiagram
         value_length
         legacy
     }
+    class CssToken {
+        kind
+        start
+        end
+    }
+    class Stylesheet {
+        rules
+    }
+    class StyleRule {
+        selectors
+        declarations
+    }
+    class Selector {
+        compounds
+        combinators
+        specificity
+    }
+    class Declaration {
+        name
+        value
+        important
+    }
+    class Specificity {
+        ids
+        classes
+        types
+    }
     class LayoutTree {
         text_boxes
         image_boxes
@@ -220,6 +247,11 @@ classDiagram
     Tokenizer --> Characters : consume references
     Characters --> NamedEntry : bounded prefix lookup
     Tokenizer --> Document : tree builder
+    CssToken --> Stylesheet : parse_stylesheet
+    Stylesheet --> StyleRule
+    StyleRule --> Selector
+    StyleRule --> Declaration
+    Selector --> Specificity
     Engine --> PreparedDocument : one retained successful page
     PreparedDocument --> Document : DOM snapshot
     PreparedDocument --> RasterImage : shared Arc image resources
@@ -296,7 +328,11 @@ classDiagram
   per operation; networking and original layout do not hold this gate.
   The current GDI backend measures painted glyph ranges for native hit testing;
   network addresses are resolved only by the worker/engine, not by the painter.
-- op_css will own parsing, cascade, computed style, and style data.
+- op_css owns the initial CSS syntax layer: token spans/errors, stylesheet rules,
+  declaration lists, supported selector ASTs and specificity. It accepts type,
+  universal, class and ID selectors plus descendant/child combinators. Unsupported
+  selectors and at-rules are reported and skipped without panicking. Matching,
+  cascade, computed values and layout-facing styled data remain the next M2 work.
 - op_engine::images walks visible DOM img nodes, resolves against the effective
   loaded address, serializes loads/decode on the worker and owns page budgets/cache.
   Image failure does not fail document history. Arc pixels are reused across nodes.
@@ -336,4 +372,6 @@ Connected: Win32 navigation events -> op_browser command channel -> worker-owned
 Engine -> op_net/WinHTTP -> own document pipeline -> result channel -> UI-thread
 NativeBrowserWindow::present -> WM_PAINT. Also connected: painted LinkSpan -> measured
 LinkRegion -> scroll-aware mouse click -> FollowLink -> resolve_link -> same worker.
-Next: broader HTML/URL conformance and resource loading.
+The op_css syntax graph now exists independently but is not yet connected to DOM
+style resolution or layout. Next: collect author CSS, match selectors and build
+layout-facing styled data.

@@ -1,6 +1,6 @@
 # OPBrowser Code Slices
 
-Last updated: 2026-10-05
+Last updated: 2026-10-06
 
 A code slice is an end-to-end path through the architecture that produces one
 observable capability. This prevents isolated subsystems from becoming impressive
@@ -194,17 +194,38 @@ scroll anchoring or history page cache. Current single-window ownership still ap
 
 ## S3 - CSS-styled document
 
-Status: PLANNED.
+Status: IN PROGRESS. Syntax foundation complete; styling is not connected to pixels yet.
+
+Current foundation:
 
 ```text
-HTML + linked/inline CSS
+text CSS / future style attribute
+  -> op_css::tokenize
+  -> positioned CSS tokens + recoverable syntax errors
+  -> op_css::parse_stylesheet / parse_declaration_list
+  -> Stylesheet / StyleRule / Declaration
+  -> supported Selector AST + Specificity
+```
+
+Supported selector syntax at this stage is type, universal, class and ID simple
+selectors, comma-separated selector lists, descendant combinators and child
+combinators. At-rules and unsupported selector forms are explicitly skipped with
+errors rather than silently treated as supported.
+
+Planned integration:
+
+```text
+HTML + embedded/inline/linked CSS
   -> HTML DOM
-  -> CSS parser
+  -> CSS syntax parser
   -> selector matching
   -> cascade/computed style
   -> layout
   -> paint
 ```
+
+The next coherent S3 step is embedded style + style-attribute collection, selector
+matching against op_dom, and a style map/styled tree consumed by layout.
 
 ## S4 - Scripted page
 

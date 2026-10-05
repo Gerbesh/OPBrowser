@@ -8,6 +8,7 @@ and original ECMAScript engine.
 - [Project Overview](Project-Overview.md)
 - [Architecture](Architecture.md)
 - [Rendering Pipeline](Rendering-Pipeline.md)
+- [CSS Syntax Foundation](CSS-Syntax-Foundation.md)
 - [Document Source Loading](Document-Source-Loading.md)
 - [HTML Text Decoding](HTML-Text-Decoding.md)
 - [Image Loading](Image-Loading.md)

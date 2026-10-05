@@ -87,8 +87,13 @@ Successful navigation retains the DOM and shared images for
 [Page Reflow](Page-Reflow.md). WM_SIZE triggers a debounced worker layout rebuild;
 only results matching the current viewport reach present_reflow and native paint.
 
-This is deliberately small. It exists to prove subsystem boundaries and the complete
-path to pixels before expanding CSS/layout complexity.
+The first [CSS syntax foundation](CSS-Syntax-Foundation.md) now exists in op_css:
+tokenization, stylesheet/declaration parsing, an initial selector AST and specificity.
+It is deliberately not connected to this rendering path yet. Until author-style
+collection, selector matching and computed style are added, the layout behavior above
+still uses its M1 HTML defaults.
+
+This separation keeps the rendering slice honest while M2 styling is built incrementally.
 
 ## Paint smoke verification
 

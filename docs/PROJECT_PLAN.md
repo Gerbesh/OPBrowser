@@ -1,6 +1,6 @@
 # OPBrowser Project Plan
 
-Last updated: 2026-10-05
+Last updated: 2026-10-06
 
 ## North star
 
@@ -94,8 +94,17 @@ image animation, scripting and modern-site compatibility remain later milestones
 
 ## M2 - CSS foundation
 
-- LATER CSS tokenizer/parser.
-- LATER selectors and matching.
+Status: IN PROGRESS.
+
+- DONE initial owned CSS tokenizer with spans, comments, strings/escapes, identifiers,
+  hashes, numbers, percentages, dimensions, functions and structural tokens.
+- DONE stylesheet and declaration-list parsers with bounded error recovery, !important
+  extraction and custom-property name preservation.
+- DONE initial selector AST/parser for type, universal, class and ID simple selectors,
+  selector lists, descendant/child combinators and specificity calculation.
+- NEXT collect embedded style elements and inline style attributes, match supported
+  selectors against the DOM, and introduce layout-facing styled data.
+- LATER linked stylesheet loading.
 - LATER cascade and inheritance.
 - LATER computed values.
 - LATER box model.

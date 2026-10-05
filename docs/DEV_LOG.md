@@ -305,3 +305,21 @@ This file is append-only project history.
   resize/image paint smokes. Release EXE: 417,792 bytes, an increase of 18,944 from
   398,848; dependency packages are unchanged. The new resize smoke also verifies
   an actual hyperlink destination after the geometry update.
+
+## 2026-10-06 - CSS syntax and core stylesheet model
+
+- Replaced the op_css placeholder with an original tokenizer and parser implemented
+  without new dependency packages or a ready-made CSS engine.
+- Added positioned tokens for identifiers, hashes, strings/escapes, numbers,
+  percentages, dimensions, functions and CSS punctuation; comments are consumed and
+  malformed comments/strings produce recoverable errors.
+- Added Stylesheet, StyleRule, Declaration, Selector, CompoundSelector, SimpleSelector
+  and Specificity data models. The initial selector parser supports type/universal,
+  class/ID, selector lists and descendant/child combinators.
+- Added declaration-list parsing for future style attributes, case normalization for
+  ordinary property names, custom-property case preservation and !important extraction.
+- Unsupported at-rules/selectors are explicit initial limitations and do not poison
+  following valid rules. CSS is intentionally not wired to layout in this update.
+- Added eight focused CSS tests. Final verification passed workspace rustfmt,
+  warning-free workspace Clippy, all 88 workspace tests and the native browser
+  startup/paint smoke.
