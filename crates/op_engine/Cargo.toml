@@ -7,5 +7,7 @@ edition = "2024"
 op_dom = { path = "../op_dom" }
 op_html = { path = "../op_html" }
 op_css = { path = "../op_css" }
+op_layout = { path = "../op_layout" }
+op_paint = { path = "../op_paint" }
 op_js = { path = "../op_js" }
 op_net = { path = "../op_net" }

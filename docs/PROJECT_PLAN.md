@@ -27,11 +27,11 @@ Status: DONE at initial level.
 
 - DONE Rust workspace under C:\OPBrowser.
 - DONE Native Win32 top-level browser window.
-- DONE Separate browser, engine, DOM, HTML, CSS, JS, network, and Windows crates.
+- DONE Separate browser, engine, DOM, HTML, CSS, layout, paint, JS, network, and Windows crates.
 - DONE Git repository.
 - DONE rustfmt / Clippy / test workflow.
 - DONE debug and release builds.
-- DONE non-interactive Win32 startup smoke test.
+- DONE non-interactive Win32 startup/paint smoke test.
 - DONE documented dependency policy.
 - DONE project documentation workflow, code graph, code slices, and local wiki.
 - DONE public GitHub repository: https://github.com/Gerbesh/OPBrowser
@@ -44,15 +44,16 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE initial HTML tokenizer state machine.
 - DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
 - DONE initial HTML tree builder from tokenizer output into op_dom::Document.
-- IN PROGRESS document-to-layout pipeline.
-- NEXT minimal block/inline layout.
-- NEXT paint/display-list primitives.
-- NEXT Win32 surface painting of engine-generated content.
-- NEXT local file/data document loading.
+- DONE initial document-to-layout pipeline with basic text flow and wrapping.
+- DONE initial paint/display-list primitives.
+- DONE Win32 GDI backend consuming OPBrowser display-list commands.
+- DONE first in-memory HTML page rendered by the complete OPBrowser pipeline.
+- DONE smoke test verifies WM_PAINT actually ran.
+- IN PROGRESS local file/data document loading.
 - NEXT URL parser and navigation state.
 - NEXT HTTP(S) fetching.
 - NEXT basic image loading.
-- NEXT first useful static HTML page.
+- NEXT richer block/inline layout behavior.
 
 Exit condition: OPBrowser renders a non-trivial local HTML document using only its
 own HTML/DOM/layout/paint pipeline.

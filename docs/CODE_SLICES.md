@@ -25,40 +25,44 @@ Verification:
 - cargo run -p op_browser -- --smoke-test
 - manual native window launch
 
-## S1 - Static local document to pixels
+## S1 - Static document to pixels
 
-Status: IN PROGRESS.
+Status: COMPLETE for in-memory HTML, IN PROGRESS for local-file navigation.
 
-Target path:
+Current working path:
 
 ```text
-HTML source bytes/string
+HTML string
   -> op_html::Tokenizer
   -> op_html::parse_document/tree builder
   -> op_dom::Document
-  -> style defaults / op_css
-  -> layout tree
-  -> display list
-  -> op_platform_win paint surface
+  -> op_layout::layout_document
+  -> op_layout::LayoutTree/TextBox
+  -> op_paint::build_display_list
+  -> op_paint::DisplayList
+  -> op_platform_win WM_PAINT/GDI backend
   -> pixels in OPBrowser window
 ```
 
 Implemented:
 
 - tokenizer foundation
-- DOM arena foundation
-- DOM attributes
+- DOM arena and attributes
 - initial tree builder
-- mismatched-end-tag recovery for the current subset
 - void-element handling for the current subset
+- initial malformed nesting recovery
+- basic text layout and word wrapping
+- heading/paragraph default styles
+- display-list background/text commands
+- Win32 paint backend
+- synchronous UpdateWindow startup paint
+- smoke verification that WM_PAINT executed
 
-Missing:
+Missing before the original local-document S1 goal is fully complete:
 
-- layout primitives
-- display list
-- painting bridge
-
-This is the current priority slice.
+- local file/data source loader
+- navigation state around that source
+- richer block/inline semantics
 
 ## S2 - URL navigation to static page
 

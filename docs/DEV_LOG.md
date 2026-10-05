@@ -74,3 +74,17 @@ This file is append-only project history.
 - Added regression tests for nested DOM construction, attributes, void elements, and
   malformed nesting.
 - Verified rustfmt, Clippy, and all workspace tests.
+
+## 2026-10-05 - First visible rendering pipeline
+
+- Added op_layout and op_paint crates.
+- Added initial layout tree/text-box model with heading/paragraph defaults and
+  approximate word wrapping.
+- Added platform-neutral display-list commands for background fills and text.
+- Added Engine::render_html() to orchestrate HTML -> DOM -> layout -> paint.
+- Extended op_platform_win with a WM_PAINT GDI backend consuming the display list.
+- Kept GDI isolated as a temporary OS drawing backend rather than a web engine.
+- Added an in-memory OPBrowser start page rendered entirely by the new pipeline.
+- Added synchronous UpdateWindow startup painting.
+- Strengthened --smoke-test so it fails unless WM_PAINT actually executed.
+- Verified rustfmt, Clippy, all workspace tests, paint smoke, and release build.

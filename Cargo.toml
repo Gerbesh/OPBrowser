@@ -5,6 +5,8 @@ members = [
     "crates/op_dom",
     "crates/op_html",
     "crates/op_css",
+    "crates/op_layout",
+    "crates/op_paint",
     "crates/op_js",
     "crates/op_net",
     "crates/op_platform_win",

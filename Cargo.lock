@@ -26,7 +26,9 @@ dependencies = [
  "op_dom",
  "op_html",
  "op_js",
+ "op_layout",
  "op_net",
+ "op_paint",
 ]
 
 [[package]]
@@ -41,13 +43,28 @@ name = "op_js"
 version = "0.1.0"
 
 [[package]]
+name = "op_layout"
+version = "0.1.0"
+dependencies = [
+ "op_dom",
+]
+
+[[package]]
 name = "op_net"
 version = "0.1.0"
+
+[[package]]
+name = "op_paint"
+version = "0.1.0"
+dependencies = [
+ "op_layout",
+]
 
 [[package]]
 name = "op_platform_win"
 version = "0.1.0"
 dependencies = [
+ "op_paint",
  "windows-sys",
 ]
 
