@@ -25,6 +25,7 @@ graph TD
     G[Windows GDI<br/>font extents + pixel output]
 
     B --> E
+    B --> P
     B --> W
     E --> D
     E --> H
@@ -57,11 +58,14 @@ classDiagram
         -NetworkContext network
         -NavigationState navigation
         -Option~String~ document_address
+        -Option~PreparedDocument~ active_document
         +new()
         +start()
         +state()
         +navigation()
         +render_html()
+        +set_html_page()
+        +reflow()
         +render_source()
         +navigate()
         +follow_link()
@@ -78,6 +82,14 @@ classDiagram
         +current()
         +can_go_back()
         +can_go_forward()
+    }
+
+    class PreparedDocument {
+        address
+        mime_type
+        document
+        images
+        +render(width, height)
     }
 
     class NavigationEntry {
@@ -208,6 +220,9 @@ classDiagram
     Tokenizer --> Characters : consume references
     Characters --> NamedEntry : bounded prefix lookup
     Tokenizer --> Document : tree builder
+    Engine --> PreparedDocument : one retained successful page
+    PreparedDocument --> Document : DOM snapshot
+    PreparedDocument --> RasterImage : shared Arc image resources
     Document --> LayoutTree : flow grouping / inline lines
     Engine --> TextMeasurer : worker-local GDI adapter
     TextMeasurer --> TextMetrics : whole href-run extents
@@ -238,15 +253,22 @@ classDiagram
   redirects on back/forward/reload. It is separate from immutable history requests.
 - Engine::follow_link resolves the href against that effective document address
   before entering the same navigate/commit-after-success path.
+- Reflow borrows only the active PreparedDocument and never loads sources or changes
+  history/effective address. Failed navigation leaves that snapshot unchanged.
 
 ## Current ownership boundaries
 
 - op_browser owns bootstrap, UI command/result channels and a single worker thread.
-  The worker owns Engine and serializes navigation; only the UI thread touches HWNDs.
+  The worker owns Engine and serializes navigation/reflow; only the UI thread touches
+  HWNDs. Results carry viewport dimensions; stale-width pages trigger a latest-size
+  reflow and are not presented. op_paint is used directly for smoke assertions.
 - op_platform_win owns Windows-specific window/input/surface/process glue and consumes
   platform-neutral display lists.
 - op_engine currently owns per-page navigation state plus orchestration between loading
   and web-engine subsystems. This state will later become per-tab.
+- Engine.active_document retains one PreparedDocument with parsed DOM, address,
+  MIME type and shared image resources after successful navigation/back/forward/reload.
+  Stateless render_source remains uncached; set_html_page initializes the start page.
 - op_net owns document-source interpretation, initial link-reference resolution,
   an initial HTTP URL parser, owned document byte decoding and bounded
   HTTP(S) loading, response validation and errors. Its private http::windows module
@@ -269,6 +291,9 @@ classDiagram
 - op_layout owns text-flow geometry, structural-container traversal and UTF-8
   LinkSpan ranges preserved across whitespace normalization and line wrapping.
 - op_paint owns platform-neutral paint commands/display lists and default link color.
+  TEXT_FONT_FAMILY and Windows GDI_TEXT_LOCK are shared by engine metric adapter and
+  native painter. Font realization, measurement/drawing and cleanup are synchronized
+  per operation; networking and original layout do not hold this gate.
   The current GDI backend measures painted glyph ranges for native hit testing;
   network addresses are resolved only by the worker/engine, not by the painter.
 - op_css will own parsing, cascade, computed style, and style data.
@@ -295,7 +320,10 @@ classDiagram
 - Navigation state is single-page/single-tab for now.
 - A single in-flight navigation disables navigation buttons; the window continues
   processing paint/input/close messages. A 30 ms Win32 timer polls worker results
-  only while loading and is removed when loading completes (no idle timer).
+  only while a worker command is active and is removed on completion (no idle timer).
+- WM_SIZE uses a separate 120 ms one-shot debounce timer; minimized events do not
+  schedule it. Reflow presentation preserves address edits and clamps pixel scroll
+  to the new page height, clears old hit regions and immediately repaints new ones.
 - Win32 events are queued before calling application code, so the window procedure
   never performs networking or mutates engine history.
 - HTTP URL parsing is a documented subset, not full WHATWG URL conformance.

@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 op_engine = { path = "../op_engine" }
+op_paint = { path = "../op_paint" }
 op_platform_win = { path = "../op_platform_win" }

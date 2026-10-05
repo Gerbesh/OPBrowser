@@ -22,7 +22,8 @@ The first visible renderer path is live:
 
 HTML -> tokenizer -> tree builder -> DOM -> layout -> display list -> WM_PAINT -> pixels.
 
-GDI is deliberately isolated inside op_platform_win. It is not responsible for HTML,
+GDI drawing is isolated inside op_platform_win; op_engine::text supplies GDI font
+metrics through the layout interface. GDI is not responsible for HTML,
 CSS, layout, or paint decisions. That means the Windows graphics backend can later be
 replaced with DirectWrite/Direct2D/DirectComposition without rewriting the web engine.
 
@@ -74,3 +75,11 @@ and op_layout::inline constructs measured lines with a shared text/image baselin
 LayoutTree::order preserves TextBox/ImageBox source order in painting. Engine and
 native painter share op_paint::TEXT_FONT_FAMILY; portable layout uses approximate
 metrics. See [Inline Layout](Inline-Layout.md) for the supported formatting subset.
+
+Engine retains one PreparedDocument after a successful navigation, containing DOM,
+effective address/MIME and Arc-shared image resources. Reflow borrows this snapshot
+on the worker and performs no loading or history changes. Resize debounce and
+viewport-tagged results prevent stale-width presentation; native present_reflow
+preserves address edits/scroll bounds and rebuilds link regions. The worker and UI
+share a short GDI text gate for font creation, use and cleanup. See
+[Page Reflow](Page-Reflow.md) for lifetime/costs and verification.

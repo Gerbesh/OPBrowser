@@ -87,11 +87,36 @@ pub struct RenderedPage {
 }
 
 #[derive(Debug)]
+struct PreparedDocument {
+    address: String,
+    mime_type: String,
+    document: op_dom::Document,
+    images: ImageResources,
+}
+
+impl PreparedDocument {
+    fn render(&self, width: i32, height: i32) -> RenderedPage {
+        let layout = layout_document_with_metrics(
+            &self.document,
+            width,
+            &self.images,
+            &mut text::Measurer::new(),
+        );
+        RenderedPage {
+            address: self.address.clone(),
+            mime_type: self.mime_type.clone(),
+            display_list: build_display_list(&layout, height),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Engine {
     state: EngineState,
     network: NetworkContext,
     navigation: NavigationState,
     document_address: Option<String>,
+    active_document: Option<PreparedDocument>,
 }
 
 impl Engine {
@@ -101,6 +126,7 @@ impl Engine {
             network: NetworkContext,
             navigation: NavigationState::default(),
             document_address: None,
+            active_document: None,
         }
     }
 
@@ -138,8 +164,42 @@ impl Engine {
         viewport_width: i32,
         viewport_height: i32,
     ) -> Result<RenderedPage, LoadError> {
-        let loaded = self.network.load_document(source)?;
-        Ok(self.render_loaded_document(loaded, viewport_width, viewport_height))
+        Ok(self
+            .prepare_source(source)?
+            .render(viewport_width, viewport_height))
+    }
+
+    /// Initialize an in-memory page and an empty navigation history for startup.
+    pub fn set_html_page(&mut self, html: &str, width: i32, height: i32) -> DisplayList {
+        let prepared = PreparedDocument {
+            address: String::new(),
+            mime_type: "text/html".into(),
+            document: parse_document(html),
+            images: ImageResources::new(),
+        };
+        let page = prepared.render(width, height);
+        self.active_document = Some(prepared);
+        self.document_address = None;
+        self.navigation = NavigationState::default();
+        page.display_list
+    }
+
+    /// Rebuild only layout/paint from the current DOM and shared image pixels.
+    pub fn reflow(&self, width: i32, height: i32) -> Option<RenderedPage> {
+        Some(self.active_document.as_ref()?.render(width, height))
+    }
+
+    fn load_active(
+        &mut self,
+        source: &str,
+        width: i32,
+        height: i32,
+    ) -> Result<RenderedPage, LoadError> {
+        let prepared = self.prepare_source(source)?;
+        let page = prepared.render(width, height);
+        self.active_document = Some(prepared);
+        self.document_address = Some(page.address.clone());
+        Ok(page)
     }
 
     pub fn navigate(
@@ -148,8 +208,7 @@ impl Engine {
         viewport_width: i32,
         viewport_height: i32,
     ) -> Result<RenderedPage, LoadError> {
-        let page = self.render_source(source, viewport_width, viewport_height)?;
-        self.document_address = Some(page.address.clone());
+        let page = self.load_active(source, viewport_width, viewport_height)?;
         self.navigation.commit_navigation(NavigationEntry {
             request: source.to_owned(),
             address: page.address.clone(),
@@ -177,7 +236,7 @@ impl Engine {
             return Ok(None);
         };
 
-        let page = self.render_source(&request, viewport_width, viewport_height)?;
+        let page = self.load_active(&request, viewport_width, viewport_height)?;
         self.navigation.set_current_index(target_index);
         self.document_address = Some(page.address.clone());
         Ok(Some(page))
@@ -192,7 +251,7 @@ impl Engine {
             return Ok(None);
         };
 
-        let page = self.render_source(&request, viewport_width, viewport_height)?;
+        let page = self.load_active(&request, viewport_width, viewport_height)?;
         self.navigation.set_current_index(target_index);
         self.document_address = Some(page.address.clone());
         Ok(Some(page))
@@ -207,32 +266,21 @@ impl Engine {
             return Ok(None);
         };
 
-        let page = self.render_source(&request, viewport_width, viewport_height)?;
+        let page = self.load_active(&request, viewport_width, viewport_height)?;
         self.document_address = Some(page.address.clone());
         Ok(Some(page))
     }
 
-    fn render_loaded_document(
-        &self,
-        loaded: LoadedDocument,
-        viewport_width: i32,
-        viewport_height: i32,
-    ) -> RenderedPage {
+    fn prepare_source(&self, source: &str) -> Result<PreparedDocument, LoadError> {
+        let loaded: LoadedDocument = self.network.load_document(source)?;
         let document = parse_document(&loaded.text);
         let images = images::load(&self.network, &document, &loaded.address);
-        let layout = layout_document_with_metrics(
-            &document,
-            viewport_width,
-            &images,
-            &mut text::Measurer::new(),
-        );
-        let display_list = build_display_list(&layout, viewport_height);
-
-        RenderedPage {
+        Ok(PreparedDocument {
             address: loaded.address,
             mime_type: loaded.mime_type,
-            display_list,
-        }
+            document,
+            images,
+        })
     }
 }
 
@@ -257,6 +305,42 @@ mod tests {
         let mut engine = Engine::new();
         engine.start();
         assert_eq!(engine.state(), EngineState::Running);
+    }
+
+    #[test]
+    fn reflow_keeps_start_page_and_tracks_only_successful_history_changes() {
+        let mut engine = Engine::new();
+        assert!(engine.reflow(320, 300).is_none());
+        engine.set_html_page("<p>Start page</p>", 800, 600);
+        assert!(contains_text(
+            &engine.reflow(320, 300).unwrap().display_list,
+            "Start page"
+        ));
+        assert!(engine.navigation().entries().is_empty());
+        assert!(engine.reload(320, 300).unwrap().is_none());
+        let first = "data:text/html,%3Cp%3EFirst%3C%2Fp%3E";
+        let second = "data:text/html,%3Cp%3ESecond%3C%2Fp%3E";
+        engine.navigate(first, 800, 600).unwrap();
+        engine.navigate(second, 800, 600).unwrap();
+        engine.go_back(800, 600).unwrap();
+        let history = engine.navigation().clone();
+        assert!(engine.navigate("unsupported:failure", 320, 300).is_err());
+        assert!(contains_text(
+            &engine.reflow(320, 300).unwrap().display_list,
+            "First"
+        ));
+        assert_eq!(engine.navigation(), &history);
+        engine.go_forward(320, 300).unwrap();
+        assert!(contains_text(
+            &engine.reflow(800, 600).unwrap().display_list,
+            "Second"
+        ));
+        engine.reload(800, 600).unwrap();
+        assert_eq!(engine.navigation().entries().len(), 2);
+        assert!(contains_text(
+            &engine.reflow(320, 300).unwrap().display_list,
+            "Second"
+        ));
     }
 
     #[test]
@@ -351,7 +435,11 @@ mod tests {
         let mut engine = Engine::new();
         let page = engine.navigate(path.to_str().unwrap(), 800, 600).unwrap();
         assert!(contains_text(&page.display_list, "Привет, мир!"));
-        assert!(contains_text(&page.display_list, "Windows-1251: Ё ё №"));
+        assert!(
+            contains_text(&page.display_list, "Windows-1251: Ё ё №"),
+            "{:?}",
+            page.display_list
+        );
         assert!(contains_text(&page.display_list, "© 2026 & OPBrowser"));
         assert!(page.display_list.commands.iter().any(|command| matches!(command, PaintCommand::Text { links, .. } if links.iter().any(|link| link.href == "../navigation/index.html?source=encoding&lang=ru"))));
         let next = engine

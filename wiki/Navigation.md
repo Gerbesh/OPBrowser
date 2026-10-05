@@ -31,6 +31,8 @@ Engine exposes:
 - go_back(): reloads the previous historical request;
 - go_forward(): reloads the next historical request;
 - reload(): reloads the current request without adding a history entry.
+- reflow(): rebuilds layout/paint from retained DOM/images without fetching or
+  changing history; resize input invokes this on the same worker.
 
 ## Invariants
 
@@ -51,7 +53,7 @@ Engine. It loads/renders and sends the page and history-button flags to the UI.
 Only the UI thread replaces the display list, updates controls and repaints.
 
 A Win32 timer polls results every 30 ms while loading; it is stopped when loading
-finishes. The status line shows Loading, Ready or the load error. Navigation is
+finishes. The status line shows Loading, Layout, Ready or the load error. Navigation is
 serialized: buttons are disabled and further navigation shortcuts are ignored
 while a request is in flight. Paint, address editing, scroll and close stay live.
 A failed load keeps the previous page and history, allowing correction of the URL.
@@ -71,7 +73,9 @@ path; see [Image Loading](Image-Loading.md) for bounds and
 [Inline Layout](Inline-Layout.md) for mixed text/image lines.
 CSS and JavaScript remain future work. Fragment-only links reload without anchor
 scrolling; HTML base elements and target/download behavior remain future work.
-Resizing moves controls; content reflows on next navigation.
+Resizing moves controls immediately and reflows retained page data after a 120 ms
+pause. It preserves address edits and pixel scroll within the new bounds, rebuilds
+link hit regions and changes no history. See [Page Reflow](Page-Reflow.md).
 
 All standard named/numeric references decode in href attributes before layout,
 so links such as `?a=1&amp;b=2` navigate to `?a=1&b=2`.

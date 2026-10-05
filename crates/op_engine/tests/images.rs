@@ -32,6 +32,72 @@ fn painted_text(commands: &[PaintCommand]) -> String {
 }
 
 #[test]
+fn reflow_uses_retained_dom_and_shared_pixels_after_sources_disappear() {
+    struct Fixture(std::path::PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(self.0.join("index.html"));
+            let _ = std::fs::remove_file(self.0.join("image.png"));
+            let _ = std::fs::remove_dir(&self.0);
+        }
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let fixture = Fixture(
+        std::env::temp_dir().join(format!("opbrowser-reflow-{}-{stamp}", std::process::id())),
+    );
+    std::fs::create_dir(&fixture.0).unwrap();
+    let source = fixture.0.join("index.html");
+    std::fs::write(
+        fixture.0.join("image.png"),
+        include_bytes!("../../../examples/images/colors.png"),
+    )
+    .unwrap();
+    let text = "Retained document contains enough words to wrap when the viewport becomes narrow. "
+        .repeat(5);
+    std::fs::write(
+        &source,
+        format!("<p><a href='next.html'><img src='image.png' width=300></a> {text}</p>"),
+    )
+    .unwrap();
+    let mut engine = Engine::new();
+    let wide = engine
+        .navigate(source.to_str().unwrap(), 1000, 600)
+        .unwrap();
+    let history = engine.navigation().clone();
+    std::fs::remove_file(&source).unwrap();
+    std::fs::remove_file(fixture.0.join("image.png")).unwrap();
+    let narrow = engine.reflow(240, 300).unwrap();
+    assert_eq!(wide.address, narrow.address);
+    assert_eq!(wide.mime_type, narrow.mime_type);
+    assert_eq!(engine.navigation(), &history);
+    assert!(Arc::ptr_eq(
+        images(&wide.display_list.commands)[0],
+        images(&narrow.display_list.commands)[0]
+    ));
+    assert!(narrow.display_list.commands.len() > wide.display_list.commands.len());
+    assert!(
+        narrow
+            .display_list
+            .commands
+            .iter()
+            .any(|command| matches!(command,
+        PaintCommand::Image { width: 176, href: Some(href), .. } if href == "next.html"))
+    );
+    assert!(engine.reload(240, 300).is_err());
+    assert_eq!(engine.navigation(), &history);
+    let restored = engine.reflow(1000, 600).unwrap();
+    assert_eq!(restored.display_list, wide.display_list);
+    assert!(engine.follow_link("next.html", 240, 300).is_err());
+    assert_eq!(
+        engine.reflow(1000, 600).unwrap().display_list,
+        wide.display_list
+    );
+}
+
+#[test]
 fn local_images_and_fallback_text_reach_paint_and_image_link_navigation() {
     let source =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/images/index.html");

@@ -40,6 +40,7 @@ const ADDRESS: i32 = 104;
 const GO: i32 = 105;
 const STATUS: i32 = 106;
 const POLL_TIMER: usize = 1;
+const RESIZE_TIMER: usize = 2;
 const NAVIGATION_COMMAND: u32 = WM_APP + 1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +50,7 @@ pub enum NavigationEvent {
     Back,
     Forward,
     Reload,
+    Resize,
     Poll,
 }
 
@@ -158,6 +160,8 @@ impl NativeBrowserWindow {
         unsafe {
             ShowWindow(hwnd, SW_SHOW);
             UpdateWindow(hwnd);
+            // Creation sends WM_SIZE before the application starts its event loop.
+            KillTimer(hwnd, RESIZE_TIMER);
         }
 
         Ok(window)
@@ -230,6 +234,36 @@ impl NativeBrowserWindow {
             SetWindowTextW(self.hwnd, wide(&format!("OPBrowser - {address}")).as_ptr());
             InvalidateRect(self.hwnd, null(), 1);
             UpdateWindow(self.hwnd);
+        }
+    }
+
+    /// Keep address edits and scroll position while replacing geometry/hit regions.
+    pub fn present_reflow(&self, display_list: DisplayList) {
+        set_display_list(display_list);
+        clamp_scroll(self.hwnd);
+        PAINTED_ONCE.store(false, Ordering::SeqCst);
+        unsafe {
+            InvalidateRect(self.hwnd, null(), 1);
+            UpdateWindow(self.hwnd);
+        }
+    }
+
+    /// Resize the real native client area; used by offline reflow smoke tests.
+    pub fn resize_viewport(&self, width: i32, height: i32) {
+        let mut outer: RECT = unsafe { zeroed() };
+        let mut client: RECT = unsafe { zeroed() };
+        unsafe {
+            GetWindowRect(self.hwnd, &mut outer);
+            GetClientRect(self.hwnd, &mut client);
+            SetWindowPos(
+                self.hwnd,
+                null_mut(),
+                0,
+                0,
+                width.max(240) + outer.right - outer.left - client.right,
+                height.max(100) + TOOLBAR_HEIGHT + outer.bottom - outer.top - client.bottom,
+                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
         }
     }
 
@@ -347,9 +381,41 @@ impl NativeBrowserWindow {
             WM_TIMER if message.hwnd == self.hwnd && message.wParam == POLL_TIMER => {
                 Some(NavigationEvent::Poll)
             }
+            WM_TIMER if message.hwnd == self.hwnd && message.wParam == RESIZE_TIMER => {
+                unsafe {
+                    KillTimer(self.hwnd, RESIZE_TIMER);
+                }
+                Some(NavigationEvent::Resize)
+            }
             _ => None,
         }
     }
+}
+
+fn max_scroll(hwnd: HWND) -> i32 {
+    let mut rect: RECT = unsafe { zeroed() };
+    unsafe {
+        GetClientRect(hwnd, &mut rect);
+    }
+    let height = DISPLAY_LIST
+        .get()
+        .and_then(|storage| storage.read().ok())
+        .and_then(|list| {
+            list.commands
+                .iter()
+                .filter_map(|command| match command {
+                    PaintCommand::FillRect { y, height, .. } => Some(y + height),
+                    _ => None,
+                })
+                .max()
+        })
+        .unwrap_or(0);
+    (height - (rect.bottom - TOOLBAR_HEIGHT).max(0)).max(0)
+}
+
+fn clamp_scroll(hwnd: HWND) {
+    let old = SCROLL_Y.load(Ordering::SeqCst);
+    SCROLL_Y.store(old.clamp(0, max_scroll(hwnd)), Ordering::SeqCst);
 }
 
 impl Drop for NativeBrowserWindow {
@@ -443,29 +509,18 @@ unsafe extern "system" fn window_proc(
         }
         WM_SIZE => {
             layout_controls(hwnd);
+            unsafe {
+                KillTimer(hwnd, RESIZE_TIMER);
+                if wparam != SIZE_MINIMIZED as usize {
+                    clamp_scroll(hwnd);
+                    SetTimer(hwnd, RESIZE_TIMER, 120, None);
+                }
+            }
             0
         }
         WM_MOUSEWHEEL => {
             let delta = ((wparam >> 16) as u16 as i16) as i32;
-            let mut rect: RECT = unsafe { zeroed() };
-            unsafe {
-                GetClientRect(hwnd, &mut rect);
-            }
-            let height = DISPLAY_LIST
-                .get()
-                .and_then(|storage| storage.read().ok())
-                .map(|list| {
-                    list.commands
-                        .iter()
-                        .filter_map(|command| match command {
-                            PaintCommand::FillRect { y, height, .. } => Some(y + height),
-                            _ => None,
-                        })
-                        .max()
-                        .unwrap_or(0)
-                })
-                .unwrap_or(0);
-            let max_scroll = (height - (rect.bottom - TOOLBAR_HEIGHT)).max(0);
+            let max_scroll = max_scroll(hwnd);
             let old = SCROLL_Y.load(Ordering::SeqCst);
             SCROLL_Y.store(
                 (old - delta / 120 * 72).clamp(0, max_scroll),
@@ -584,6 +639,9 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
             color,
             links,
         } => {
+            let _guard = op_paint::GDI_TEXT_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let face = wide(op_paint::TEXT_FONT_FAMILY);
             let weight = if *bold { FW_BOLD } else { FW_NORMAL } as i32;
 
@@ -898,9 +956,63 @@ mod tests {
                 }
                 7 => {
                     assert_eq!(event, NavigationEvent::FollowLink("../image".into()));
+                    let old_scroll = SCROLL_Y.load(Ordering::SeqCst);
+                    window.set_address("address edit survives reflow");
+                    window.present_reflow(DisplayList {
+                        commands: vec![
+                            PaintCommand::FillRect {
+                                x: 0,
+                                y: 0,
+                                width: 1200,
+                                height: 2000,
+                                color: Color::WHITE,
+                            },
+                            PaintCommand::Text {
+                                x: 32,
+                                y: 200,
+                                text: "New link".into(),
+                                font_size: 18,
+                                bold: false,
+                                color: Color::BLACK,
+                                links: vec![op_paint::LinkSpan {
+                                    start: 0,
+                                    end: 8,
+                                    href: "new".into(),
+                                }],
+                            },
+                        ],
+                    });
+                    assert_eq!(SCROLL_Y.load(Ordering::SeqCst), old_scroll);
+                    assert_eq!(window.address(), "address edit survives reflow");
+                    assert!(
+                        window
+                            .link_at_client_point(33, TOOLBAR_HEIGHT + 121 - old_scroll)
+                            .is_none()
+                    );
+                    assert_eq!(
+                        window.link_at_client_point(33, TOOLBAR_HEIGHT + 201 - old_scroll),
+                        Some("new".into())
+                    );
+                    window.present_reflow(DisplayList {
+                        commands: vec![PaintCommand::FillRect {
+                            x: 0,
+                            y: 0,
+                            width: 1200,
+                            height: 120,
+                            color: Color::WHITE,
+                        }],
+                    });
+                    assert_eq!(SCROLL_Y.load(Ordering::SeqCst), 0);
+                    assert_eq!(window.address(), "address edit survives reflow");
                     window.present("http://example.test/replaced", DisplayList::default());
                     assert_eq!(window.painted_image_count(), 0);
                     assert!(!window.click_first_link());
+                    window.resize_viewport(640, 500);
+                    window.resize_viewport(320, 400);
+                }
+                8 => {
+                    assert_eq!(event, NavigationEvent::Resize);
+                    assert_eq!(window.viewport_size(), (320, 400));
                     window.close();
                 }
                 _ => panic!("unexpected extra UI event"),
@@ -910,6 +1022,6 @@ mod tests {
         done.send(()).unwrap();
         watchdog.join().unwrap();
         assert_eq!(exit, 0);
-        assert_eq!(step, 8);
+        assert_eq!(step, 9);
     }
 }

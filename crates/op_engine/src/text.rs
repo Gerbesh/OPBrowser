@@ -43,6 +43,9 @@ mod native {
 
     impl Font {
         fn new(size: i32, bold: bool) -> Option<Self> {
+            let guard = op_paint::GDI_TEXT_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             let dc = unsafe { CreateCompatibleDC(null_mut()) };
             if dc.is_null() {
                 return None;
@@ -92,12 +95,16 @@ mod native {
                 ascent: metrics.tmAscent,
                 descent: metrics.tmDescent,
             };
+            drop(guard);
             if measured == 0 { None } else { Some(result) }
         }
     }
 
     impl Drop for Font {
         fn drop(&mut self) {
+            let _guard = op_paint::GDI_TEXT_LOCK
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             unsafe {
                 SelectObject(self.dc, self.previous);
                 DeleteObject(self.font);
@@ -126,6 +133,9 @@ mod native {
                 .or_insert_with(|| Font::new(size, bold));
             if let Some(font) = font {
                 let utf16: Vec<u16> = text.encode_utf16().collect();
+                let _guard = op_paint::GDI_TEXT_LOCK
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 let mut extent: SIZE = unsafe { zeroed() };
                 if utf16.is_empty()
                     || unsafe {
@@ -162,6 +172,22 @@ mod native {
             assert!(unicode.width > 0 && unicode.ascent > 0 && unicode.descent >= 0);
             assert_eq!(measurer.fonts.len(), 1);
             assert!(measurer.fonts.values().all(Option::is_some));
+        }
+
+        #[test]
+        fn concurrent_font_realization_and_measurement_keep_layout_stable() {
+            let html = "<h1>OPBrowser</h1><p>Windows-1251: Ё ё №</p><p>Привет 😀</p>";
+            let expected = crate::Engine::new().render_html(html, 800, 600);
+            std::thread::scope(|scope| {
+                for _ in 0..8 {
+                    let expected = &expected;
+                    scope.spawn(move || {
+                        for _ in 0..16 {
+                            assert_eq!(crate::Engine::new().render_html(html, 800, 600), *expected);
+                        }
+                    });
+                }
+            });
         }
 
         #[test]

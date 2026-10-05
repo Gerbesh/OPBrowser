@@ -121,8 +121,7 @@ Limits: initial URL/encoding subsets; no CSS or scripts yet. Raster images are
 supported by the S2a slice below.
 Links open in the current window. Fragment links reload the document without anchor
 scrolling; HTML base elements, target/download behavior, other legacy encodings and full
-WHATWG URL processing remain future work. Resizing moves controls but text reflow
-occurs on next navigation.
+WHATWG URL processing remain future work. Resize reflow is covered by S2b below.
 
 ## S2a - Image subresource to pixels and link behavior
 
@@ -159,6 +158,39 @@ and href-run segmentation as painting; original layout chooses line breaks.
 Full CSS inline formatting, shaping/bidi/grapheme line breaking, progressive
 results, GIF animation, srcset/picture, EXIF orientation and color management
 are future work. See wiki/Inline-Layout.md for the supported subset.
+
+## S2b - Window resize to retained-page reflow and link behavior
+
+Status: COMPLETE at initial M1 level.
+
+```text
+WM_SIZE -> toolbar layout / 120 ms debounce -> NavigationEvent::Resize
+  -> op_browser command with latest viewport -> worker-owned Engine::reflow
+  -> retained PreparedDocument DOM + Arc image resources (no network/file access)
+  -> measured original layout -> new DisplayList + requested viewport dimensions
+  -> UI checks current viewport, discards stale geometry and requests newest size
+  -> present_reflow / preserve address edit / clamp scroll / rebuild link regions
+  -> WM_PAINT -> native hyperlink click -> S2 navigation
+```
+
+The startup page also retains its DOM without a history entry. Successful
+navigation/back/forward/reload replaces the single active snapshot; failed loading
+keeps it. Reflow does not mutate history or the effective document base. Back and
+reload still fetch their historical source; this is not a back/forward page cache.
+Original decoded HTML is dropped after parsing; retained DOM strings have their
+own memory cost. Image pixels are Arc-shared with paint commands rather than copied.
+
+Verification deletes loaded HTML/image files before narrowing/restoring the page,
+asserts identical restored painting and shared image allocation, and checks failed
+reload/navigation rollback and start/back/forward/reload snapshots. Native tests
+check debounce, scroll preservation/clamping, address edits and stale hit cleanup.
+`--resize-smoke-test` resizes the real window both while idle and while an older
+reflow is in flight, verifies final 320-pixel wrapping/raster paint, then clicks
+the image link and paints its destination. It has a ten-second watchdog and runs
+offline in CI. Concurrent font regression tests exercise the shared GDI text gate.
+
+Limits: full relayout after a 120 ms pause, no incremental DOM invalidation, semantic
+scroll anchoring or history page cache. Current single-window ownership still applies.
 
 ## S3 - CSS-styled document
 

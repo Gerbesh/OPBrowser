@@ -48,6 +48,13 @@ Windows engine tests verify positions against real GDI extents and source-order
 painting. The font adapter reuses windows-sys; no additional package install is
 needed. See [Inline Layout](Inline-Layout.md).
 
+`cargo run -p op_browser -- --resize-smoke-test` exercises real window resizing,
+including a size change while reflow is in flight, final wrapping/image paint and
+a native click after the geometry update. It is offline and bounded by a watchdog.
+Engine tests remove loaded files before reflow, verify Arc reuse/history rollback,
+and stress concurrent font realization/measurement. Native tests cover debounce,
+scroll clamps, address edits and stale hit regions. See [Page Reflow](Page-Reflow.md).
+
 ## Current GitHub Actions status
 
 The Windows CI workflow is committed and GitHub discovers it correctly, but remote

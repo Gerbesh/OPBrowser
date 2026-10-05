@@ -57,6 +57,8 @@ You can also start `target\release\op_browser.exe`, paste `https://example.com`
 into the address bar, and press Enter or Go. Ctrl+L selects the address, F5 reloads,
 Back/Forward traverse history, and the mouse wheel scrolls. Loads run on a worker
 thread; errors appear in the status line and preserve the previous page/history.
+Resizing the window rewraps the current page from retained DOM/image data without
+refetching it. See [page reflow](wiki/Page-Reflow.md) for behavior and verification.
 The start page also has an Example Domain link. Links are blue/underlined with a
 hand cursor; clicking uses the same loading/history path. The navigation example
 demonstrates a relative link to a second local page.

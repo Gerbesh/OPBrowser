@@ -27,6 +27,8 @@ struct LoadResult {
     back: bool,
     forward: bool,
     reload: bool,
+    viewport: (i32, i32),
+    reflow: bool,
 }
 
 fn main() {
@@ -35,17 +37,21 @@ fn main() {
     let smoke = args.iter().any(|argument| argument == "--smoke-test");
     let link_smoke = args.iter().any(|argument| argument == "--link-smoke-test");
     let image_smoke = args.iter().any(|argument| argument == "--image-smoke-test");
+    let resize_smoke = args
+        .iter()
+        .any(|argument| argument == "--resize-smoke-test");
     let navigation_smoke = args
         .iter()
         .any(|argument| argument == "--navigation-smoke-test");
     let mut engine = Engine::new();
     engine.start();
-    let display_list = engine.render_html(START_PAGE, 1200, 700);
+    let display_list = engine.set_html_page(START_PAGE, 1200, 700);
     let window = NativeBrowserWindow::create("OPBrowser", display_list).unwrap_or_else(|error| {
         eprintln!("OPBrowser startup failed: {error}");
         std::process::exit(1);
     });
     let (width, height) = window.viewport_size();
+    window.present_reflow(engine.reflow(width, height).unwrap().display_list);
 
     if smoke {
         if let Some(source) = source {
@@ -79,6 +85,7 @@ fn main() {
                 width,
                 height,
             } = command;
+            let reflow = event == NavigationEvent::Resize;
             let page = match event {
                 NavigationEvent::Navigate(source) => {
                     engine.navigate(&source, width, height).map(Some)
@@ -89,6 +96,7 @@ fn main() {
                 NavigationEvent::Back => engine.go_back(width, height),
                 NavigationEvent::Forward => engine.go_forward(width, height),
                 NavigationEvent::Reload => engine.reload(width, height),
+                NavigationEvent::Resize => Ok(engine.reflow(width, height)),
                 NavigationEvent::Poll => continue,
             }
             .map_err(|error| error.to_string());
@@ -99,6 +107,8 @@ fn main() {
                     back: history.can_go_back(),
                     forward: history.can_go_forward(),
                     reload: history.current().is_some(),
+                    viewport: (width, height),
+                    reflow,
                 })
                 .is_err()
             {
@@ -110,6 +120,8 @@ fn main() {
     // Both CLI sources and the interactive smoke enter through the native Enter path.
     if let Some(source) = source {
         window.submit_address(source);
+    } else if resize_smoke {
+        window.submit_address("examples/navigation/resize.html");
     } else if image_smoke {
         window.submit_address("examples/images/index.html");
     } else if link_smoke {
@@ -124,6 +136,22 @@ fn main() {
     let mut reload = false;
     let mut smoke_exit = 0;
     let mut link_smoke_clicked = false;
+    let mut awaiting_navigation = false;
+    let mut last_error = None;
+    let mut resize_phase = 0;
+    let mut wide_text_count = 0;
+    let mut presented_viewport = (width, height);
+    let (smoke_done, smoke_watch) = mpsc::channel::<()>();
+    if resize_smoke {
+        std::thread::spawn(move || {
+            if smoke_watch.recv_timeout(std::time::Duration::from_secs(10))
+                == Err(mpsc::RecvTimeoutError::Timeout)
+            {
+                eprintln!("OPBrowser resize smoke timed out");
+                std::process::exit(4);
+            }
+        });
+    }
     let exit_code = window.run_message_loop(|event| {
         if event == NavigationEvent::Poll {
             match results.try_recv() {
@@ -133,47 +161,96 @@ fn main() {
                     forward = result.forward;
                     reload = result.reload;
                     let mut page_loaded = false;
+                    let stale_size = result.viewport != window.viewport_size();
                     match result.page {
                         Ok(Some(page)) => {
-                            println!(
-                                "Loaded {} ({}, {} paint commands)",
-                                page.address,
-                                page.mime_type,
-                                page.display_list.commands.len()
-                            );
-                            window.present(&page.address, page.display_list);
-                            window.set_status("Ready");
-                            page_loaded = true;
-                            if (navigation_smoke || link_smoke || image_smoke)
-                                && !window.painted_once()
-                            {
-                                smoke_exit = 2;
+                            awaiting_navigation |= !result.reflow;
+                            if !result.reflow {
+                                last_error = None;
                             }
-                            if image_smoke && window.painted_image_count() == 0 {
-                                eprintln!("OPBrowser image smoke failed: no raster image painted");
-                                smoke_exit = 2;
+                            if !stale_size {
+                                println!(
+                                    "{} {} ({}, {} paint commands)",
+                                    if result.reflow { "Reflowed" } else { "Loaded" },
+                                    page.address,
+                                    page.mime_type,
+                                    page.display_list.commands.len()
+                                );
+                                let text_count = page.display_list.commands.iter()
+                                    .filter(|command| matches!(command, op_paint::PaintCommand::Text { .. }))
+                                    .count();
+                                if resize_smoke && resize_phase == 0 {
+                                    wide_text_count = text_count;
+                                }
+                                if resize_smoke && resize_phase == 1
+                                    && (result.viewport.0 != 320 || text_count <= wide_text_count)
+                                {
+                                    eprintln!("OPBrowser resize smoke failed: latest width did not rewrap text");
+                                    smoke_exit = 2;
+                                }
+                                if awaiting_navigation {
+                                    window.present(&page.address, page.display_list);
+                                    awaiting_navigation = false;
+                                } else {
+                                    window.present_reflow(page.display_list);
+                                }
+                                presented_viewport = result.viewport;
+                                window.set_status(last_error.as_deref().unwrap_or("Ready"));
+                                page_loaded = true;
+                                if (navigation_smoke || link_smoke || image_smoke || resize_smoke)
+                                    && !window.painted_once()
+                                {
+                                    smoke_exit = 2;
+                                }
+                                if (image_smoke || (resize_smoke && resize_phase < 2))
+                                    && window.painted_image_count() == 0
+                                {
+                                    eprintln!("OPBrowser image smoke failed: no raster image painted");
+                                    smoke_exit = 2;
+                                }
                             }
                         }
-                        Ok(None) => window.set_status("Ready"),
+                        Ok(None) => window.set_status(last_error.as_deref().unwrap_or("Ready")),
                         Err(error) => {
                             eprintln!("OPBrowser document load failed: {error}");
-                            window.set_status(&format!("Load failed: {error}"));
-                            if navigation_smoke || link_smoke || image_smoke {
+                            last_error = Some(format!("Load failed: {error}"));
+                            window.set_status(last_error.as_deref().unwrap());
+                            if navigation_smoke || link_smoke || image_smoke || resize_smoke {
                                 smoke_exit = 3;
                             }
                         }
                     }
+                    if stale_size && smoke_exit == 0 {
+                        let (width, height) = window.viewport_size();
+                        busy = commands.send(LoadCommand {
+                            event: NavigationEvent::Resize,
+                            width,
+                            height,
+                        }).is_ok();
+                        window.set_navigation_state(back, forward, reload, busy);
+                        return;
+                    }
                     window.set_navigation_state(back, forward, reload, busy);
-                    if link_smoke && page_loaded && !link_smoke_clicked && smoke_exit == 0 {
+                    if resize_smoke && page_loaded && resize_phase == 0 && smoke_exit == 0 {
+                        resize_phase = 1;
+                        window.resize_viewport(640, 500);
+                        window.resize_viewport(480, 500);
+                        window.resize_viewport(800, 500);
+                    } else if (link_smoke || (resize_smoke && resize_phase == 1))
+                        && page_loaded && !link_smoke_clicked && smoke_exit == 0
+                    {
                         if window.click_first_link() {
                             link_smoke_clicked = true;
+                            if resize_smoke {
+                                resize_phase = 2;
+                            }
                         } else {
                             eprintln!("OPBrowser link smoke failed: no visible clickable link");
                             smoke_exit = 2;
                             window.close();
                         }
-                    } else if navigation_smoke || link_smoke || image_smoke {
-                        if link_smoke && page_loaded && !back {
+                    } else if navigation_smoke || link_smoke || image_smoke || resize_smoke {
+                        if (link_smoke || resize_smoke) && page_loaded && !back {
                             smoke_exit = 2;
                         }
                         window.close();
@@ -184,7 +261,7 @@ fn main() {
                     busy = false;
                     window.set_status("Navigation worker stopped");
                     window.set_navigation_state(back, forward, reload, busy);
-                    if navigation_smoke || link_smoke || image_smoke {
+                    if navigation_smoke || link_smoke || image_smoke || resize_smoke {
                         smoke_exit = 3;
                         window.close();
                     }
@@ -192,6 +269,10 @@ fn main() {
             }
         } else if !busy {
             let (width, height) = window.viewport_size();
+            if event == NavigationEvent::Resize && (width, height) == presented_viewport {
+                return;
+            }
+            let reflow = event == NavigationEvent::Resize;
             if commands
                 .send(LoadCommand {
                     event,
@@ -201,11 +282,17 @@ fn main() {
                 .is_ok()
             {
                 busy = true;
-                window.set_status("Loading...");
+                window.set_status(if reflow { "Layout..." } else { "Loading..." });
                 window.set_navigation_state(back, forward, reload, busy);
+                if resize_smoke && resize_phase == 1 && reflow && width == 800 {
+                    // Change size while the worker owns an older viewport request.
+                    window.resize_viewport(480, 500);
+                    window.resize_viewport(320, 500);
+                }
             }
         }
     });
+    drop(smoke_done);
     drop(commands);
     std::process::exit(if smoke_exit != 0 {
         smoke_exit

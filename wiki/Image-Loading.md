@@ -45,6 +45,8 @@ initialization. Only owned pixels cross the worker/UI channel.
   codec work. Images load serially before the worker publishes the page.
 
 Navigation/reload builds a fresh per-page cache; there is no persistent image cache.
+The active page retains its successful per-node Arc resources for
+[Page Reflow](Page-Reflow.md); resizing performs no image requests or decoding.
 Old/new display lists can coexist while the worker prepares a replacement, so the
 page budget is not a total-process memory limit. GDI temporarily copies one source
 raster into a DIB for each visible paint; codec/OS working memory is separate from

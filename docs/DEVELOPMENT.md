@@ -170,6 +170,25 @@ platforms and standalone layout helpers use approximate metrics. This reuses the
 existing windows-sys binding and adds no dependency packages. See
 [Inline Layout](../wiki/Inline-Layout.md) for the current limitations.
 
+## Resize reflow
+
+    cargo run -p op_browser -- examples/navigation/resize.html
+    cargo run -p op_browser -- --resize-smoke-test
+
+The offline resize smoke changes the real client size, changes it again while the
+worker has an older request, verifies final wrapping/image paint and clicks the
+reflowed image link. A watchdog prevents a broken resize path from hanging CI.
+Engine regression tests remove source files before reflow and verify shared pixels,
+history/base preservation and failed-load rollback. Native tests verify debounce,
+scroll bounds and address-edit/hit-region preservation. See
+[Page Reflow](../wiki/Page-Reflow.md) for ownership and memory costs.
+
+The Windows metric adapter and painter share a short GDI text mutex. Parallel tests
+exposed transient implausible extents on this installation; synchronized font
+creation/extents/drawing/cleanup removes the observed instability. The OS cause is
+not established. Concurrent layout tests compare 128 renders against a baseline.
+No networking or original layout algorithm runs under the gate.
+
 ## Dependency rule
 
 Do not add a browser engine, rendering engine, or ready-made JavaScript engine as a

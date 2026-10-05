@@ -82,7 +82,9 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE initial mixed text/image lines, measured font extents, baseline alignment and wrapping.
 - DONE inline sibling grouping around blocks, HTML whitespace/NBSP and explicit br breaks.
 - NEXT progressive image loading, animation and additional formats.
-- NEXT richer CSS block/inline layout, shaping and resize reflow.
+- DONE resize reflow from retained DOM/images without refetch or history mutation.
+- DONE debounced resize input, stale-width result suppression, scroll/link-region updates.
+- NEXT richer CSS block/inline layout and shaping.
 
 Exit condition: OPBrowser renders a non-trivial local HTML document using only its
 own HTML/DOM/layout/paint pipeline. Achieved at the initial M1 level. The current

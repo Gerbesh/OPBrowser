@@ -58,8 +58,13 @@ a click through to the linked destination.
 This is an initial left-to-right subset with one font style per block. CSS parsing,
 inline style changes, margin collapsing, advanced shaping/font fallback, bidi,
 grapheme-aware or full Unicode line breaking, preformatted whitespace modes,
-floats/tables/flex/grid and resize reflow remain future work. These tests do not
+floats/tables/flex/grid remain future work. These tests do not
 claim complete CSS conformance.
+
+[Page Reflow](Page-Reflow.md) now rebuilds these lines on window resize using the
+retained DOM and shared image pixels. Engine and painter synchronize Windows font
+operations with `op_paint::GDI_TEXT_LOCK`; concurrent regression tests verify stable
+extents. Layout and network work remain outside the gate.
 
 Primary references: [Microsoft GDI text extents](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-gettextextentpoint32w),
 [CSS2 inline formatting](https://www.w3.org/TR/CSS2/visuren.html#inline-formatting) and

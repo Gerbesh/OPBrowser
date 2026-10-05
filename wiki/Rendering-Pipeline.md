@@ -83,6 +83,9 @@ draws only visible images with AlphaBlend; the source bitmap/DC are released aft
 drawing. Clickable rectangles use the same document-coordinate hit regions.
 See [Image Loading](Image-Loading.md) for the complete resource-to-pixels path.
 See [Inline Layout](Inline-Layout.md) for font measurement, line building and limits.
+Successful navigation retains the DOM and shared images for
+[Page Reflow](Page-Reflow.md). WM_SIZE triggers a debounced worker layout rebuild;
+only results matching the current viewport reach present_reflow and native paint.
 
 This is deliberately small. It exists to prove subsystem boundaries and the complete
 path to pixels before expanding CSS/layout complexity.

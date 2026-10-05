@@ -6,6 +6,10 @@ use std::sync::Arc;
 /// Shared by the worker's font extent adapter and native painter.
 pub const TEXT_FONT_FAMILY: &str = "Segoe UI";
 
+/// Serialize GDI font realization, extents and cleanup across worker/UI threads.
+#[cfg(windows)]
+pub static GDI_TEXT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
     pub r: u8,

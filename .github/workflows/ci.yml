@@ -59,3 +59,6 @@ jobs:
 
       - name: Mixed inline image hyperlink smoke test
         run: cargo run -p op_browser -- --link-smoke-test examples/images/inline.html
+
+      - name: Native resize reflow and hyperlink smoke test
+        run: cargo run -p op_browser -- --resize-smoke-test

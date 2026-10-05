@@ -277,3 +277,31 @@ This file is append-only project history.
   paint/mixed-image-link/existing-image-link/Windows-1251-link native smokes,
   release build and release mixed-image paint/link smokes. Release EXE: 398,848
   bytes, an increase of 9,728 from 389,120; dependency packages are unchanged.
+
+## 2026-10-05 - Retained-page resize reflow
+
+- Added a single active PreparedDocument with DOM, effective address/MIME and shared
+  image resources. Reflow rebuilds layout/paint without fetching, decoding or
+  changing history. Successful navigation/back/forward/reload replaces the snapshot;
+  failed loading preserves it. The startup page retains DOM without a history entry.
+- Added WM_SIZE debounce, worker reflow commands and viewport-tagged results.
+  Stale-width geometry is discarded and the latest size is requested after busy
+  work. Reflow presentation preserves address edits, clamps scroll and rebuilds
+  measured text/image hit regions; navigation still resets scroll normally.
+- Added a resize example and bounded offline native smoke that changes width during
+  an older in-flight reflow, checks final wrapping/raster paint and clicks an image
+  link. Added source-deletion/Arc-reuse/history tests and extended native tests for
+  resize debounce, scroll preservation/clamping and stale hit regions.
+- Parallel checks exposed transient implausible GDI widths for short words on this
+  installation. A shared per-operation GDI font gate removes the observed fault;
+  OS cause is not established. A 128-render concurrent regression checks stability.
+- The current DOM now remains alive beyond loading; image pixels stay Arc-shared.
+  This is not a history page cache, incremental layout or semantic scroll anchoring.
+  No dependency packages were added; op_browser adds an internal op_paint dependency
+  for smoke geometry assertions.
+- Final verification passed: rustfmt check, warning-free workspace Clippy, all 80
+  workspace tests, generated-table freshness, startup/address/resize/mixed-image
+  paint/mixed-image-link/Windows-1251-link native smokes, release build and release
+  resize/image paint smokes. Release EXE: 417,792 bytes, an increase of 18,944 from
+  398,848; dependency packages are unchanged. The new resize smoke also verifies
+  an actual hyperlink destination after the geometry update.
