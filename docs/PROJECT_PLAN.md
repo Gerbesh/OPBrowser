@@ -79,14 +79,16 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE basic PNG/JPEG/GIF/BMP image subresources from HTTP(S), local files and data URLs.
 - DONE bounded worker loading, per-page reuse, alt fallback, dimensions and alpha painting.
 - DONE clickable image links with scroll-aware native hit regions and image smoke tests.
-- NEXT image inline formatting, progressive loading, animation and additional formats.
-- NEXT richer block/inline layout behavior.
+- DONE initial mixed text/image lines, measured font extents, baseline alignment and wrapping.
+- DONE inline sibling grouping around blocks, HTML whitespace/NBSP and explicit br breaks.
+- NEXT progressive image loading, animation and additional formats.
+- NEXT richer CSS block/inline layout, shaping and resize reflow.
 
 Exit condition: OPBrowser renders a non-trivial local HTML document using only its
 own HTML/DOM/layout/paint pipeline. Achieved at the initial M1 level. The current
 iteration also opens external HTML sites, including declared Windows-1251 pages,
-through the address bar and renders initial raster images; full CSS,
-image inline formatting/animation, scripting and modern-site compatibility remain later milestones.
+through the address bar and renders raster images beside measured text; full CSS,
+image animation, scripting and modern-site compatibility remain later milestones.
 
 ## M2 - CSS foundation
 
@@ -96,7 +98,7 @@ image inline formatting/animation, scripting and modern-site compatibility remai
 - LATER computed values.
 - LATER box model.
 - LATER normal flow block layout.
-- LATER inline formatting and line breaking.
+- LATER full CSS inline formatting and Unicode line breaking (initial M1 subset exists).
 - LATER fonts/text shaping integration.
 - LATER progressively expand CSS WPT coverage.
 

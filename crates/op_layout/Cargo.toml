@@ -9,3 +9,6 @@ authors.workspace = true
 [dependencies]
 op_dom = { path = "../op_dom" }
 op_image = { path = "../op_image" }
+
+[dev-dependencies]
+op_html = { path = "../op_html" }

@@ -74,8 +74,10 @@ Cookies and automatic authentication are disabled. No requests run until you sup
 a document address. See [source loading](wiki/Document-Source-Loading.md) for limits.
 Image subrequests follow that document load on the same worker. Windows WIC performs
 only raster decoding; OPBrowser owns resource policy, layout and painting. Images
-currently occupy their own lines and GIF shows the first frame. See
-[image loading](wiki/Image-Loading.md) for limits and the local example.
+share measured lines with text; GIF shows the first frame. Line layout supports
+baseline alignment, wrapping, `<br>` and HTML whitespace. See
+[inline layout](wiki/Inline-Layout.md) and [image loading](wiki/Image-Loading.md)
+for limits and local examples.
 
 See:
 

@@ -12,3 +12,6 @@ op_paint = { path = "../op_paint" }
 op_js = { path = "../op_js" }
 op_net = { path = "../op_net" }
 op_image = { path = "../op_image" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi"] }

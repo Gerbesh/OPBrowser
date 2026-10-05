@@ -1,9 +1,9 @@
 use op_html::parse_document;
-use op_layout::layout_document;
-use op_layout::layout_document_with_images;
+use op_layout::{ImageResources, layout_document_with_metrics};
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link};
 use op_paint::{DisplayList, build_display_list};
 mod images;
+mod text;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EngineState {
@@ -123,7 +123,12 @@ impl Engine {
         viewport_height: i32,
     ) -> DisplayList {
         let document = parse_document(html);
-        let layout = layout_document(&document, viewport_width);
+        let layout = layout_document_with_metrics(
+            &document,
+            viewport_width,
+            &ImageResources::new(),
+            &mut text::Measurer::new(),
+        );
         build_display_list(&layout, viewport_height)
     }
 
@@ -215,7 +220,12 @@ impl Engine {
     ) -> RenderedPage {
         let document = parse_document(&loaded.text);
         let images = images::load(&self.network, &document, &loaded.address);
-        let layout = layout_document_with_images(&document, viewport_width, &images);
+        let layout = layout_document_with_metrics(
+            &document,
+            viewport_width,
+            &images,
+            &mut text::Measurer::new(),
+        );
         let display_list = build_display_list(&layout, viewport_height);
 
         RenderedPage {

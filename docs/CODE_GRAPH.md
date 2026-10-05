@@ -22,6 +22,7 @@ graph TD
     T[Windows WinHTTP<br/>HTTP framing + TLS + proxy]
     I[op_image<br/>bounded raster buffers + codec adapter]
     K[Windows WIC<br/>Microsoft raster codecs only]
+    G[Windows GDI<br/>font extents + pixel output]
 
     B --> E
     B --> W
@@ -33,6 +34,7 @@ graph TD
     E --> J
     E --> N
     E --> I
+    E --> G
     N --> T
     H --> D
     L --> D
@@ -41,6 +43,7 @@ graph TD
     P --> I
     I --> K
     W --> P
+    W --> G
 ```
 
 No browser engine or ready-made JavaScript engine is below this graph.
@@ -153,7 +156,23 @@ classDiagram
         value_length
         legacy
     }
-    class LayoutTree
+    class LayoutTree {
+        text_boxes
+        image_boxes
+        order
+    }
+    class LayoutItem {
+        Text_index
+        Image_index
+    }
+    class TextMeasurer {
+        +measure(text, size, weight) TextMetrics
+    }
+    class TextMetrics {
+        width
+        ascent
+        descent
+    }
     class LinkSpan {
         start_byte
         end_byte
@@ -189,10 +208,14 @@ classDiagram
     Tokenizer --> Characters : consume references
     Characters --> NamedEntry : bounded prefix lookup
     Tokenizer --> Document : tree builder
-    Document --> LayoutTree : layout_document
+    Document --> LayoutTree : flow grouping / inline lines
+    Engine --> TextMeasurer : worker-local GDI adapter
+    TextMeasurer --> TextMetrics : whole href-run extents
+    LayoutTree --> TextMeasurer : injected metric interface
+    LayoutTree --> LayoutItem : ordered text / image indexes
     LayoutTree --> DisplayList : build_display_list
     Engine --> RasterImage : visible img resources / bounded worker decode
-    LayoutTree --> ImageBox : separate-line image placement
+    LayoutTree --> ImageBox : atomic inline box / shared baseline
     ImageBox --> RasterImage : shared Arc pixels
     DisplayList --> RasterImage : Image paint commands
     NativeBrowserWindow --> RasterImage : transient DIB / AlphaBlend

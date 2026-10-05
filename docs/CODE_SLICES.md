@@ -134,8 +134,10 @@ loaded HTML -> DOM img src (character references already decoded)
   -> op_net::images relative-source policy / bounded binary HTTP, file or data loading
   -> op_image Microsoft WIC codec / first frame / preallocation pixel limits
   -> Arc<RasterImage> premultiplied BGRA shared across repeated sources
-  -> op_layout ImageBox / dimensions / viewport fitting / inherited anchor href
-  -> op_paint Image command
+  -> op_engine::text GDI font metrics / portable approximate fallback
+  -> op_layout::flow inline grouping around block children
+  -> op_layout::inline measured TextBox + ImageBox lines / wrapping / shared baseline
+  -> LayoutTree::order / op_paint source-ordered Text and Image commands
   -> op_platform_win transient DIB + GDI AlphaBlend -> pixels
   -> image rectangle / scroll-aware hit test / click -> S2 navigation
 ```
@@ -149,9 +151,14 @@ Windows UI operations on the UI thread. See wiki/Image-Loading.md for exact limi
 
 Verified with color/alpha GDI pixel assertions, all four codec fixtures, loopback
 redirect/cache/error tests, data image/node/pixel budgets and native image paint/link
-smokes. Initial images occupy separate lines; full inline replaced-element layout,
-progressive results, GIF animation, srcset/picture, EXIF orientation and color
-management are future work.
+smokes, plus mixed-line metrics, baseline/wrapping, Unicode href byte ranges,
+block boundaries, repeated br, HTML whitespace/NBSP and bounded long-word probing.
+`examples/images/inline.html` exercises text/image order and linked-image clicks
+through native paint/link smokes in CI. Font extents use the same Segoe UI settings
+and href-run segmentation as painting; original layout chooses line breaks.
+Full CSS inline formatting, shaping/bidi/grapheme line breaking, progressive
+results, GIF animation, srcset/picture, EXIF orientation and color management
+are future work. See wiki/Inline-Layout.md for the supported subset.
 
 ## S3 - CSS-styled document
 

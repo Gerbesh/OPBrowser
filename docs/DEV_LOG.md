@@ -254,3 +254,26 @@ This file is append-only project history.
   smokes. Release EXE: 389,120 bytes, an increase of 35,840 from 353,280 bytes.
   The page's owned decoded buffers are capped at 32 MiB; this is not a total-process
   or OS-codec working-memory cap.
+
+## 2026-10-05 - Measured mixed text and image lines
+
+- Replaced separate-line image placement with original mixed inline line building,
+  baseline alignment, atomic image wrapping and line heights that contain tall images.
+- Added TextMeasurer/TextMetrics and a worker-local Windows GDI font/DC cache using
+  the same Segoe UI settings as painting. Portable helpers and GDI errors retain an
+  approximate fallback. Existing windows-sys is reused; no package dependencies added.
+- Split layout into flow grouping and inline line construction. Adjacent inline
+  siblings share anonymous groups around block children; HTML spaces collapse,
+  NBSP stays intact, repeated br produces blank lines and alt labels stay inline.
+- Preserved UTF-8 href ranges through wrapping and added LayoutTree::order so text
+  and image paint commands follow placement/source order. Emergency long-word
+  splitting probes bounded prefixes instead of repeatedly measuring giant suffixes.
+- Added deterministic geometry/whitespace/Unicode/long-word tests, real GDI extent
+  and cache tests, a mixed-line example and native image paint/link CI smokes.
+- Full CSS inline formatting, shaping/bidi/grapheme breaking and resize reflow
+  remain planned; the new formatting behavior is explicitly an initial M1 subset.
+- Final verification passed: rustfmt check, generated-table freshness check,
+  warning-free workspace Clippy, all 77 workspace tests, startup/address/mixed-image
+  paint/mixed-image-link/existing-image-link/Windows-1251-link native smokes,
+  release build and release mixed-image paint/link smokes. Release EXE: 398,848
+  bytes, an increase of 9,728 from 389,120; dependency packages are unchanged.

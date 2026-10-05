@@ -12,7 +12,8 @@ HTTP(S) URL / filesystem path / file: URL / data:text/html URL
   -> op_html::Tokenizer
   -> op_html::parse_document
   -> op_dom::Document
-  -> op_layout::layout_document
+  -> op_engine::text GDI TextMeasurer
+  -> op_layout::layout_document_with_metrics
   -> LayoutTree
   -> op_paint::build_display_list
   -> DisplayList
@@ -23,7 +24,7 @@ HTTP(S) URL / filesystem path / file: URL / data:text/html URL
 
 ## Why GDI is acceptable here
 
-GDI is only the temporary Windows pixel-output backend. It does not parse HTML, run
+GDI supplies font extents and the temporary Windows pixel-output backend. It does not parse HTML, run
 CSS, create layout, or decide what should be painted. Those decisions are owned by
 OPBrowser crates.
 
@@ -61,14 +62,15 @@ The M1 layout layer currently provides:
 
 - body-root selection;
 - hidden head/style/script content filtering;
-- basic h1/h2/h3/p defaults;
+- basic h1-h6/p/li defaults;
 - block traversal inside div/main/section and other structural containers;
-- approximate word wrapping;
-- vertical text flow;
-- platform-neutral text boxes.
-- UTF-8 href spans across nested inline labels, whitespace normalization and wrapping.
+- measured word wrapping on Windows, approximate portable fallback;
+- adjacent inline nodes grouped around block children;
+- platform-neutral text/image boxes in source-order paint sequence;
+- UTF-8 href spans across nested inline labels and wrapping;
+- HTML whitespace collapsing, preserved NBSP and explicit/repeated br breaks;
 - image boxes with intrinsic/HTML dimensions, viewport fitting and alpha pixels;
-- separate-line image placement, surrounding text order and alt fallback;
+- mixed text/image lines with shared baselines and inline alt fallback;
 - inherited anchor hrefs on image rectangles.
 
 Text paint commands carry LinkSpan byte ranges. The native painter draws linked
@@ -80,6 +82,7 @@ Image commands carry shared premultiplied BGRA pixels. A transient GDI surface
 draws only visible images with AlphaBlend; the source bitmap/DC are released after
 drawing. Clickable rectangles use the same document-coordinate hit regions.
 See [Image Loading](Image-Loading.md) for the complete resource-to-pixels path.
+See [Inline Layout](Inline-Layout.md) for font measurement, line building and limits.
 
 This is deliberately small. It exists to prove subsystem boundaries and the complete
 path to pixels before expanding CSS/layout complexity.

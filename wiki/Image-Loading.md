@@ -52,7 +52,8 @@ the owned buffer limits. No image timers or animation CPU run in the background.
 
 ## Layout, fallback and native drawing
 
-Images currently occupy separate lines inside normal vertical flow. Natural sizes
+Images share measured lines with text, align their bottom edge to the text baseline
+and wrap as atomic boxes. See [Inline Layout](Inline-Layout.md). Natural sizes
 are used unless supported integer width/height attributes override them. One
 dimension preserves aspect ratio; two dimensions may stretch. Oversized attribute
 values above 4096 are ignored; zero dimensions suppress drawing/fallback. Boxes
@@ -67,7 +68,7 @@ with per-pixel alpha, then restores/releases GDI objects. Fully clipped images a
 skipped. Image rectangles use the existing toolbar/scroll-aware click/cursor hit
 testing and clear when the display list is replaced.
 
-Full inline replaced-element layout, progressive loading, animation, srcset/picture,
+Full CSS replaced-element layout, progressive loading, animation, srcset/picture,
 CSS image sizing, SVG/WebP/AVIF, EXIF orientation and color management remain future work.
 
 ## Verification
@@ -75,6 +76,8 @@ CSS image sizing, SVG/WebP/AVIF, EXIF orientation and color management remain fu
     cargo run -p op_browser -- examples/images/index.html
     cargo run -p op_browser -- --image-smoke-test
     cargo run -p op_browser -- --link-smoke-test examples/images/index.html
+    cargo run -p op_browser -- --image-smoke-test examples/images/inline.html
+    cargo run -p op_browser -- --link-smoke-test examples/images/inline.html
 
 The fixtures contain original generated color pixels, not external assets. Native
 smokes require actual raster painting and a click on the image link. Unit/integration

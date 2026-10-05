@@ -41,6 +41,13 @@ and `--link-smoke-test examples/images/index.html` alongside existing page check
 Codec, loopback, resource-budget, dimension and actual GDI pixel tests cover the
 initial [Image Loading](Image-Loading.md) slice.
 
+CI also runs both image paint and image-link smokes against
+`examples/images/inline.html`. Injected metrics verify wrapping, baseline alignment,
+HTML whitespace/NBSP, br breaks, sibling/block grouping and Unicode link ranges.
+Windows engine tests verify positions against real GDI extents and source-order
+painting. The font adapter reuses windows-sys; no additional package install is
+needed. See [Inline Layout](Inline-Layout.md).
+
 ## Current GitHub Actions status
 
 The Windows CI workflow is committed and GitHub discovers it correctly, but remote

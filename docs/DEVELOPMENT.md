@@ -147,6 +147,9 @@ Image checks and example:
     cargo run -p op_browser -- examples/images/index.html
     cargo run -p op_browser -- --image-smoke-test
     cargo run -p op_browser -- --link-smoke-test examples/images/index.html
+    cargo run -p op_browser -- examples/images/inline.html
+    cargo run -p op_browser -- --image-smoke-test examples/images/inline.html
+    cargo run -p op_browser -- --link-smoke-test examples/images/inline.html
 
 The image smoke requires a successful raster paint in WM_PAINT, not just window
 startup. Image-link smoke clicks the linked PNG and paints its destination.
@@ -158,6 +161,14 @@ The windows 0.62.2 binding is limited to WIC and COM feature sets in op_image.
 Its 14 added packages include binding/core support and build-time procedural macros;
 the codec itself remains part of Windows. Image CPU/OS working memory are separate
 from OPBrowser's explicit raster/encoded budgets; keep these limits measurable.
+
+Mixed-line layout tests use injected deterministic text metrics. On Windows,
+op_engine::text measures Segoe UI with GDI and caches fonts/DCs for one render;
+objects are released before the page crosses the worker/UI boundary. Native metric
+tests check exact image positions/baselines and source-order paint commands. Other
+platforms and standalone layout helpers use approximate metrics. This reuses the
+existing windows-sys binding and adds no dependency packages. See
+[Inline Layout](../wiki/Inline-Layout.md) for the current limitations.
 
 ## Dependency rule
 

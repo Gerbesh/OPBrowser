@@ -1,7 +1,10 @@
 pub use op_image::RasterImage;
 pub use op_layout::LinkSpan;
-use op_layout::{FontWeight, LayoutTree};
+use op_layout::{FontWeight, LayoutItem, LayoutTree};
 use std::sync::Arc;
+
+/// Shared by the worker's font extent adapter and native painter.
+pub const TEXT_FONT_FAMILY: &str = "Segoe UI";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
@@ -64,7 +67,7 @@ pub struct DisplayList {
 }
 
 pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayList {
-    let mut commands = Vec::with_capacity(layout.text_boxes.len() + 1);
+    let mut commands = Vec::with_capacity(layout.text_boxes.len() + layout.image_boxes.len() + 1);
 
     commands.push(PaintCommand::FillRect {
         x: 0,
@@ -74,27 +77,36 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
         color: Color::WHITE,
     });
 
-    for text_box in &layout.text_boxes {
-        commands.push(PaintCommand::Text {
-            x: text_box.x,
-            y: text_box.y,
-            text: text_box.text.clone(),
-            font_size: text_box.font_size,
-            bold: text_box.weight == FontWeight::Bold,
-            color: Color::BLACK,
-            links: text_box.links.clone(),
-        });
-    }
-
-    for image_box in &layout.image_boxes {
-        commands.push(PaintCommand::Image {
-            x: image_box.x,
-            y: image_box.y,
-            width: image_box.width,
-            height: image_box.height,
-            image: image_box.image.clone(),
-            href: image_box.href.clone(),
-        });
+    for item in &layout.order {
+        match *item {
+            LayoutItem::Text(index) => {
+                let Some(text_box) = layout.text_boxes.get(index) else {
+                    continue;
+                };
+                commands.push(PaintCommand::Text {
+                    x: text_box.x,
+                    y: text_box.y,
+                    text: text_box.text.clone(),
+                    font_size: text_box.font_size,
+                    bold: text_box.weight == FontWeight::Bold,
+                    color: Color::BLACK,
+                    links: text_box.links.clone(),
+                });
+            }
+            LayoutItem::Image(index) => {
+                let Some(image_box) = layout.image_boxes.get(index) else {
+                    continue;
+                };
+                commands.push(PaintCommand::Image {
+                    x: image_box.x,
+                    y: image_box.y,
+                    width: image_box.width,
+                    height: image_box.height,
+                    image: image_box.image.clone(),
+                    href: image_box.href.clone(),
+                });
+            }
+        }
     }
 
     DisplayList { commands }
@@ -121,6 +133,7 @@ mod tests {
                 links: Vec::new(),
             }],
             image_boxes: vec![],
+            order: vec![LayoutItem::Text(0)],
         };
 
         let display_list = build_display_list(&layout, 600);

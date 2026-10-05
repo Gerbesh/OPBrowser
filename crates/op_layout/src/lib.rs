@@ -42,11 +42,18 @@ pub struct LinkSpan {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LayoutItem {
+    Text(usize),
+    Image(usize),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayoutTree {
     pub viewport_width: i32,
     pub content_height: i32,
     pub text_boxes: Vec<TextBox>,
     pub image_boxes: Vec<ImageBox>,
+    pub order: Vec<LayoutItem>,
 }
 
 pub fn layout_document(document: &Document, viewport_width: i32) -> LayoutTree {
@@ -58,393 +65,48 @@ pub fn layout_document_with_images(
     viewport_width: i32,
     images: &ImageResources,
 ) -> LayoutTree {
-    let viewport_width = viewport_width.max(240);
-    let margin_x = 32;
-    let content_width = (viewport_width - margin_x * 2).max(160);
-
-    let root =
-        find_first_element(document, document.root(), "body").unwrap_or_else(|| document.root());
-
-    let mut context = LayoutContext {
+    layout_document_with_metrics(
         document,
-        x: margin_x,
-        width: content_width,
-        cursor_y: 28,
-        text_boxes: Vec::new(),
-        images,
-        image_boxes: Vec::new(),
-    };
-
-    for child in document.children(root) {
-        context.layout_top_level(*child);
-    }
-
-    LayoutTree {
         viewport_width,
-        content_height: context.cursor_y + 24,
-        text_boxes: context.text_boxes,
-        image_boxes: context.image_boxes,
-    }
-}
-
-struct LayoutContext<'a> {
-    document: &'a Document,
-    x: i32,
-    width: i32,
-    cursor_y: i32,
-    text_boxes: Vec<TextBox>,
-    images: &'a ImageResources,
-    image_boxes: Vec<ImageBox>,
-}
-
-impl<'a> LayoutContext<'a> {
-    fn layout_top_level(&mut self, node_id: NodeId) {
-        let Some(node) = self.document.node(node_id) else {
-            return;
-        };
-
-        match &node.kind {
-            NodeKind::Text(text) => {
-                let chars = text
-                    .chars()
-                    .map(|ch| InlineChar { ch, href: None })
-                    .collect();
-                self.emit_block(chars, style_for_tag(""));
-            }
-            NodeKind::Element(element) => {
-                if is_hidden_tag(&element.tag_name) {
-                    return;
-                }
-
-                // Real documents wrap headings/paragraphs in structural containers.
-                // Keep their block defaults instead of flattening an entire div to text.
-                if matches!(
-                    element.tag_name.as_str(),
-                    "html"
-                        | "body"
-                        | "div"
-                        | "main"
-                        | "article"
-                        | "section"
-                        | "nav"
-                        | "header"
-                        | "footer"
-                        | "aside"
-                        | "ul"
-                        | "ol"
-                        | "blockquote"
-                ) {
-                    for child in &node.children {
-                        self.layout_top_level(*child);
-                    }
-                    return;
-                }
-
-                let mut chars = Vec::new();
-                self.collect_inline(node_id, None, &mut chars, style_for_tag(&element.tag_name));
-                self.emit_block(chars, style_for_tag(&element.tag_name));
-            }
-            NodeKind::Document => {
-                for child in self.document.children(node_id) {
-                    self.layout_top_level(*child);
-                }
-            }
-        }
-    }
-
-    fn collect_inline(
-        &mut self,
-        node_id: NodeId,
-        href: Option<&'a str>,
-        chars: &mut Vec<InlineChar<'a>>,
-        style: TextStyle,
-    ) {
-        let Some(node) = self.document.node(node_id) else {
-            return;
-        };
-        match &node.kind {
-            NodeKind::Text(text) => chars.extend(text.chars().map(|ch| InlineChar { ch, href })),
-            NodeKind::Element(element) => {
-                if is_hidden_tag(&element.tag_name) {
-                    return;
-                }
-                let href = if element.tag_name == "a" {
-                    attribute(element, "href")
-                } else {
-                    href
-                };
-                if element.tag_name == "img" {
-                    if dimension(element, "width") == Some(0)
-                        || dimension(element, "height") == Some(0)
-                    {
-                        return;
-                    }
-                    if let Some(image) = self.images.get(&node_id).cloned() {
-                        let width = dimension(element, "width");
-                        let height = dimension(element, "height");
-                        if width == Some(0) || height == Some(0) {
-                            return;
-                        }
-                        self.emit_block(std::mem::take(chars), style);
-                        let mut width = width.unwrap_or_else(|| {
-                            height.map_or(image.width(), |h| {
-                                (h * image.width() / image.height()).max(1)
-                            })
-                        });
-                        let mut height = height
-                            .unwrap_or_else(|| (width * image.height() / image.width()).max(1));
-                        if width > self.width as u32 {
-                            height = ((u64::from(height) * self.width as u64 / u64::from(width))
-                                as u32)
-                                .max(1);
-                            width = self.width as u32;
-                        }
-                        if height > op_image::MAX_DIMENSION {
-                            width = ((u64::from(width) * u64::from(op_image::MAX_DIMENSION)
-                                / u64::from(height)) as u32)
-                                .max(1);
-                            height = op_image::MAX_DIMENSION;
-                        }
-                        self.image_boxes.push(ImageBox {
-                            x: self.x,
-                            y: self.cursor_y,
-                            width: width as i32,
-                            height: height as i32,
-                            image,
-                            href: href.map(str::to_owned),
-                        });
-                        self.cursor_y += height as i32 + 10;
-                    } else {
-                        chars.extend(
-                            attribute(element, "alt")
-                                .unwrap_or("[image]")
-                                .chars()
-                                .map(|ch| InlineChar { ch, href }),
-                        );
-                    }
-                    return;
-                }
-                if element.tag_name == "br" {
-                    chars.push(InlineChar { ch: ' ', href });
-                    return;
-                }
-                for child in &node.children {
-                    self.collect_inline(*child, href, chars, style);
-                }
-            }
-            NodeKind::Document => {
-                for child in &node.children {
-                    self.collect_inline(*child, href, chars, style);
-                }
-            }
-        }
-    }
-
-    fn emit_block(&mut self, chars: Vec<InlineChar<'_>>, style: TextStyle) {
-        let lines = wrap_inline_text(chars, self.width, style.font_size);
-        if lines.is_empty() {
-            return;
-        }
-        self.cursor_y += style.margin_top;
-        let line_height = ((style.font_size as f32) * 1.35).round() as i32;
-
-        for line in lines {
-            let mut text = String::new();
-            let mut links: Vec<LinkSpan> = Vec::new();
-            for character in line {
-                let start = text.len();
-                text.push(character.ch);
-                if let Some(href) = character.href {
-                    if let Some(last) = links.last_mut()
-                        && last.end == start
-                        && last.href == href
-                    {
-                        last.end = text.len();
-                    } else {
-                        links.push(LinkSpan {
-                            start,
-                            end: text.len(),
-                            href: href.to_owned(),
-                        });
-                    }
-                }
-            }
-            self.text_boxes.push(TextBox {
-                x: self.x,
-                y: self.cursor_y,
-                width: self.width,
-                height: line_height,
-                text,
-                font_size: style.font_size,
-                weight: style.weight,
-                links,
-            });
-            self.cursor_y += line_height;
-        }
-
-        self.cursor_y += style.margin_bottom;
-    }
-}
-
-fn attribute<'a>(element: &'a op_dom::ElementData, name: &str) -> Option<&'a str> {
-    element
-        .attributes
-        .iter()
-        .find(|a| a.name == name)
-        .map(|a| a.value.as_str())
-}
-
-fn dimension(element: &op_dom::ElementData, name: &str) -> Option<u32> {
-    attribute(element, name)?
-        .trim()
-        .parse::<u32>()
-        .ok()
-        .filter(|n| *n <= op_image::MAX_DIMENSION)
-}
-
-#[derive(Debug, Clone, Copy)]
-struct TextStyle {
-    font_size: i32,
-    weight: FontWeight,
-    margin_top: i32,
-    margin_bottom: i32,
-}
-
-fn style_for_tag(tag_name: &str) -> TextStyle {
-    match tag_name {
-        "h1" => TextStyle {
-            font_size: 34,
-            weight: FontWeight::Bold,
-            margin_top: 8,
-            margin_bottom: 16,
-        },
-        "h2" => TextStyle {
-            font_size: 28,
-            weight: FontWeight::Bold,
-            margin_top: 8,
-            margin_bottom: 14,
-        },
-        "h3" => TextStyle {
-            font_size: 23,
-            weight: FontWeight::Bold,
-            margin_top: 6,
-            margin_bottom: 12,
-        },
-        "p" | "li" => TextStyle {
-            font_size: 18,
-            weight: FontWeight::Normal,
-            margin_top: 0,
-            margin_bottom: 12,
-        },
-        _ => TextStyle {
-            font_size: 18,
-            weight: FontWeight::Normal,
-            margin_top: 0,
-            margin_bottom: 10,
-        },
-    }
-}
-
-fn find_first_element(document: &Document, node_id: NodeId, tag_name: &str) -> Option<NodeId> {
-    if document
-        .element(node_id)
-        .is_some_and(|element| element.tag_name == tag_name)
-    {
-        return Some(node_id);
-    }
-
-    for child in document.children(node_id) {
-        if let Some(found) = find_first_element(document, *child, tag_name) {
-            return Some(found);
-        }
-    }
-
-    None
-}
-
-#[derive(Clone, Copy)]
-struct InlineChar<'a> {
-    ch: char,
-    href: Option<&'a str>,
-}
-
-fn is_hidden_tag(tag_name: &str) -> bool {
-    matches!(
-        tag_name,
-        "head" | "title" | "style" | "script" | "meta" | "link" | "template"
+        images,
+        &mut ApproximateTextMeasurer,
     )
 }
 
-fn wrap_inline_text(
-    chars: Vec<InlineChar<'_>>,
-    width: i32,
-    font_size: i32,
-) -> Vec<Vec<InlineChar<'_>>> {
-    let approximate_char_width = ((font_size as f32) * 0.55).max(1.0);
-    let max_chars = ((width as f32) / approximate_char_width).floor().max(1.0) as usize;
-
-    // Normalize in place instead of allocating a second per-character buffer.
-    let mut normalized = chars;
-    let mut previous_space = true;
-    normalized.retain_mut(|character| {
-        if character.ch.is_whitespace() {
-            if previous_space {
-                return false;
-            }
-            character.ch = ' ';
-            previous_space = true;
-        } else {
-            previous_space = false;
-        }
-        true
-    });
-    if normalized.last().is_some_and(|c| c.ch == ' ') {
-        normalized.pop();
-    }
-    let mut lines = Vec::new();
-    let mut current = Vec::new();
-    let mut index = 0;
-    while index < normalized.len() {
-        let space = if normalized[index].ch == ' ' {
-            let space = normalized[index];
-            index += 1;
-            Some(space)
-        } else {
-            None
-        };
-        let end = normalized[index..]
-            .iter()
-            .position(|c| c.ch == ' ')
-            .map_or(normalized.len(), |offset| index + offset);
-        let word = &normalized[index..end];
-        if current.len() + usize::from(!current.is_empty()) + word.len() > max_chars
-            && !current.is_empty()
-        {
-            lines.push(std::mem::take(&mut current));
-        }
-        if !current.is_empty()
-            && let Some(space) = space
-        {
-            current.push(space);
-        }
-        if word.len() <= max_chars {
-            current.extend_from_slice(word);
-        } else {
-            for chunk in word.chunks(max_chars) {
-                if chunk.len() == max_chars {
-                    lines.push(chunk.to_vec());
-                } else {
-                    current.extend_from_slice(chunk);
-                }
-            }
-        }
-        index = end;
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
+pub fn layout_document_with_metrics(
+    document: &Document,
+    viewport_width: i32,
+    images: &ImageResources,
+    measurer: &mut dyn TextMeasurer,
+) -> LayoutTree {
+    flow::layout(document, viewport_width, images, measurer)
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct TextMetrics {
+    pub width: i32,
+    pub ascent: i32,
+    pub descent: i32,
+}
+
+/// The layout algorithm owns wrapping and placement; this supplies only font extents.
+pub trait TextMeasurer {
+    fn measure(&mut self, text: &str, font_size: i32, weight: FontWeight) -> TextMetrics;
+}
+
+pub struct ApproximateTextMeasurer;
+impl TextMeasurer for ApproximateTextMeasurer {
+    fn measure(&mut self, text: &str, font_size: i32, _weight: FontWeight) -> TextMetrics {
+        TextMetrics {
+            width: ((text.chars().count() as f32) * font_size as f32 * 0.55).ceil() as i32,
+            ascent: font_size * 4 / 5,
+            descent: font_size - font_size * 4 / 5,
+        }
+    }
+}
+
+mod flow;
+mod inline;
 
 #[cfg(test)]
 mod tests {

@@ -67,7 +67,8 @@ local pages support relative filesystem links. Unsupported schemes show a load
 error and preserve the previous page. They never launch another application.
 
 PNG/JPEG/GIF/BMP images and image links now participate in the same worker/history
-path; see [Image Loading](Image-Loading.md) for bounds and initial separate-line layout.
+path; see [Image Loading](Image-Loading.md) for bounds and
+[Inline Layout](Inline-Layout.md) for mixed text/image lines.
 CSS and JavaScript remain future work. Fragment-only links reload without anchor
 scrolling; HTML base elements and target/download behavior remain future work.
 Resizing moves controls; content reflows on next navigation.

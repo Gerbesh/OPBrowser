@@ -584,7 +584,7 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
             color,
             links,
         } => {
-            let face = wide("Segoe UI");
+            let face = wide(op_paint::TEXT_FONT_FAMILY);
             let weight = if *bold { FW_BOLD } else { FW_NORMAL } as i32;
 
             let font = unsafe {

@@ -53,3 +53,9 @@ jobs:
 
       - name: Image hyperlink smoke test
         run: cargo run -p op_browser -- --link-smoke-test examples/images/index.html
+
+      - name: Mixed inline image paint smoke test
+        run: cargo run -p op_browser -- --image-smoke-test examples/images/inline.html
+
+      - name: Mixed inline image hyperlink smoke test
+        run: cargo run -p op_browser -- --link-smoke-test examples/images/inline.html

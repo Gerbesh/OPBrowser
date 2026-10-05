@@ -66,3 +66,11 @@ object crosses the worker/UI boundary. Arc pixels reach original ImageBox layout
 and Image paint commands; a transient GDI DIB/DC draws them with alpha.
 Image rectangles inherit anchor hrefs and use existing native hit testing.
 See [Image Loading](Image-Loading.md) for budgets, source policy and current limits.
+
+Layout now accepts a TextMeasurer interface. op_engine::text owns a per-render GDI
+font/DC cache on Windows and returns numeric TextMetrics; no OS handle crosses
+into layout or the UI result. op_layout::flow groups inline siblings around blocks,
+and op_layout::inline constructs measured lines with a shared text/image baseline.
+LayoutTree::order preserves TextBox/ImageBox source order in painting. Engine and
+native painter share op_paint::TEXT_FONT_FAMILY; portable layout uses approximate
+metrics. See [Inline Layout](Inline-Layout.md) for the supported formatting subset.

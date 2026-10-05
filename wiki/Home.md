@@ -11,6 +11,7 @@ and original ECMAScript engine.
 - [Document Source Loading](Document-Source-Loading.md)
 - [HTML Text Decoding](HTML-Text-Decoding.md)
 - [Image Loading](Image-Loading.md)
+- [Inline Layout](Inline-Layout.md)
 - [Navigation](Navigation.md)
 - [Development Workflow](Development-Workflow.md)
 - [Compatibility Strategy](Compatibility-Strategy.md)

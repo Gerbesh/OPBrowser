@@ -30,6 +30,7 @@ dependencies = [
  "op_layout",
  "op_net",
  "op_paint",
+ "windows-sys",
 ]
 
 [[package]]
@@ -55,6 +56,7 @@ name = "op_layout"
 version = "0.1.0"
 dependencies = [
  "op_dom",
+ "op_html",
  "op_image",
 ]
 
