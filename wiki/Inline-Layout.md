@@ -10,9 +10,10 @@ size/weight. `op_engine::text` implements it using GetTextExtentPoint32W and
 GetTextMetricsW on Windows. Each render caches selected Segoe UI fonts and scratch
 DCs by size/weight, then restores/releases them before returning the display list.
 Font creation matches the native painter and both use `op_paint::TEXT_FONT_FAMILY`.
-Measurements split at href boundaries because the painter also draws these runs
-separately. Whole-run extents preserve spacing that summing individual characters
-would lose. Portable layout helpers and failed GDI calls use approximate metrics.
+Measurements split when href or computed inline style changes because the painter may
+draw those runs separately. Whole-run extents preserve spacing that summing individual
+characters would lose. Mixed font-size/weight runs are measured independently, then
+aligned to one line baseline. Portable helpers and failed GDI calls use approximate metrics.
 
 GDI does not select line breaks or HTML flow. `op_layout::flow` chooses the body,
 filters hidden subtrees and groups consecutive inline siblings around block
@@ -25,7 +26,8 @@ emits this sequence instead of painting all text before all images.
 - Text, nested inline labels, images and failed-image alt labels share lines.
 - Images wrap as atomic boxes and align their bottom edge to the common baseline.
   Tall images expand the line ascent so subsequent lines do not overlap them.
-- Font ascent/descent and initial normal line spacing establish a line strut.
+- Font ascent/descent and the initial normal line spacing establish a line strut;
+  larger styled runs increase ascent/descent while smaller runs share the same baseline.
 - ASCII HTML spaces, tabs, LF, CR and form feed collapse to one space; leading and
   trailing collapsed spaces disappear. NBSP and other Unicode spaces stay intact.
 - `br` forces a line; repeated breaks produce empty lines with normal line height.
@@ -34,8 +36,10 @@ emits this sequence instead of painting all text before all images.
   close to the available width instead of every remaining long suffix.
 - UTF-8 href byte ranges are reconstructed for each wrapped text fragment; image
   rectangles retain inherited hrefs and use existing scroll-aware hit testing.
-- Headings h1-h6, paragraphs/li and structural block containers have initial
-  defaults. Consecutive inline nodes around blocks form anonymous line groups.
+- Computed display:none/block/inline participates in flow. Headings h1-h6,
+  paragraphs/li and structural containers still have temporary semantic spacing defaults.
+- Computed font-size, font-weight and text color can change inside one inline line.
+  Consecutive inline nodes around blocks form anonymous line groups.
 
 Image source policy, dimensions, viewport fitting and pixel budgets are described
 in [Image Loading](Image-Loading.md).
@@ -55,11 +59,11 @@ verify variable glyph widths, Unicode, font-cache reuse, exact GDI-based positio
 and Text/Image/Text display-list order. Native smokes verify raster painting and
 a click through to the linked destination.
 
-This is an initial left-to-right subset with one font style per block. CSS parsing,
-inline style changes, margin collapsing, advanced shaping/font fallback, bidi,
-grapheme-aware or full Unicode line breaking, preformatted whitespace modes,
-floats/tables/flex/grid remain future work. These tests do not
-claim complete CSS conformance.
+This is still an initial left-to-right subset. Mixed computed inline size/weight/color
+is supported, but margin collapsing, CSS line-height, font families/styles, advanced
+shaping/font fallback, bidi, grapheme-aware/full Unicode line breaking, preformatted
+whitespace modes, floats/tables/flex/grid remain future work. Hyperlink glyph color is
+still the native default blue. These tests do not claim complete CSS conformance.
 
 [Page Reflow](Page-Reflow.md) now rebuilds these lines on window resize using the
 retained DOM and shared image pixels. Engine and painter synchronize Windows font

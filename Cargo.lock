@@ -60,6 +60,7 @@ version = "0.1.0"
 name = "op_layout"
 version = "0.1.0"
 dependencies = [
+ "op_css",
  "op_dom",
  "op_html",
  "op_image",

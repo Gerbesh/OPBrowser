@@ -93,17 +93,23 @@ accepts digit-leading hash values required by hexadecimal colors.
 PreparedDocument retains both the author StyleCollection and ComputedStyleMap. Resize
 reflow therefore does not reparse, rematch or recascade CSS.
 
-## What is not connected yet
+## Rendering integration
 
-Layout and paint still use the M1 style heuristics directly, so author CSS does not yet
-change pixels. The next S3 slice is:
+ComputedStyleMap is now consumed by op_layout. display:none removes the subtree from
+layout, display:block creates a flow boundary, and display:inline stays in the current
+inline flow. font-size, font-weight and color are carried on inline character runs, so a
+span can change typography/color without forcing a new line. Runs with different font
+metrics share the same baseline.
 
-```text
-ComputedStyleMap
-  -> display/block/inline decisions
-  -> text size/weight/color
-  -> layout
-  -> paint
-```
+Text color reaches op_paint and the Win32 painter through TextBox/paint commands. Because
+background-color is not implemented yet, alpha text colors are currently composited over
+the white page background before GDI drawing. The existing hyperlink glyph/underline
+path still paints native link blue, so author color on links is an explicit temporary
+limitation rather than silently changing hit-testing representation.
 
-Linked stylesheets, broader values/properties and the box model remain later work.
+The local demonstration page is `examples/css/index.html`, and the built-in start page
+also uses the supported CSS subset so a release build shows the feature immediately.
+
+The next S3 work is linked stylesheet loading through op_net and then the first box-model
+properties (background/border, margin and padding). Broader selectors, values, at-rules
+and full CSS conformance remain later work.

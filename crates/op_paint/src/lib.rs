@@ -1,6 +1,6 @@
 pub use op_image::RasterImage;
 pub use op_layout::LinkSpan;
-use op_layout::{FontWeight, LayoutItem, LayoutTree};
+use op_layout::{FontWeight, LayoutItem, LayoutTree, TextColor};
 use std::sync::Arc;
 
 /// Shared by the worker's font extent adapter and native painter.
@@ -24,11 +24,7 @@ impl Color {
         b: 255,
     };
 
-    pub const BLACK: Self = Self {
-        r: 18,
-        g: 18,
-        b: 18,
-    };
+    pub const BLACK: Self = Self { r: 0, g: 0, b: 0 };
 
     pub const LINK: Self = Self {
         r: 0,
@@ -93,7 +89,7 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
                     text: text_box.text.clone(),
                     font_size: text_box.font_size,
                     bold: text_box.weight == FontWeight::Bold,
-                    color: Color::BLACK,
+                    color: composite_text_color(text_box.color),
                     links: text_box.links.clone(),
                 });
             }
@@ -116,10 +112,50 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
     DisplayList { commands }
 }
 
+fn composite_text_color(color: TextColor) -> Color {
+    fn channel(value: u8, alpha: u8) -> u8 {
+        let alpha = u16::from(alpha);
+        let value = u16::from(value);
+        ((value * alpha + 255 * (255 - alpha) + 127) / 255) as u8
+    }
+
+    Color {
+        r: channel(color.red, color.alpha),
+        g: channel(color.green, color.alpha),
+        b: channel(color.blue, color.alpha),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use op_layout::{FontWeight, LayoutTree, TextBox};
+
+    #[test]
+    fn composites_css_text_alpha_over_white_page_background() {
+        assert_eq!(
+            composite_text_color(TextColor {
+                red: 0,
+                green: 0,
+                blue: 0,
+                alpha: 0,
+            }),
+            Color::WHITE
+        );
+        assert_eq!(
+            composite_text_color(TextColor {
+                red: 255,
+                green: 0,
+                blue: 0,
+                alpha: 128,
+            }),
+            Color {
+                r: 255,
+                g: 127,
+                b: 127,
+            }
+        );
+    }
 
     #[test]
     fn creates_background_and_text_commands() {
@@ -134,6 +170,12 @@ mod tests {
                 text: "OPBrowser".into(),
                 font_size: 24,
                 weight: FontWeight::Bold,
+                color: TextColor {
+                    red: 12,
+                    green: 34,
+                    blue: 56,
+                    alpha: 255,
+                },
                 links: Vec::new(),
             }],
             image_boxes: vec![],
@@ -160,7 +202,11 @@ mod tests {
                 text: "OPBrowser".into(),
                 font_size: 24,
                 bold: true,
-                color: Color::BLACK,
+                color: Color {
+                    r: 12,
+                    g: 34,
+                    b: 56,
+                },
                 links: Vec::new(),
             }
         );

@@ -93,8 +93,10 @@ stage produces a per-node ComputedStyleMap for display, color, font-size and fon
 PreparedDocument retains author and computed style data beside DOM/images, and resize
 reflow reuses it without reparsing or recascading CSS.
 
-Layout and paint still use the M1 HTML defaults directly. The next rendering step is to
-consume ComputedStyleMap while preserving the same appearance when no author CSS exists.
+op_layout now consumes that ComputedStyleMap for display:none/block/inline and mixed
+inline font-size/font-weight/color runs. Styled text becomes colored TextBox records,
+op_paint carries those colors in the display list, and the Win32 backend draws them.
+M1 semantic spacing remains temporary while the CSS box model is still absent.
 
 ## Paint smoke verification
 

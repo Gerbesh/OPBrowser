@@ -140,6 +140,17 @@ Release executable:
 
     target\release\op_browser.exe
 
+Rebuild the runnable release after a user-visible engine change:
+
+    cargo build -p op_browser --release
+
+CSS rendering example:
+
+    cargo run -p op_browser -- examples/css/index.html
+    target\release\op_browser.exe examples\css\index.html
+
+The built-in start page also exercises the currently supported author-CSS subset.
+
 ## Image support
 
 Image checks and example:

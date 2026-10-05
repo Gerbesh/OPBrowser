@@ -365,3 +365,25 @@ This file is append-only project history.
   consume ComputedStyleMap.
 - Final verification passed workspace rustfmt, warning-free workspace Clippy, all 102
   workspace tests and the native browser startup/paint smoke.
+
+## 2026-10-06 - Computed CSS reaches layout and native paint
+
+- Connected the retained ComputedStyleMap to op_layout and op_paint so author CSS now
+  changes native Win32 pixels instead of stopping after style resolution.
+- display:none skips element subtrees, display:block creates a flow boundary, and
+  display:inline remains in the surrounding inline flow.
+- Reworked inline line construction to preserve per-run computed font size, weight and
+  RGBA text color. Differently sized runs share one measured baseline with images.
+- TextBox now carries color; op_paint composites alpha text colors over the current white
+  page background and emits the resulting native text color.
+- Preserved the existing LinkSpan/hit-testing path and native default blue for hyperlink
+  glyphs/underlines; author link color remains an explicit temporary limitation.
+- Added an end-to-end engine regression proving CSS size/weight/color/display reach paint,
+  plus a paint regression for alpha compositing. Workspace total is now 104 tests.
+- Added `examples/css/index.html` and styled the built-in start page so the supported CSS
+  subset is visible immediately in a normal release launch.
+- Updated project plan, code graph/slices, README, development workflow and CSS/rendering/
+  inline-layout wiki pages for the new end-to-end rendering path.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 104 workspace
+  tests, normal startup smoke and a CSS-demo smoke producing 13 paint commands.
+- Rebuilt `target/release/op_browser.exe`; this build is 495,616 bytes.

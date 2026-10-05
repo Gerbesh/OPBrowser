@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>OPBrowser CSS demo</title>
+<style>
+body { color: #20232a; font-size: 18px; }
+h1 { color: #6d28d9; font-size: 42px; }
+.lead { color: #087a35; font-size: 22px; font-weight: bold; }
+.accent { color: #b42318; font-weight: bold; }
+.block { display: block; color: #075985; font-size: 24px; }
+.inline { display: inline; color: #7c2d12; }
+.hidden { display: none; }
+#specific { color: #123456; font-size: 28px; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>OPBrowser CSS demo</h1>
+<p class="lead">Embedded author CSS now reaches layout and Win32 paint.</p>
+<p>Normal text, <span class="accent">bold red inline span</span>, then normal text again.</p>
+<p>Before block span. <span class="block">This span is display:block and 24px.</span> After block span.</p>
+<p><span class="inline">This span stays inline and has its own color.</span></p>
+<p id="specific">ID specificity: #123456, 28px, bold.</p>
+<p style="color:#5b21b6; font-size:20px; font-weight:bold">Inline style attribute: violet, 20px, bold.</p>
+<p class="hidden">THIS MUST NOT BE VISIBLE.</p>
+<p><a href="../navigation/destination.html">Open local navigation destination</a></p>
+</body>
+</html>

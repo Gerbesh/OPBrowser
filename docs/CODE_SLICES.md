@@ -194,8 +194,8 @@ scroll anchoring or history page cache. Current single-window ownership still ap
 
 ## S3 - CSS-styled document
 
-Status: IN PROGRESS. Author cascade and initial computed styles are connected to page
-preparation; layout/paint do not consume them yet.
+Status: IN PROGRESS. The initial local author-CSS path is end-to-end through native
+pixels; broader CSS syntax, external stylesheets and box-model properties remain.
 
 Current path:
 
@@ -211,6 +211,10 @@ HTML
   -> inheritance + initial/inherit/unset
   -> ComputedStyleMap { display, color, font-size, font-weight }
   -> retained in PreparedDocument
+  -> op_layout display/block/inline decisions + mixed inline style runs
+  -> TextBox color/size/weight
+  -> op_paint display-list text color
+  -> Win32 GDI pixels
   -> resize reflow reuses retained DOM/images/author/computed styles
 ```
 
@@ -219,18 +223,25 @@ font-weight normal/bold/400/700, a small named-color set plus #RGB(A)/#RRGGBB(AA
 the global keywords inherit/initial/unset. color/font-size/font-weight inherit; display
 does not unless explicitly set to inherit. Unsupported/invalid values are discarded
 before cascade winner selection so a lower-priority valid declaration may still win.
-Temporary UA defaults preserve M1 block/hidden behavior and heading typography.
+Temporary UA defaults preserve M1 block/hidden behavior and heading typography. Inline
+text runs may now differ in size, weight and color while sharing a line and baseline.
+RGBA text colors are composited over the current white page background before native
+painting. Existing hyperlink glyphs/underlines still use the native default link blue;
+author link color is deferred until link styling is represented without breaking the
+current LinkSpan hit-testing model.
 
 Planned next path:
 
 ```text
-ComputedStyleMap
-  -> CSS-aware block/inline choice and display:none
-  -> CSS-aware text size/weight/color
-  -> paint
+<link rel=stylesheet>
+  -> op_net stylesheet load
+  -> document source order
+  -> existing cascade/computed/layout/paint path
+
+then background/border + margin/padding box geometry
 ```
 
-Linked stylesheet loading and broader property/value coverage remain later work.
+Broader property/value coverage remains later work.
 
 ## S4 - Scripted page
 

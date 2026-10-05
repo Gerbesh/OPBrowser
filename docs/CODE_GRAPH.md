@@ -289,11 +289,12 @@ classDiagram
     PreparedDocument --> Document : DOM snapshot
     PreparedDocument --> RasterImage : shared Arc image resources
     Document --> LayoutTree : flow grouping / inline lines
+    ComputedStyleMap --> LayoutTree : display flow + text run style
+    LayoutTree --> DisplayList : styled text / image paint commands
     Engine --> TextMeasurer : worker-local GDI adapter
     TextMeasurer --> TextMetrics : whole href-run extents
     LayoutTree --> TextMeasurer : injected metric interface
     LayoutTree --> LayoutItem : ordered text / image indexes
-    LayoutTree --> DisplayList : build_display_list
     Engine --> RasterImage : visible img resources / bounded worker decode
     LayoutTree --> ImageBox : atomic inline box / shared baseline
     ImageBox --> RasterImage : shared Arc pixels
@@ -355,8 +356,11 @@ classDiagram
   references and markup from being incorrectly parsed inside script/style/title.
 - op_dom owns document/node storage, element attributes, and DOM invariants.
 - op_layout owns text-flow geometry, structural-container traversal and UTF-8
-  LinkSpan ranges preserved across whitespace normalization and line wrapping.
-- op_paint owns platform-neutral paint commands/display lists and default link color.
+  LinkSpan ranges preserved across whitespace normalization and line wrapping. It now
+  consumes ComputedStyleMap for display flow and emits mixed text runs carrying computed
+  size, weight and RGBA color on a shared baseline.
+- op_paint owns platform-neutral paint commands/display lists, CSS text-color conversion
+  (including alpha over the current white page) and the temporary default link color.
   TEXT_FONT_FAMILY and Windows GDI_TEXT_LOCK are shared by engine metric adapter and
   native painter. Font realization, measurement/drawing and cleanup are synchronized
   per operation; networking and original layout do not hold this gate.
@@ -368,8 +372,8 @@ classDiagram
   candidates. compute_styles resolves supported values using !important, inline source,
   specificity and source order, then applies inheritance/global keywords into a
   ComputedStyleMap. Initial properties are display, color, font-size and font-weight.
-  Temporary UA defaults mirror M1 block/hidden tags and heading typography so later
-  layout integration can preserve the no-author-CSS appearance.
+  Temporary UA defaults mirror M1 block/hidden tags and heading typography; the computed
+  map now feeds op_layout/op_paint instead of stopping at page preparation.
 - op_engine::images walks visible DOM img nodes, resolves against the effective
   loaded address, serializes loads/decode on the worker and owns page budgets/cache.
   Image failure does not fail document history. Arc pixels are reused across nodes.
@@ -410,7 +414,7 @@ Engine -> op_net/WinHTTP -> own document pipeline -> result channel -> UI-thread
 NativeBrowserWindow::present -> WM_PAINT. Also connected: painted LinkSpan -> measured
 LinkRegion -> scroll-aware mouse click -> FollowLink -> resolve_link -> same worker.
 Engine preparation now connects parsed DOM -> author CSS collection -> selector
-matching -> cascade/inheritance -> retained ComputedStyleMap beside DOM/images/styles.
-Reflow reuses both author candidates and computed values without reparsing CSS. Layout
-still consumes the M1 defaults. Next: make layout/paint consume computed display,
-font-size, font-weight and color.
+matching -> cascade/inheritance -> retained ComputedStyleMap -> CSS-aware layout ->
+display-list text styling -> Win32 pixels. Reflow reuses author candidates and computed
+values without reparsing CSS. Next: feed linked stylesheets into the same cascade, then
+replace temporary semantic spacing with the first CSS box-model geometry.

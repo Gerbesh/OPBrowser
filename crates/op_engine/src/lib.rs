@@ -2,7 +2,7 @@ use op_css::{
     ComputedStyleMap, StyleCollection, StyleError, StyleMap, collect_author_styles, compute_styles,
 };
 use op_html::parse_document;
-use op_layout::{ImageResources, layout_document_with_metrics};
+use op_layout::{ImageResources, layout_document_with_computed_styles_and_metrics};
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link};
 use op_paint::{DisplayList, build_display_list};
 mod images;
@@ -101,10 +101,11 @@ struct PreparedDocument {
 
 impl PreparedDocument {
     fn render(&self, width: i32, height: i32) -> RenderedPage {
-        let layout = layout_document_with_metrics(
+        let layout = layout_document_with_computed_styles_and_metrics(
             &self.document,
             width,
             &self.images,
+            &self.computed_styles,
             &mut text::Measurer::new(),
         );
         RenderedPage {
@@ -166,10 +167,13 @@ impl Engine {
         viewport_height: i32,
     ) -> DisplayList {
         let document = parse_document(html);
-        let layout = layout_document_with_metrics(
+        let style_collection = collect_author_styles(&document);
+        let computed_styles = compute_styles(&document, &style_collection.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
             &document,
             viewport_width,
             &ImageResources::new(),
+            &computed_styles,
             &mut text::Measurer::new(),
         );
         build_display_list(&layout, viewport_height)
@@ -439,6 +443,61 @@ mod tests {
 
         assert!(contains_text(&display_list, "OPBrowser"));
         assert!(contains_text(&display_list, "Own engine."));
+    }
+
+    #[test]
+    fn author_css_reaches_layout_and_paint() {
+        let display_list = Engine::new().render_html(
+            "<style>.accent{color:#123456;font-size:30px;font-weight:bold}.block{display:block;color:red}.hidden{display:none}</style><p>before <span class='accent'>styled</span> after</p><span class='block'>block</span><span class='hidden'>hidden</span>",
+            800,
+            600,
+        );
+
+        let styled = display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Text {
+                    text,
+                    font_size,
+                    bold,
+                    color,
+                    ..
+                } if text == "styled" => Some((*font_size, *bold, *color)),
+                _ => None,
+            });
+        assert_eq!(
+            styled,
+            Some((
+                30,
+                true,
+                op_paint::Color {
+                    r: 0x12,
+                    g: 0x34,
+                    b: 0x56,
+                },
+            ))
+        );
+        assert!(!contains_text(&display_list, "hidden"));
+
+        let before_y = display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Text { text, y, .. } if text == "before " => Some(*y),
+                _ => None,
+            });
+        let block_y = display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Text { text, y, color, .. } if text == "block" => {
+                    assert_eq!(*color, op_paint::Color { r: 255, g: 0, b: 0 });
+                    Some(*y)
+                }
+                _ => None,
+            });
+        assert!(before_y.is_some() && block_y.is_some() && block_y > before_y);
     }
 
     #[test]

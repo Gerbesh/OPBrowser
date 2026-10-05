@@ -1,9 +1,19 @@
-use super::{FontWeight, ImageBox, LayoutItem, LinkSpan, TextBox, TextMeasurer};
+use super::{
+    FontWeight, ImageBox, LayoutItem, LinkSpan, TextBox, TextColor, TextMeasurer, TextMetrics,
+};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct InlineStyle {
+    pub font_size: i32,
+    pub weight: FontWeight,
+    pub color: TextColor,
+}
 
 #[derive(Clone, Copy)]
 pub(super) struct InlineChar<'a> {
     pub ch: char,
     pub href: Option<&'a str>,
+    pub style: InlineStyle,
 }
 
 pub(super) enum Item<'a> {
@@ -20,10 +30,24 @@ enum BoxItem<'a> {
     Image(ImageBox),
 }
 
+struct PreparedText {
+    text: String,
+    links: Vec<LinkSpan>,
+    width: i32,
+    style: InlineStyle,
+    metrics: TextMetrics,
+    ascent: i32,
+    descent: i32,
+}
+
+enum PreparedBox {
+    Text(PreparedText),
+    Image(ImageBox),
+}
+
 pub(super) struct Lines<'a, 'm> {
     measurer: &'m mut dyn TextMeasurer,
-    font_size: i32,
-    weight: FontWeight,
+    default_style: InlineStyle,
     x: i32,
     y: i32,
     width: i32,
@@ -38,16 +62,14 @@ pub(super) struct Lines<'a, 'm> {
 impl<'a, 'm> Lines<'a, 'm> {
     pub fn new(
         measurer: &'m mut dyn TextMeasurer,
-        font_size: i32,
-        weight: FontWeight,
+        default_style: InlineStyle,
         x: i32,
         y: i32,
         width: i32,
     ) -> Self {
         Self {
             measurer,
-            font_size,
-            weight,
+            default_style,
             x,
             y,
             width,
@@ -70,6 +92,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                         self.pending_space = Some(InlineChar {
                             ch: ' ',
                             href: ch.href,
+                            style: ch.style,
                         });
                     }
                 }
@@ -98,14 +121,15 @@ impl<'a, 'm> Lines<'a, 'm> {
         let mut start = 0;
         while start < chars.len() {
             let href = chars[start].href;
+            let style = chars[start].style;
             let end = chars[start..]
                 .iter()
-                .position(|ch| ch.href != href)
+                .position(|ch| ch.href != href || ch.style != style)
                 .map_or(chars.len(), |n| start + n);
             let text: String = chars[start..end].iter().map(|ch| ch.ch).collect();
             width = width.saturating_add(
                 self.measurer
-                    .measure(&text, self.font_size, self.weight)
+                    .measure(&text, style.font_size, style.weight)
                     .width
                     .max(0),
             );
@@ -223,73 +247,127 @@ impl<'a, 'm> Lines<'a, 'm> {
         self.boxes.push(BoxItem::Image(image));
     }
 
+    fn metrics_for(&mut self, style: InlineStyle) -> (TextMetrics, i32, i32) {
+        let metrics = self.measurer.measure("", style.font_size, style.weight);
+        let leading =
+            (((style.font_size as f32) * 1.35).round() as i32 - metrics.ascent - metrics.descent)
+                .max(0);
+        let ascent = metrics.ascent + leading / 2;
+        let descent = metrics.descent + leading - leading / 2;
+        (metrics, ascent, descent)
+    }
+
+    fn prepare_text(&mut self, chars: &[InlineChar<'a>], style: InlineStyle) -> PreparedText {
+        let width = self.text_width(chars);
+        let mut text = String::new();
+        let mut links: Vec<LinkSpan> = Vec::new();
+        for ch in chars {
+            let start = text.len();
+            text.push(ch.ch);
+            if let Some(href) = ch.href {
+                if let Some(last) = links.last_mut()
+                    && last.end == start
+                    && last.href == href
+                {
+                    last.end = text.len();
+                } else {
+                    links.push(LinkSpan {
+                        start,
+                        end: text.len(),
+                        href: href.to_owned(),
+                    });
+                }
+            }
+        }
+        let (metrics, ascent, descent) = self.metrics_for(style);
+        PreparedText {
+            text,
+            links,
+            width,
+            style,
+            metrics,
+            ascent,
+            descent,
+        }
+    }
+
     fn flush(&mut self, forced: bool) {
         self.pending_space = None;
         if self.boxes.is_empty() && !forced {
             return;
         }
-        let metrics = self.measurer.measure("", self.font_size, self.weight);
-        let leading =
-            (((self.font_size as f32) * 1.35).round() as i32 - metrics.ascent - metrics.descent)
-                .max(0);
-        let descent = metrics.descent + leading - leading / 2;
-        let ascent = self
-            .boxes
+
+        let boxes = std::mem::take(&mut self.boxes);
+        let mut prepared = Vec::new();
+        for item in boxes {
+            match item {
+                BoxItem::Image(image) => prepared.push(PreparedBox::Image(image)),
+                BoxItem::Text { chars, .. } => {
+                    let mut start = 0;
+                    while start < chars.len() {
+                        let style = chars[start].style;
+                        let end = chars[start..]
+                            .iter()
+                            .position(|ch| ch.style != style)
+                            .map_or(chars.len(), |n| start + n);
+                        prepared.push(PreparedBox::Text(
+                            self.prepare_text(&chars[start..end], style),
+                        ));
+                        start = end;
+                    }
+                }
+            }
+        }
+
+        let (_, default_ascent, default_descent) = self.metrics_for(self.default_style);
+        let ascent = prepared
             .iter()
-            .filter_map(|item| match item {
-                BoxItem::Image(image) => Some(image.height),
-                _ => None,
+            .map(|item| match item {
+                PreparedBox::Image(image) => image.height,
+                PreparedBox::Text(text) => text.ascent,
             })
             .max()
-            .unwrap_or(0)
-            .max(metrics.ascent + leading / 2);
+            .unwrap_or(default_ascent)
+            .max(default_ascent);
+        let descent = prepared
+            .iter()
+            .filter_map(|item| match item {
+                PreparedBox::Text(text) => Some(text.descent),
+                PreparedBox::Image(_) => None,
+            })
+            .max()
+            .unwrap_or(default_descent)
+            .max(default_descent);
+
         let baseline = self.y + ascent;
         let mut x = self.x;
-        for item in std::mem::take(&mut self.boxes) {
+        for item in prepared {
             match item {
-                BoxItem::Image(mut image) => {
+                PreparedBox::Image(mut image) => {
                     image.x = x;
                     image.y = baseline - image.height;
                     x += image.width;
                     self.order.push(LayoutItem::Image(self.image_boxes.len()));
                     self.image_boxes.push(image);
                 }
-                BoxItem::Text { chars, width } => {
-                    let mut text = String::new();
-                    let mut links: Vec<LinkSpan> = Vec::new();
-                    for ch in chars {
-                        let start = text.len();
-                        text.push(ch.ch);
-                        if let Some(href) = ch.href {
-                            if let Some(last) = links.last_mut()
-                                && last.end == start
-                                && last.href == href
-                            {
-                                last.end = text.len();
-                            } else {
-                                links.push(LinkSpan {
-                                    start,
-                                    end: text.len(),
-                                    href: href.to_owned(),
-                                });
-                            }
-                        }
-                    }
+                PreparedBox::Text(text) => {
                     self.order.push(LayoutItem::Text(self.text_boxes.len()));
                     self.text_boxes.push(TextBox {
                         x,
-                        y: baseline - metrics.ascent,
-                        width,
-                        height: metrics.ascent + metrics.descent,
-                        text,
-                        font_size: self.font_size,
-                        weight: self.weight,
-                        links,
+                        y: baseline - text.metrics.ascent,
+                        width: text.width,
+                        height: text.metrics.ascent + text.metrics.descent,
+                        text: text.text,
+                        font_size: text.style.font_size,
+                        weight: text.style.weight,
+                        color: text.style.color,
+                        links: text.links,
                     });
-                    x += width;
+                    x += text.width;
                 }
             }
         }
+
         self.y += ascent + descent;
         self.line_width = 0;
     }

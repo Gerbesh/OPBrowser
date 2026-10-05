@@ -111,11 +111,13 @@ Status: IN PROGRESS.
 - DONE initial inheritance/global keywords plus ComputedStyleMap for display, color,
   font-size and font-weight, with temporary UA defaults matching the M1 layout baseline.
 - DONE Engine retains computed styles across resize reflow.
-- NEXT feed computed display/font-size/font-weight/color into layout/paint without
-  changing the existing default appearance when author CSS is absent.
-- LATER linked stylesheet loading.
+- DONE feed computed display/font-size/font-weight/color into layout and paint, including
+  mixed inline style runs sharing one line/baseline and display:none/block/inline flow.
+- DONE render CSS text color through the platform-neutral display list; alpha colors are
+  composited against the current white page background.
+- NEXT load linked stylesheets through op_net and fold them into document source order.
+- NEXT begin the CSS box model with background/border and margin/padding geometry.
 - LATER broader computed values.
-- LATER box model.
 - LATER normal flow block layout.
 - LATER full CSS inline formatting and Unicode line breaking (initial M1 subset exists).
 - LATER fonts/text shaping integration.

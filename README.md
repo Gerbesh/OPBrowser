@@ -8,7 +8,7 @@ Its own tokenizer, tree builder, DOM, text layout and display list render the pa
 into a Win32 window. Text hyperlinks support current-window navigation, including
 relative HTTP(S) and local-file links. PNG/JPEG/GIF/BMP images load from HTTP(S),
 local files and data URLs, with dimensions, transparency, alt fallback and image links.
-CSS and JavaScript remain future work.
+Initial embedded/inline author CSS now reaches native pixels; JavaScript remains future work.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 
@@ -36,8 +36,9 @@ HTTP(S) URL / local path / file: URL / data:text/html URL
   -> op_net source loader (WinHTTP for transport/TLS only)
   -> op_html tokenizer/tree builder
   -> op_dom
-  -> op_layout
-  -> op_paint display list
+  -> op_css selector matching / cascade / computed style
+  -> op_layout CSS-aware flow + inline runs
+  -> op_paint styled display list
   -> op_platform_win
   -> Win32 pixels
 ```
@@ -48,6 +49,7 @@ Current usage examples:
 target\release\op_browser.exe "https://example.com"
 
 target\release\op_browser.exe examples\hello.html
+target\release\op_browser.exe examples\css\index.html
 target\release\op_browser.exe examples\navigation\index.html
 target\release\op_browser.exe "file:///C:/path/to/page.html"
 target\release\op_browser.exe "data:text/html,%3Ch1%3EHello%3C%2Fh1%3E"
@@ -59,9 +61,10 @@ Back/Forward traverse history, and the mouse wheel scrolls. Loads run on a worke
 thread; errors appear in the status line and preserve the previous page/history.
 Resizing the window rewraps the current page from retained DOM/image data without
 refetching it. See [page reflow](wiki/Page-Reflow.md) for behavior and verification.
-The start page also has an Example Domain link. Links are blue/underlined with a
-hand cursor; clicking uses the same loading/history path. The navigation example
-demonstrates a relative link to a second local page.
+The start page is now styled with OPBrowser's supported CSS subset, so the release binary
+shows color, font size/weight and display behavior immediately. `examples\css\index.html`
+is a focused CSS fixture. Links remain blue/underlined with a hand cursor; clicking uses
+the same loading/history path. The navigation example demonstrates a relative local link.
 
 Initial network support requires Windows, an ASCII hostname (or an IPv4/bracketed
 IPv6 literal) and an explicit `http://` or `https://` scheme. Documents support
@@ -77,9 +80,12 @@ a document address. See [source loading](wiki/Document-Source-Loading.md) for li
 Image subrequests follow that document load on the same worker. Windows WIC performs
 only raster decoding; OPBrowser owns resource policy, layout and painting. Images
 share measured lines with text; GIF shows the first frame. Line layout supports
-baseline alignment, wrapping, `<br>` and HTML whitespace. See
-[inline layout](wiki/Inline-Layout.md) and [image loading](wiki/Image-Loading.md)
-for limits and local examples.
+baseline alignment, wrapping, `<br>` and HTML whitespace. Initial CSS supports embedded
+`<style>` and `style=""`, type/class/ID/universal selectors, descendant/child combinators,
+cascade/inheritance, `display` inline/block/none, text color, px font size and normal/bold
+font weight. External stylesheets, the box model and JavaScript are not implemented yet;
+link glyphs still use the native default blue. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),
+[inline layout](wiki/Inline-Layout.md) and [image loading](wiki/Image-Loading.md).
 
 See:
 

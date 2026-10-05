@@ -1,3 +1,4 @@
+use op_css::{ComputedStyleMap, CssColor, StyleMap, compute_styles};
 use op_dom::{Document, NodeId, NodeKind};
 use op_image::RasterImage;
 use std::collections::HashMap;
@@ -21,6 +22,25 @@ pub enum FontWeight {
     Bold,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextColor {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+    pub alpha: u8,
+}
+
+impl From<CssColor> for TextColor {
+    fn from(color: CssColor) -> Self {
+        Self {
+            red: color.red,
+            green: color.green,
+            blue: color.blue,
+            alpha: color.alpha,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextBox {
     pub x: i32,
@@ -30,6 +50,7 @@ pub struct TextBox {
     pub text: String,
     pub font_size: i32,
     pub weight: FontWeight,
+    pub color: TextColor,
     pub links: Vec<LinkSpan>,
 }
 
@@ -79,7 +100,24 @@ pub fn layout_document_with_metrics(
     images: &ImageResources,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
-    flow::layout(document, viewport_width, images, measurer)
+    let computed = compute_styles(document, &StyleMap::default());
+    layout_document_with_computed_styles_and_metrics(
+        document,
+        viewport_width,
+        images,
+        &computed,
+        measurer,
+    )
+}
+
+pub fn layout_document_with_computed_styles_and_metrics(
+    document: &Document,
+    viewport_width: i32,
+    images: &ImageResources,
+    computed_styles: &ComputedStyleMap,
+    measurer: &mut dyn TextMeasurer,
+) -> LayoutTree {
+    flow::layout(document, viewport_width, images, computed_styles, measurer)
 }
 
 #[derive(Debug, Clone, Copy)]

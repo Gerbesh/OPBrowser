@@ -7,6 +7,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+op_css = { path = "../op_css" }
 op_dom = { path = "../op_dom" }
 op_image = { path = "../op_image" }
 

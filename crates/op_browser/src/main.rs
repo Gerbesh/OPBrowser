@@ -4,15 +4,25 @@ use op_engine::{Engine, RenderedPage};
 use op_platform_win::{NativeBrowserWindow, NavigationEvent};
 
 const START_PAGE: &str = r#"
-<html><head><title>OPBrowser</title></head><body>
+<html><head><title>OPBrowser</title><style>
+body { color: #20232a; font-size: 18px; }
+h1 { color: #6d28d9; font-size: 42px; }
+.status { color: #087a35; font-size: 21px; font-weight: bold; }
+.accent { color: #b42318; font-weight: bold; }
+.demo-block { display: block; color: #075985; font-size: 20px; }
+.hidden-proof { display: none; }
+a { font-weight: bold; }
+</style></head><body>
 <h1>OPBrowser</h1>
+<p class="status">CSS теперь проходит через cascade → computed style → layout → Win32.</p>
 <p><a href="https://example.com">Открыть Example Domain</a></p>
+<p>Работают <span class="accent">color, font-size, font-weight</span> и <span class="demo-block">display: block / inline / none.</span></p>
+<p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>
 <p>Колесо мыши — прокрутка страницы.</p>
-<p>Работают HTTP, HTTPS, локальные HTML-файлы и data:text/html.</p>
-<p>Собственный движок: HTML → DOM → layout → display list → Win32.</p>
-<p>Работают текст и изображения PNG/JPEG/GIF/BMP. CSS и JavaScript ещё в разработке.</p>
+<p>Работают HTTP, HTTPS, локальные HTML-файлы, data:text/html и PNG/JPEG/GIF/BMP.</p>
+<p>Собственный движок: HTML → DOM → CSS → layout → display list → Win32.</p>
 </body></html>
 "#;
 
