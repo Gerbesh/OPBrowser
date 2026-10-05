@@ -20,6 +20,7 @@ a { font-weight: bold; }
 <p><a href="https://example.com">Открыть Example Domain</a></p>
 <p>Работают <span class="accent">color, font-size, font-weight</span> и <span class="demo-block">display: block / inline / none.</span></p>
 <div class="box-demo">Box model: width/max-width + margin:auto + %/em padding + box-sizing + independent borders.</div>
+<p>Selectors: attributes, + / ~ siblings and :root/:first-child/:last-child/:only-child/:empty/:link now match in the author cascade.</p>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>

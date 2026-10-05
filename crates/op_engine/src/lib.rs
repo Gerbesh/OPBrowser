@@ -594,6 +594,52 @@ mod tests {
     }
 
     #[test]
+    fn expanded_selectors_reach_native_display_list() {
+        let display_list = Engine::new().render_html(
+            "<style>
+                section[data-state=ready i] > span:first-child + span[data-kind~=accent] { color:#b42318; font-weight:bold }
+                .seed ~ .tail[title$=target] { color:#0369a1; font-weight:bold }
+                .blank:empty { min-height:16px; padding:4px; background-color:#f5f3ff; border:2px solid #7c3aed }
+             </style>
+             <section data-state='READY'><span>first</span><span data-kind='accent featured'>second</span></section>
+             <p><span class='seed'>seed</span><span>middle</span><span class='tail' title='final-target'>tail</span></p>
+             <div class='blank'></div>",
+            800,
+            600,
+        );
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text {
+                text,
+                bold: true,
+                color: op_paint::Color { r: 0xb4, g: 0x23, b: 0x18 },
+                ..
+            } if text == "second"
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text {
+                text,
+                bold: true,
+                color: op_paint::Color { r: 0x03, g: 0x69, b: 0xa1 },
+                ..
+            } if text == "tail"
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::FillRect {
+                color: op_paint::Color {
+                    r: 0xf5,
+                    g: 0xf3,
+                    b: 0xff
+                },
+                ..
+            }
+        )));
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,

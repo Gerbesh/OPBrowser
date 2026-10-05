@@ -1,6 +1,6 @@
 use crate::{
-    Combinator, CssError, Declaration, Selector, SimpleSelector, Specificity, StyleRule,
-    parse_declaration_list, parse_stylesheet,
+    AttributeMatcher, AttributeSelector, Combinator, CssError, Declaration, PseudoClass, Selector,
+    SimpleSelector, Specificity, StyleRule, parse_declaration_list, parse_stylesheet,
 };
 use op_dom::{Document, NodeId, NodeKind};
 use std::collections::HashMap;
@@ -271,6 +271,13 @@ fn matches_selector_at(
             }
             false
         }
+        Combinator::AdjacentSibling => {
+            previous_element_sibling(document, node).is_some_and(|sibling| {
+                matches_selector_at(document, sibling, selector, compound_index - 1)
+            })
+        }
+        Combinator::GeneralSibling => preceding_element_siblings(document, node)
+            .any(|sibling| matches_selector_at(document, sibling, selector, compound_index - 1)),
     }
 }
 
@@ -285,7 +292,126 @@ fn compound_matches(document: &Document, node: NodeId, compound: &crate::Compoun
         SimpleSelector::Class(name) => attribute_value(element, "class")
             .is_some_and(|classes| classes.split_ascii_whitespace().any(|class| class == name)),
         SimpleSelector::Id(name) => attribute_value(element, "id").is_some_and(|id| id == name),
+        SimpleSelector::Attribute(attribute) => attribute_matches(element, attribute),
+        SimpleSelector::PseudoClass(pseudo) => pseudo_class_matches(document, node, *pseudo),
     })
+}
+
+fn attribute_matches(element: &op_dom::ElementData, selector: &AttributeSelector) -> bool {
+    let Some(actual) = attribute_value(element, &selector.name) else {
+        return false;
+    };
+    if selector.matcher == AttributeMatcher::Exists {
+        return true;
+    }
+    let Some(expected) = selector.value.as_deref() else {
+        return false;
+    };
+    let equals = |left: &str, right: &str| {
+        if selector.case_insensitive {
+            left.eq_ignore_ascii_case(right)
+        } else {
+            left == right
+        }
+    };
+    let normalize = |value: &str| {
+        if selector.case_insensitive {
+            value.to_ascii_lowercase()
+        } else {
+            value.to_owned()
+        }
+    };
+
+    match selector.matcher {
+        AttributeMatcher::Exists => true,
+        AttributeMatcher::Exact => equals(actual, expected),
+        AttributeMatcher::Includes => {
+            !expected.is_empty()
+                && actual
+                    .split_ascii_whitespace()
+                    .any(|word| equals(word, expected))
+        }
+        AttributeMatcher::DashMatch => {
+            equals(actual, expected)
+                || (!expected.is_empty()
+                    && normalize(actual).starts_with(&(normalize(expected) + "-")))
+        }
+        AttributeMatcher::Prefix => {
+            !expected.is_empty() && normalize(actual).starts_with(&normalize(expected))
+        }
+        AttributeMatcher::Suffix => {
+            !expected.is_empty() && normalize(actual).ends_with(&normalize(expected))
+        }
+        AttributeMatcher::Substring => {
+            !expected.is_empty() && normalize(actual).contains(&normalize(expected))
+        }
+    }
+}
+
+fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) -> bool {
+    match pseudo {
+        PseudoClass::Root => document
+            .node(node)
+            .and_then(|current| current.parent)
+            .is_some_and(|parent| parent == document.root()),
+        PseudoClass::FirstChild => {
+            element_siblings(document, node).and_then(|siblings| siblings.first().copied())
+                == Some(node)
+        }
+        PseudoClass::LastChild => {
+            element_siblings(document, node).and_then(|siblings| siblings.last().copied())
+                == Some(node)
+        }
+        PseudoClass::OnlyChild => {
+            element_siblings(document, node).is_some_and(|siblings| siblings.as_slice() == [node])
+        }
+        PseudoClass::Empty => document.children(node).iter().all(|child| {
+            document.node(*child).is_none_or(|child| match &child.kind {
+                NodeKind::Element(_) => false,
+                NodeKind::Text(text) => text.is_empty(),
+                NodeKind::Document => true,
+            })
+        }),
+        PseudoClass::Link => document.element(node).is_some_and(|element| {
+            element.tag_name.eq_ignore_ascii_case("a") && attribute_value(element, "href").is_some()
+        }),
+    }
+}
+
+fn element_siblings(document: &Document, node: NodeId) -> Option<Vec<NodeId>> {
+    let parent = document.node(node)?.parent?;
+    Some(
+        document
+            .children(parent)
+            .iter()
+            .copied()
+            .filter(|candidate| document.element(*candidate).is_some())
+            .collect(),
+    )
+}
+
+fn previous_element_sibling(document: &Document, node: NodeId) -> Option<NodeId> {
+    preceding_element_siblings(document, node).next()
+}
+
+fn preceding_element_siblings(
+    document: &Document,
+    node: NodeId,
+) -> impl Iterator<Item = NodeId> + '_ {
+    let siblings = document
+        .node(node)
+        .and_then(|current| current.parent)
+        .map(|parent| document.children(parent))
+        .unwrap_or_default();
+    let before = siblings
+        .iter()
+        .position(|candidate| *candidate == node)
+        .unwrap_or(0);
+    siblings[..before]
+        .iter()
+        .rev()
+        .copied()
+        .filter(|candidate| document.element(*candidate).is_some())
 }
 
 fn is_css_style_element(element: &op_dom::ElementData) -> bool {
@@ -341,6 +467,21 @@ mod tests {
         find(document, document.root(), tag).expect("expected element")
     }
 
+    fn element_by_id(document: &Document, id: &str) -> NodeId {
+        fn find(document: &Document, node: NodeId, id: &str) -> Option<NodeId> {
+            if document.element(node).is_some_and(|element| {
+                attribute_value(element, "id").is_some_and(|value| value == id)
+            }) {
+                return Some(node);
+            }
+            document
+                .children(node)
+                .iter()
+                .find_map(|child| find(document, *child, id))
+        }
+        find(document, document.root(), id).expect("expected id")
+    }
+
     #[test]
     fn matches_supported_compounds_child_and_descendant_combinators() {
         let document = parse_document(
@@ -367,6 +508,49 @@ mod tests {
             span,
             &miss.value.rules[0].selectors[0]
         ));
+    }
+
+    #[test]
+    fn matches_attribute_sibling_and_structural_pseudo_selectors() {
+        let document = parse_document(
+            "<html><body><main id='main' data-mode='Dark'>
+                <a id='a' href='https://x' rel='external noopener'></a>
+                text
+                <span id='s' data-lang='en-US' title='HelloWorld'></span>
+                <em id='e'></em>
+                <i><b id='only'></b></i>
+                <div id='empty'></div>
+                <div id='notempty'> </div>
+             </main></body></html>",
+        );
+        let html = first_element_by_tag(&document, "html");
+        let main = element_by_id(&document, "main");
+        let a = element_by_id(&document, "a");
+        let span = element_by_id(&document, "s");
+        let em = element_by_id(&document, "e");
+        let only = element_by_id(&document, "only");
+        let empty = element_by_id(&document, "empty");
+        let notempty = element_by_id(&document, "notempty");
+
+        let matches = |node, source: &str| {
+            let parsed = parse_stylesheet(&format!("{source} {{ color:red }}"));
+            assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+            selector_matches(&document, node, &parsed.value.rules[0].selectors[0])
+        };
+
+        assert!(matches(html, ":root"));
+        assert!(matches(main, "[data-mode=dark i]"));
+        assert!(matches(
+            a,
+            "a:link:first-child[rel~=external][href^=https][href$=x][href*='://']"
+        ));
+        assert!(matches(span, "a + span[data-lang|=en][title='HelloWorld']"));
+        assert!(matches(em, "a ~ em"));
+        assert!(matches(only, "b:only-child:first-child:last-child"));
+        assert!(matches(empty, "div:empty"));
+        assert!(!matches(notempty, "div:empty"));
+        assert!(!matches(span, "a + em"));
+        assert!(!matches(span, "[data-mode=dark]"));
     }
 
     #[test]

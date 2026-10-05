@@ -207,7 +207,10 @@ HTML
        -> loaded CSS attached to each <link rel=stylesheet> NodeId
   -> collect linked + <style> rules in DOM order + style="" declarations
   -> op_css tokenizer/parser
-  -> supported Selector AST + Specificity
+  -> Selector AST + Specificity
+       type/universal/class/ID + attribute operators
+       descendant/child/adjacent/general-sibling combinators
+       root/child/empty/link pseudo-classes
   -> right-to-left selector matching against op_dom
   -> per-NodeId StyleMap<MatchedDeclaration>
   -> cascade: !important -> inline source -> specificity -> source order
@@ -264,12 +267,18 @@ collapse. Parent/child and empty-block margin collapsing are deliberately not im
 in this slice. Author box geometry still applies to ordinary non-replaced block boxes;
 inline box fragments and replaced-element CSS decorations remain later work.
 
+Selector matching now also supports attribute existence/equality/token/dash/prefix/suffix/
+substring operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators
+that ignore intervening text nodes, and :root/:first-child/:last-child/:only-child/:empty/:link.
+Attribute and pseudo-class selectors contribute class-level specificity. Functional pseudos,
+pseudo-elements and namespaces remain later work.
+
 Planned next path:
 
 ```text
-Selector/value expansion
-  -> attribute + sibling selectors / useful pseudo-classes
-  -> richer colors/functions and typography values
+Value/rendering expansion
+  -> rgb()/rgba() and broader named/function colors
+  -> richer typography values
   -> inline box fragments/decorations
 ```
 

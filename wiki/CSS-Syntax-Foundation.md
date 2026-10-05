@@ -1,8 +1,8 @@
 # CSS Syntax Foundation
 
-OPBrowser now owns the first M2 CSS syntax layer in the op_css crate. This layer
-parses CSS text into structured data but deliberately does not affect layout or paint
-yet.
+OPBrowser owns CSS tokenization, selector/declaration parsing, author matching, cascade and
+the current computed-style subset in `op_css`. Supported values now feed layout and paint;
+this page records the syntax/matching boundary rather than a parser-only prototype.
 
 ## Current flow
 
@@ -26,23 +26,23 @@ rules where recovery is possible. Declaration parsing preserves custom-property 
 case, normalizes ordinary property names to ASCII lowercase and extracts trailing
 !important.
 
-## Initial selector subset
+## Current selector subset
 
-The current selector AST supports:
+The current selector AST/matcher supports:
 
-- type selectors such as p and article;
-- the universal selector *;
-- class selectors such as .card;
-- ID selectors such as #hero;
-- compound selectors such as article.card.feature;
-- comma-separated selector lists;
-- descendant combinators;
-- child combinators using >;
-- specificity counts for IDs, classes and types.
+- type, universal, class and ID selectors;
+- compound and comma-separated selector lists;
+- descendant and child (`>`) combinators;
+- adjacent (`+`) and general (`~`) element-sibling combinators;
+- attribute existence plus `=`, `~=`, `|=`, `^=`, `$=`, `*=` matchers;
+- explicit ASCII `i`/`s` attribute-value flags;
+- `:root`, `:first-child`, `:last-child`, `:only-child`, `:empty`, `:link`;
+- specificity counts with attributes/pseudo-classes in the class column.
 
-Pseudo-classes, pseudo-elements, attribute selectors, sibling combinators and at-rules
-are not supported yet. They are reported as explicit parser errors instead of being
-silently accepted.
+Matching runs right-to-left. Sibling combinators operate on element siblings and therefore
+ignore intervening text nodes, matching CSS tree semantics. `:empty` still treats any text,
+including whitespace text, as content. Functional pseudo-classes, pseudo-elements, namespace
+selectors and at-rules remain explicit unsupported syntax rather than silently succeeding.
 
 ## Author style collection and matching
 
@@ -76,13 +76,11 @@ cascade key is, from strongest dimension to weakest: !important, inline-style so
 specificity, then source order. Invalid values for a supported property are filtered
 before choosing the winner, allowing a lower-priority valid declaration to apply.
 
-The initial computed subset is:
-
-- display: inline, block, none;
-- color: black/white/red/green/blue/transparent and #RGB(A)/#RRGGBB(AA);
-- font-size: bounded px values;
-- font-weight: normal, bold, 400, 700;
-- global keywords: inherit, initial, unset.
+The current computed subset includes display, text color/font sizing/weight, block
+backgrounds, margin/padding/border edges, width/height min/max and box-sizing. Color is still
+a small named set plus #RGB(A)/#RRGGBB(AA); font-size accepts percentages, px/em/rem,
+absolute CSS length units and the current keyword set. Global inherit/initial/unset handling
+is shared by the supported properties.
 
 color, font-size and font-weight inherit through the element tree. display uses its
 initial value unless explicitly inherited. Temporary UA defaults mirror the existing M1
@@ -119,5 +117,5 @@ The local demonstration page is `examples/css/index.html`; it now links a real
 The built-in start page also describes the supported subset in a normal release launch.
 
 The expanded block-level box model is documented in [CSS Block Box Model](CSS-Box-Model.md).
-Next S3 work moves into broader selectors/value syntax and inline box fragments. At-rules,
-media queries and full CSS conformance remain later.
+Next S3 work moves into richer color/value functions and inline box fragments. Functional
+pseudos, pseudo-elements, at-rules, media queries and full CSS conformance remain later.

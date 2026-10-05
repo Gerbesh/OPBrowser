@@ -127,8 +127,12 @@ Status: IN PROGRESS.
   block-boundary whitespace suppression; parent/child/empty-block collapsing remains later.
 - DONE move the previous temporary heading/paragraph/list spacing into computed UA margins
   so normal flow consumes one box-model spacing path instead of separate semantic offsets.
-- NEXT broaden selectors/value syntax and add inline box fragments/decorations.
-- LATER fuller parent/child margin collapsing and definite percentage-height propagation.
+- DONE expand selector syntax/matching with attribute selectors (`[a]`, =, ~=, |=, ^=,
+  $=, *=, i/s flags), adjacent/general sibling combinators and structural pseudo-classes
+  :root/:first-child/:last-child/:only-child/:empty/:link.
+- NEXT broaden value syntax/colors/functions and add inline box fragments/decorations.
+- LATER functional pseudo-classes (:is/:where/:not/:nth-child), pseudo-elements and fuller
+  parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.
 - LATER normal flow block layout.
 - LATER full CSS inline formatting and Unicode line breaking (initial M1 subset exists).

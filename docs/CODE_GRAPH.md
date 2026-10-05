@@ -185,6 +185,15 @@ classDiagram
         combinators
         specificity
     }
+    class AttributeSelector {
+        name
+        matcher
+        value
+        case_insensitive
+    }
+    class PseudoClass {
+        root / first-child / last-child / only-child / empty / link
+    }
     class Declaration {
         name
         value
@@ -391,8 +400,10 @@ classDiagram
 - op_css owns CSS tokenization/parsing, author-style matching and the initial cascade.
   It traverses op_dom, interleaves loaded link stylesheets with style elements at their
   actual DOM positions, collects inline style attributes, and matches the
-  supported selector subset right-to-left and builds per-NodeId MatchedDeclaration
-  candidates. compute_styles resolves supported values using !important, inline source,
+  selector AST right-to-left and builds per-NodeId MatchedDeclaration candidates. Selector
+  matching now includes attribute operators, adjacent/general element siblings and the
+  initial structural/link pseudo-class set. compute_styles resolves supported values using
+  !important, inline source,
   specificity and source order, then applies inheritance/global keywords into a
   ComputedStyleMap. Properties now include display, color, font-size/font-weight,
   background-color, margin/padding edges, independent border edges, width/height min/max and
@@ -450,6 +461,7 @@ Engine preparation now connects parsed DOM -> bounded external stylesheet loadin
 DOM-order linked/embedded CSS collection -> selector matching -> cascade/inheritance ->
 retained ComputedStyleMap -> CSS-aware layout -> display-list text styling -> Win32 pixels.
 Reflow reuses author candidates and computed values without refetching/reparsing CSS.
-The block-box path now includes used width/min/max/auto-margin geometry, per-side borders
-and adjacent sibling margin collapse before BoxDecoration/background-border FillRects.
-Next: selector/value expansion and inline box fragments/decorations.
+The block-box path includes used width/min/max/auto-margin geometry, per-side borders and
+adjacent sibling margin collapse before BoxDecoration/background-border FillRects. Selector
+matching now adds attributes, +/~ and initial structural pseudos before the same cascade.
+Next: richer color/value functions and inline box fragments/decorations.

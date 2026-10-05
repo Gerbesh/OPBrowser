@@ -63,17 +63,50 @@ pub struct CompoundSelector {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeSelector {
+    pub name: String,
+    pub matcher: AttributeMatcher,
+    pub value: Option<String>,
+    pub case_insensitive: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttributeMatcher {
+    Exists,
+    Exact,
+    Includes,
+    DashMatch,
+    Prefix,
+    Suffix,
+    Substring,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PseudoClass {
+    Root,
+    FirstChild,
+    LastChild,
+    OnlyChild,
+    Empty,
+    Link,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimpleSelector {
     Type(String),
     Universal,
     Class(String),
     Id(String),
+    Attribute(AttributeSelector),
+    PseudoClass(PseudoClass),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Combinator {
     Descendant,
     Child,
+    AdjacentSibling,
+    GeneralSibling,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -87,7 +120,11 @@ impl Specificity {
     fn add_simple(&mut self, selector: &SimpleSelector) {
         match selector {
             SimpleSelector::Id(_) => self.ids = self.ids.saturating_add(1),
-            SimpleSelector::Class(_) => self.classes = self.classes.saturating_add(1),
+            SimpleSelector::Class(_)
+            | SimpleSelector::Attribute(_)
+            | SimpleSelector::PseudoClass(_) => {
+                self.classes = self.classes.saturating_add(1);
+            }
             SimpleSelector::Type(_) => self.types = self.types.saturating_add(1),
             SimpleSelector::Universal => {}
         }

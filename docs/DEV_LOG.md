@@ -470,3 +470,24 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 123 workspace tests,
   normal startup smoke, the 35-command expanded CSS demo smoke and optimized release build.
 - Rebuilt `target/release/op_browser.exe`; this build is 548,352 bytes.
+
+## 2026-10-06 - Expanded CSS selector matching
+
+- Extended the selector AST with attribute selectors, attribute match operators and explicit
+  ASCII case flags, plus adjacent/general sibling combinators and initial pseudo-class nodes.
+- Added `[attr]`, `=`, `~=`, `|=`, `^=`, `$=`, `*=` matching with `i`/`s` flags. Attribute
+  names follow HTML ASCII-insensitive lookup while values remain case-sensitive unless `i`.
+- Added `+` and `~` right-to-left matching over element siblings, correctly ignoring text
+  nodes between elements instead of treating DOM indentation as a CSS sibling.
+- Added `:root`, `:first-child`, `:last-child`, `:only-child`, `:empty` and `:link` matching.
+  Attributes and pseudo-classes contribute class-column specificity.
+- Added parser/matcher regressions for every attribute operator, flags, sibling relations,
+  structural pseudos, :empty whitespace semantics and specificity, plus an engine regression
+  proving the expanded selectors reach native display-list text/background output.
+- Updated the CSS demo with attribute + adjacent sibling, general sibling + suffix matching
+  and a visible :empty block; the demo smoke now produces 44 paint commands.
+- Updated the start page, project plan, code graph/slices, README and CSS syntax wiki with the
+  expanded selector surface and explicit remaining functional-pseudo/pseudo-element limits.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 127 workspace tests,
+  normal startup smoke, the 44-command selector demo smoke and optimized release build.
+- Rebuilt `target/release/op_browser.exe`; this build is 564,224 bytes.

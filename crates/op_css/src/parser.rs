@@ -1,6 +1,7 @@
 use crate::{
-    Combinator, CompoundSelector, CssError, Declaration, ParseResult, Selector, SimpleSelector,
-    Specificity, StyleRule, Stylesheet, Token, TokenKind, tokenize,
+    AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, CssError, Declaration,
+    ParseResult, PseudoClass, Selector, SimpleSelector, Specificity, StyleRule, Stylesheet, Token,
+    TokenKind, tokenize,
 };
 
 pub fn parse_stylesheet(input: &str) -> ParseResult<Stylesheet> {
@@ -256,8 +257,14 @@ fn parse_selector(tokens: &[Token]) -> Result<Selector, CssError> {
             break;
         }
 
-        if tokens[index].kind == TokenKind::Delim('>') {
-            combinators.push(Combinator::Child);
+        let explicit = match tokens[index].kind {
+            TokenKind::Delim('>') => Some((Combinator::Child, '>')),
+            TokenKind::Delim('+') => Some((Combinator::AdjacentSibling, '+')),
+            TokenKind::Delim('~') => Some((Combinator::GeneralSibling, '~')),
+            _ => None,
+        };
+        if let Some((combinator, symbol)) = explicit {
+            combinators.push(combinator);
             index += 1;
             while index < tokens.len() && matches!(tokens[index].kind, TokenKind::Whitespace) {
                 index += 1;
@@ -265,7 +272,7 @@ fn parse_selector(tokens: &[Token]) -> Result<Selector, CssError> {
             if index >= tokens.len() {
                 return Err(CssError {
                     offset: tokens.last().map_or(0, |token| token.end),
-                    message: "selector cannot end with '>'".into(),
+                    message: format!("selector cannot end with '{symbol}'"),
                 });
             }
         } else if had_whitespace {
@@ -336,6 +343,18 @@ fn parse_compound(
                 simple.push(selector);
                 index += 2;
             }
+            TokenKind::OpenSquare => {
+                let (selector, next) = parse_attribute_selector(tokens, index)?;
+                specificity.add_simple(&selector);
+                simple.push(selector);
+                index = next;
+            }
+            TokenKind::Colon => {
+                let (selector, next) = parse_pseudo_class(tokens, index)?;
+                specificity.add_simple(&selector);
+                simple.push(selector);
+                index = next;
+            }
             _ => break,
         }
     }
@@ -348,6 +367,206 @@ fn parse_compound(
         });
     }
     Ok((CompoundSelector { simple }, index))
+}
+
+fn parse_attribute_selector(
+    tokens: &[Token],
+    start: usize,
+) -> Result<(SimpleSelector, usize), CssError> {
+    let mut index = start + 1;
+    skip_selector_whitespace(tokens, &mut index);
+    let Some(name_token) = tokens.get(index) else {
+        return Err(selector_error(
+            tokens,
+            start,
+            "unterminated attribute selector",
+        ));
+    };
+    let TokenKind::Ident(name) = &name_token.kind else {
+        return Err(CssError {
+            offset: name_token.start,
+            message: "attribute selector requires an attribute name".into(),
+        });
+    };
+    let name = name.to_ascii_lowercase();
+    index += 1;
+    skip_selector_whitespace(tokens, &mut index);
+
+    if matches!(
+        tokens.get(index).map(|token| &token.kind),
+        Some(TokenKind::CloseSquare)
+    ) {
+        return Ok((
+            SimpleSelector::Attribute(AttributeSelector {
+                name,
+                matcher: AttributeMatcher::Exists,
+                value: None,
+                case_insensitive: false,
+            }),
+            index + 1,
+        ));
+    }
+
+    let (matcher, operator_len) = match tokens.get(index).map(|token| &token.kind) {
+        Some(TokenKind::Delim('=')) => (AttributeMatcher::Exact, 1),
+        Some(TokenKind::Delim('~'))
+            if matches!(
+                tokens.get(index + 1).map(|token| &token.kind),
+                Some(TokenKind::Delim('='))
+            ) =>
+        {
+            (AttributeMatcher::Includes, 2)
+        }
+        Some(TokenKind::Delim('|'))
+            if matches!(
+                tokens.get(index + 1).map(|token| &token.kind),
+                Some(TokenKind::Delim('='))
+            ) =>
+        {
+            (AttributeMatcher::DashMatch, 2)
+        }
+        Some(TokenKind::Delim('^'))
+            if matches!(
+                tokens.get(index + 1).map(|token| &token.kind),
+                Some(TokenKind::Delim('='))
+            ) =>
+        {
+            (AttributeMatcher::Prefix, 2)
+        }
+        Some(TokenKind::Delim('$'))
+            if matches!(
+                tokens.get(index + 1).map(|token| &token.kind),
+                Some(TokenKind::Delim('='))
+            ) =>
+        {
+            (AttributeMatcher::Suffix, 2)
+        }
+        Some(TokenKind::Delim('*'))
+            if matches!(
+                tokens.get(index + 1).map(|token| &token.kind),
+                Some(TokenKind::Delim('='))
+            ) =>
+        {
+            (AttributeMatcher::Substring, 2)
+        }
+        Some(token) => {
+            return Err(CssError {
+                offset: tokens[index].start,
+                message: format!("unsupported attribute selector operator: {token:?}"),
+            });
+        }
+        None => {
+            return Err(selector_error(
+                tokens,
+                start,
+                "unterminated attribute selector",
+            ));
+        }
+    };
+    index += operator_len;
+    skip_selector_whitespace(tokens, &mut index);
+
+    let Some(value_token) = tokens.get(index) else {
+        return Err(selector_error(
+            tokens,
+            start,
+            "attribute selector is missing a value",
+        ));
+    };
+    let value = match &value_token.kind {
+        TokenKind::Ident(value) | TokenKind::String(value) => value.clone(),
+        _ => {
+            return Err(CssError {
+                offset: value_token.start,
+                message: "attribute selector value must be an identifier or string".into(),
+            });
+        }
+    };
+    index += 1;
+    skip_selector_whitespace(tokens, &mut index);
+
+    let mut case_insensitive = false;
+    if let Some(Token {
+        kind: TokenKind::Ident(flag),
+        ..
+    }) = tokens.get(index)
+    {
+        if flag.eq_ignore_ascii_case("i") {
+            case_insensitive = true;
+        } else if !flag.eq_ignore_ascii_case("s") {
+            return Err(CssError {
+                offset: tokens[index].start,
+                message: "attribute selector flag must be i or s".into(),
+            });
+        }
+        index += 1;
+        skip_selector_whitespace(tokens, &mut index);
+    }
+
+    if !matches!(
+        tokens.get(index).map(|token| &token.kind),
+        Some(TokenKind::CloseSquare)
+    ) {
+        return Err(selector_error(
+            tokens,
+            start,
+            "unterminated attribute selector",
+        ));
+    }
+
+    Ok((
+        SimpleSelector::Attribute(AttributeSelector {
+            name,
+            matcher,
+            value: Some(value),
+            case_insensitive,
+        }),
+        index + 1,
+    ))
+}
+
+fn parse_pseudo_class(tokens: &[Token], start: usize) -> Result<(SimpleSelector, usize), CssError> {
+    let Some(token) = tokens.get(start + 1) else {
+        return Err(selector_error(
+            tokens,
+            start,
+            "pseudo-class is missing a name",
+        ));
+    };
+    let TokenKind::Ident(name) = &token.kind else {
+        return Err(CssError {
+            offset: token.start,
+            message: "only simple pseudo-classes are supported in this slice".into(),
+        });
+    };
+    let pseudo = match name.to_ascii_lowercase().as_str() {
+        "root" => PseudoClass::Root,
+        "first-child" => PseudoClass::FirstChild,
+        "last-child" => PseudoClass::LastChild,
+        "only-child" => PseudoClass::OnlyChild,
+        "empty" => PseudoClass::Empty,
+        "link" => PseudoClass::Link,
+        _ => {
+            return Err(CssError {
+                offset: token.start,
+                message: format!("unsupported pseudo-class :{name}"),
+            });
+        }
+    };
+    Ok((SimpleSelector::PseudoClass(pseudo), start + 2))
+}
+
+fn skip_selector_whitespace(tokens: &[Token], index: &mut usize) {
+    while *index < tokens.len() && matches!(tokens[*index].kind, TokenKind::Whitespace) {
+        *index += 1;
+    }
+}
+
+fn selector_error(tokens: &[Token], start: usize, message: &str) -> CssError {
+    CssError {
+        offset: tokens.get(start).map_or(0, |token| token.start),
+        message: message.into(),
+    }
 }
 
 fn find_rule_block_start(tokens: &[Token], start: usize) -> Option<usize> {
@@ -475,6 +694,70 @@ mod tests {
         assert_eq!(rule.declarations[0].name, "color");
         assert_eq!(rule.declarations[1].name, "margin");
         assert!(rule.declarations[1].important);
+    }
+
+    #[test]
+    fn parses_attribute_sibling_and_structural_pseudo_selectors() {
+        let parsed = parse_stylesheet(
+            "main[data-mode='dark' i] > a[href^='https'][rel~=external]:link + span:first-child ~ em:last-child { color:red }",
+        );
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let selector = &parsed.value.rules[0].selectors[0];
+        assert_eq!(
+            selector.combinators,
+            vec![
+                Combinator::Child,
+                Combinator::AdjacentSibling,
+                Combinator::GeneralSibling,
+            ]
+        );
+        assert_eq!(
+            selector.specificity,
+            Specificity {
+                ids: 0,
+                classes: 6,
+                types: 4,
+            }
+        );
+        let SimpleSelector::Attribute(attribute) = &selector.compounds[0].simple[1] else {
+            panic!("expected attribute selector");
+        };
+        assert_eq!(attribute.matcher, AttributeMatcher::Exact);
+        assert_eq!(attribute.value.as_deref(), Some("dark"));
+        assert!(attribute.case_insensitive);
+        assert!(matches!(
+            selector.compounds[1].simple.last(),
+            Some(SimpleSelector::PseudoClass(PseudoClass::Link))
+        ));
+    }
+
+    #[test]
+    fn parses_all_attribute_match_operators_and_case_flags() {
+        let parsed = parse_stylesheet(
+            "[a][b=x][c~=y][d|=en][e^=pre][f$='end'][g*=mid i][h=value s] { color:red }",
+        );
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let simple = &parsed.value.rules[0].selectors[0].compounds[0].simple;
+        let matchers: Vec<_> = simple
+            .iter()
+            .filter_map(|selector| match selector {
+                SimpleSelector::Attribute(attribute) => Some(attribute.matcher),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            matchers,
+            vec![
+                AttributeMatcher::Exists,
+                AttributeMatcher::Exact,
+                AttributeMatcher::Includes,
+                AttributeMatcher::DashMatch,
+                AttributeMatcher::Prefix,
+                AttributeMatcher::Suffix,
+                AttributeMatcher::Substring,
+                AttributeMatcher::Exact,
+            ]
+        );
     }
 
     #[test]

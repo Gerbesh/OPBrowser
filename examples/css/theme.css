@@ -11,3 +11,6 @@ h1 { color: #6d28d9; font-size: 42px; }
 .nested-box { width: 80%; margin: 14px auto -6px; padding: 0.75em 5%; box-sizing: border-box; background-color: #ffffff; border-width: 1px 3px 4px 2px; border-style: solid; border-color: #7c3aed #2563eb #4338ca #b42318; color: #5b21b6; }
 .collapse-a { margin: 24px 0 30px; padding: 6px; background-color: #ffffff; border-left: 4px solid #087a35; }
 .collapse-b { margin: 12px 0 18px; padding: 6px; background-color: #eef2ff; border-left: 4px solid #b42318; }
+.selector-demo[data-state=ready i] > span:first-child + span[data-kind~=accent] { color: #b42318; font-weight: bold; }
+.selector-seed ~ .selector-tail[title$='target'] { color: #0369a1; font-weight: bold; }
+.empty-demo:empty { width: 55%; min-height: 18px; margin: 10px auto; padding: 8px; background-color: #f5f3ff; border: 2px solid #7c3aed; box-sizing: border-box; }

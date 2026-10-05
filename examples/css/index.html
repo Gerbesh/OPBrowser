@@ -16,6 +16,9 @@
 <div class="box-model">Centered 72% border-box with min/max width, %/em padding and four independent borders.<div class="nested-box">Nested 80% box uses auto margins, negative bottom margin, border-width/style/color shorthands and per-side colors.</div></div>
 <div class="collapse-a">Sibling A has margin-bottom: 30px.</div>
 <div class="collapse-b">Sibling B has margin-top: 12px; adjoining margins collapse to 30px, not 42px.</div>
+<div class="selector-demo" data-state="READY"><span>Attribute + child selector.</span> <span data-kind="accent featured">This red bold span matched :first-child + [data-kind~=accent].</span></div>
+<p><span class="selector-seed">Seed.</span> <span>Middle.</span> <span class="selector-tail" title="final-target">General sibling + suffix attribute selector matched this blue bold tail.</span></p>
+<div class="empty-demo"></div>
 <p>Normal text, <span class="accent">bold red inline span</span>, then normal text again.</p>
 <p>Before block span. <span class="block">This span is display:block and 24px.</span> After block span.</p>
 <p><span class="inline">This span stays inline and has its own color.</span></p>
