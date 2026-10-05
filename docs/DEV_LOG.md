@@ -88,3 +88,14 @@ This file is append-only project history.
 - Added synchronous UpdateWindow startup painting.
 - Strengthened --smoke-test so it fails unless WM_PAINT actually executed.
 - Verified rustfmt, Clippy, all workspace tests, paint smoke, and release build.
+
+## 2026-10-05 - GitHub Actions external blocker
+
+- Confirmed the CI workflow is discovered on every public push.
+- Inspected the failed GitHub check-run annotation directly.
+- GitHub reports: "The job was not started because your account is locked due to a billing issue."
+- No workflow steps execute, so these red runs are not code/test failures.
+- Local rustfmt, Clippy, workspace tests, real WM_PAINT smoke test, and release build
+  all pass for commit 20b9eea.
+- Kept CI configured so remote execution can resume once the GitHub account billing
+  lock is cleared.

@@ -19,6 +19,7 @@ Primary conformance targets:
 - DONE: implemented and verified at the current milestone level.
 - IN PROGRESS: active engineering work.
 - NEXT: queued immediately after active work.
+- BLOCKED: configured or implemented, but prevented by an external dependency/state.
 - LATER: planned but intentionally deferred.
 
 ## M0 - Foundation
@@ -35,7 +36,9 @@ Status: DONE at initial level.
 - DONE documented dependency policy.
 - DONE project documentation workflow, code graph, code slices, and local wiki.
 - DONE public GitHub repository: https://github.com/Gerbesh/OPBrowser
-- DONE GitHub Actions Windows CI and continuous commit/push workflow.
+- DONE continuous Git commit/push workflow to public main.
+- BLOCKED GitHub Actions Windows CI execution: the workflow is configured, but
+  GitHub currently refuses to start jobs because the account is locked due to a billing issue.
 
 ## M1 - First static document pipeline
 

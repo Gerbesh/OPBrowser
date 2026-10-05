@@ -14,3 +14,13 @@ Every coherent update follows the same loop:
 Red builds are not considered completed updates.
 
 See AGENTS.md for the exact repository rules.
+
+## Current GitHub Actions status
+
+The Windows CI workflow is committed and GitHub discovers it correctly, but remote
+jobs are currently blocked before runner startup. GitHub's check annotation states
+that the account is locked due to a billing issue.
+
+Until that external account state is cleared, local completion still requires the
+full format, Clippy, test, paint-smoke, and release-build checks. A red GitHub Actions
+run with zero executed steps must not be interpreted as an OPBrowser code failure.
