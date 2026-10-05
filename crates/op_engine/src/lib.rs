@@ -504,6 +504,51 @@ mod tests {
     }
 
     #[test]
+    fn css_block_box_model_reaches_display_list_geometry_and_paint() {
+        let display_list = Engine::new().render_html(
+            "<style>.card{display:block;margin:10px 20px;padding:8px 12px;background-color:#eef2ff;border:2px solid #4338ca}</style><div class='card'>boxed</div>",
+            800,
+            600,
+        );
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::FillRect {
+                x: 52,
+                width: 696,
+                color: op_paint::Color {
+                    r: 0xee,
+                    g: 0xf2,
+                    b: 0xff
+                },
+                ..
+            }
+        )));
+        assert!(
+            display_list
+                .commands
+                .iter()
+                .filter(|command| matches!(
+                    command,
+                    PaintCommand::FillRect {
+                        color: op_paint::Color {
+                            r: 0x43,
+                            g: 0x38,
+                            b: 0xca
+                        },
+                        ..
+                    }
+                ))
+                .count()
+                >= 4
+        );
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, x: 66, .. } if text == "boxed"
+        )));
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,

@@ -63,11 +63,47 @@ impl CssColor {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoxEdges {
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+    pub left: f32,
+}
+
+impl BoxEdges {
+    pub const ZERO: Self = Self {
+        top: 0.0,
+        right: 0.0,
+        bottom: 0.0,
+        left: 0.0,
+    };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ComputedBorder {
+    pub width_px: f32,
+    pub color: CssColor,
+    pub solid: bool,
+}
+
+impl ComputedBorder {
+    pub const NONE: Self = Self {
+        width_px: 0.0,
+        color: CssColor::BLACK,
+        solid: false,
+    };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ComputedStyle {
     pub display: Display,
     pub color: CssColor,
     pub font_size_px: f32,
     pub font_weight: ComputedFontWeight,
+    pub background_color: CssColor,
+    pub margin: BoxEdges,
+    pub padding: BoxEdges,
+    pub border: ComputedBorder,
 }
 
 impl ComputedStyle {
@@ -77,6 +113,10 @@ impl ComputedStyle {
             color: CssColor::BLACK,
             font_size_px: 18.0,
             font_weight: ComputedFontWeight::Normal,
+            background_color: CssColor::TRANSPARENT,
+            margin: BoxEdges::ZERO,
+            padding: BoxEdges::ZERO,
+            border: ComputedBorder::NONE,
         }
     }
 }
@@ -141,6 +181,10 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             color: parent.color,
             font_size_px: parent.font_size_px,
             font_weight: parent.font_weight,
+            background_color: initial.background_color,
+            margin: initial.margin,
+            padding: initial.padding,
+            border: initial.border,
         },
         None => initial,
     }
@@ -159,19 +203,28 @@ fn apply_ua_defaults(style: &mut ComputedStyle, tag: &str) {
         "h1" => {
             style.font_size_px = 34.0;
             style.font_weight = ComputedFontWeight::Bold;
+            style.margin.top = 8.0;
+            style.margin.bottom = 16.0;
         }
         "h2" => {
             style.font_size_px = 28.0;
             style.font_weight = ComputedFontWeight::Bold;
+            style.margin.top = 8.0;
+            style.margin.bottom = 14.0;
         }
         "h3" => {
             style.font_size_px = 23.0;
             style.font_weight = ComputedFontWeight::Bold;
+            style.margin.top = 6.0;
+            style.margin.bottom = 12.0;
         }
         "h4" | "h5" | "h6" => {
             style.font_size_px = 18.0;
             style.font_weight = ComputedFontWeight::Bold;
+            style.margin.top = 6.0;
+            style.margin.bottom = 12.0;
         }
+        "p" | "li" => style.margin.bottom = 12.0,
         _ => {}
     }
 }
@@ -246,6 +299,34 @@ fn apply_author_declarations(
             ComputedFontWeight::Normal,
         );
     }
+    if let Some((_, value)) = winning_value(declarations, "background-color", parse_color) {
+        style.background_color = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.background_color),
+            CssColor::TRANSPARENT,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "margin", parse_box_edges) {
+        style.margin = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.margin),
+            BoxEdges::ZERO,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "padding", parse_box_edges) {
+        style.padding = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.padding),
+            BoxEdges::ZERO,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "border", parse_border) {
+        style.border = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.border),
+            ComputedBorder::NONE,
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -290,6 +371,14 @@ fn resolve_inherited<T: Copy>(value: Specified<T>, parent: Option<T>, initial: T
         Specified::Value(value) => value,
         Specified::Inherit | Specified::Unset => parent.unwrap_or(initial),
         Specified::Initial => initial,
+    }
+}
+
+fn resolve_non_inherited<T: Copy>(value: Specified<T>, parent: Option<T>, initial: T) -> T {
+    match value {
+        Specified::Value(value) => value,
+        Specified::Inherit => parent.unwrap_or(initial),
+        Specified::Initial | Specified::Unset => initial,
     }
 }
 
@@ -347,6 +436,129 @@ fn parse_font_size(tokens: &[TokenKind]) -> Option<Specified<f32>> {
     (value.is_finite() && (1.0..=4096.0).contains(&value)).then_some(Specified::Value(value))
 }
 
+fn parse_box_edges(tokens: &[TokenKind]) -> Option<Specified<BoxEdges>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| BoxEdges::ZERO));
+    }
+    let values: Vec<f32> = tokens
+        .iter()
+        .filter(|token| !matches!(token, TokenKind::Whitespace))
+        .map(parse_length_token)
+        .collect::<Option<_>>()?;
+    let edges = match values.as_slice() {
+        [all] => BoxEdges {
+            top: *all,
+            right: *all,
+            bottom: *all,
+            left: *all,
+        },
+        [vertical, horizontal] => BoxEdges {
+            top: *vertical,
+            right: *horizontal,
+            bottom: *vertical,
+            left: *horizontal,
+        },
+        [top, horizontal, bottom] => BoxEdges {
+            top: *top,
+            right: *horizontal,
+            bottom: *bottom,
+            left: *horizontal,
+        },
+        [top, right, bottom, left] => BoxEdges {
+            top: *top,
+            right: *right,
+            bottom: *bottom,
+            left: *left,
+        },
+        _ => return None,
+    };
+    Some(Specified::Value(edges))
+}
+
+fn parse_border(tokens: &[TokenKind]) -> Option<Specified<ComputedBorder>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| ComputedBorder::NONE));
+    }
+    if single_ident(tokens).is_some_and(|ident| ident.eq_ignore_ascii_case("none")) {
+        return Some(Specified::Value(ComputedBorder::NONE));
+    }
+
+    let significant: Vec<&TokenKind> = tokens
+        .iter()
+        .filter(|token| !matches!(token, TokenKind::Whitespace))
+        .collect();
+    if significant.len() != 3 {
+        return None;
+    }
+
+    let mut width = None;
+    let mut solid = false;
+    let mut color = None;
+    for token in significant {
+        if width.is_none()
+            && let Some(value) = parse_length_token(token)
+        {
+            width = Some(value);
+            continue;
+        }
+        if matches!(token, TokenKind::Ident(value) if value.eq_ignore_ascii_case("solid")) {
+            if solid {
+                return None;
+            }
+            solid = true;
+            continue;
+        }
+        if color.is_none()
+            && let Some(value) = parse_color_token(token)
+        {
+            color = Some(value);
+            continue;
+        }
+        return None;
+    }
+
+    Some(Specified::Value(ComputedBorder {
+        width_px: width?,
+        color: color?,
+        solid,
+    }))
+}
+
+fn parse_length_token(token: &TokenKind) -> Option<f32> {
+    let value = match token {
+        TokenKind::Number(number) if number == "0" || number == "+0" || number == "-0" => 0.0,
+        TokenKind::Dimension { number, unit } if unit.eq_ignore_ascii_case("px") => {
+            number.parse::<f32>().ok()?
+        }
+        _ => return None,
+    };
+    (value.is_finite() && (0.0..=4096.0).contains(&value)).then_some(value)
+}
+
+fn global_keyword(tokens: &[TokenKind]) -> Option<Specified<()>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+trait SpecifiedMap {
+    fn map<T>(self, value: impl FnOnce(()) -> T) -> Specified<T>;
+}
+
+impl SpecifiedMap for Specified<()> {
+    fn map<T>(self, value: impl FnOnce(()) -> T) -> Specified<T> {
+        match self {
+            Specified::Value(()) => Specified::Value(value(())),
+            Specified::Inherit => Specified::Inherit,
+            Specified::Initial => Specified::Initial,
+            Specified::Unset => Specified::Unset,
+        }
+    }
+}
+
 fn parse_color(tokens: &[TokenKind]) -> Option<Specified<CssColor>> {
     if let Some(ident) = single_ident(tokens) {
         return match ident.to_ascii_lowercase().as_str() {
@@ -363,10 +575,23 @@ fn parse_color(tokens: &[TokenKind]) -> Option<Specified<CssColor>> {
         };
     }
 
-    let TokenKind::Hash { value, .. } = single_significant_token(tokens)? else {
-        return None;
-    };
-    parse_hex_color(value).map(Specified::Value)
+    parse_color_token(single_significant_token(tokens)?).map(Specified::Value)
+}
+
+fn parse_color_token(token: &TokenKind) -> Option<CssColor> {
+    match token {
+        TokenKind::Ident(value) => match value.to_ascii_lowercase().as_str() {
+            "black" => Some(CssColor::BLACK),
+            "white" => Some(CssColor::WHITE),
+            "red" => Some(CssColor::RED),
+            "green" => Some(CssColor::GREEN),
+            "blue" => Some(CssColor::BLUE),
+            "transparent" => Some(CssColor::TRANSPARENT),
+            _ => None,
+        },
+        TokenKind::Hash { value, .. } => parse_hex_color(value),
+        _ => None,
+    }
 }
 
 fn parse_hex_color(hex: &str) -> Option<CssColor> {
@@ -537,6 +762,88 @@ mod tests {
         assert_eq!(child.font_size_px, 24.0);
         assert_eq!(child.font_weight, ComputedFontWeight::Normal);
         assert_eq!(child.display, Display::Inline);
+    }
+
+    #[test]
+    fn computes_initial_block_box_model_values_and_global_keywords() {
+        let document = parse_document(
+            "<div id='parent' style='background-color:#abc; margin:1px 2px 3px 4px; padding:5px 6px; border:2px solid #123456'>
+                <div id='child' style='background-color:inherit; margin:inherit; padding:unset; border:inherit'>x</div>
+             </div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let parent = computed.style_for(find_by_id(&document, "parent")).unwrap();
+        let child = computed.style_for(find_by_id(&document, "child")).unwrap();
+
+        assert_eq!(
+            parent.background_color,
+            CssColor {
+                red: 0xaa,
+                green: 0xbb,
+                blue: 0xcc,
+                alpha: 255,
+            }
+        );
+        assert_eq!(
+            parent.margin,
+            BoxEdges {
+                top: 1.0,
+                right: 2.0,
+                bottom: 3.0,
+                left: 4.0,
+            }
+        );
+        assert_eq!(
+            parent.padding,
+            BoxEdges {
+                top: 5.0,
+                right: 6.0,
+                bottom: 5.0,
+                left: 6.0,
+            }
+        );
+        assert_eq!(
+            parent.border,
+            ComputedBorder {
+                width_px: 2.0,
+                color: CssColor {
+                    red: 0x12,
+                    green: 0x34,
+                    blue: 0x56,
+                    alpha: 255,
+                },
+                solid: true,
+            }
+        );
+        assert_eq!(child.background_color, parent.background_color);
+        assert_eq!(child.margin, parent.margin);
+        assert_eq!(child.padding, BoxEdges::ZERO);
+        assert_eq!(child.border, parent.border);
+    }
+
+    #[test]
+    fn ua_spacing_is_represented_as_computed_margins_and_can_be_overridden() {
+        let document =
+            parse_document("<p id='default'>a</p><p id='custom' style='margin:4px 5px'>b</p>");
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let default = computed
+            .style_for(find_by_id(&document, "default"))
+            .unwrap();
+        let custom = computed.style_for(find_by_id(&document, "custom")).unwrap();
+
+        assert_eq!(default.margin.bottom, 12.0);
+        assert_eq!(default.margin.top, 0.0);
+        assert_eq!(
+            custom.margin,
+            BoxEdges {
+                top: 4.0,
+                right: 5.0,
+                bottom: 4.0,
+                left: 5.0,
+            }
+        );
     }
 
     #[test]

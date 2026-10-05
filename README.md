@@ -8,7 +8,7 @@ Its own tokenizer, tree builder, DOM, text layout and display list render the pa
 into a Win32 window. Text hyperlinks support current-window navigation, including
 relative HTTP(S) and local-file links. PNG/JPEG/GIF/BMP images load from HTTP(S),
 local files and data URLs, with dimensions, transparency, alt fallback and image links.
-Initial embedded, inline and external author CSS now reaches native pixels; JavaScript remains future work.
+Initial embedded, inline and external author CSS plus a block-level box model now reach native pixels; JavaScript remains future work.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 
@@ -63,9 +63,9 @@ thread; errors appear in the status line and preserve the previous page/history.
 Resizing the window rewraps the current page from retained DOM/image data without
 refetching it. See [page reflow](wiki/Page-Reflow.md) for behavior and verification.
 The start page is now styled with OPBrowser's supported CSS subset, so the release binary
-shows color, font size/weight and display behavior immediately. `examples\css\index.html`
-is a focused CSS fixture that loads a real external `theme.css` and demonstrates a later
-embedded rule overriding it in source order. Links remain blue/underlined with a hand cursor; clicking uses
+shows text styling, display behavior and block margin/padding/background/borders immediately.
+`examples\css\index.html` is a focused CSS fixture that loads a real external `theme.css`,
+demonstrates source-order override and draws nested block boxes. Links remain blue/underlined with a hand cursor; clicking uses
 the same loading/history path. The navigation example demonstrates a relative local link.
 
 Initial network support requires Windows, an ASCII hostname (or an IPv4/bracketed
@@ -85,11 +85,14 @@ share measured lines with text; GIF shows the first frame. Line layout supports
 baseline alignment, wrapping, `<br>` and HTML whitespace. Initial CSS supports embedded
 `<style>`, `style=""`, and bounded `<link rel="stylesheet">` from local/file/data/HTTP(S),
 type/class/ID/universal selectors, descendant/child combinators, cascade/inheritance,
-`display` inline/block/none, text color, px font size and normal/bold font weight. External
-CSS is merged with embedded rules in DOM source order and retained across resize reflow.
-The box model, `@import`, general media queries, CSS `url(...)` resources and JavaScript
-are not implemented yet; link glyphs still use the native default blue. See
-[CSS foundation](wiki/CSS-Syntax-Foundation.md), [stylesheet loading](wiki/Stylesheet-Loading.md),
+`display` inline/block/none, text color, px font size and normal/bold font weight. The
+initial block box model adds nonnegative px/zero `margin` and `padding` shorthands,
+`background-color`, and `border: <px> solid <color>`/`none`. External CSS is merged with
+embedded rules in DOM source order and retained across resize reflow. Margin collapsing,
+side longhands, width/height, inline box decorations, `@import`, general media queries,
+CSS `url(...)` resources and JavaScript are not implemented yet; link glyphs still use the
+native default blue. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),
+[CSS box model](wiki/CSS-Box-Model.md), [stylesheet loading](wiki/Stylesheet-Loading.md),
 [inline layout](wiki/Inline-Layout.md) and [image loading](wiki/Image-Loading.md).
 
 See:

@@ -413,3 +413,29 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 112 workspace tests,
   normal startup smoke and the external-CSS demo smoke with 14 paint commands.
 - Rebuilt `target/release/op_browser.exe`; this build is 518,144 bytes.
+
+## 2026-10-06 - Initial CSS block box model
+
+- Extended ComputedStyle with non-inherited background-color, margin/padding edges and a
+  uniform initial border value while preserving the existing text/display inheritance path.
+- Added `margin` and `padding` shorthands with 1-4 nonnegative px/zero values, plus
+  `background-color`, `border: none`, and `<px> solid <color>` parsing/cascade support.
+- Moved temporary h1-h6 and paragraph/list vertical spacing into computed UA margins so
+  author margins and browser defaults now enter the same block geometry path.
+- Reworked op_layout block flow to compute margin -> border -> padding -> content geometry,
+  propagate the reduced content width to nested blocks/inline lines/images, and emit
+  BoxDecoration records for visible block backgrounds and solid borders.
+- op_paint now expands BoxDecoration into a background FillRect and four solid-border side
+  FillRects before text/images; Win32 remains a native drawing backend rather than CSS logic.
+- Added deterministic computed-style, layout, paint and engine regressions for shorthand
+  expansion/global keywords, UA-margin override, nested content coordinates and final paint.
+- Updated the built-in start page and external CSS demo with visible nested box-model panels;
+  the CSS demo smoke now produces 26 paint commands.
+- Added `wiki/CSS-Box-Model.md` and updated project plan, code graph/slices, README,
+  development instructions, CSS/rendering/inline-layout wiki pages and wiki navigation.
+- Current limits are explicit: ordinary non-replaced block boxes only, no margin collapsing,
+  side longhands, width/height, auto/percent/em sizing, negative margins, inline box
+  fragments/decorations, replaced-element box decoration, radii/shadows or full stacking.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 117 workspace tests,
+  normal startup smoke, the 26-command CSS box demo smoke and optimized release build.
+- Rebuilt `target/release/op_browser.exe`; this build is 528,384 bytes.

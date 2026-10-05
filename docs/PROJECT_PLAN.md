@@ -118,7 +118,13 @@ Status: IN PROGRESS.
 - DONE load bounded external `<link rel="stylesheet">` resources from local/file/data/HTTP(S)
   through op_net, preserve their DOM source order with embedded styles, and retain the result
   across reflow; failed stylesheet subresources are nonfatal.
-- NEXT begin the CSS box model with background/border and margin/padding geometry.
+- DONE initial block-level box model: nonnegative px/zero `margin` and `padding`
+  shorthands (1-4 values), `background-color`, and `border: <px> solid <color>`/`none`
+  now reach computed style, layout geometry, display-list fills and native paint.
+- DONE move the previous temporary heading/paragraph/list spacing into computed UA margins
+  so normal flow consumes one box-model spacing path instead of separate semantic offsets.
+- NEXT broaden the box model with side longhands, width/height, margin collapsing and inline
+  box fragments/decorations.
 - LATER broader computed values.
 - LATER normal flow block layout.
 - LATER full CSS inline formatting and Unicode line breaking (initial M1 subset exists).

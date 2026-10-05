@@ -194,8 +194,8 @@ scroll anchoring or history page cache. Current single-window ownership still ap
 
 ## S3 - CSS-styled document
 
-Status: IN PROGRESS. Embedded, inline and initial external author CSS are end-to-end
-through native pixels; broader CSS syntax and box-model properties remain.
+Status: IN PROGRESS. Embedded, inline and initial external author CSS plus the first
+block-level box model are end-to-end through native pixels; broader CSS remains.
 
 Current path:
 
@@ -212,11 +212,14 @@ HTML
   -> per-NodeId StyleMap<MatchedDeclaration>
   -> cascade: !important -> inline source -> specificity -> source order
   -> inheritance + initial/inherit/unset
-  -> ComputedStyleMap { display, color, font-size, font-weight }
+  -> ComputedStyleMap { display, color, font-size, font-weight,
+                        background-color, margin, padding, border }
   -> retained in PreparedDocument
   -> op_layout display/block/inline decisions + mixed inline style runs
-  -> TextBox color/size/weight
-  -> op_paint display-list text color
+       + block margin/border/padding content geometry
+       + BoxDecoration background/border rectangles
+  -> TextBox color/size/weight + BoxDecoration geometry
+  -> op_paint text plus background/border FillRect commands
   -> Win32 GDI pixels
   -> resize reflow reuses retained DOM/images/author/computed styles
 ```
@@ -226,10 +229,12 @@ font-weight normal/bold/400/700, a small named-color set plus #RGB(A)/#RRGGBB(AA
 the global keywords inherit/initial/unset. color/font-size/font-weight inherit; display
 does not unless explicitly set to inherit. Unsupported/invalid values are discarded
 before cascade winner selection so a lower-priority valid declaration may still win.
-Temporary UA defaults preserve M1 block/hidden behavior and heading typography. Inline
-text runs may now differ in size, weight and color while sharing a line and baseline.
-RGBA text colors are composited over the current white page background before native
-painting. Existing hyperlink glyphs/underlines still use the native default link blue;
+UA defaults preserve M1 block/hidden behavior and heading typography. Former semantic
+heading/paragraph/list spacing now lives in computed margins and goes through the same
+block geometry path as author margins. Inline text runs may differ in size, weight and
+color while sharing a line and baseline. RGBA text and box colors are currently composited
+over the white page background before native painting. Existing hyperlink glyphs/underlines
+still use the native default link blue;
 author link color is deferred until link styling is represented without breaking the
 current LinkSpan hit-testing model.
 
@@ -238,13 +243,21 @@ requests, 1 MiB per stylesheet and 2 MiB decoded CSS per document. The current a
 subset accepts normal screen/all stylesheets and skips alternate/disabled/print links.
 Resize reflow reuses retained author/computed styles without refetching CSS.
 
+Initial block-box values accept `margin`/`padding` shorthands with 1-4 nonnegative px
+(or zero) values, `background-color` from the existing color subset, and `border: none` or
+three-component solid borders. These properties are non-inherited by default but support
+inherit/initial/unset. Author box geometry currently applies to non-replaced block boxes;
+inline element boxes and block images do not yet receive CSS padding/background/border.
+There is no margin collapsing, auto/percent/em sizing, width/height, box-sizing or side
+longhand support yet.
+
 Planned next path:
 
 ```text
 ComputedStyleMap
-  -> background/border paint data
-  -> margin/padding box geometry
-  -> replace temporary semantic spacing with CSS box-model flow
+  -> margin-*/padding-*/border-* + width/height
+  -> margin collapsing / richer normal block flow
+  -> inline box fragments and decorations
 ```
 
 Broader property/value coverage, `@import`, media queries and CSS `url(...)` resources

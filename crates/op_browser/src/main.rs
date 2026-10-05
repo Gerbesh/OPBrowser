@@ -10,6 +10,7 @@ h1 { color: #6d28d9; font-size: 42px; }
 .status { color: #087a35; font-size: 21px; font-weight: bold; }
 .accent { color: #b42318; font-weight: bold; }
 .demo-block { display: block; color: #075985; font-size: 20px; }
+.box-demo { margin: 10px 0; padding: 10px 14px; background-color: #eef2ff; border: 2px solid #4338ca; color: #312e81; font-weight: bold; }
 .hidden-proof { display: none; }
 a { font-weight: bold; }
 </style></head><body>
@@ -18,6 +19,7 @@ a { font-weight: bold; }
 <p>Поддерживаются встроенные стили, style="" и внешние link rel=stylesheet для local/file/HTTP(S).</p>
 <p><a href="https://example.com">Открыть Example Domain</a></p>
 <p>Работают <span class="accent">color, font-size, font-weight</span> и <span class="demo-block">display: block / inline / none.</span></p>
+<div class="box-demo">Box model: margin + padding + background-color + solid border.</div>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>

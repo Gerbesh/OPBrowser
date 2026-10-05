@@ -1,6 +1,6 @@
 pub use op_image::RasterImage;
 pub use op_layout::LinkSpan;
-use op_layout::{FontWeight, LayoutItem, LayoutTree, TextColor};
+use op_layout::{BoxDecoration, FontWeight, LayoutItem, LayoutTree, TextColor};
 use std::sync::Arc;
 
 /// Shared by the worker's font extent adapter and native painter.
@@ -67,7 +67,9 @@ pub struct DisplayList {
 }
 
 pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayList {
-    let mut commands = Vec::with_capacity(layout.text_boxes.len() + layout.image_boxes.len() + 1);
+    let mut commands = Vec::with_capacity(
+        layout.text_boxes.len() + layout.image_boxes.len() + layout.box_decorations.len() * 5 + 1,
+    );
 
     commands.push(PaintCommand::FillRect {
         x: 0,
@@ -76,6 +78,10 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
         height: viewport_height.max(layout.content_height),
         color: Color::WHITE,
     });
+
+    for decoration in &layout.box_decorations {
+        push_box_decoration(&mut commands, decoration);
+    }
 
     for item in &layout.order {
         match *item {
@@ -112,7 +118,62 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
     DisplayList { commands }
 }
 
+fn push_box_decoration(commands: &mut Vec<PaintCommand>, decoration: &BoxDecoration) {
+    if decoration.width <= 0 || decoration.height <= 0 {
+        return;
+    }
+    if decoration.background.alpha > 0 {
+        commands.push(PaintCommand::FillRect {
+            x: decoration.x,
+            y: decoration.y,
+            width: decoration.width,
+            height: decoration.height,
+            color: composite_color(decoration.background),
+        });
+    }
+
+    let border = decoration
+        .border_width
+        .clamp(0, decoration.width.min(decoration.height) / 2);
+    if border == 0 {
+        return;
+    }
+    let color = composite_color(decoration.border_color);
+    commands.push(PaintCommand::FillRect {
+        x: decoration.x,
+        y: decoration.y,
+        width: decoration.width,
+        height: border,
+        color,
+    });
+    commands.push(PaintCommand::FillRect {
+        x: decoration.x,
+        y: decoration.y + decoration.height - border,
+        width: decoration.width,
+        height: border,
+        color,
+    });
+    commands.push(PaintCommand::FillRect {
+        x: decoration.x,
+        y: decoration.y + border,
+        width: border,
+        height: decoration.height - border * 2,
+        color,
+    });
+    commands.push(PaintCommand::FillRect {
+        x: decoration.x + decoration.width - border,
+        y: decoration.y + border,
+        width: border,
+        height: decoration.height - border * 2,
+        color,
+    });
+}
+
 fn composite_text_color(color: TextColor) -> Color {
+    composite_color(color)
+}
+
+fn composite_color(color: TextColor) -> Color {
     fn channel(value: u8, alpha: u8) -> u8 {
         let alpha = u16::from(alpha);
         let value = u16::from(value);
@@ -158,10 +219,69 @@ mod tests {
     }
 
     #[test]
+    fn creates_block_background_and_border_fill_commands() {
+        let layout = LayoutTree {
+            viewport_width: 300,
+            content_height: 120,
+            box_decorations: vec![BoxDecoration {
+                x: 20,
+                y: 30,
+                width: 200,
+                height: 60,
+                background: TextColor {
+                    red: 240,
+                    green: 244,
+                    blue: 255,
+                    alpha: 255,
+                },
+                border_width: 2,
+                border_color: TextColor {
+                    red: 12,
+                    green: 34,
+                    blue: 56,
+                    alpha: 255,
+                },
+            }],
+            text_boxes: vec![],
+            image_boxes: vec![],
+            order: vec![],
+        };
+
+        let display_list = build_display_list(&layout, 120);
+        assert_eq!(display_list.commands.len(), 6);
+        assert_eq!(
+            display_list.commands[1],
+            PaintCommand::FillRect {
+                x: 20,
+                y: 30,
+                width: 200,
+                height: 60,
+                color: Color {
+                    r: 240,
+                    g: 244,
+                    b: 255,
+                },
+            }
+        );
+        assert!(display_list.commands[2..].iter().all(|command| matches!(
+            command,
+            PaintCommand::FillRect {
+                color: Color {
+                    r: 12,
+                    g: 34,
+                    b: 56
+                },
+                ..
+            }
+        )));
+    }
+
+    #[test]
     fn creates_background_and_text_commands() {
         let layout = LayoutTree {
             viewport_width: 800,
             content_height: 120,
+            box_decorations: vec![],
             text_boxes: vec![TextBox {
                 x: 32,
                 y: 40,

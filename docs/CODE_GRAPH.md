@@ -218,8 +218,19 @@ classDiagram
         color
         font_size_px
         font_weight
+        background_color
+        margin
+        padding
+        border
+    }
+    class BoxDecoration {
+        bounds
+        background
+        border_width
+        border_color
     }
     class LayoutTree {
+        box_decorations
         text_boxes
         image_boxes
         order
@@ -294,7 +305,9 @@ classDiagram
     PreparedDocument --> Document : DOM snapshot
     PreparedDocument --> RasterImage : shared Arc image resources
     Document --> LayoutTree : flow grouping / inline lines
-    ComputedStyleMap --> LayoutTree : display flow + text run style
+    ComputedStyleMap --> LayoutTree : display/text style + block box geometry
+    LayoutTree --> BoxDecoration : block backgrounds / solid borders
+    BoxDecoration --> DisplayList : background + four border FillRects
     LayoutTree --> DisplayList : styled text / image paint commands
     Engine --> TextMeasurer : worker-local GDI adapter
     TextMeasurer --> TextMetrics : whole href-run extents
@@ -360,12 +373,13 @@ classDiagram
   Initial raw-text/RCDATA context keeps
   references and markup from being incorrectly parsed inside script/style/title.
 - op_dom owns document/node storage, element attributes, and DOM invariants.
-- op_layout owns text-flow geometry, structural-container traversal and UTF-8
-  LinkSpan ranges preserved across whitespace normalization and line wrapping. It now
-  consumes ComputedStyleMap for display flow and emits mixed text runs carrying computed
-  size, weight and RGBA color on a shared baseline.
-- op_paint owns platform-neutral paint commands/display lists, CSS text-color conversion
-  (including alpha over the current white page) and the temporary default link color.
+- op_layout owns text-flow and initial block-box geometry, structural-container traversal
+  and UTF-8 LinkSpan ranges preserved across whitespace normalization and line wrapping.
+  It consumes ComputedStyleMap for display flow, mixed text runs and block margin/border/
+  padding geometry, emitting BoxDecoration records for backgrounds/solid borders.
+- op_paint owns platform-neutral paint commands/display lists, CSS color conversion and
+  BoxDecoration -> FillRect expansion for backgrounds/four border sides, plus the temporary
+  default link color. Alpha text/box colors currently composite over the white page.
   TEXT_FONT_FAMILY and Windows GDI_TEXT_LOCK are shared by engine metric adapter and
   native painter. Font realization, measurement/drawing and cleanup are synchronized
   per operation; networking and original layout do not hold this gate.
@@ -377,9 +391,10 @@ classDiagram
   supported selector subset right-to-left and builds per-NodeId MatchedDeclaration
   candidates. compute_styles resolves supported values using !important, inline source,
   specificity and source order, then applies inheritance/global keywords into a
-  ComputedStyleMap. Initial properties are display, color, font-size and font-weight.
-  Temporary UA defaults mirror M1 block/hidden tags and heading typography; the computed
-  map now feeds op_layout/op_paint instead of stopping at page preparation.
+  ComputedStyleMap. Initial properties now include display, color, font-size/font-weight,
+  background-color, margin/padding edges and one solid-border shorthand result. UA defaults
+  mirror M1 block/hidden tags and heading typography; heading/paragraph/list spacing is now
+  represented as computed margins instead of a separate layout spacing table.
 - op_engine::styles walks link nodes during page preparation, applies the initial
   stylesheet-link activation subset, resolves against the effective document address,
   and owns per-document request/text budgets plus duplicate-source reuse. Load failures
@@ -430,4 +445,5 @@ Engine preparation now connects parsed DOM -> bounded external stylesheet loadin
 DOM-order linked/embedded CSS collection -> selector matching -> cascade/inheritance ->
 retained ComputedStyleMap -> CSS-aware layout -> display-list text styling -> Win32 pixels.
 Reflow reuses author candidates and computed values without refetching/reparsing CSS.
-Next: replace temporary semantic spacing with the first CSS box-model geometry.
+The first block-box path now continues into BoxDecoration/background-border FillRects.
+Next: side longhands, width/height, margin collapsing and inline box fragments.

@@ -36,8 +36,8 @@ emits this sequence instead of painting all text before all images.
   close to the available width instead of every remaining long suffix.
 - UTF-8 href byte ranges are reconstructed for each wrapped text fragment; image
   rectangles retain inherited hrefs and use existing scroll-aware hit testing.
-- Computed display:none/block/inline participates in flow. Headings h1-h6,
-  paragraphs/li and structural containers still have temporary semantic spacing defaults.
+- Computed display:none/block/inline participates in flow. Heading/paragraph/list spacing
+  is now represented as temporary UA computed margins in the block box-model path.
 - Computed font-size, font-weight and text color can change inside one inline line.
   Consecutive inline nodes around blocks form anonymous line groups.
 
@@ -60,7 +60,9 @@ and Text/Image/Text display-list order. Native smokes verify raster painting and
 a click through to the linked destination.
 
 This is still an initial left-to-right subset. Mixed computed inline size/weight/color
-is supported, but margin collapsing, CSS line-height, font families/styles, advanced
+is supported, but inline padding/background/border fragments are not. Block-level box-model
+support is described in [CSS Block Box Model](CSS-Box-Model.md). Margin collapsing,
+CSS line-height, font families/styles, advanced
 shaping/font fallback, bidi, grapheme-aware/full Unicode line breaking, preformatted
 whitespace modes, floats/tables/flex/grid remain future work. Hyperlink glyph color is
 still the native default blue. These tests do not claim complete CSS conformance.

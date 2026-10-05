@@ -101,11 +101,12 @@ inline flow. font-size, font-weight and color are carried on inline character ru
 span can change typography/color without forcing a new line. Runs with different font
 metrics share the same baseline.
 
-Text color reaches op_paint and the Win32 painter through TextBox/paint commands. Because
-background-color is not implemented yet, alpha text colors are currently composited over
-the white page background before GDI drawing. The existing hyperlink glyph/underline
-path still paints native link blue, so author color on links is an explicit temporary
-limitation rather than silently changing hit-testing representation.
+Text color reaches op_paint and the Win32 painter through TextBox/paint commands. Initial
+block `background-color`, `margin`, `padding` and uniform solid `border` also flow through
+computed style into layout BoxDecoration geometry and platform-neutral FillRect commands.
+Alpha text/box colors are currently composited over the white page background. The existing
+hyperlink glyph/underline path still paints native link blue, so author color on links
+remains an explicit temporary limitation.
 
 External `<link rel="stylesheet">` resources now join embedded rules at their actual DOM
 positions before selector matching, so stylesheet source order crosses file boundaries.
@@ -117,5 +118,7 @@ The local demonstration page is `examples/css/index.html`; it now links a real
 `examples/css/theme.css` and uses a later embedded override to expose source order.
 The built-in start page also describes the supported subset in a normal release launch.
 
-The next S3 work is the first box-model properties (background/border, margin and padding).
-Broader selectors, values, at-rules, media queries and full CSS conformance remain later.
+The first block-level box model is documented in [CSS Block Box Model](CSS-Box-Model.md).
+Next S3 work expands it with side longhands, width/height, margin collapsing and inline box
+fragments. Broader selectors, values, at-rules, media queries and full CSS conformance
+remain later.

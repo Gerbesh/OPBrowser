@@ -150,8 +150,8 @@ CSS rendering example:
     target\release\op_browser.exe examples\css\index.html
 
 The CSS example links `examples/css/theme.css`, so it exercises the external local
-stylesheet loader, document-order cascade and native paint path. The built-in start page
-also describes the currently supported author-CSS subset.
+stylesheet loader, document-order cascade, nested block margin/padding/background/border
+geometry and native paint path. The built-in start page also renders one box-model panel.
 
 ## Image support
 

@@ -91,14 +91,15 @@ The [CSS foundation](CSS-Syntax-Foundation.md) now participates in page preparat
 After HTML parsing, [stylesheet loading](Stylesheet-Loading.md) fetches eligible external
 CSS on the navigation worker. Loaded link CSS and embedded style rules are collected in
 DOM source order, inline declarations join the author cascade, and inheritance produces a
-per-node ComputedStyleMap for display, color, font-size and font-weight. PreparedDocument
-retains author/computed style data beside DOM/images; resize reflow neither refetches nor
-reparses external CSS.
+per-node ComputedStyleMap for display, text properties and the initial block box-model
+properties. PreparedDocument retains author/computed style data beside DOM/images; resize
+reflow neither refetches nor reparses external CSS.
 
-op_layout now consumes that ComputedStyleMap for display:none/block/inline and mixed
-inline font-size/font-weight/color runs. Styled text becomes colored TextBox records,
-op_paint carries those colors in the display list, and the Win32 backend draws them.
-M1 semantic spacing remains temporary while the CSS box model is still absent.
+op_layout consumes that map for display:none/block/inline, mixed inline text runs and the
+first [block box model](CSS-Box-Model.md). Block margin/border/padding changes content
+geometry and produces BoxDecoration records for background/solid-border paint. op_paint
+expands those into FillRect commands before text/images, while Win32 remains only the native
+drawing backend. Former M1 heading/paragraph/list spacing now enters this path as UA margins.
 
 ## Paint smoke verification
 

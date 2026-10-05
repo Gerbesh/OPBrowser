@@ -42,6 +42,17 @@ impl From<CssColor> for TextColor {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoxDecoration {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub background: TextColor,
+    pub border_width: i32,
+    pub border_color: TextColor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextBox {
     pub x: i32,
     pub y: i32,
@@ -72,6 +83,7 @@ pub enum LayoutItem {
 pub struct LayoutTree {
     pub viewport_width: i32,
     pub content_height: i32,
+    pub box_decorations: Vec<BoxDecoration>,
     pub text_boxes: Vec<TextBox>,
     pub image_boxes: Vec<ImageBox>,
     pub order: Vec<LayoutItem>,
@@ -253,6 +265,51 @@ mod tests {
         assert_eq!(layout.text_boxes[0].weight, FontWeight::Bold);
         assert_eq!(layout.text_boxes[1].font_size, 18);
         assert!(layout.text_boxes[1].y > layout.text_boxes[0].y);
+    }
+
+    #[test]
+    fn block_box_model_changes_content_geometry_and_emits_decoration() {
+        let document = op_html::parse_document(
+            "<style>.box { margin:10px 20px; padding:8px 12px; background-color:#eef2ff; border:2px solid #4338ca }</style>
+             <div class='box'>inside</div><p>after</p>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        assert_eq!(layout.box_decorations.len(), 1);
+        let decoration = &layout.box_decorations[0];
+        assert_eq!(decoration.x, 52);
+        assert_eq!(decoration.width, 696);
+        assert_eq!(decoration.border_width, 2);
+        assert_eq!(
+            decoration.background,
+            TextColor {
+                red: 0xee,
+                green: 0xf2,
+                blue: 0xff,
+                alpha: 255,
+            }
+        );
+        let inside = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "inside")
+            .unwrap();
+        let after = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "after")
+            .unwrap();
+        assert_eq!(inside.x, 66);
+        assert!(inside.y >= decoration.y + 10);
+        assert!(after.y >= decoration.y + decoration.height + 10);
     }
 
     #[test]
