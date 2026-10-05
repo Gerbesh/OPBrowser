@@ -6,6 +6,7 @@ use op_platform_win::{NativeBrowserWindow, NavigationEvent};
 const START_PAGE: &str = r#"
 <html><head><title>OPBrowser</title></head><body>
 <h1>OPBrowser</h1>
+<p><a href="https://example.com">Открыть Example Domain</a></p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>
 <p>Колесо мыши — прокрутка страницы.</p>
@@ -32,6 +33,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let source = args.iter().find(|argument| !argument.starts_with("--"));
     let smoke = args.iter().any(|argument| argument == "--smoke-test");
+    let link_smoke = args.iter().any(|argument| argument == "--link-smoke-test");
     let navigation_smoke = args
         .iter()
         .any(|argument| argument == "--navigation-smoke-test");
@@ -80,6 +82,9 @@ fn main() {
                 NavigationEvent::Navigate(source) => {
                     engine.navigate(&source, width, height).map(Some)
                 }
+                NavigationEvent::FollowLink(href) => {
+                    engine.follow_link(&href, width, height).map(Some)
+                }
                 NavigationEvent::Back => engine.go_back(width, height),
                 NavigationEvent::Forward => engine.go_forward(width, height),
                 NavigationEvent::Reload => engine.reload(width, height),
@@ -104,6 +109,8 @@ fn main() {
     // Both CLI sources and the interactive smoke enter through the native Enter path.
     if let Some(source) = source {
         window.submit_address(source);
+    } else if link_smoke {
+        window.submit_address("examples/navigation/index.html");
     } else if navigation_smoke {
         window.submit_address("data:text/html,%3Ch1%3ENavigation%20smoke%3C%2Fh1%3E");
     }
@@ -113,6 +120,7 @@ fn main() {
     let mut forward = false;
     let mut reload = false;
     let mut smoke_exit = 0;
+    let mut link_smoke_clicked = false;
     let exit_code = window.run_message_loop(|event| {
         if event == NavigationEvent::Poll {
             match results.try_recv() {
@@ -121,6 +129,7 @@ fn main() {
                     back = result.back;
                     forward = result.forward;
                     reload = result.reload;
+                    let mut page_loaded = false;
                     match result.page {
                         Ok(Some(page)) => {
                             println!(
@@ -131,7 +140,8 @@ fn main() {
                             );
                             window.present(&page.address, page.display_list);
                             window.set_status("Ready");
-                            if navigation_smoke && !window.painted_once() {
+                            page_loaded = true;
+                            if (navigation_smoke || link_smoke) && !window.painted_once() {
                                 smoke_exit = 2;
                             }
                         }
@@ -139,13 +149,24 @@ fn main() {
                         Err(error) => {
                             eprintln!("OPBrowser document load failed: {error}");
                             window.set_status(&format!("Load failed: {error}"));
-                            if navigation_smoke {
+                            if navigation_smoke || link_smoke {
                                 smoke_exit = 3;
                             }
                         }
                     }
                     window.set_navigation_state(back, forward, reload, busy);
-                    if navigation_smoke {
+                    if link_smoke && page_loaded && !link_smoke_clicked && smoke_exit == 0 {
+                        if window.click_first_link() {
+                            link_smoke_clicked = true;
+                        } else {
+                            eprintln!("OPBrowser link smoke failed: no visible clickable link");
+                            smoke_exit = 2;
+                            window.close();
+                        }
+                    } else if navigation_smoke || link_smoke {
+                        if link_smoke && page_loaded && !back {
+                            smoke_exit = 2;
+                        }
                         window.close();
                     }
                 }
@@ -154,7 +175,7 @@ fn main() {
                     busy = false;
                     window.set_status("Navigation worker stopped");
                     window.set_navigation_state(back, forward, reload, busy);
-                    if navigation_smoke {
+                    if navigation_smoke || link_smoke {
                         smoke_exit = 3;
                         window.close();
                     }

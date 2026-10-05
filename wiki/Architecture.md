@@ -35,7 +35,13 @@ paragraph defaults. Windows WinHTTP supplies HTTP/TLS/proxy/framing/decompressio
 only; it is an OS infrastructure API, not a browser engine. TLS certificate checks
 remain enabled. The UI owns window handles and updates them only on its own thread.
 
-Display-list and scroll storage are currently process-global because M1 has one browser window.
+Layout preserves inline href metadata as LinkSpan byte ranges on each wrapped line.
+Paint commands carry these ranges to GDI, which measures LinkRegion bounds for
+native cursor/click hit testing. Engine tracks the last loaded document address
+separately from history requests so link bases follow redirects during reload.
+
+Display-list, scroll and measured link-region storage are currently process-global
+because M1 has one browser window.
 Multi-window and multi-process work will replace this with explicit per-window /
 per-renderer ownership.
 

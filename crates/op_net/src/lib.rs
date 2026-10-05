@@ -3,6 +3,8 @@
 //! Local/data loading and bounded HTTP(S) document requests via Windows WinHTTP.
 
 mod http;
+mod links;
+pub use links::resolve_link;
 
 use std::fmt;
 use std::fs;
@@ -38,6 +40,7 @@ pub enum LoadError {
     UnsupportedContentType(String),
     UnsupportedCharset(String),
     DocumentTooLarge,
+    InvalidLink(String),
 }
 
 impl fmt::Display for LoadError {
@@ -68,6 +71,7 @@ impl fmt::Display for LoadError {
                 write!(formatter, "unsupported document charset: {charset}")
             }
             Self::DocumentTooLarge => write!(formatter, "document exceeds the 2 MiB limit"),
+            Self::InvalidLink(message) => write!(formatter, "cannot open link: {message}"),
         }
     }
 }

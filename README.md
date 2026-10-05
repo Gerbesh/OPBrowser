@@ -5,8 +5,8 @@ Public repository: https://github.com/Gerbesh/OPBrowser
 Status: early engine development. OPBrowser opens external HTTP/HTTPS HTML pages,
 local files and HTML data URLs from a native address bar or command-line argument.
 Its own tokenizer, tree builder, DOM, text layout and display list render the page
-into a Win32 window. CSS, images, JavaScript and clickable page links are not yet
-implemented; this milestone displays static HTML text.
+into a Win32 window. Text hyperlinks support current-window navigation, including
+relative HTTP(S) and local-file links. CSS, images and JavaScript remain future work.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 
@@ -46,6 +46,7 @@ Current usage examples:
 target\release\op_browser.exe "https://example.com"
 
 target\release\op_browser.exe examples\hello.html
+target\release\op_browser.exe examples\navigation\index.html
 target\release\op_browser.exe "file:///C:/path/to/page.html"
 target\release\op_browser.exe "data:text/html,%3Ch1%3EHello%3C%2Fh1%3E"
 ```
@@ -54,6 +55,9 @@ You can also start `target\release\op_browser.exe`, paste `https://example.com`
 into the address bar, and press Enter or Go. Ctrl+L selects the address, F5 reloads,
 Back/Forward traverse history, and the mouse wheel scrolls. Loads run on a worker
 thread; errors appear in the status line and preserve the previous page/history.
+The start page also has an Example Domain link. Links are blue/underlined with a
+hand cursor; clicking uses the same loading/history path. The navigation example
+demonstrates a relative link to a second local page.
 
 Initial network support requires Windows, an ASCII hostname (or an IPv4/bracketed
 IPv6 literal), an explicit `http://` or `https://` scheme, and UTF-8 HTML. Requests

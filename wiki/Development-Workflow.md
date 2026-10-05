@@ -19,6 +19,8 @@ The test suite includes bounded loopback HTTP fixtures and native control dispat
 repaint coverage. `cargo run -p op_browser -- --navigation-smoke-test` additionally
 checks Enter input -> command channel -> navigation worker -> result channel ->
 native repaint using an offline data URL; CI runs it after the startup smoke.
+`cargo run -p op_browser -- --link-smoke-test` additionally verifies a native link
+click, relative-file loading, history and destination repaint using local fixtures.
 External network verification is separate:
 `cargo run -p op_browser -- --navigation-smoke-test https://example.com`.
 

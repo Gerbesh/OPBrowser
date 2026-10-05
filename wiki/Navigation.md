@@ -7,6 +7,9 @@ from Windows controls so the same history rules can later be used by tabs.
 Start `target\release\op_browser.exe`, enter `https://example.com` and press Enter
 or Go. An explicit HTTP/HTTPS URL can also be the first command-line argument.
 Ctrl+L selects the address, F5 reloads, and the mouse wheel scrolls the document.
+Blue, underlined page links are clickable and show a hand cursor. The start page
+contains an Example Domain link; examples/navigation/index.html demonstrates local
+relative navigation.
 
 ## State
 
@@ -23,6 +26,8 @@ NavigationState stores:
 Engine exposes:
 
 - navigate(source): loads/renders and commits a new history entry;
+- follow_link(href): resolves against the last successfully loaded document address,
+  then performs normal navigation;
 - go_back(): reloads the previous historical request;
 - go_forward(): reloads the next historical request;
 - reload(): reloads the current request without adding a history entry.
@@ -54,6 +59,14 @@ A failed load keeps the previous page and history, allowing correction of the UR
 ## Current limits
 
 Pages show static HTML text with heading/paragraph defaults, including blocks inside
-structural containers. CSS, images, JavaScript and clickable page links are future
-work. Resizing moves the address controls; document text reflows on next navigation.
+structural containers. Links open in the current window through the worker and
+history. Inline href spans survive line wrapping; native hit regions are measured
+from painted glyphs, adjusted for scroll and cleared on display replacement.
+Relative network links use the final response URL, including redirects on reload;
+local pages support relative filesystem links. Unsupported schemes show a load
+error and preserve the previous page. They never launch another application.
+
+CSS, images and JavaScript remain future work. Fragment-only links reload without
+anchor scrolling; HTML base elements, target/download behavior and entity decoding
+remain future work. Resizing moves controls; text reflows on next navigation.
 Back/Forward fetch the historical request again; there is no page cache yet.

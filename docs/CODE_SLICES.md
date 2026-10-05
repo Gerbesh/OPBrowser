@@ -73,7 +73,7 @@ Implemented:
 User-visible path:
 
 ```text
-address Enter / Go / Back / Forward / Reload / startup URL
+address Enter / hyperlink click / Go / Back / Forward / Reload / startup URL
   -> Win32 NavigationEvent
   -> op_browser command channel
   -> worker-owned Engine navigation
@@ -94,8 +94,21 @@ redirect loops, rendered text and history preservation after failed navigation,
 back and reload. The asynchronous external HTTPS path is manually smoke-tested with
 `--navigation-smoke-test https://example.com`; normal CI uses offline/local fixtures.
 
-Limits: initial URL subset and UTF-8 HTML only; no CSS, images, scripts or clickable
-page links yet. Resizing moves controls but text reflow occurs on next navigation.
+The hyperlink path preserves UTF-8 href spans through whitespace normalization,
+nested inline labels and wrapping. GDI measures painted label bounds; hit testing
+excludes ordinary text, toolbar and off-screen points, compensates for scrolling,
+and clears stale regions after page replacement. Engine::follow_link uses the last
+successful effective URL, including redirects during reload, before committing a
+new history entry. Absolute HTTP(S), relative path/root/query/network references,
+dot segments and local-file relatives are supported. The offline `--link-smoke-test`
+clicks the first link in examples/navigation/index.html and paints its destination;
+CI runs this with no external network dependency.
+
+Limits: initial URL subset and UTF-8 HTML only; no CSS, images or scripts yet.
+Links open in the current window. Fragment links reload the document without anchor
+scrolling; HTML base elements, target/download behavior, entity decoding and full
+WHATWG URL processing remain future work. Resizing moves controls but text reflow
+occurs on next navigation.
 
 ## S3 - CSS-styled document
 

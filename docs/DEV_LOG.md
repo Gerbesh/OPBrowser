@@ -153,3 +153,30 @@ This file is append-only project history.
   workspace tests, startup/local-file/offline navigation smoke tests, external HTTP
   navigation smoke, release build and release external HTTPS navigation smoke.
 - Produced target/release/op_browser.exe (283,648 bytes on this build).
+
+## 2026-10-05 - Clickable text hyperlinks and relative navigation
+
+- Preserved href byte ranges through nested inline labels, whitespace normalization
+  and line wrapping. Normalized text in place to avoid another character buffer.
+- Added platform-neutral LinkSpan metadata and default blue/underlined presentation.
+  GDI measures actual label bounds for hand-cursor and scroll-aware click hit testing;
+  ordinary text and toolbar areas do not activate links, and page replacement clears
+  obsolete hit regions.
+- Added FollowLink input and Engine::follow_link through the existing worker and
+  commit-after-success history path. Effective document bases follow successful
+  redirects on navigate/back/forward/reload without rewriting history requests.
+- Added owned relative HTTP(S) reference resolution, dot-segment handling and relative
+  local-file paths. Unsupported link schemes fail visibly without external launches.
+  Fragment scrolling, HTML base/target/download behavior and character-reference
+  decoding remain explicit limitations of this iteration.
+- Added an external link on the start page and two local navigation example pages.
+- Added --link-smoke-test and offline CI coverage for click -> relative URL -> worker
+  -> destination pixels. Extended native tests with actual measured hit bounds,
+  scrolling and stale-region removal, and loopback engine tests with initial/reload
+  redirects and subsequent relative links.
+- Verified external hyperlink navigation to https://example.com through a native
+  click and the original engine.
+- Final verification passed: rustfmt check, warning-free Clippy, all 39 workspace
+  tests, startup/offline address/offline hyperlink smoke tests, release build and
+  release hyperlink navigation to external HTTPS. Release EXE: 307,200 bytes,
+  an increase of 23,552 bytes; no dependency packages were added.

@@ -65,7 +65,9 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE worker-thread loading with visible loading/errors and history rollback.
 - DONE mouse-wheel scrolling and block defaults inside structural HTML containers.
 - DONE external https://example.com navigation + native repaint verified.
-- NEXT clickable hyperlinks and relative URL resolution.
+- DONE clickable text hyperlinks with measured hit regions and scroll-aware input.
+- DONE relative HTTP(S)/local-file link resolution using the loaded document base.
+- DONE link input -> worker -> load -> history -> pixels smoke coverage.
 - NEXT broader HTML decoding/charset and URL conformance.
 - NEXT basic image loading.
 - NEXT richer block/inline layout behavior.

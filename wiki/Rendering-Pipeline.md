@@ -58,6 +58,13 @@ The M1 layout layer currently provides:
 - approximate word wrapping;
 - vertical text flow;
 - platform-neutral text boxes.
+- UTF-8 href spans across nested inline labels, whitespace normalization and wrapping.
+
+Text paint commands carry LinkSpan byte ranges. The native painter draws linked
+ranges blue/underlined and measures their glyph bounds with GDI; cursor and click
+hit testing use these regions in document coordinates with the toolbar/scroll
+offset applied. Page replacement clears stale regions. Address resolution remains
+in op_net/Engine rather than the graphics backend.
 
 This is deliberately small. It exists to prove subsystem boundaries and the complete
 path to pixels before expanding CSS/layout complexity.
@@ -72,3 +79,7 @@ the source-to-pixels path. --navigation-smoke-test uses queued native Enter inpu
 worker navigation and display-list replacement, then checks real replacement
 painting. Passing https://example.com additionally verifies external HTTPS without
 making normal CI tests depend on public network access.
+
+--link-smoke-test loads examples/navigation/index.html, queues a native click on its
+first visible link, resolves the relative local URL on the worker and checks the
+destination painting/history. It runs in CI using only repository fixtures.

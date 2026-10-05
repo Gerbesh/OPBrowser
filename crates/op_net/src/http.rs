@@ -2,6 +2,10 @@ use crate::{LoadError, LoadedDocument, SourceKind};
 
 pub(crate) const MAX_DOCUMENT_BYTES: usize = 2 * 1024 * 1024;
 
+pub(crate) fn validate_url(source: &str) -> Result<(), LoadError> {
+    HttpUrl::parse(source).map(|_| ())
+}
+
 /// Initial HTTP URL subset: ASCII DNS/IPv4 or bracketed IPv6, optional port,
 /// UTF-8 path/query encoded as bytes. Credentials and malformed escapes are rejected.
 #[derive(Debug, PartialEq, Eq)]

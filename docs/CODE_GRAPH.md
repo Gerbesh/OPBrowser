@@ -47,6 +47,7 @@ classDiagram
         -EngineState state
         -NetworkContext network
         -NavigationState navigation
+        -Option~String~ document_address
         +new()
         +start()
         +state()
@@ -54,6 +55,7 @@ classDiagram
         +render_html()
         +render_source()
         +navigate()
+        +follow_link()
         +go_back()
         +go_forward()
         +reload()
@@ -100,6 +102,8 @@ classDiagram
         +viewport_size()
         +submit_address()
         +present()
+        +link_at_client_point()
+        +click_first_link()
         +set_navigation_state()
         +set_status()
         +run_message_loop(on_event)
@@ -107,6 +111,7 @@ classDiagram
 
     class NavigationEvent {
         Navigate(source)
+        FollowLink(href)
         Back
         Forward
         Reload
@@ -122,6 +127,15 @@ classDiagram
 
     class Document
     class LayoutTree
+    class LinkSpan {
+        start_byte
+        end_byte
+        href
+    }
+    class LinkRegion {
+        measured_bounds
+        href
+    }
     class DisplayList
 
     Engine --> NavigationState
@@ -133,6 +147,9 @@ classDiagram
     LoadedDocument --> Engine : render
     Document --> LayoutTree : layout_document
     LayoutTree --> DisplayList : build_display_list
+    LayoutTree --> LinkSpan : TextBox links
+    DisplayList --> LinkSpan : Text paint command links
+    NativeBrowserWindow --> LinkRegion : GDI measurement / hit testing
     RenderedPage --> DisplayList
     NativeBrowserWindow --> DisplayList
     NativeBrowserWindow --> NavigationEvent
@@ -145,6 +162,10 @@ classDiagram
 - Reload does not mutate the history list or current index.
 - Navigating from the middle of history truncates the old forward branch.
 - No-target back/forward operations are no-ops.
+- Engine.document_address follows the last successful loaded page, including
+  redirects on back/forward/reload. It is separate from immutable history requests.
+- Engine::follow_link resolves the href against that effective document address
+  before entering the same navigate/commit-after-success path.
 
 ## Current ownership boundaries
 
@@ -154,22 +175,26 @@ classDiagram
   platform-neutral display lists.
 - op_engine currently owns per-page navigation state plus orchestration between loading
   and web-engine subsystems. This state will later become per-tab.
-- op_net owns document-source interpretation, an initial HTTP URL parser, bounded
+- op_net owns document-source interpretation, initial link-reference resolution,
+  an initial HTTP URL parser, bounded
   HTTP(S) loading, response validation and errors. Its private http::windows module
   uses RAII WinHTTP handles for transport/TLS/proxy/framing/decompression. Cache,
   cookies and request filtering remain future work.
 - op_html owns HTML tokenization and tree construction rules.
 - op_dom owns document/node storage, element attributes, and DOM invariants.
-- op_layout owns current text-flow geometry and structural-container block traversal,
-  and will grow into full layout.
-- op_paint owns platform-neutral paint commands/display lists.
+- op_layout owns text-flow geometry, structural-container traversal and UTF-8
+  LinkSpan ranges preserved across whitespace normalization and line wrapping.
+- op_paint owns platform-neutral paint commands/display lists and default link color.
+  The current GDI backend measures painted glyph ranges for native hit testing;
+  network addresses are resolved only by the worker/engine, not by the painter.
 - op_css will own parsing, cascade, computed style, and style data.
 - op_js will own the original ECMAScript implementation.
 
 ## Temporary architectural constraints
 
 - The initial Windows renderer uses GDI as an OS drawing backend.
-- Display-list and scroll storage are currently process-global because M1 has one window.
+- Display-list, scroll and measured link-region storage are currently process-global
+  because M1 has one window. Display replacement clears old link regions.
 - Navigation state is single-page/single-tab for now.
 - A single in-flight navigation disables navigation buttons; the window continues
   processing paint/input/close messages. A 30 ms Win32 timer polls worker results
@@ -184,4 +209,6 @@ classDiagram
 
 Connected: Win32 navigation events -> op_browser command channel -> worker-owned
 Engine -> op_net/WinHTTP -> own document pipeline -> result channel -> UI-thread
-NativeBrowserWindow::present -> WM_PAINT. Next: link hit testing and relative URLs.
+NativeBrowserWindow::present -> WM_PAINT. Also connected: painted LinkSpan -> measured
+LinkRegion -> scroll-aware mouse click -> FollowLink -> resolve_link -> same worker.
+Next: broader HTML/URL conformance and resource loading.

@@ -1,6 +1,6 @@
 use op_html::parse_document;
 use op_layout::layout_document;
-use op_net::{LoadError, LoadedDocument, NetworkContext};
+use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link};
 use op_paint::{DisplayList, build_display_list};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,6 +89,7 @@ pub struct Engine {
     state: EngineState,
     network: NetworkContext,
     navigation: NavigationState,
+    document_address: Option<String>,
 }
 
 impl Engine {
@@ -97,6 +98,7 @@ impl Engine {
             state: EngineState::Created,
             network: NetworkContext,
             navigation: NavigationState::default(),
+            document_address: None,
         }
     }
 
@@ -140,12 +142,23 @@ impl Engine {
         viewport_height: i32,
     ) -> Result<RenderedPage, LoadError> {
         let page = self.render_source(source, viewport_width, viewport_height)?;
+        self.document_address = Some(page.address.clone());
         self.navigation.commit_navigation(NavigationEntry {
             request: source.to_owned(),
             address: page.address.clone(),
             mime_type: page.mime_type.clone(),
         });
         Ok(page)
+    }
+
+    pub fn follow_link(
+        &mut self,
+        href: &str,
+        viewport_width: i32,
+        viewport_height: i32,
+    ) -> Result<RenderedPage, LoadError> {
+        let source = resolve_link(self.document_address.as_deref(), href)?;
+        self.navigate(&source, viewport_width, viewport_height)
     }
 
     pub fn go_back(
@@ -159,6 +172,7 @@ impl Engine {
 
         let page = self.render_source(&request, viewport_width, viewport_height)?;
         self.navigation.set_current_index(target_index);
+        self.document_address = Some(page.address.clone());
         Ok(Some(page))
     }
 
@@ -173,11 +187,12 @@ impl Engine {
 
         let page = self.render_source(&request, viewport_width, viewport_height)?;
         self.navigation.set_current_index(target_index);
+        self.document_address = Some(page.address.clone());
         Ok(Some(page))
     }
 
     pub fn reload(
-        &self,
+        &mut self,
         viewport_width: i32,
         viewport_height: i32,
     ) -> Result<Option<RenderedPage>, LoadError> {
@@ -185,8 +200,9 @@ impl Engine {
             return Ok(None);
         };
 
-        self.render_source(&request, viewport_width, viewport_height)
-            .map(Some)
+        let page = self.render_source(&request, viewport_width, viewport_height)?;
+        self.document_address = Some(page.address.clone());
+        Ok(Some(page))
     }
 
     fn render_loaded_document(
@@ -359,7 +375,10 @@ mod tests {
         let address = format!("http://{}", listener.local_addr().unwrap());
         listener.set_nonblocking(true).unwrap();
         let server = std::thread::spawn(move || {
-            for status in [200, 404, 200, 200, 200, 200, 500, 500] {
+            for (index, status) in [302, 200, 404, 200, 200, 200, 302, 200, 200, 500, 500]
+                .into_iter()
+                .enumerate()
+            {
                 let started = Instant::now();
                 let mut stream = loop {
                     match listener.accept() {
@@ -381,7 +400,18 @@ mod tests {
                     assert!(count > 0 && request.len() < 32 * 1024);
                     request.push_str(std::str::from_utf8(&buffer[..count]).unwrap());
                 }
-                let text = if request.starts_with("GET /one ") {
+                if status == 302 {
+                    let location = if index == 0 {
+                        "/nested/one"
+                    } else {
+                        "/after-reload/two"
+                    };
+                    write!(stream, "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                    continue;
+                }
+                let text = if request.starts_with("GET /nested/one ")
+                    || request.starts_with("GET /start ")
+                {
                     "One"
                 } else {
                     "Two"
@@ -392,9 +422,10 @@ mod tests {
         });
         let mut engine = Engine::new();
         let first = engine
-            .navigate(&format!("{address}/one"), 800, 600)
+            .navigate(&format!("{address}/start"), 800, 600)
             .unwrap();
         assert!(contains_text(&first.display_list, "One"));
+        assert_eq!(first.address, format!("{address}/nested/one"));
         let before = engine.navigation().clone();
         assert_eq!(
             engine
@@ -403,9 +434,11 @@ mod tests {
             LoadError::HttpStatus(404)
         );
         assert_eq!(*engine.navigation(), before);
-        engine
-            .navigate(&format!("{address}/two"), 800, 600)
-            .unwrap();
+        engine.follow_link("two", 800, 600).unwrap();
+        assert_eq!(
+            engine.navigation().current().unwrap().request,
+            format!("{address}/nested/two")
+        );
         assert!(contains_text(
             &engine.go_back(800, 600).unwrap().unwrap().display_list,
             "One"
@@ -418,6 +451,11 @@ mod tests {
             &engine.reload(800, 600).unwrap().unwrap().display_list,
             "Two"
         ));
+        engine.follow_link("next", 800, 600).unwrap();
+        assert_eq!(
+            engine.navigation().current().unwrap().request,
+            format!("{address}/after-reload/next")
+        );
         let before = engine.navigation().clone();
         assert_eq!(
             engine.go_back(800, 600).unwrap_err(),

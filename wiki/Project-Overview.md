@@ -19,4 +19,5 @@ The project starts on Windows 11 x86-64 using Rust and the MSVC toolchain.
 The current milestone opens external HTTP/HTTPS HTML pages through a native address
 bar or startup URL. It displays static text using the original engine, supports
 Back/Forward/Reload and scrolling, and keeps the window responsive during loading.
-CSS, images, JavaScript and clickable page hyperlinks remain future work.
+Text hyperlinks are clickable, including relative HTTP(S) and local-file links.
+CSS, images and JavaScript remain future work.

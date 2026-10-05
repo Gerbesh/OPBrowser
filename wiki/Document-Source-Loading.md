@@ -32,7 +32,7 @@ scripts. The existing windows-sys package supplies bindings; the engine is origi
   IPv6 and explicit nonzero ports are accepted. UTF-8 path/query bytes are percent
   encoded, existing escapes retained, and fragments omitted from the GET target.
 - Credentials, whitespace/control characters, backslashes, malformed escapes and
-  non-ASCII hostnames are rejected. Full WHATWG URL/IDNA and relative URLs are later.
+  non-ASCII hostnames are rejected. Full WHATWG URL/IDNA processing is later.
 - At most five redirects are followed; HTTPS-to-HTTP redirects are disallowed. The
   final response URL is returned as LoadedDocument.address and shown in the UI.
 - Non-2xx statuses become typed errors. Only text/html is accepted (missing
@@ -53,3 +53,17 @@ Loopback tests cover redirects, compression, framing and failure limits without
 depending on internet availability. External HTTPS is verified separately with:
 
     cargo run -p op_browser -- --navigation-smoke-test https://example.com
+
+## Hyperlink reference resolution
+
+resolve_link handles absolute HTTP(S) links plus relative paths, root paths,
+network-path references, query/fragment references and dot segments. Percent-encoded
+dot segments are recognized without decoding escaped slashes. The base is the last
+successfully loaded effective address, not the original pre-redirect request.
+
+Local documents resolve relative paths beside the loaded file, with UTF-8 percent
+decoding. Relative links from data URLs have no base. Other absolute schemes
+(including file:, data:, javascript:, mailto: and ftp:) are rejected for page-link
+navigation; address-bar source loading retains its existing file/data support.
+Fragment references load the document again; anchor scrolling and HTML base-element
+handling are not implemented yet. URL whitespace must be percent-encoded.

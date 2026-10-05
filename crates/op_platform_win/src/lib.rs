@@ -7,13 +7,13 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 use op_paint::{Color, DisplayList, PaintCommand};
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateFontW, CreateSolidBrush,
     DEFAULT_CHARSET, DEFAULT_PITCH, DeleteObject, EndPaint, FF_DONTCARE, FW_BOLD, FW_NORMAL,
-    FillRect, GetStockObject, IntersectClipRect, InvalidateRect, OUT_DEFAULT_PRECIS, PAINTSTRUCT,
-    SelectObject, SetBkMode, SetTextColor, SetViewportOrgEx, TRANSPARENT, TextOutW, UpdateWindow,
-    WHITE_BRUSH,
+    FillRect, GetStockObject, GetTextExtentPoint32W, IntersectClipRect, InvalidateRect,
+    OUT_DEFAULT_PRECIS, PAINTSTRUCT, ScreenToClient, SelectObject, SetBkMode, SetTextColor,
+    SetViewportOrgEx, TRANSPARENT, TextOutW, UpdateWindow, WHITE_BRUSH,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -24,6 +24,12 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 static DISPLAY_LIST: OnceLock<RwLock<DisplayList>> = OnceLock::new();
 static PAINTED_ONCE: AtomicBool = AtomicBool::new(false);
 static SCROLL_Y: AtomicI32 = AtomicI32::new(0);
+static LINK_REGIONS: OnceLock<RwLock<Vec<LinkRegion>>> = OnceLock::new();
+
+struct LinkRegion {
+    bounds: RECT,
+    href: String,
+}
 const TOOLBAR_HEIGHT: i32 = 76;
 const BACK: i32 = 101;
 const FORWARD: i32 = 102;
@@ -37,6 +43,7 @@ const NAVIGATION_COMMAND: u32 = WM_APP + 1;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NavigationEvent {
     Navigate(String),
+    FollowLink(String),
     Back,
     Forward,
     Reload,
@@ -220,6 +227,41 @@ impl NativeBrowserWindow {
         }
     }
 
+    pub fn link_at_client_point(&self, x: i32, y: i32) -> Option<String> {
+        link_at_client_point(self.hwnd, x, y)
+    }
+
+    /// Queue a native click, also used by offline end-to-end link smoke tests.
+    pub fn click_first_link(&self) -> bool {
+        let point = LINK_REGIONS
+            .get()
+            .and_then(|regions| regions.read().ok())
+            .and_then(|regions| {
+                regions.first().map(|region| {
+                    (
+                        region.bounds.left + 1,
+                        region.bounds.top + 1 + TOOLBAR_HEIGHT - SCROLL_Y.load(Ordering::SeqCst),
+                    )
+                })
+            });
+        if let Some((x, y)) = point {
+            if self.link_at_client_point(x, y).is_none() {
+                return false;
+            }
+            unsafe {
+                PostMessageW(
+                    self.hwnd,
+                    WM_LBUTTONUP,
+                    0,
+                    ((y as u16 as u32) << 16 | x as u16 as u32) as LPARAM,
+                );
+            }
+            true
+        } else {
+            false
+        }
+    }
+
     /// Exercises the same queued Enter-key path as a user pasting an address.
     pub fn submit_address(&self, address: &str) {
         self.set_address(address);
@@ -276,6 +318,12 @@ impl NativeBrowserWindow {
 
     fn navigation_event(&self, message: &MSG) -> Option<NavigationEvent> {
         match message.message {
+            WM_LBUTTONUP if message.hwnd == self.hwnd => {
+                let x = (message.lParam as u16 as i16) as i32;
+                let y = ((message.lParam >> 16) as u16 as i16) as i32;
+                self.link_at_client_point(x, y)
+                    .map(NavigationEvent::FollowLink)
+            }
             WM_KEYDOWN
                 if message.wParam == VK_RETURN as usize
                     && message.hwnd == unsafe { GetDlgItem(self.hwnd, ADDRESS) } =>
@@ -324,11 +372,37 @@ fn layout_controls(hwnd: HWND) {
 }
 
 fn set_display_list(display_list: DisplayList) {
+    if let Ok(mut regions) = LINK_REGIONS.get_or_init(|| RwLock::new(Vec::new())).write() {
+        regions.clear();
+    }
     let storage = DISPLAY_LIST.get_or_init(|| RwLock::new(DisplayList::default()));
 
     if let Ok(mut current) = storage.write() {
         *current = display_list;
     }
+}
+
+fn link_at_client_point(hwnd: HWND, x: i32, y: i32) -> Option<String> {
+    let mut client: RECT = unsafe { zeroed() };
+    unsafe {
+        GetClientRect(hwnd, &mut client);
+    }
+    if x < 0 || x >= client.right || y < TOOLBAR_HEIGHT || y >= client.bottom {
+        return None;
+    }
+    let document_y = y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst);
+    LINK_REGIONS
+        .get()?
+        .read()
+        .ok()?
+        .iter()
+        .find(|region| {
+            x >= region.bounds.left
+                && x < region.bounds.right
+                && document_y >= region.bounds.top
+                && document_y < region.bounds.bottom
+        })
+        .map(|region| region.href.clone())
 }
 
 unsafe extern "system" fn window_proc(
@@ -338,6 +412,20 @@ unsafe extern "system" fn window_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match message {
+        WM_SETCURSOR if lparam as u16 as i16 as i32 == HTCLIENT as i32 => {
+            let mut point: POINT = unsafe { zeroed() };
+            unsafe {
+                GetCursorPos(&mut point);
+                ScreenToClient(hwnd, &mut point);
+            }
+            if link_at_client_point(hwnd, point.x, point.y).is_some() {
+                unsafe {
+                    SetCursor(LoadCursorW(null_mut(), IDC_HAND));
+                }
+                return 1;
+            }
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
         WM_COMMAND
             if wparam >> 16 == 0
                 && matches!((wparam & 0xffff) as i32, BACK | FORWARD | RELOAD | GO) =>
@@ -414,12 +502,16 @@ fn paint_window(hwnd: HWND) {
         );
     }
 
+    let mut link_regions = Vec::new();
     if let Some(storage) = DISPLAY_LIST.get()
         && let Ok(display_list) = storage.read()
     {
         for command in &display_list.commands {
-            paint_command(hdc, command);
+            paint_command(hdc, command, &mut link_regions);
         }
+    }
+    if let Ok(mut regions) = LINK_REGIONS.get_or_init(|| RwLock::new(Vec::new())).write() {
+        *regions = link_regions;
     }
 
     unsafe {
@@ -429,7 +521,7 @@ fn paint_window(hwnd: HWND) {
     PAINTED_ONCE.store(true, Ordering::SeqCst);
 }
 
-fn paint_command(hdc: *mut c_void, command: &PaintCommand) {
+fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Vec<LinkRegion>) {
     match command {
         PaintCommand::FillRect {
             x,
@@ -460,6 +552,7 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand) {
             font_size,
             bold,
             color,
+            links,
         } => {
             let face = wide("Segoe UI");
             let weight = if *bold { FW_BOLD } else { FW_NORMAL } as i32;
@@ -494,18 +587,51 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand) {
                 unsafe { SelectObject(hdc, font) }
             };
 
-            let wide_text: Vec<u16> = text.encode_utf16().collect();
-            if !wide_text.is_empty() {
-                unsafe {
-                    TextOutW(
-                        hdc,
-                        *x,
-                        *y,
-                        wide_text.as_ptr(),
-                        wide_text.len().min(i32::MAX as usize) as i32,
-                    );
+            let mut cursor_x = *x;
+            let mut offset = 0;
+            for link in links {
+                if link.start < offset
+                    || link.start >= link.end
+                    || !text.is_char_boundary(link.start)
+                    || !text.is_char_boundary(link.end)
+                {
+                    continue;
                 }
+                let Some(plain) = text.get(offset..link.start) else {
+                    continue;
+                };
+                let Some(label) = text.get(link.start..link.end) else {
+                    continue;
+                };
+                cursor_x += paint_text_segment(hdc, cursor_x, *y, plain, *color);
+                let width = paint_text_segment(hdc, cursor_x, *y, label, Color::LINK);
+                // Underline through the OS drawing backend, using measured glyph width.
+                let underline = RECT {
+                    left: cursor_x,
+                    top: *y + *font_size + 2,
+                    right: cursor_x + width,
+                    bottom: *y + *font_size + 3,
+                };
+                let brush = unsafe { CreateSolidBrush(color_ref(Color::LINK)) };
+                if !brush.is_null() {
+                    unsafe {
+                        FillRect(hdc, &underline, brush);
+                        DeleteObject(brush);
+                    }
+                }
+                link_regions.push(LinkRegion {
+                    bounds: RECT {
+                        left: cursor_x,
+                        top: *y,
+                        right: cursor_x + width,
+                        bottom: *y + ((*font_size as f32) * 1.35).round() as i32,
+                    },
+                    href: link.href.clone(),
+                });
+                cursor_x += width;
+                offset = link.end;
             }
+            paint_text_segment(hdc, cursor_x, *y, &text[offset..], *color);
 
             if !font.is_null() {
                 unsafe {
@@ -517,6 +643,19 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand) {
             }
         }
     }
+}
+
+fn paint_text_segment(hdc: *mut c_void, x: i32, y: i32, text: &str, color: Color) -> i32 {
+    let wide_text: Vec<u16> = text.encode_utf16().collect();
+    let mut size: SIZE = unsafe { zeroed() };
+    if !wide_text.is_empty() {
+        unsafe {
+            SetTextColor(hdc, color_ref(color));
+            TextOutW(hdc, x, y, wide_text.as_ptr(), wide_text.len() as i32);
+            GetTextExtentPoint32W(hdc, wide_text.as_ptr(), wide_text.len() as i32, &mut size);
+        }
+    }
+    size.cx
 }
 
 fn color_ref(color: Color) -> u32 {
@@ -614,6 +753,72 @@ mod tests {
                 5 => {
                     assert_eq!(event, NavigationEvent::Poll);
                     window.set_navigation_state(true, true, true, false);
+                    window.present(
+                        "http://example.test/nested/index",
+                        DisplayList {
+                            commands: vec![
+                                PaintCommand::FillRect {
+                                    x: 0,
+                                    y: 0,
+                                    width: 1200,
+                                    height: 2000,
+                                    color: Color::WHITE,
+                                },
+                                PaintCommand::Text {
+                                    x: 32,
+                                    y: 120,
+                                    text: "Before link after".into(),
+                                    font_size: 18,
+                                    bold: false,
+                                    color: Color::BLACK,
+                                    links: vec![op_paint::LinkSpan {
+                                        start: 7,
+                                        end: 11,
+                                        href: "../target".into(),
+                                    }],
+                                },
+                            ],
+                        },
+                    );
+                    assert!(
+                        window
+                            .link_at_client_point(32, TOOLBAR_HEIGHT + 121)
+                            .is_none()
+                    );
+                    assert!(window.link_at_client_point(33, 40).is_none());
+                    let (left, right) = {
+                        let regions = LINK_REGIONS.get().unwrap().read().unwrap();
+                        (regions[0].bounds.left, regions[0].bounds.right)
+                    };
+                    assert!(
+                        window
+                            .link_at_client_point(left - 1, TOOLBAR_HEIGHT + 121)
+                            .is_none()
+                    );
+                    assert!(
+                        window
+                            .link_at_client_point(right, TOOLBAR_HEIGHT + 121)
+                            .is_none()
+                    );
+                    unsafe {
+                        SendMessageW(
+                            window.hwnd,
+                            WM_MOUSEWHEEL,
+                            ((-120i16 as u16) as usize) << 16,
+                            0,
+                        );
+                        UpdateWindow(window.hwnd);
+                    }
+                    assert_eq!(
+                        window.link_at_client_point(left + 1, TOOLBAR_HEIGHT + 121 - 72),
+                        Some("../target".into())
+                    );
+                    assert!(window.click_first_link());
+                }
+                6 => {
+                    assert_eq!(event, NavigationEvent::FollowLink("../target".into()));
+                    window.present("http://example.test/replaced", DisplayList::default());
+                    assert!(!window.click_first_link());
                     window.close();
                 }
                 _ => panic!("unexpected extra UI event"),
@@ -623,6 +828,6 @@ mod tests {
         done.send(()).unwrap();
         watchdog.join().unwrap();
         assert_eq!(exit, 0);
-        assert_eq!(step, 6);
+        assert_eq!(step, 7);
     }
 }

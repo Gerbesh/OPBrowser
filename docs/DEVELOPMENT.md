@@ -80,6 +80,14 @@ Run the asynchronous address-input/worker/repaint smoke test (offline data URL):
 
     cargo run -p op_browser -- --navigation-smoke-test
 
+Run the offline hyperlink-click/relative-file/worker/repaint smoke test:
+
+    cargo run -p op_browser -- --link-smoke-test
+
+Open the hyperlink example interactively:
+
+    cargo run -p op_browser -- examples/navigation/index.html
+
 Open an external site interactively:
 
     cargo run -p op_browser -- https://example.com

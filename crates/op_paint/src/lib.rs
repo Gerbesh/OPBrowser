@@ -1,3 +1,4 @@
+pub use op_layout::LinkSpan;
 use op_layout::{FontWeight, LayoutTree};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +20,12 @@ impl Color {
         g: 18,
         b: 18,
     };
+
+    pub const LINK: Self = Self {
+        r: 0,
+        g: 70,
+        b: 190,
+    };
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +44,7 @@ pub enum PaintCommand {
         font_size: i32,
         bold: bool,
         color: Color,
+        links: Vec<LinkSpan>,
     },
 }
 
@@ -64,6 +72,7 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
             font_size: text_box.font_size,
             bold: text_box.weight == FontWeight::Bold,
             color: Color::BLACK,
+            links: text_box.links.clone(),
         });
     }
 
@@ -88,6 +97,7 @@ mod tests {
                 text: "OPBrowser".into(),
                 font_size: 24,
                 weight: FontWeight::Bold,
+                links: Vec::new(),
             }],
         };
 
@@ -112,6 +122,7 @@ mod tests {
                 font_size: 24,
                 bold: true,
                 color: Color::BLACK,
+                links: Vec::new(),
             }
         );
     }
