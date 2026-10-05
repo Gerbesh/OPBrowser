@@ -88,6 +88,17 @@ Open the hyperlink example interactively:
 
     cargo run -p op_browser -- examples/navigation/index.html
 
+Verify declared Windows-1251 decoding and native repaint:
+
+    cargo run -p op_browser -- --navigation-smoke-test examples/encoding/windows-1251.html
+
+Verify links from the same legacy-encoded page:
+
+    cargo run -p op_browser -- --link-smoke-test examples/encoding/windows-1251.html
+
+The fixture intentionally contains Windows-1251 bytes, not UTF-8. Preserve its
+declared encoding when editing it; all Rust source and documentation remain UTF-8.
+
 Open an external site interactively:
 
     cargo run -p op_browser -- https://example.com

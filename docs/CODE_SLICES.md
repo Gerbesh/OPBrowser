@@ -79,7 +79,7 @@ address Enter / hyperlink click / Go / Back / Forward / Reload / startup URL
   -> worker-owned Engine navigation
   -> op_net HTTP URL parser
   -> WinHTTP GET + TLS + redirect/framing/decompression
-  -> validated, bounded UTF-8 HTML
+  -> bounded bytes -> BOM / charset / early meta -> owned decoding to Unicode
   -> own tokenizer/DOM/block text layout/display list
   -> result channel polled only during loading
   -> NativeBrowserWindow::present + status/address/history controls
@@ -104,9 +104,18 @@ dot segments and local-file relatives are supported. The offline `--link-smoke-t
 clicks the first link in examples/navigation/index.html and paints its destination;
 CI runs this with no external network dependency.
 
-Limits: initial URL subset and UTF-8 HTML only; no CSS, images or scripts yet.
+The text decoding slice now accepts Windows-1251/1252 and UTF-16 alongside UTF-8,
+with BOM/transport/early-meta precedence. Common named and numeric references are
+consumed in the tokenizer, so `&amp;` in hrefs becomes the actual query separator,
+and escaped `<` remains text rather than becoming markup. Raw-text/RCDATA contexts
+keep script/style source literal and decode references in title/textarea text.
+HTTP regression fixtures and examples/encoding/windows-1251.html verify Cyrillic,
+link metadata, loaded bytes -> pixels and subsequent link navigation in CI.
+
+Limits: initial URL/encoding subsets; no CSS, images or scripts yet.
 Links open in the current window. Fragment links reload the document without anchor
-scrolling; HTML base elements, target/download behavior, entity decoding and full
+scrolling; HTML base elements, target/download behavior, the complete named-reference
+table, other legacy encodings and full
 WHATWG URL processing remain future work. Resizing moves controls but text reflow
 occurs on next navigation.
 

@@ -18,7 +18,7 @@ data:text/html;base64,PGgxPkhlbGxvPC9oMT4=
 NetworkContext::load_document returns a LoadedDocument containing the normalized
 address, MIME type, UTF-8 text and SourceKind.
 
-Local UTF-8 BOMs are stripped. Invalid UTF-8 and malformed percent/base64 payloads
+Unicode BOMs select and strip the encoding. Invalid Unicode and malformed percent/base64 payloads
 produce typed LoadError values rather than silently replacing bytes.
 
 ## HTTP and HTTPS
@@ -37,10 +37,14 @@ scripts. The existing windows-sys package supplies bindings; the engine is origi
   final response URL is returned as LoadedDocument.address and shown in the UI.
 - Non-2xx statuses become typed errors. Only text/html is accepted (missing
   Content-Type defaults to text/html at this milestone).
-- UTF-8 HTML, optionally with a UTF-8 BOM, is supported. UTF-8/us-ascii charset
-  declarations are accepted; other declared charsets and invalid UTF-8 fail.
-  Meta-tag charset sniffing and legacy encodings are not implemented yet.
-- Decoded body limit: 2 MiB. Resolve/connect/send/receive operation timeouts: 10 s.
+- UTF-8, UTF-16LE/BE, Windows-1251 and Windows-1252 are supported with documented
+  label aliases. ASCII/Latin1 labels use Windows-1252 mappings. Selection checks
+  BOM first, then transport charset, then meta declarations in the first 1024 bytes.
+  No declaration defaults to strict UTF-8; unsupported transport labels and malformed
+  Unicode fail. See [HTML Text Decoding](HTML-Text-Decoding.md) for exact limits.
+- Body limit after HTTP decompression and before charset decoding: 2 MiB. The final
+  Unicode string can grow when converting single-byte or UTF-16 input to UTF-8.
+  Resolve/connect/send/receive operation timeouts: 10 s.
   A 30 s elapsed deadline is checked between body reads; it is not a strict total
   wall-clock deadline, because synchronous OS operations can finish after it.
 - Automatic cookies/authentication are disabled. No persistent cache or cookie

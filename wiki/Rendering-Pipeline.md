@@ -39,13 +39,19 @@ The source loader currently accepts:
 - direct/relative filesystem paths;
 - Windows drive paths without mistaking C: for a URI scheme;
 - file: URLs with percent decoding;
-- data:text/html URLs using percent-encoded UTF-8;
+- data:text/html URLs using percent-encoded document bytes and charset parameters;
 - data:text/html;base64 URLs.
-- HTTP/HTTPS UTF-8 HTML via the system WinHTTP transport/TLS/proxy API.
+- HTTP/HTTPS HTML via the system WinHTTP transport/TLS/proxy API.
 
 Network loads validate status, media type and charset, limit decoded HTML to 2 MiB,
 and follow at most five redirects. See [Document Source Loading](Document-Source-Loading.md)
 for the precise initial URL/encoding/timeout limits.
+
+All document loaders share owned byte decoding for UTF-8, UTF-16, Windows-1251 and
+Windows-1252. BOM/header/early-meta selection happens before HTML tokenization.
+The tokenizer decodes common named and numeric references in text/attributes while
+keeping escaped markup as text; raw-text/RCDATA context preserves script/style
+content. See [HTML Text Decoding](HTML-Text-Decoding.md) for the subset boundaries.
 
 ## Current layout subset
 
@@ -83,3 +89,5 @@ making normal CI tests depend on public network access.
 --link-smoke-test loads examples/navigation/index.html, queues a native click on its
 first visible link, resolves the relative local URL on the worker and checks the
 destination painting/history. It runs in CI using only repository fixtures.
+The Windows-1251 fixture in examples/encoding verifies legacy bytes -> Cyrillic
+pixels through the same native navigation smoke path.

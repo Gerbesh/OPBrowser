@@ -1,3 +1,4 @@
+mod references;
 mod tree_builder;
 pub use tree_builder::parse_document;
 
@@ -47,6 +48,7 @@ pub struct Tokenizer {
     current_attributes: Vec<Attribute>,
     current_attribute: Option<Attribute>,
     current_is_end_tag: bool,
+    text_mode: Option<(String, bool)>,
 }
 
 impl Tokenizer {
@@ -59,6 +61,7 @@ impl Tokenizer {
             current_attributes: Vec::new(),
             current_attribute: None,
             current_is_end_tag: false,
+            text_mode: None,
         }
     }
 
@@ -66,9 +69,47 @@ impl Tokenizer {
         let mut output = Vec::new();
 
         loop {
+            // Initial raw-text/RCDATA handling keeps escaped markup as text and
+            // avoids decoding references inside script/style source.
+            if self.state == State::Data
+                && let Some((tag, decode_references)) = &self.text_mode
+            {
+                let remaining = &self.input[self.cursor..];
+                let is_end = remaining.starts_with(&['<', '/'])
+                    && remaining.len() >= tag.len() + 2
+                    && remaining[2..]
+                        .iter()
+                        .copied()
+                        .zip(tag.chars())
+                        .all(|(a, b)| a.eq_ignore_ascii_case(&b))
+                    && remaining
+                        .get(tag.len() + 2)
+                        .is_some_and(|ch| ch.is_ascii_whitespace() || matches!(ch, '/' | '>'));
+                if is_end {
+                    self.text_mode = None;
+                } else {
+                    let decode_references = *decode_references;
+                    match self.next_char() {
+                        Some('&') if decode_references => {
+                            let ch = self.character_reference(false).unwrap_or('&');
+                            output.push(Token::Character(ch));
+                        }
+                        Some(ch) => output.push(Token::Character(ch)),
+                        None => {
+                            output.push(Token::Eof);
+                            break;
+                        }
+                    }
+                    continue;
+                }
+            }
             match self.state {
                 State::Data => match self.next_char() {
                     Some('<') => self.state = State::TagOpen,
+                    Some('&') => {
+                        let ch = self.character_reference(false).unwrap_or('&');
+                        output.push(Token::Character(ch));
+                    }
                     Some(character) => output.push(Token::Character(character)),
                     None => {
                         output.push(Token::Eof);
@@ -217,6 +258,10 @@ impl Tokenizer {
                 },
                 State::AttributeValueDoubleQuoted => match self.next_char() {
                     Some('"') => self.state = State::AfterAttributeValueQuoted,
+                    Some('&') => {
+                        let ch = self.character_reference(true).unwrap_or('&');
+                        self.push_attribute_value(ch);
+                    }
                     Some('\0') => self.push_attribute_value('\u{fffd}'),
                     Some(character) => self.push_attribute_value(character),
                     None => {
@@ -226,6 +271,10 @@ impl Tokenizer {
                 },
                 State::AttributeValueSingleQuoted => match self.next_char() {
                     Some('\'') => self.state = State::AfterAttributeValueQuoted,
+                    Some('&') => {
+                        let ch = self.character_reference(true).unwrap_or('&');
+                        self.push_attribute_value(ch);
+                    }
                     Some('\0') => self.push_attribute_value('\u{fffd}'),
                     Some(character) => self.push_attribute_value(character),
                     None => {
@@ -234,6 +283,10 @@ impl Tokenizer {
                     }
                 },
                 State::AttributeValueUnquoted => match self.next_char() {
+                    Some('&') => {
+                        let ch = self.character_reference(true).unwrap_or('&');
+                        self.push_attribute_value(ch);
+                    }
                     Some(character) if character.is_ascii_whitespace() => {
                         self.finish_attribute();
                         self.state = State::BeforeAttributeName;
@@ -333,6 +386,12 @@ impl Tokenizer {
         }
     }
 
+    fn character_reference(&mut self, attribute: bool) -> Option<char> {
+        let (character, consumed) = references::consume(&self.input[self.cursor..], attribute)?;
+        self.cursor += consumed;
+        Some(character)
+    }
+
     fn finish_attribute(&mut self) {
         if self.current_is_end_tag {
             self.current_attribute = None;
@@ -355,6 +414,20 @@ impl Tokenizer {
                 name: std::mem::take(&mut self.current_tag_name),
             }
         } else {
+            let tag = self.current_tag_name.as_str();
+            if matches!(
+                tag,
+                "script"
+                    | "style"
+                    | "xmp"
+                    | "iframe"
+                    | "noembed"
+                    | "noframes"
+                    | "title"
+                    | "textarea"
+            ) {
+                self.text_mode = Some((tag.to_owned(), matches!(tag, "title" | "textarea")));
+            }
             Token::StartTag {
                 name: std::mem::take(&mut self.current_tag_name),
                 attributes: std::mem::take(&mut self.current_attributes),

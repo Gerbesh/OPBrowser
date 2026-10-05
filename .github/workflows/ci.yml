@@ -36,5 +36,8 @@ jobs:
       - name: Hyperlink navigation smoke test
         run: cargo run -p op_browser -- --link-smoke-test
 
+      - name: Legacy HTML encoding smoke test
+        run: cargo run -p op_browser -- --navigation-smoke-test examples/encoding/windows-1251.html
+
       - name: Release build
         run: cargo build -p op_browser --release

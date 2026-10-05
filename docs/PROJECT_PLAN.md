@@ -68,13 +68,19 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE clickable text hyperlinks with measured hit regions and scroll-aware input.
 - DONE relative HTTP(S)/local-file link resolution using the loaded document base.
 - DONE link input -> worker -> load -> history -> pixels smoke coverage.
-- NEXT broader HTML decoding/charset and URL conformance.
+- DONE owned UTF-8/UTF-16/Windows-1251/Windows-1252 document decoding.
+- DONE BOM -> transport -> first-1024-byte meta charset selection and label aliases.
+- DONE common named and numeric references in HTML text/attributes, including hrefs.
+- DONE initial raw-text/RCDATA tokenizer handling to preserve script/style text.
+- DONE Windows-1251 source -> Cyrillic pixels -> decoded hyperlink smoke coverage.
+- NEXT remaining named-reference table and broader encoding/URL conformance.
 - NEXT basic image loading.
 - NEXT richer block/inline layout behavior.
 
 Exit condition: OPBrowser renders a non-trivial local HTML document using only its
 own HTML/DOM/layout/paint pipeline. Achieved at the initial M1 level. The current
-iteration also opens external UTF-8 HTML sites through the address bar; full CSS,
+iteration also opens external HTML sites, including declared Windows-1251 pages,
+through the address bar; full CSS,
 images, scripting, and modern-site compatibility remain later milestones.
 
 ## M2 - CSS foundation

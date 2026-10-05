@@ -270,6 +270,42 @@ mod tests {
     }
 
     #[test]
+    fn legacy_document_text_and_entity_decoded_links_reach_paint() {
+        let mut engine = Engine::new();
+        let page = engine.navigate("data:text/html;charset=windows-1251,%3Ch1%3E%CF%F0%E8%E2%E5%F2%3C%2Fh1%3E%3Cp%3E%26copy%3B%3C%2Fp%3E%3Cp%3E%3Ca%20href%3D%27https%3A%2F%2Fexample.com%2F%3Fa%3D1%26amp%3Bb%3D2%27%3EGo%3C%2Fa%3E%3C%2Fp%3E", 800, 600).unwrap();
+        assert!(contains_text(&page.display_list, "Привет"));
+        assert!(contains_text(&page.display_list, "©"));
+        assert!(page.display_list.commands.iter().any(|command| matches!(command, PaintCommand::Text { links, .. } if links.iter().any(|link| link.href == "https://example.com/?a=1&b=2"))));
+        let before = engine.navigation().clone();
+        assert!(
+            engine
+                .navigate("data:text/html;charset=unknown,x", 800, 600)
+                .is_err()
+        );
+        assert_eq!(*engine.navigation(), before);
+    }
+
+    #[test]
+    fn local_windows1251_fixture_renders_cyrillic_and_decoded_query_link() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/encoding/windows-1251.html");
+        let mut engine = Engine::new();
+        let page = engine.navigate(path.to_str().unwrap(), 800, 600).unwrap();
+        assert!(contains_text(&page.display_list, "Привет, мир!"));
+        assert!(contains_text(&page.display_list, "Windows-1251: Ё ё №"));
+        assert!(contains_text(&page.display_list, "© 2026 & OPBrowser"));
+        assert!(page.display_list.commands.iter().any(|command| matches!(command, PaintCommand::Text { links, .. } if links.iter().any(|link| link.href == "../navigation/index.html?source=encoding&lang=ru"))));
+        let next = engine
+            .follow_link("../navigation/index.html?source=encoding&lang=ru", 800, 600)
+            .unwrap();
+        assert!(contains_text(
+            &next.display_list,
+            "OPBrowser link navigation"
+        ));
+        assert!(engine.navigation().can_go_back());
+    }
+
+    #[test]
     fn render_source_loads_data_html_before_rendering() {
         let engine = Engine::new();
         let page = engine
@@ -390,6 +426,7 @@ mod tests {
                         Err(error) => panic!("{error}"),
                     }
                 };
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(3)))
                     .unwrap();

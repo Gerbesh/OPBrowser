@@ -115,20 +115,8 @@ fn decode_document(
     if mime != "text/html" {
         return Err(LoadError::UnsupportedContentType(mime));
     }
-    for parameter in parts {
-        if let Some((name, value)) = parameter.trim().split_once('=')
-            && name.trim().eq_ignore_ascii_case("charset")
-        {
-            let charset = value.trim().trim_matches(['\'', '"']);
-            if !charset.eq_ignore_ascii_case("utf-8") && !charset.eq_ignore_ascii_case("us-ascii") {
-                return Err(LoadError::UnsupportedCharset(charset.to_owned()));
-            }
-        }
-    }
-    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
-    let text = String::from_utf8(bytes.to_vec()).map_err(|_| LoadError::InvalidUtf8 {
-        source: address.clone(),
-    })?;
+    let charset = crate::encoding::charset_parameter(content_type);
+    let text = crate::encoding::decode_html(&bytes, charset.as_deref(), &address)?;
     Ok(LoadedDocument {
         address,
         mime_type: mime,
@@ -366,6 +354,7 @@ mod tests {
                         Err(error) => panic!("{error}"),
                     }
                 };
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(3)))
                     .unwrap();
@@ -414,6 +403,27 @@ mod tests {
         let requests = server.join().unwrap();
         assert!(requests[0].starts_with("GET /page?x=1 HTTP/1.1\r\n"));
         assert!(requests[0].contains("OPBrowser/0.1"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn fetches_windows1251_from_header_or_meta_and_honors_bom() {
+        let body = b"<meta charset=windows-1251><h1>\xcf\xf0\xe8\xe2\xe5\xf2</h1>";
+        for headers in [
+            "Content-Type: text/html; charset=windows-1251\r\n",
+            "Content-Type: text/html\r\n",
+        ] {
+            let (address, server) = serve(vec![response("200 OK", headers, body)]);
+            assert!(load(&address).unwrap().text.contains("<h1>Привет</h1>"));
+            server.join().unwrap();
+        }
+        let (address, server) = serve(vec![response(
+            "200 OK",
+            "Content-Type: text/html; charset=windows-1251\r\n",
+            "\u{feff}<p>UTF-8 Привет</p>".as_bytes(),
+        )]);
+        assert_eq!(load(&address).unwrap().text, "<p>UTF-8 Привет</p>");
+        server.join().unwrap();
     }
 
     #[test]
@@ -549,7 +559,7 @@ mod tests {
             Err(LoadError::UnsupportedContentType(_))
         ));
         assert!(matches!(
-            decode_document("a".into(), "text/html; charset=windows-1251", vec![]),
+            decode_document("a".into(), "text/html; charset=unsupported", vec![]),
             Err(LoadError::UnsupportedCharset(_))
         ));
         assert!(matches!(

@@ -60,9 +60,13 @@ hand cursor; clicking uses the same loading/history path. The navigation example
 demonstrates a relative link to a second local page.
 
 Initial network support requires Windows, an ASCII hostname (or an IPv4/bracketed
-IPv6 literal), an explicit `http://` or `https://` scheme, and UTF-8 HTML. Requests
+IPv6 literal) and an explicit `http://` or `https://` scheme. Documents support
+UTF-8, Windows-1251, Windows-1252 and UTF-16. Encoding selection checks BOM,
+transport charset and early HTML meta declarations; no declaration defaults to
+strict UTF-8. Common named and numeric HTML references decode in text and hrefs.
+See [HTML text decoding](wiki/HTML-Text-Decoding.md) for exact limits. Requests
 use system proxy/TLS settings, keep certificate validation enabled, follow at most
-five redirects, reject HTTPS-to-HTTP redirects, and limit decoded HTML to 2 MiB.
+five redirects, reject HTTPS-to-HTTP redirects, and limit decompressed response bytes to 2 MiB.
 Cookies and automatic authentication are disabled. No requests run until you supply
 a document address. See [source loading](wiki/Document-Source-Loading.md) for limits.
 

@@ -46,3 +46,10 @@ Multi-window and multi-process work will replace this with explicit per-window /
 per-renderer ownership.
 
 Multi-process isolation remains a planned architectural requirement.
+
+Document decoding is owned by op_net::encoding: compact Windows-1251/1252 tables,
+strict Unicode conversion, charset aliases and a bounded byte-level meta prescan.
+HTTP, local-file and data loaders pass decoded Unicode to the original HTML parser.
+op_html::references consumes common named and numeric character references inside
+tokenizer text/attribute states; initial raw-text/RCDATA handling preserves the
+context rules. No new package or ready-made parsing/browser engine is involved.

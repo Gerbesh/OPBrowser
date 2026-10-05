@@ -68,3 +68,63 @@ fn treats_invalid_tag_open_as_text() {
         ]
     );
 }
+
+#[test]
+fn decodes_text_and_attribute_references_without_reparsing_markup() {
+    let tokens = Tokenizer::new(
+        "<a href='/?a=1&amp;b=2' title='&quot;x&quot;'>&lt;b&gt;&#x41F;&#1088;&copy;&amp;lt;</a>",
+    )
+    .tokenize();
+    let Token::StartTag { attributes, .. } = &tokens[0] else {
+        panic!("expected anchor");
+    };
+    assert_eq!(attributes[0].value, "/?a=1&b=2");
+    assert_eq!(attributes[1].value, "\"x\"");
+    let text: String = tokens
+        .iter()
+        .filter_map(|token| {
+            if let Token::Character(ch) = token {
+                Some(*ch)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(text, "<b>Пр©&lt;");
+    assert_eq!(
+        tokens
+            .iter()
+            .filter(|token| matches!(token, Token::StartTag { .. }))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn preserves_raw_text_and_decodes_rcdata_only_in_text() {
+    let tokens = Tokenizer::new(
+        "<script>let x = '<b>&amp;</b>';</script><textarea>&amp;<b>text</b></textarea><p>after</p>",
+    )
+    .tokenize();
+    let text: String = tokens
+        .iter()
+        .filter_map(|token| {
+            if let Token::Character(ch) = token {
+                Some(*ch)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(text, "let x = '<b>&amp;</b>';&<b>text</b>after");
+    assert!(
+        !tokens
+            .iter()
+            .any(|token| matches!(token, Token::StartTag { name, .. } if name == "b"))
+    );
+    assert!(
+        tokens
+            .iter()
+            .any(|token| matches!(token, Token::StartTag { name, .. } if name == "p"))
+    );
+}

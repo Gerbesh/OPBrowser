@@ -87,6 +87,14 @@ classDiagram
         +load_document(source) Result~LoadedDocument, LoadError~
     }
 
+    class Encoding {
+        Utf8
+        Utf16Le
+        Utf16Be
+        Windows1251
+        Windows1252
+    }
+
     class LoadedDocument {
         +String address
         +String mime_type
@@ -143,6 +151,7 @@ classDiagram
     Engine --> NetworkContext
     NetworkContext --> LoadedDocument
     NetworkContext --> HttpUrl
+    NetworkContext --> Encoding : decode_html / BOM-header-meta selection
     Engine --> RenderedPage
     LoadedDocument --> Engine : render
     Document --> LayoutTree : layout_document
@@ -176,11 +185,17 @@ classDiagram
 - op_engine currently owns per-page navigation state plus orchestration between loading
   and web-engine subsystems. This state will later become per-tab.
 - op_net owns document-source interpretation, initial link-reference resolution,
-  an initial HTTP URL parser, bounded
+  an initial HTTP URL parser, owned document byte decoding and bounded
   HTTP(S) loading, response validation and errors. Its private http::windows module
   uses RAII WinHTTP handles for transport/TLS/proxy/framing/decompression. Cache,
   cookies and request filtering remain future work.
-- op_html owns HTML tokenization and tree construction rules.
+- op_net::encoding owns charset label resolution, Unicode/single-byte decoding
+  tables and a bounded initial HTML meta prescan. HTTP/file/data loaders share it;
+  unsupported labels and malformed Unicode remain typed errors.
+- op_html owns HTML tokenization and tree construction rules. Its private
+  references module consumes a common named-reference subset and numeric references
+  before text/attribute tokens enter the DOM. Initial raw-text/RCDATA context keeps
+  references and markup from being incorrectly parsed inside script/style/title.
 - op_dom owns document/node storage, element attributes, and DOM invariants.
 - op_layout owns text-flow geometry, structural-container traversal and UTF-8
   LinkSpan ranges preserved across whitespace normalization and line wrapping.

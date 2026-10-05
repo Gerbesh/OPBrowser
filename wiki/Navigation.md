@@ -67,6 +67,10 @@ local pages support relative filesystem links. Unsupported schemes show a load
 error and preserve the previous page. They never launch another application.
 
 CSS, images and JavaScript remain future work. Fragment-only links reload without
-anchor scrolling; HTML base elements, target/download behavior and entity decoding
+anchor scrolling; HTML base elements, target/download behavior and the complete
+named character-reference table
 remain future work. Resizing moves controls; text reflows on next navigation.
+
+Common named/numeric references already decode in href attributes before layout,
+so links such as `?a=1&amp;b=2` navigate to `?a=1&b=2`.
 Back/Forward fetch the historical request again; there is no page cache yet.

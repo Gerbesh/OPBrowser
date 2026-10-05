@@ -180,3 +180,28 @@ This file is append-only project history.
   tests, startup/offline address/offline hyperlink smoke tests, release build and
   release hyperlink navigation to external HTTPS. Release EXE: 307,200 bytes,
   an increase of 23,552 bytes; no dependency packages were added.
+
+## 2026-10-05 - Legacy document encodings and HTML character references
+
+- Addressed the reported UnsupportedCharset windows-1251 failure with an owned,
+  shared source decoder for UTF-8, UTF-16LE/BE, Windows-1251 and Windows-1252.
+- Added compact WHATWG single-byte tables and charset label aliases without adding
+  dependency packages. HTTP/file/data sources now share decoding before tokenization.
+- Added BOM -> transport -> bounded early-meta selection, including Content-Type
+  http-equiv declarations, comment/quoted-attribute skipping and strict Unicode errors.
+  Kept the UTF-8 default and documented remaining sniffing/encoding limitations.
+- Added original tokenizer consumption of common named/numeric references in text
+  and attribute values, so escaped markup remains text and &amp; query separators
+  in hrefs become the actual navigation address.
+- Added initial raw-text/RCDATA context so script/style source remains literal and
+  title/textarea text follows character-reference context rules.
+- Added a Windows-1251 example, exact Cyrillic/paint/link regression tests, HTTP
+  header/meta/BOM fixtures and native CI smoke coverage for legacy document loading.
+- Fixed a discovered Windows fixture race: accepted loopback sockets explicitly
+  return to blocking mode before reads instead of inheriting listener nonblocking state.
+- Final verification passed: rustfmt check, warning-free Clippy, all 50 workspace
+  tests, startup/offline address/offline hyperlink smoke tests, Windows-1251 native
+  loading and hyperlink smoke tests, release build and release legacy hyperlink test.
+  Release EXE: 317,440 bytes, an increase of 10,240 bytes; no dependency packages
+  were added. The reported site's URL was not supplied; verification used controlled
+  HTTP fixtures and the checked-in Cyrillic example.

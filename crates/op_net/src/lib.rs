@@ -2,6 +2,7 @@
 //!
 //! Local/data loading and bounded HTTP(S) document requests via Windows WinHTTP.
 
+mod encoding;
 mod http;
 mod links;
 pub use links::resolve_link;
@@ -34,6 +35,7 @@ pub enum LoadError {
     UnsupportedDataMime(String),
     Io { path: PathBuf, message: String },
     InvalidUtf8 { source: String },
+    InvalidEncoding { source: String, encoding: String },
     InvalidHttpUrl(String),
     Network(String),
     HttpStatus(u32),
@@ -60,6 +62,9 @@ impl fmt::Display for LoadError {
             }
             Self::InvalidUtf8 { source } => {
                 write!(formatter, "{source} is not valid UTF-8")
+            }
+            Self::InvalidEncoding { source, encoding } => {
+                write!(formatter, "{source} is not valid {encoding}")
             }
             Self::InvalidHttpUrl(message) => write!(formatter, "invalid HTTP URL: {message}"),
             Self::Network(message) => write!(formatter, "network request failed: {message}"),
@@ -156,10 +161,7 @@ fn load_file_path(path: PathBuf) -> Result<LoadedDocument, LoadError> {
         message: error.to_string(),
     })?;
 
-    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
-    let text = String::from_utf8(bytes.to_vec()).map_err(|_| LoadError::InvalidUtf8 {
-        source: path.display().to_string(),
-    })?;
+    let text = encoding::decode_html(&bytes, None, &path.display().to_string())?;
 
     let address = path
         .canonicalize()
@@ -194,10 +196,17 @@ fn load_data_url(source: &str) -> Result<LoadedDocument, LoadError> {
     }
 
     let mut base64 = false;
+    let mut charset = None;
     for parameter in parts {
         if parameter.eq_ignore_ascii_case("base64") {
             base64 = true;
-        } else if !parameter.eq_ignore_ascii_case("charset=utf-8") {
+        } else if let Some((name, value)) = parameter.split_once('=')
+            && name.trim().eq_ignore_ascii_case("charset")
+        {
+            if charset.is_none() {
+                charset = Some(value.trim().trim_matches(['\'', '"']));
+            }
+        } else {
             return Err(LoadError::InvalidDataUrl(format!(
                 "unsupported parameter: {parameter}"
             )));
@@ -211,9 +220,7 @@ fn load_data_url(source: &str) -> Result<LoadedDocument, LoadError> {
             .map_err(|message| LoadError::InvalidDataUrl(message.to_owned()))?
     };
 
-    let text = String::from_utf8(decoded_bytes).map_err(|_| LoadError::InvalidUtf8 {
-        source: "data URL payload".into(),
-    })?;
+    let text = encoding::decode_html(&decoded_bytes, charset, "data URL payload")?;
 
     Ok(LoadedDocument {
         address: "data:text/html".into(),
@@ -386,6 +393,15 @@ mod tests {
         assert_eq!(loaded.source_kind, SourceKind::DataUrl);
         assert_eq!(loaded.mime_type, "text/html");
         assert_eq!(loaded.text, "<h1>OPBrowser</h1>");
+    }
+
+    #[test]
+    fn loads_windows1251_data_payload() {
+        let loaded = load_document(
+            "data:text/html;charset=windows-1251,%3Ch1%3E%CF%F0%E8%E2%E5%F2%3C%2Fh1%3E",
+        )
+        .unwrap();
+        assert_eq!(loaded.text, "<h1>Привет</h1>");
     }
 
     #[test]
