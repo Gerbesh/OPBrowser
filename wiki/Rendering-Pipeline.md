@@ -67,12 +67,19 @@ The M1 layout layer currently provides:
 - vertical text flow;
 - platform-neutral text boxes.
 - UTF-8 href spans across nested inline labels, whitespace normalization and wrapping.
+- image boxes with intrinsic/HTML dimensions, viewport fitting and alpha pixels;
+- separate-line image placement, surrounding text order and alt fallback;
+- inherited anchor hrefs on image rectangles.
 
 Text paint commands carry LinkSpan byte ranges. The native painter draws linked
 ranges blue/underlined and measures their glyph bounds with GDI; cursor and click
 hit testing use these regions in document coordinates with the toolbar/scroll
 offset applied. Page replacement clears stale regions. Address resolution remains
 in op_net/Engine rather than the graphics backend.
+Image commands carry shared premultiplied BGRA pixels. A transient GDI surface
+draws only visible images with AlphaBlend; the source bitmap/DC are released after
+drawing. Clickable rectangles use the same document-coordinate hit regions.
+See [Image Loading](Image-Loading.md) for the complete resource-to-pixels path.
 
 This is deliberately small. It exists to prove subsystem boundaries and the complete
 path to pixels before expanding CSS/layout complexity.
@@ -81,6 +88,10 @@ path to pixels before expanding CSS/layout complexity.
 
 NativeBrowserWindow::create calls UpdateWindow after ShowWindow. The WM_PAINT handler
 sets an atomic painted-once flag. The --smoke-test mode fails if that flag is not set.
+The --image-smoke-test mode additionally requires a successful raster draw after
+address input/worker loading. Codec tests check all supported formats and budgets;
+GDI surface tests inspect scaled colors and alpha-composited pixels. Native tests
+exercise image hit bounds, scroll offsets, click dispatch and stale-region cleanup.
 
 The repository also smoke-tests examples\hello.html and an HTML data URL through
 the source-to-pixels path. --navigation-smoke-test uses queued native Enter input,

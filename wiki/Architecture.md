@@ -12,6 +12,7 @@ Current crates:
 - op_html: HTML tokenizer and tree builder.
 - op_css: CSS/style subsystem.
 - op_layout: platform-neutral text/layout geometry.
+- op_image: validated raster buffers and Windows WIC infrastructure codec adapter.
 - op_paint: platform-neutral display list.
 - op_js: original ECMAScript runtime.
 - op_net: source loading, initial owned HTTP URL parsing, bounded WinHTTP transport
@@ -56,4 +57,12 @@ context rules. Its Characters result carries one or two Unicode scalars. A sorte
 eight-byte NamedEntry table and packed strings replace per-name pointers; prefix
 ranges limit lookup to 31 input characters without allocation. A Python standard
 library tool generates the table offline from pinned WHATWG data; Cargo builds use
-the committed Rust output. No new package or ready-made parsing/browser engine is involved.
+the committed Rust output. No ready-made parsing/browser engine is involved.
+
+Raster image subresources are coordinated by op_engine::images and loaded as binary
+bytes by op_net::images. The new op_image crate uses targeted Windows WIC/COM bindings
+to decode supported Microsoft raster formats into premultiplied BGRA. No codec
+object crosses the worker/UI boundary. Arc pixels reach original ImageBox layout
+and Image paint commands; a transient GDI DIB/DC draws them with alpha.
+Image rectangles inherit anchor hrefs and use existing native hit testing.
+See [Image Loading](Image-Loading.md) for budgets, source policy and current limits.

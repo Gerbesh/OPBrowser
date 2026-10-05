@@ -50,6 +50,9 @@ scripts. The existing windows-sys package supplies bindings; the engine is origi
 - Automatic cookies/authentication are disabled. No persistent cache or cookie
   store exists, and no request starts without an explicit document source.
 - HTTP transport currently requires Windows. Local and data loaders are portable.
+- After an explicit document load, visible img nodes may start bounded binary
+  HTTP(S)/local/data image subrequests on the worker. See [Image Loading](Image-Loading.md)
+  for their byte/time budgets and source restrictions. WIC raster decoding requires Windows.
 
 Requests execute on the browser's navigation worker, preserving UI responsiveness.
 Navigation history is committed only after loading and own-engine rendering succeed.

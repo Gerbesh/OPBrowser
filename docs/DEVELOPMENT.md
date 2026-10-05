@@ -40,6 +40,9 @@ but they are installed now for future native dependencies and graphics tooling.
 - op_css: CSS engine
 - op_js: ECMAScript engine
 - op_net: networking
+- op_image: bounded raster image buffers and Windows WIC codec adapter
+- op_layout: original text/image layout
+- op_paint: platform-neutral text/image display list
 - op_platform_win: Win32 platform integration
 
 ## Common commands
@@ -136,6 +139,25 @@ Debug executable:
 Release executable:
 
     target\release\op_browser.exe
+
+## Image support
+
+Image checks and example:
+
+    cargo run -p op_browser -- examples/images/index.html
+    cargo run -p op_browser -- --image-smoke-test
+    cargo run -p op_browser -- --link-smoke-test examples/images/index.html
+
+The image smoke requires a successful raster paint in WM_PAINT, not just window
+startup. Image-link smoke clicks the linked PNG and paints its destination.
+Color/premultiplied-alpha tests draw into real GDI DIB surfaces and inspect pixels.
+Fixtures are checked in; regenerate offline with `tools/generate_image_fixtures.ps1`
+(Windows System.Drawing). They use no external pictures or services.
+
+The windows 0.62.2 binding is limited to WIC and COM feature sets in op_image.
+Its 14 added packages include binding/core support and build-time procedural macros;
+the codec itself remains part of Windows. Image CPU/OS working memory are separate
+from OPBrowser's explicit raster/encoded budgets; keep these limits measurable.
 
 ## Dependency rule
 

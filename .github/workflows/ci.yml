@@ -47,3 +47,9 @@ jobs:
 
       - name: Release build
         run: cargo build -p op_browser --release
+
+      - name: Native image paint smoke test
+        run: cargo run -p op_browser -- --image-smoke-test
+
+      - name: Image hyperlink smoke test
+        run: cargo run -p op_browser -- --link-smoke-test examples/images/index.html

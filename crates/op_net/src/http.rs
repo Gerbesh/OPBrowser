@@ -112,6 +112,11 @@ fn decode_document(
         .unwrap_or("text/html")
         .trim()
         .to_ascii_lowercase();
+    let mime = if mime.is_empty() {
+        "text/html".to_owned()
+    } else {
+        mime
+    };
     if mime != "text/html" {
         return Err(LoadError::UnsupportedContentType(mime));
     }
@@ -129,11 +134,46 @@ pub(crate) fn load(source: &str) -> Result<LoadedDocument, LoadError> {
     let url = HttpUrl::parse(source)?;
     #[cfg(windows)]
     {
-        windows::load(url)
+        let response = windows::load(url, false, MAX_DOCUMENT_BYTES)?;
+        decode_document(response.address, &response.content_type, response.bytes)
     }
     #[cfg(not(windows))]
     {
         let _ = url;
+        Err(LoadError::Network("HTTP transport requires Windows".into()))
+    }
+}
+
+pub(crate) fn load_image(source: &str, limit: usize) -> Result<Vec<u8>, LoadError> {
+    let url = HttpUrl::parse(source)?;
+    #[cfg(windows)]
+    {
+        let response = windows::load(url, true, limit)?;
+        let mime = response
+            .content_type
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        if !mime.is_empty()
+            && !matches!(
+                mime.as_str(),
+                "image/png"
+                    | "image/jpeg"
+                    | "image/gif"
+                    | "image/bmp"
+                    | "image/x-ms-bmp"
+                    | "application/octet-stream"
+            )
+        {
+            return Err(LoadError::UnsupportedContentType(mime));
+        }
+        Ok(response.bytes)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (url, limit);
         Err(LoadError::Network("HTTP transport requires Windows".into()))
     }
 }
@@ -183,7 +223,17 @@ mod windows {
         value.encode_utf16().chain(Some(0)).collect()
     }
 
-    pub(super) fn load(url: HttpUrl) -> Result<LoadedDocument, LoadError> {
+    pub(super) struct Response {
+        pub(super) address: String,
+        pub(super) content_type: String,
+        pub(super) bytes: Vec<u8>,
+    }
+
+    pub(super) fn load(
+        url: HttpUrl,
+        image: bool,
+        byte_limit: usize,
+    ) -> Result<Response, LoadError> {
         // WinHTTP handles only transport/TLS/proxy/framing, never HTML or rendering.
         let agent = wide("OPBrowser/0.1");
         let session = Handle::checked(
@@ -199,7 +249,10 @@ mod windows {
             "open session",
         )?;
         check(
-            unsafe { WinHttpSetTimeouts(session.0, 10_000, 10_000, 10_000, 10_000) },
+            unsafe {
+                let timeout = if image { 2000 } else { 10_000 };
+                WinHttpSetTimeouts(session.0, timeout, timeout, timeout, timeout)
+            },
             "set timeouts",
         )?;
         let host = wide(&url.host);
@@ -209,7 +262,11 @@ mod windows {
         )?;
         let verb = wide("GET");
         let target = wide(&url.target);
-        let accept = wide("text/html");
+        let accept = wide(if image {
+            "image/png,image/jpeg,image/gif,image/bmp"
+        } else {
+            "text/html"
+        });
         let accept_types = [accept.as_ptr(), null()];
         let request = Handle::checked(
             unsafe {
@@ -270,8 +327,8 @@ mod windows {
         let mut bytes = Vec::new();
         let mut buffer = [0u8; 16 * 1024];
         loop {
-            if started.elapsed() > Duration::from_secs(30) {
-                return Err(LoadError::Network("document read deadline exceeded".into()));
+            if started.elapsed() > Duration::from_secs(if image { 5 } else { 30 }) {
+                return Err(LoadError::Network("resource read deadline exceeded".into()));
             }
             let mut read = 0;
             check(
@@ -288,12 +345,20 @@ mod windows {
             if read == 0 {
                 break;
             }
-            if bytes.len() + read as usize > MAX_DOCUMENT_BYTES {
-                return Err(LoadError::DocumentTooLarge);
+            if bytes.len() + read as usize > byte_limit {
+                return Err(if image {
+                    LoadError::ImageTooLarge
+                } else {
+                    LoadError::DocumentTooLarge
+                });
             }
             bytes.extend_from_slice(&buffer[..read as usize]);
         }
-        decode_document(address, &content_type, bytes)
+        Ok(Response {
+            address,
+            content_type,
+            bytes,
+        })
     }
 
     fn query_string(request: &Handle, header: Option<u32>) -> Result<String, LoadError> {
@@ -308,9 +373,9 @@ mod windows {
         };
         query(null_mut(), &mut length);
         if length == 0 {
-            // Missing Content-Type is treated as HTML at this milestone.
+            // Each caller supplies its own missing-header policy.
             if header.is_some() {
-                return Ok("text/html".into());
+                return Ok(String::new());
             }
             return Err(error("query response URL"));
         }
@@ -403,6 +468,28 @@ mod tests {
         let requests = server.join().unwrap();
         assert!(requests[0].starts_with("GET /page?x=1 HTTP/1.1\r\n"));
         assert!(requests[0].contains("OPBrowser/0.1"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn bounds_image_bytes_and_accepts_missing_or_binary_media_types() {
+        for headers in [
+            "",
+            "Content-Type: image/png\r\n",
+            "Content-Type: application/octet-stream\r\n",
+        ] {
+            let (address, server) = serve(vec![response("200 OK", headers, b"12345678")]);
+            assert_eq!(load_image(&address, 8).unwrap(), b"12345678");
+            let requests = server.join().unwrap();
+            assert!(requests[0].contains("image/png"));
+        }
+        let (address, server) = serve(vec![response(
+            "200 OK",
+            "Content-Type: image/png\r\n",
+            b"123456789",
+        )]);
+        assert_eq!(load_image(&address, 8), Err(LoadError::ImageTooLarge));
+        server.join().unwrap();
     }
 
     #[test]

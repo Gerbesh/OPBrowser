@@ -4,7 +4,9 @@
 
 mod encoding;
 mod http;
+mod images;
 mod links;
+pub use images::resolve_image_source;
 pub use links::resolve_link;
 
 use std::fmt;
@@ -42,6 +44,7 @@ pub enum LoadError {
     UnsupportedContentType(String),
     UnsupportedCharset(String),
     DocumentTooLarge,
+    ImageTooLarge,
     InvalidLink(String),
 }
 
@@ -76,6 +79,7 @@ impl fmt::Display for LoadError {
                 write!(formatter, "unsupported document charset: {charset}")
             }
             Self::DocumentTooLarge => write!(formatter, "document exceeds the 2 MiB limit"),
+            Self::ImageTooLarge => write!(formatter, "image exceeds the byte budget"),
             Self::InvalidLink(message) => write!(formatter, "cannot open link: {message}"),
         }
     }
@@ -87,6 +91,10 @@ impl std::error::Error for LoadError {}
 pub struct NetworkContext;
 
 impl NetworkContext {
+    pub fn load_image(&self, source: &str, byte_limit: usize) -> Result<Vec<u8>, LoadError> {
+        images::load(source, byte_limit)
+    }
+
     pub fn load_document(&self, source: &str) -> Result<LoadedDocument, LoadError> {
         load_document(source)
     }
@@ -131,6 +139,10 @@ pub fn load_document(source: &str) -> Result<LoadedDocument, LoadError> {
 }
 
 fn load_file_url(source: &str) -> Result<LoadedDocument, LoadError> {
+    load_file_path(file_url_path(source)?)
+}
+
+fn file_url_path(source: &str) -> Result<PathBuf, LoadError> {
     let rest = &source[5..];
 
     let path_text = if let Some(without_slashes) = rest.strip_prefix("//") {
@@ -152,7 +164,7 @@ fn load_file_url(source: &str) -> Result<LoadedDocument, LoadError> {
         .map_err(|message| LoadError::InvalidFileUrl(format!("{source}: {message}")))?;
 
     let normalized = normalize_windows_file_url_path(&decoded);
-    load_file_path(PathBuf::from(normalized))
+    Ok(PathBuf::from(normalized))
 }
 
 fn load_file_path(path: PathBuf) -> Result<LoadedDocument, LoadError> {

@@ -20,4 +20,5 @@ The current milestone opens external HTTP/HTTPS HTML pages through a native addr
 bar or startup URL. It displays static text using the original engine, supports
 Back/Forward/Reload and scrolling, and keeps the window responsive during loading.
 Text hyperlinks are clickable, including relative HTTP(S) and local-file links.
-CSS, images and JavaScript remain future work.
+PNG/JPEG/GIF/BMP images support bounded HTTP/file/data loading, dimensions, alpha,
+alt fallback and image links. CSS and JavaScript remain future work.

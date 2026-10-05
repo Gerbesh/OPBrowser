@@ -9,6 +9,7 @@ members = [
     "crates/op_paint",
     "crates/op_js",
     "crates/op_net",
+    "crates/op_image",
     "crates/op_platform_win",
 ]
 resolver = "3"

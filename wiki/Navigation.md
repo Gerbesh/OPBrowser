@@ -66,11 +66,12 @@ Relative network links use the final response URL, including redirects on reload
 local pages support relative filesystem links. Unsupported schemes show a load
 error and preserve the previous page. They never launch another application.
 
-CSS, images and JavaScript remain future work. Fragment-only links reload without
-anchor scrolling; HTML base elements, target/download behavior and the complete
-named character-reference table
-remain future work. Resizing moves controls; text reflows on next navigation.
+PNG/JPEG/GIF/BMP images and image links now participate in the same worker/history
+path; see [Image Loading](Image-Loading.md) for bounds and initial separate-line layout.
+CSS and JavaScript remain future work. Fragment-only links reload without anchor
+scrolling; HTML base elements and target/download behavior remain future work.
+Resizing moves controls; content reflows on next navigation.
 
-Common named/numeric references already decode in href attributes before layout,
+All standard named/numeric references decode in href attributes before layout,
 so links such as `?a=1&amp;b=2` navigate to `?a=1&b=2`.
 Back/Forward fetch the historical request again; there is no page cache yet.

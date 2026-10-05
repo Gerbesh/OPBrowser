@@ -226,3 +226,31 @@ This file is append-only project history.
   full-table and Windows-1251 native hyperlink smoke tests, release build and
   release full-table hyperlink smoke. Release EXE: 353,280 bytes, an increase of
   35,840 bytes from 317,440; dependency packages are unchanged.
+
+## 2026-10-05 - First raster image subresource pipeline
+
+- Added original img resource orchestration and bounded HTTP/file/data binary loads
+  using the effective post-redirect document address. Network pages cannot read
+  local image files; HTTPS image downgrades are blocked and cookies/auth stay disabled.
+- Added op_image with targeted Windows WIC/COM bindings for explicit Microsoft
+  PNG/JPEG/GIF/BMP codecs, first-frame decoding and preallocation size/budget checks.
+  The OS codec does not replace any HTML/DOM/CSS/layout/painting/JavaScript subsystem.
+- Added page-local success/failure caching and shared immutable Arc BGRA pixels.
+  Limits cover image nodes, source attempts, accepted encoded bytes and decoded
+  buffers. Serial loads/decode run on the navigation worker before page publication.
+- Added initial separate-line ImageBox placement, intrinsic/width/height dimensions,
+  viewport fitting, alt fallback and inherited image-link metadata without failing
+  document navigation/history when an image fails.
+- Added visible-raster GDI AlphaBlend with transient DIB/DC cleanup and existing
+  scroll-aware cursor/click regions, including replacement cleanup.
+- Added generated local color/alpha/oversize/budget fixtures, image paint/link CI
+  smokes and codec, HTTP redirect/cache/failure, budget, dimension and GDI pixel tests.
+- Added 14 Windows binding/support/procedural-macro packages; no third-party codec
+  or browser/JavaScript engine. Full inline image formatting, progressive results,
+  animation and additional formats remain explicitly planned.
+- Final verification passed: rustfmt check, named-table freshness check,
+  warning-free workspace Clippy, all 68 workspace tests, startup/address/image
+  paint/image-link/Windows-1251 smokes, release build and release image paint/link
+  smokes. Release EXE: 389,120 bytes, an increase of 35,840 from 353,280 bytes.
+  The page's owned decoded buffers are capped at 32 MiB; this is not a total-process
+  or OS-codec working-memory cap.

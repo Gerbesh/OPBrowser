@@ -6,7 +6,9 @@ Status: early engine development. OPBrowser opens external HTTP/HTTPS HTML pages
 local files and HTML data URLs from a native address bar or command-line argument.
 Its own tokenizer, tree builder, DOM, text layout and display list render the page
 into a Win32 window. Text hyperlinks support current-window navigation, including
-relative HTTP(S) and local-file links. CSS, images and JavaScript remain future work.
+relative HTTP(S) and local-file links. PNG/JPEG/GIF/BMP images load from HTTP(S),
+local files and data URLs, with dimensions, transparency, alt fallback and image links.
+CSS and JavaScript remain future work.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 
@@ -70,6 +72,10 @@ use system proxy/TLS settings, keep certificate validation enabled, follow at mo
 five redirects, reject HTTPS-to-HTTP redirects, and limit decompressed response bytes to 2 MiB.
 Cookies and automatic authentication are disabled. No requests run until you supply
 a document address. See [source loading](wiki/Document-Source-Loading.md) for limits.
+Image subrequests follow that document load on the same worker. Windows WIC performs
+only raster decoding; OPBrowser owns resource policy, layout and painting. Images
+currently occupy their own lines and GIF shows the first frame. See
+[image loading](wiki/Image-Loading.md) for limits and the local example.
 
 See:
 

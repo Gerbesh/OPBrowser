@@ -3,10 +3,11 @@
 use std::ffi::c_void;
 use std::mem::zeroed;
 use std::ptr::{null, null_mut};
-use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 use std::sync::{OnceLock, RwLock};
 
 use op_paint::{Color, DisplayList, PaintCommand};
+mod raster;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateFontW, CreateSolidBrush,
@@ -23,6 +24,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 static DISPLAY_LIST: OnceLock<RwLock<DisplayList>> = OnceLock::new();
 static PAINTED_ONCE: AtomicBool = AtomicBool::new(false);
+static PAINTED_IMAGES: AtomicUsize = AtomicUsize::new(0);
 static SCROLL_Y: AtomicI32 = AtomicI32::new(0);
 static LINK_REGIONS: OnceLock<RwLock<Vec<LinkRegion>>> = OnceLock::new();
 
@@ -167,6 +169,10 @@ impl NativeBrowserWindow {
 
     pub fn painted_once(&self) -> bool {
         PAINTED_ONCE.load(Ordering::SeqCst)
+    }
+
+    pub fn painted_image_count(&self) -> usize {
+        PAINTED_IMAGES.load(Ordering::SeqCst)
     }
 
     pub fn viewport_size(&self) -> (i32, i32) {
@@ -503,6 +509,7 @@ fn paint_window(hwnd: HWND) {
     }
 
     let mut link_regions = Vec::new();
+    PAINTED_IMAGES.store(0, Ordering::SeqCst);
     if let Some(storage) = DISPLAY_LIST.get()
         && let Ok(display_list) = storage.read()
     {
@@ -523,6 +530,29 @@ fn paint_window(hwnd: HWND) {
 
 fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Vec<LinkRegion>) {
     match command {
+        PaintCommand::Image {
+            x,
+            y,
+            width,
+            height,
+            href,
+            ..
+        } => {
+            if raster::paint(hdc, command) {
+                PAINTED_IMAGES.fetch_add(1, Ordering::SeqCst);
+                if let Some(href) = href {
+                    link_regions.push(LinkRegion {
+                        bounds: RECT {
+                            left: *x,
+                            top: *y,
+                            right: *x + *width,
+                            bottom: *y + *height,
+                        },
+                        href: href.clone(),
+                    });
+                }
+            }
+        }
         PaintCommand::FillRect {
             x,
             y,
@@ -817,7 +847,59 @@ mod tests {
                 }
                 6 => {
                     assert_eq!(event, NavigationEvent::FollowLink("../target".into()));
+                    let image =
+                        op_paint::RasterImage::from_premultiplied_bgra(1, 1, vec![255; 4]).unwrap();
+                    window.present(
+                        "http://example.test/image",
+                        DisplayList {
+                            commands: vec![
+                                PaintCommand::FillRect {
+                                    x: 0,
+                                    y: 0,
+                                    width: 1200,
+                                    height: 2000,
+                                    color: Color::WHITE,
+                                },
+                                PaintCommand::Image {
+                                    x: 32,
+                                    y: 120,
+                                    width: 40,
+                                    height: 20,
+                                    image: std::sync::Arc::new(image),
+                                    href: Some("../image".into()),
+                                },
+                            ],
+                        },
+                    );
+                    assert_eq!(window.painted_image_count(), 1);
+                    assert_eq!(
+                        window.link_at_client_point(33, TOOLBAR_HEIGHT + 121),
+                        Some("../image".into())
+                    );
+                    assert!(
+                        window
+                            .link_at_client_point(72, TOOLBAR_HEIGHT + 121)
+                            .is_none()
+                    );
+                    unsafe {
+                        SendMessageW(
+                            window.hwnd,
+                            WM_MOUSEWHEEL,
+                            ((-120i16 as u16) as usize) << 16,
+                            0,
+                        );
+                        UpdateWindow(window.hwnd);
+                    }
+                    assert_eq!(
+                        window.link_at_client_point(33, TOOLBAR_HEIGHT + 121 - 72),
+                        Some("../image".into())
+                    );
+                    assert!(window.click_first_link());
+                }
+                7 => {
+                    assert_eq!(event, NavigationEvent::FollowLink("../image".into()));
                     window.present("http://example.test/replaced", DisplayList::default());
+                    assert_eq!(window.painted_image_count(), 0);
                     assert!(!window.click_first_link());
                     window.close();
                 }
@@ -828,6 +910,6 @@ mod tests {
         done.send(()).unwrap();
         watchdog.join().unwrap();
         assert_eq!(exit, 0);
-        assert_eq!(step, 7);
+        assert_eq!(step, 8);
     }
 }

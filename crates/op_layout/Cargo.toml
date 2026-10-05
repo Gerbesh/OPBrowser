@@ -8,3 +8,4 @@ authors.workspace = true
 
 [dependencies]
 op_dom = { path = "../op_dom" }
+op_image = { path = "../op_image" }

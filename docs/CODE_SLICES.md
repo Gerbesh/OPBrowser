@@ -117,11 +117,41 @@ text, three attribute-value states and RCDATA against the pinned WHATWG snapshot
 examples/encoding/named-references.html verifies exact painted text, Unicode link
 byte ranges, decoded query values and subsequent native hyperlink navigation.
 
-Limits: initial URL/encoding subsets; no CSS, images or scripts yet.
+Limits: initial URL/encoding subsets; no CSS or scripts yet. Raster images are
+supported by the S2a slice below.
 Links open in the current window. Fragment links reload the document without anchor
 scrolling; HTML base elements, target/download behavior, other legacy encodings and full
 WHATWG URL processing remain future work. Resizing moves controls but text reflow
 occurs on next navigation.
+
+## S2a - Image subresource to pixels and link behavior
+
+Status: COMPLETE at initial M1 level.
+
+```text
+loaded HTML -> DOM img src (character references already decoded)
+  -> op_engine::images visible-node traversal / effective document base
+  -> op_net::images relative-source policy / bounded binary HTTP, file or data loading
+  -> op_image Microsoft WIC codec / first frame / preallocation pixel limits
+  -> Arc<RasterImage> premultiplied BGRA shared across repeated sources
+  -> op_layout ImageBox / dimensions / viewport fitting / inherited anchor href
+  -> op_paint Image command
+  -> op_platform_win transient DIB + GDI AlphaBlend -> pixels
+  -> image rectangle / scroll-aware hit test / click -> S2 navigation
+```
+
+Failed/blocked/over-budget images produce alt text (or `[image]` without alt) and
+allow document navigation/history to succeed. Hidden head/script/style/template
+subtrees do not request images. Budgets limit node count, unique attempts, accepted
+encoded bytes and decoded pixel storage; caches are local to each rendered page.
+The navigation worker loads images serially before publishing the page, keeping
+Windows UI operations on the UI thread. See wiki/Image-Loading.md for exact limits.
+
+Verified with color/alpha GDI pixel assertions, all four codec fixtures, loopback
+redirect/cache/error tests, data image/node/pixel budgets and native image paint/link
+smokes. Initial images occupy separate lines; full inline replaced-element layout,
+progressive results, GIF animation, srcset/picture, EXIF orientation and color
+management are future work.
 
 ## S3 - CSS-styled document
 

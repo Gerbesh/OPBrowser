@@ -20,6 +20,8 @@ graph TD
     J[op_js<br/>ECMAScript VM]
     N[op_net<br/>source/network stack]
     T[Windows WinHTTP<br/>HTTP framing + TLS + proxy]
+    I[op_image<br/>bounded raster buffers + codec adapter]
+    K[Windows WIC<br/>Microsoft raster codecs only]
 
     B --> E
     B --> W
@@ -30,10 +32,14 @@ graph TD
     E --> P
     E --> J
     E --> N
+    E --> I
     N --> T
     H --> D
     L --> D
+    L --> I
     P --> L
+    P --> I
+    I --> K
     W --> P
 ```
 
@@ -158,6 +164,19 @@ classDiagram
         href
     }
     class DisplayList
+    class RasterImage {
+        width
+        height
+        pixels
+        +width()
+        +height()
+        +pixels()
+    }
+    class ImageBox {
+        bounds
+        Arc~RasterImage~ image
+        href
+    }
 
     Engine --> NavigationState
     NavigationState --> NavigationEntry
@@ -172,6 +191,11 @@ classDiagram
     Tokenizer --> Document : tree builder
     Document --> LayoutTree : layout_document
     LayoutTree --> DisplayList : build_display_list
+    Engine --> RasterImage : visible img resources / bounded worker decode
+    LayoutTree --> ImageBox : separate-line image placement
+    ImageBox --> RasterImage : shared Arc pixels
+    DisplayList --> RasterImage : Image paint commands
+    NativeBrowserWindow --> RasterImage : transient DIB / AlphaBlend
     LayoutTree --> LinkSpan : TextBox links
     DisplayList --> LinkSpan : Text paint command links
     NativeBrowserWindow --> LinkRegion : GDI measurement / hit testing
@@ -225,6 +249,19 @@ classDiagram
   The current GDI backend measures painted glyph ranges for native hit testing;
   network addresses are resolved only by the worker/engine, not by the painter.
 - op_css will own parsing, cascade, computed style, and style data.
+- op_engine::images walks visible DOM img nodes, resolves against the effective
+  loaded address, serializes loads/decode on the worker and owns page budgets/cache.
+  Image failure does not fail document history. Arc pixels are reused across nodes.
+- op_net::images loads bounded binary HTTP/file/data image bytes; HTTP shares the
+  WinHTTP transport, with image-specific Accept/byte/time limits. Source policy
+  rejects network-page file access and HTTPS-to-HTTP image downgrades.
+- op_image owns validated top-down premultiplied BGRA RasterImage buffers and size
+  checks before pixel copying. Targeted windows bindings call explicit Microsoft
+  WIC PNG/JPEG/GIF/BMP decoders, never HTML/DOM/layout/painting or a browser engine.
+- op_layout places ImageBox records in normal vertical order with intrinsic or
+  HTML width/height sizes, viewport fitting, inherited href and alt fallback.
+- op_platform_win::raster owns transient DIB/DC lifetimes and alpha drawing; image
+  rectangles enter the existing scroll-aware hit testing and clear on replacement.
 - op_js will own the original ECMAScript implementation.
 
 ## Temporary architectural constraints

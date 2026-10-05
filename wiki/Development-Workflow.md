@@ -32,6 +32,15 @@ Cargo tests cover every source spelling in text/attributes/RCDATA and prefix rec
 checks Unicode text and decoded links through native painting and click dispatch.
 See [HTML Text Decoding](HTML-Text-Decoding.md) for provenance and supported rules.
 
+## Image checks
+
+Image fixtures in examples/images use only generated color pixels. Normal tests
+need no image generator or external service. Optional regeneration uses Windows
+System.Drawing via tools/generate_image_fixtures.ps1. CI runs `--image-smoke-test`
+and `--link-smoke-test examples/images/index.html` alongside existing page checks.
+Codec, loopback, resource-budget, dimension and actual GDI pixel tests cover the
+initial [Image Loading](Image-Loading.md) slice.
+
 ## Current GitHub Actions status
 
 The Windows CI workflow is committed and GitHub discovers it correctly, but remote

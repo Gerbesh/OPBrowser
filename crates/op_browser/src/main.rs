@@ -12,7 +12,7 @@ const START_PAGE: &str = r#"
 <p>Колесо мыши — прокрутка страницы.</p>
 <p>Работают HTTP, HTTPS, локальные HTML-файлы и data:text/html.</p>
 <p>Собственный движок: HTML → DOM → layout → display list → Win32.</p>
-<p>Пока отображается текст HTML. CSS, изображения и JavaScript ещё в разработке.</p>
+<p>Работают текст и изображения PNG/JPEG/GIF/BMP. CSS и JavaScript ещё в разработке.</p>
 </body></html>
 "#;
 
@@ -34,6 +34,7 @@ fn main() {
     let source = args.iter().find(|argument| !argument.starts_with("--"));
     let smoke = args.iter().any(|argument| argument == "--smoke-test");
     let link_smoke = args.iter().any(|argument| argument == "--link-smoke-test");
+    let image_smoke = args.iter().any(|argument| argument == "--image-smoke-test");
     let navigation_smoke = args
         .iter()
         .any(|argument| argument == "--navigation-smoke-test");
@@ -109,6 +110,8 @@ fn main() {
     // Both CLI sources and the interactive smoke enter through the native Enter path.
     if let Some(source) = source {
         window.submit_address(source);
+    } else if image_smoke {
+        window.submit_address("examples/images/index.html");
     } else if link_smoke {
         window.submit_address("examples/navigation/index.html");
     } else if navigation_smoke {
@@ -141,7 +144,13 @@ fn main() {
                             window.present(&page.address, page.display_list);
                             window.set_status("Ready");
                             page_loaded = true;
-                            if (navigation_smoke || link_smoke) && !window.painted_once() {
+                            if (navigation_smoke || link_smoke || image_smoke)
+                                && !window.painted_once()
+                            {
+                                smoke_exit = 2;
+                            }
+                            if image_smoke && window.painted_image_count() == 0 {
+                                eprintln!("OPBrowser image smoke failed: no raster image painted");
                                 smoke_exit = 2;
                             }
                         }
@@ -149,7 +158,7 @@ fn main() {
                         Err(error) => {
                             eprintln!("OPBrowser document load failed: {error}");
                             window.set_status(&format!("Load failed: {error}"));
-                            if navigation_smoke || link_smoke {
+                            if navigation_smoke || link_smoke || image_smoke {
                                 smoke_exit = 3;
                             }
                         }
@@ -163,7 +172,7 @@ fn main() {
                             smoke_exit = 2;
                             window.close();
                         }
-                    } else if navigation_smoke || link_smoke {
+                    } else if navigation_smoke || link_smoke || image_smoke {
                         if link_smoke && page_loaded && !back {
                             smoke_exit = 2;
                         }
@@ -175,7 +184,7 @@ fn main() {
                     busy = false;
                     window.set_status("Navigation worker stopped");
                     window.set_navigation_state(back, forward, reload, busy);
-                    if navigation_smoke || link_smoke {
+                    if navigation_smoke || link_smoke || image_smoke {
                         smoke_exit = 3;
                         window.close();
                     }

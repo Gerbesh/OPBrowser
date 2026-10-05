@@ -8,3 +8,4 @@ authors.workspace = true
 
 [dependencies]
 op_layout = { path = "../op_layout" }
+op_image = { path = "../op_image" }

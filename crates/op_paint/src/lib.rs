@@ -1,5 +1,7 @@
+pub use op_image::RasterImage;
 pub use op_layout::LinkSpan;
 use op_layout::{FontWeight, LayoutTree};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Color {
@@ -30,6 +32,14 @@ impl Color {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaintCommand {
+    Image {
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        image: Arc<RasterImage>,
+        href: Option<String>,
+    },
     FillRect {
         x: i32,
         y: i32,
@@ -76,6 +86,17 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
         });
     }
 
+    for image_box in &layout.image_boxes {
+        commands.push(PaintCommand::Image {
+            x: image_box.x,
+            y: image_box.y,
+            width: image_box.width,
+            height: image_box.height,
+            image: image_box.image.clone(),
+            href: image_box.href.clone(),
+        });
+    }
+
     DisplayList { commands }
 }
 
@@ -99,6 +120,7 @@ mod tests {
                 weight: FontWeight::Bold,
                 links: Vec::new(),
             }],
+            image_boxes: vec![],
         };
 
         let display_list = build_display_list(&layout, 600);
