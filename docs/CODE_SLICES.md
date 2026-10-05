@@ -194,38 +194,41 @@ scroll anchoring or history page cache. Current single-window ownership still ap
 
 ## S3 - CSS-styled document
 
-Status: IN PROGRESS. Syntax foundation complete; styling is not connected to pixels yet.
+Status: IN PROGRESS. Author style collection/matching is connected to loaded DOM;
+computed styles are not connected to pixels yet.
 
-Current foundation:
+Current path:
 
 ```text
-text CSS / future style attribute
-  -> op_css::tokenize
-  -> positioned CSS tokens + recoverable syntax errors
-  -> op_css::parse_stylesheet / parse_declaration_list
-  -> Stylesheet / StyleRule / Declaration
+HTML
+  -> op_html DOM
+  -> collect <style> text + style="" declarations
+  -> op_css tokenizer/parser
   -> supported Selector AST + Specificity
+  -> right-to-left selector matching against op_dom
+  -> per-NodeId StyleMap<MatchedDeclaration>
+  -> retained StyleCollection in PreparedDocument
+  -> resize reflow reuses retained DOM/images/styles
 ```
 
-Supported selector syntax at this stage is type, universal, class and ID simple
-selectors, comma-separated selector lists, descendant combinators and child
-combinators. At-rules and unsupported selector forms are explicitly skipped with
-errors rather than silently treated as supported.
+Matched declarations retain specificity, source order, !important and whether they
+came from a stylesheet or inline attribute. If multiple selectors from one selector
+list match the same element, the declaration is stored once with the highest matching
+specificity. Parser errors are retained with the source NodeId. Non-CSS style types
+are skipped. At-rules and unsupported selector forms remain explicit limitations.
 
-Planned integration:
+Planned next path:
 
 ```text
-HTML + embedded/inline/linked CSS
-  -> HTML DOM
-  -> CSS syntax parser
-  -> selector matching
-  -> cascade/computed style
-  -> layout
+StyleMap candidates
+  -> cascade + inheritance
+  -> computed style
+  -> CSS-aware layout
   -> paint
 ```
 
-The next coherent S3 step is embedded style + style-attribute collection, selector
-matching against op_dom, and a style map/styled tree consumed by layout.
+Linked stylesheet loading remains later work after the local author-style/cascade
+path is established.
 
 ## S4 - Scripted page
 

@@ -4,9 +4,14 @@
 //! cascade, computed values and layout integration are separate milestones.
 
 mod parser;
+mod style;
 mod tokenizer;
 
 pub use parser::{parse_declaration_list, parse_stylesheet};
+pub use style::{
+    MatchedDeclaration, StyleCollection, StyleError, StyleMap, StyleSource, collect_author_styles,
+    selector_matches,
+};
 pub use tokenizer::tokenize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

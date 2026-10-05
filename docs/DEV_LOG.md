@@ -323,3 +323,21 @@ This file is append-only project history.
 - Added eight focused CSS tests. Final verification passed workspace rustfmt,
   warning-free workspace Clippy, all 88 workspace tests and the native browser
   startup/paint smoke.
+
+## 2026-10-06 - Author style collection and selector matching
+
+- Added op_css -> op_dom ownership for the style-resolution boundary and op_html only as
+  an op_css test dependency; no third-party package was added.
+- Added right-to-left selector matching for the existing type/universal/class/ID,
+  compound, descendant and child subset.
+- Added collection of CSS style elements and inline style attributes into a per-NodeId
+  StyleMap. MatchedDeclaration retains specificity, source order, !important and
+  stylesheet-vs-inline source for the upcoming cascade instead of choosing winners early.
+- Selector-list declarations are stored once with the highest specificity among matching
+  selectors. CSS parse errors retain their source NodeId; non-CSS style types are skipped.
+- PreparedDocument now retains StyleCollection beside DOM/images. Engine exposes the
+  active style map/errors for diagnostics and resize reflow keeps the same collection.
+- Added five op_css matching/collection tests and one engine retention/reflow test.
+  CSS still does not affect layout or pixels; cascade/computed values are the next step.
+- Final verification passed workspace rustfmt, warning-free workspace Clippy, all 94
+  workspace tests and the native browser startup/paint smoke.

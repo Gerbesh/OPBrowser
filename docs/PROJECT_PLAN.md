@@ -102,11 +102,13 @@ Status: IN PROGRESS.
   extraction and custom-property name preservation.
 - DONE initial selector AST/parser for type, universal, class and ID simple selectors,
   selector lists, descendant/child combinators and specificity calculation.
-- NEXT collect embedded style elements and inline style attributes, match supported
-  selectors against the DOM, and introduce layout-facing styled data.
+- DONE collect CSS from embedded style elements and inline style attributes.
+- DONE match the supported selector subset against op_dom and retain per-node StyleMap
+  candidates with specificity, source order, stylesheet/inline source and parse errors.
+- DONE Engine retains the author StyleMap beside DOM/images across resize reflow.
+- NEXT implement author cascade/inheritance and the first computed style values.
 - LATER linked stylesheet loading.
-- LATER cascade and inheritance.
-- LATER computed values.
+- LATER broader computed values.
 - LATER box model.
 - LATER normal flow block layout.
 - LATER full CSS inline formatting and Unicode line breaking (initial M1 subset exists).

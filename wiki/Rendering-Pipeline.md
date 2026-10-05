@@ -87,13 +87,14 @@ Successful navigation retains the DOM and shared images for
 [Page Reflow](Page-Reflow.md). WM_SIZE triggers a debounced worker layout rebuild;
 only results matching the current viewport reach present_reflow and native paint.
 
-The first [CSS syntax foundation](CSS-Syntax-Foundation.md) now exists in op_css:
-tokenization, stylesheet/declaration parsing, an initial selector AST and specificity.
-It is deliberately not connected to this rendering path yet. Until author-style
-collection, selector matching and computed style are added, the layout behavior above
-still uses its M1 HTML defaults.
+The [CSS foundation](CSS-Syntax-Foundation.md) now participates in page preparation:
+embedded style elements and inline style attributes are parsed, supported selectors are
+matched against the DOM, and a per-node StyleCollection is retained beside DOM/images.
+Resize reflow reuses those style candidates without reparsing them.
 
-This separation keeps the rendering slice honest while M2 styling is built incrementally.
+The candidates are not cascaded or converted to computed values yet, so layout and paint
+still use the M1 HTML defaults. This keeps the rendering slice honest while CSS behavior
+is added in explicit stages.
 
 ## Paint smoke verification
 

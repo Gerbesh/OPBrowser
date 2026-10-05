@@ -1,3 +1,4 @@
+use op_css::{StyleCollection, StyleError, StyleMap, collect_author_styles};
 use op_html::parse_document;
 use op_layout::{ImageResources, layout_document_with_metrics};
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link};
@@ -92,6 +93,7 @@ struct PreparedDocument {
     mime_type: String,
     document: op_dom::Document,
     images: ImageResources,
+    style_collection: StyleCollection,
 }
 
 impl PreparedDocument {
@@ -142,6 +144,14 @@ impl Engine {
         &self.navigation
     }
 
+    pub fn active_styles(&self) -> Option<&StyleMap> {
+        Some(&self.active_document.as_ref()?.style_collection.styles)
+    }
+
+    pub fn active_style_errors(&self) -> Option<&[StyleError]> {
+        Some(&self.active_document.as_ref()?.style_collection.errors)
+    }
+
     pub fn render_html(
         &self,
         html: &str,
@@ -171,11 +181,14 @@ impl Engine {
 
     /// Initialize an in-memory page and an empty navigation history for startup.
     pub fn set_html_page(&mut self, html: &str, width: i32, height: i32) -> DisplayList {
+        let document = parse_document(html);
+        let style_collection = collect_author_styles(&document);
         let prepared = PreparedDocument {
             address: String::new(),
             mime_type: "text/html".into(),
-            document: parse_document(html),
+            document,
             images: ImageResources::new(),
+            style_collection,
         };
         let page = prepared.render(width, height);
         self.active_document = Some(prepared);
@@ -274,12 +287,14 @@ impl Engine {
     fn prepare_source(&self, source: &str) -> Result<PreparedDocument, LoadError> {
         let loaded: LoadedDocument = self.network.load_document(source)?;
         let document = parse_document(&loaded.text);
+        let style_collection = collect_author_styles(&document);
         let images = images::load(&self.network, &document, &loaded.address);
         Ok(PreparedDocument {
             address: loaded.address,
             mime_type: loaded.mime_type,
             document,
             images,
+            style_collection,
         })
     }
 }
@@ -305,6 +320,51 @@ mod tests {
         let mut engine = Engine::new();
         engine.start();
         assert_eq!(engine.state(), EngineState::Running);
+    }
+
+    #[test]
+    fn retains_author_style_candidates_and_errors_across_reflow() {
+        fn find_tag(
+            document: &op_dom::Document,
+            node: op_dom::NodeId,
+            tag: &str,
+        ) -> Option<op_dom::NodeId> {
+            if document
+                .element(node)
+                .is_some_and(|element| element.tag_name == tag)
+            {
+                return Some(node);
+            }
+            document
+                .children(node)
+                .iter()
+                .find_map(|child| find_tag(document, *child, tag))
+        }
+
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<style>.note { color: red } p.note { margin: 1px }</style><p class='note' style='color: blue; broken'>Styled</p>",
+            800,
+            600,
+        );
+
+        let paragraph = {
+            let document = &engine.active_document.as_ref().unwrap().document;
+            find_tag(document, document.root(), "p").unwrap()
+        };
+        let declarations = engine.active_styles().unwrap().declarations_for(paragraph);
+        assert_eq!(declarations.len(), 3);
+        assert!(declarations.iter().any(|matched| {
+            matched.declaration.name == "color" && matched.source == op_css::StyleSource::Stylesheet
+        }));
+        assert!(declarations.iter().any(|matched| {
+            matched.declaration.name == "color" && matched.source == op_css::StyleSource::Inline
+        }));
+        assert_eq!(engine.active_style_errors().unwrap().len(), 1);
+
+        let retained = engine.active_styles().unwrap().clone();
+        engine.reflow(320, 300).unwrap();
+        assert_eq!(engine.active_styles().unwrap(), &retained);
     }
 
     #[test]

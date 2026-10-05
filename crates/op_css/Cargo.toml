@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+op_dom = { path = "../op_dom" }
+
+[dev-dependencies]
+op_html = { path = "../op_html" }

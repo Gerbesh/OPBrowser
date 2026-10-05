@@ -195,6 +195,20 @@ classDiagram
         classes
         types
     }
+    class StyleMap {
+        NodeId -> MatchedDeclaration[]
+        +declarations_for(node)
+    }
+    class MatchedDeclaration {
+        declaration
+        specificity
+        source_order
+        source
+    }
+    class StyleCollection {
+        styles
+        errors
+    }
     class LayoutTree {
         text_boxes
         image_boxes
@@ -252,6 +266,12 @@ classDiagram
     StyleRule --> Selector
     StyleRule --> Declaration
     Selector --> Specificity
+    Document --> StyleMap : collect_author_styles / selector matching
+    StyleMap --> MatchedDeclaration
+    MatchedDeclaration --> Declaration
+    MatchedDeclaration --> Specificity
+    StyleCollection --> StyleMap
+    Engine --> StyleCollection : retained author style candidates/errors
     Engine --> PreparedDocument : one retained successful page
     PreparedDocument --> Document : DOM snapshot
     PreparedDocument --> RasterImage : shared Arc image resources
@@ -328,11 +348,12 @@ classDiagram
   per operation; networking and original layout do not hold this gate.
   The current GDI backend measures painted glyph ranges for native hit testing;
   network addresses are resolved only by the worker/engine, not by the painter.
-- op_css owns the initial CSS syntax layer: token spans/errors, stylesheet rules,
-  declaration lists, supported selector ASTs and specificity. It accepts type,
-  universal, class and ID selectors plus descendant/child combinators. Unsupported
-  selectors and at-rules are reported and skipped without panicking. Matching,
-  cascade, computed values and layout-facing styled data remain the next M2 work.
+- op_css owns CSS tokenization/parsing plus the first author-style collection layer.
+  It traverses op_dom, collects CSS from style elements and style attributes, matches
+  type/universal/class/ID compounds with descendant/child combinators right-to-left,
+  and builds a per-NodeId StyleMap of MatchedDeclaration candidates. Candidates retain
+  specificity, source order and stylesheet-vs-inline source; CSS errors retain NodeId.
+  Cascade, inheritance and computed values remain the next M2 work.
 - op_engine::images walks visible DOM img nodes, resolves against the effective
   loaded address, serializes loads/decode on the worker and owns page budgets/cache.
   Image failure does not fail document history. Arc pixels are reused across nodes.
@@ -372,6 +393,7 @@ Connected: Win32 navigation events -> op_browser command channel -> worker-owned
 Engine -> op_net/WinHTTP -> own document pipeline -> result channel -> UI-thread
 NativeBrowserWindow::present -> WM_PAINT. Also connected: painted LinkSpan -> measured
 LinkRegion -> scroll-aware mouse click -> FollowLink -> resolve_link -> same worker.
-The op_css syntax graph now exists independently but is not yet connected to DOM
-style resolution or layout. Next: collect author CSS, match selectors and build
-layout-facing styled data.
+Engine preparation now connects parsed DOM -> author CSS collection -> selector
+matching -> retained StyleCollection beside DOM/images. Reflow reuses that collection
+without reparsing CSS. Layout still consumes the M1 defaults. Next: cascade,
+inheritance and the first computed style values feeding layout.
