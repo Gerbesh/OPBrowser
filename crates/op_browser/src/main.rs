@@ -27,7 +27,7 @@ fn main() {
     let source = args.iter().find(|argument| !argument.starts_with("--"));
 
     let (display_list, window_title) = match source {
-        Some(source) => match engine.render_source(source, VIEWPORT_WIDTH, VIEWPORT_HEIGHT) {
+        Some(source) => match engine.navigate(source, VIEWPORT_WIDTH, VIEWPORT_HEIGHT) {
             Ok(page) => (page.display_list, format!("OPBrowser - {}", page.address)),
             Err(error) => {
                 eprintln!("OPBrowser document load failed: {error}");

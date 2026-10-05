@@ -9,6 +9,7 @@ and original ECMAScript engine.
 - [Architecture](Architecture.md)
 - [Rendering Pipeline](Rendering-Pipeline.md)
 - [Document Source Loading](Document-Source-Loading.md)
+- [Navigation](Navigation.md)
 - [Development Workflow](Development-Workflow.md)
 - [Compatibility Strategy](Compatibility-Strategy.md)
 

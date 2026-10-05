@@ -114,3 +114,15 @@ This file is append-only project history.
 - Added examples/hello.html as a repository smoke fixture.
 - Verified unit tests, Clippy, normal paint smoke, local-file paint smoke, and data-URL
   paint smoke.
+
+## 2026-10-05 - Navigation history core
+
+- Added NavigationEntry and NavigationState to the engine.
+- Added navigate(), go_back(), go_forward() and reload() APIs.
+- Navigation commits history only after successful loading/rendering.
+- Back/forward reload historical requests without creating duplicate entries.
+- Reload keeps history length and current index unchanged.
+- New navigation after Back truncates the obsolete forward branch.
+- Failed navigation leaves the previous history byte-for-byte unchanged.
+- Startup external sources now enter navigation through Engine::navigate().
+- Added regression coverage for all navigation invariants and no-target operations.

@@ -10,7 +10,7 @@ whenever crates, important types, or ownership boundaries change.
 ```mermaid
 graph TD
     B[op_browser<br/>browser process bootstrap]
-    E[op_engine<br/>engine orchestration]
+    E[op_engine<br/>engine + navigation orchestration]
     W[op_platform_win<br/>Win32 platform]
     D[op_dom<br/>DOM storage]
     H[op_html<br/>HTML tokenizer/tree builder]
@@ -44,11 +44,33 @@ classDiagram
     class Engine {
         -EngineState state
         -NetworkContext network
+        -NavigationState navigation
         +new()
         +start()
         +state()
-        +render_html(html, width, height) DisplayList
-        +render_source(source, width, height) Result~RenderedPage, LoadError~
+        +navigation()
+        +render_html()
+        +render_source()
+        +navigate()
+        +go_back()
+        +go_forward()
+        +reload()
+    }
+
+    class NavigationState {
+        -Vec~NavigationEntry~ entries
+        -Option~usize~ current_index
+        +entries()
+        +current_index()
+        +current()
+        +can_go_back()
+        +can_go_forward()
+    }
+
+    class NavigationEntry {
+        +String request
+        +String address
+        +String mime_type
     }
 
     class RenderedPage {
@@ -68,17 +90,6 @@ classDiagram
         +SourceKind source_kind
     }
 
-    class LoadError {
-        <<enumeration>>
-        EmptySource
-        UnsupportedScheme
-        InvalidFileUrl
-        InvalidDataUrl
-        UnsupportedDataMime
-        Io
-        InvalidUtf8
-    }
-
     class NativeBrowserWindow {
         -HWND hwnd
         +create(title, display_list)
@@ -87,57 +98,37 @@ classDiagram
         +run_message_loop()
     }
 
-    class Document {
-        -Vec~Node~ nodes
-        -NodeId root
-        +new()
-        +root()
-        +create_element()
-        +create_element_with_attributes()
-        +create_text()
-        +append_child()
-        +node()
-        +children()
-        +element()
-    }
+    class Document
+    class LayoutTree
+    class DisplayList
 
-    class Tokenizer {
-        -Vec~char~ input
-        -usize cursor
-        -State state
-        +new(input)
-        +tokenize()
-    }
-
-    class LayoutTree {
-        +i32 viewport_width
-        +i32 content_height
-        +Vec~TextBox~ text_boxes
-    }
-
-    class DisplayList {
-        +Vec~PaintCommand~ commands
-    }
-
-    NetworkContext --> LoadedDocument
-    NetworkContext --> LoadError
+    Engine --> NavigationState
+    NavigationState --> NavigationEntry
     Engine --> NetworkContext
+    NetworkContext --> LoadedDocument
     Engine --> RenderedPage
     LoadedDocument --> Engine : render
-    Tokenizer --> Document : parse_document
     Document --> LayoutTree : layout_document
     LayoutTree --> DisplayList : build_display_list
-    Engine --> DisplayList
+    RenderedPage --> DisplayList
     NativeBrowserWindow --> DisplayList
 ```
 
+## Navigation invariants
+
+- A history entry is committed only after source loading and rendering succeed.
+- Back/forward reload the historical request but do not create duplicate entries.
+- Reload does not mutate the history list or current index.
+- Navigating from the middle of history truncates the old forward branch.
+- No-target back/forward operations are no-ops.
+
 ## Current ownership boundaries
 
-- op_browser owns process bootstrap, startup argument selection and eventually
-  browser-level UI/session state.
+- op_browser owns process bootstrap and will own browser-level UI/session input.
 - op_platform_win owns Windows-specific window/input/surface/process glue and consumes
   platform-neutral display lists.
-- op_engine owns orchestration between loading and web-engine subsystems.
+- op_engine currently owns per-page navigation state plus orchestration between loading
+  and web-engine subsystems. This state will later become per-tab.
 - op_net owns document-source interpretation/loading, and later URL networking, HTTP(S),
   cache, cookies and filtering.
 - op_html owns HTML tokenization and tree construction rules.
@@ -151,13 +142,15 @@ classDiagram
 
 - The initial Windows renderer uses GDI as an OS drawing backend.
 - Display-list storage is currently process-global because M1 has one window.
-- Source navigation currently occurs only at process startup.
-- Later browser/window isolation will move display-list state to per-window/per-renderer
-  ownership and replace the temporary GDI backend with the planned DirectWrite /
-  Direct2D / DirectComposition path.
+- Navigation state is single-page/single-tab for now.
+- Source navigation from the UI is not wired yet; startup navigation uses the same
+  history API that the UI will call.
+- Later browser/window isolation will move display-list and navigation state to
+  per-window/per-tab/per-renderer ownership.
 
 ## Active graph changes
 
 The next graph expansion will connect:
 
-NavigationState/history -> NetworkContext -> LoadedDocument -> Engine -> DisplayList.
+Win32 navigation events -> op_browser event loop -> Engine navigation ->
+updated DisplayList -> NativeBrowserWindow repaint.

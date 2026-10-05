@@ -56,7 +56,10 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE file: URL loading with percent decoding.
 - DONE data:text/html URL loading with percent and base64 decoding.
 - DONE startup source argument wired through op_net -> engine -> renderer.
-- NEXT navigation state/history around loaded sources.
+- DONE navigation history core with navigate/back/forward/reload.
+- DONE failed navigations leave history unchanged.
+- DONE new navigation after Back discards the old forward branch.
+- IN PROGRESS post-startup native navigation/event path.
 - NEXT URL parser suitable for network navigation.
 - NEXT HTTP(S) fetching.
 - NEXT basic image loading.
