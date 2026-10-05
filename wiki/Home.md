@@ -8,6 +8,7 @@ and original ECMAScript engine.
 - [Project Overview](Project-Overview.md)
 - [Architecture](Architecture.md)
 - [Rendering Pipeline](Rendering-Pipeline.md)
+- [Document Source Loading](Document-Source-Loading.md)
 - [Development Workflow](Development-Workflow.md)
 - [Compatibility Strategy](Compatibility-Strategy.md)
 

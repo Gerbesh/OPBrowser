@@ -99,3 +99,18 @@ This file is append-only project history.
   all pass for commit 20b9eea.
 - Kept CI configured so remote execution can resume once the GitHub account billing
   lock is cleared.
+
+## 2026-10-05 - Local and data document source loading
+
+- Replaced the op_net placeholder with NetworkContext, LoadedDocument, SourceKind and
+  typed LoadError handling.
+- Added direct/relative filesystem path loading and Windows drive-path recognition.
+- Added file: URL parsing with percent decoding.
+- Added UTF-8 BOM stripping and strict UTF-8 validation.
+- Added data:text/html loading with percent-encoded and base64 payload support.
+- Explicitly reject HTTP(S) until the network-navigation slice is implemented.
+- Added Engine::render_source() to connect source loading to the existing renderer.
+- Added startup CLI source selection and source-derived window titles.
+- Added examples/hello.html as a repository smoke fixture.
+- Verified unit tests, Clippy, normal paint smoke, local-file paint smoke, and data-URL
+  paint smoke.

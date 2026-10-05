@@ -18,7 +18,7 @@ graph TD
     L[op_layout<br/>layout]
     P[op_paint<br/>display list]
     J[op_js<br/>ECMAScript VM]
-    N[op_net<br/>network stack]
+    N[op_net<br/>source/network stack]
 
     B --> E
     B --> W
@@ -43,10 +43,40 @@ No browser engine or ready-made JavaScript engine is below this graph.
 classDiagram
     class Engine {
         -EngineState state
+        -NetworkContext network
         +new()
         +start()
         +state()
         +render_html(html, width, height) DisplayList
+        +render_source(source, width, height) Result~RenderedPage, LoadError~
+    }
+
+    class RenderedPage {
+        +String address
+        +String mime_type
+        +DisplayList display_list
+    }
+
+    class NetworkContext {
+        +load_document(source) Result~LoadedDocument, LoadError~
+    }
+
+    class LoadedDocument {
+        +String address
+        +String mime_type
+        +String text
+        +SourceKind source_kind
+    }
+
+    class LoadError {
+        <<enumeration>>
+        EmptySource
+        UnsupportedScheme
+        InvalidFileUrl
+        InvalidDataUrl
+        UnsupportedDataMime
+        Io
+        InvalidUtf8
     }
 
     class NativeBrowserWindow {
@@ -71,12 +101,6 @@ classDiagram
         +element()
     }
 
-    class Node {
-        +NodeKind kind
-        +Option~NodeId~ parent
-        +Vec~NodeId~ children
-    }
-
     class Tokenizer {
         -Vec~char~ input
         -usize cursor
@@ -91,51 +115,43 @@ classDiagram
         +Vec~TextBox~ text_boxes
     }
 
-    class TextBox {
-        +i32 x
-        +i32 y
-        +String text
-        +i32 font_size
-        +FontWeight weight
-    }
-
     class DisplayList {
         +Vec~PaintCommand~ commands
     }
 
-    class PaintCommand {
-        <<enumeration>>
-        FillRect
-        Text
-    }
-
+    NetworkContext --> LoadedDocument
+    NetworkContext --> LoadError
+    Engine --> NetworkContext
+    Engine --> RenderedPage
+    LoadedDocument --> Engine : render
     Tokenizer --> Document : parse_document
     Document --> LayoutTree : layout_document
-    LayoutTree --> TextBox
     LayoutTree --> DisplayList : build_display_list
-    DisplayList --> PaintCommand
     Engine --> DisplayList
     NativeBrowserWindow --> DisplayList
 ```
 
 ## Current ownership boundaries
 
-- op_browser owns process bootstrap and eventually browser-level UI/session state.
+- op_browser owns process bootstrap, startup argument selection and eventually
+  browser-level UI/session state.
 - op_platform_win owns Windows-specific window/input/surface/process glue and consumes
   platform-neutral display lists.
-- op_engine owns orchestration between web-engine subsystems.
+- op_engine owns orchestration between loading and web-engine subsystems.
+- op_net owns document-source interpretation/loading, and later URL networking, HTTP(S),
+  cache, cookies and filtering.
 - op_html owns HTML tokenization and tree construction rules.
 - op_dom owns document/node storage, element attributes, and DOM invariants.
 - op_layout owns current text-flow geometry and will grow into full layout.
 - op_paint owns platform-neutral paint commands/display lists.
 - op_css will own parsing, cascade, computed style, and style data.
 - op_js will own the original ECMAScript implementation.
-- op_net will own navigation networking, HTTP(S), cache, cookies, and filtering.
 
 ## Temporary architectural constraints
 
 - The initial Windows renderer uses GDI as an OS drawing backend.
 - Display-list storage is currently process-global because M1 has one window.
+- Source navigation currently occurs only at process startup.
 - Later browser/window isolation will move display-list state to per-window/per-renderer
   ownership and replace the temporary GDI backend with the planned DirectWrite /
   Direct2D / DirectComposition path.
@@ -144,4 +160,4 @@ classDiagram
 
 The next graph expansion will connect:
 
-navigation/local source -> op_net/source loader -> HTML input -> current rendering slice.
+NavigationState/history -> NetworkContext -> LoadedDocument -> Engine -> DisplayList.

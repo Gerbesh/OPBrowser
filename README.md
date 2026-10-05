@@ -2,9 +2,10 @@
 
 Public repository: https://github.com/Gerbesh/OPBrowser
 
-Status: early engine development. OPBrowser now renders an in-memory HTML document
-through its own tokenizer, tree builder, DOM, layout and display-list pipeline into
-a native Win32 window. CSS, networking and JavaScript are still early/not implemented.
+Status: early engine development. OPBrowser can load local HTML files and HTML data
+URLs, then render them through its own tokenizer, tree builder, DOM, layout and
+display-list pipeline into a native Win32 window. HTTP(S), CSS and JavaScript are
+still early/not implemented.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 
@@ -25,16 +26,25 @@ Primary goals:
 
 Primary implementation language: **Rust**.
 
-Current first rendering path:
+Current rendering path:
 
 ```text
-HTML
+local path / file: URL / data:text/html URL
+  -> op_net source loader
   -> op_html tokenizer/tree builder
   -> op_dom
   -> op_layout
   -> op_paint display list
   -> op_platform_win
   -> Win32 pixels
+```
+
+Current usage examples:
+
+```text
+target\release\op_browser.exe examples\hello.html
+target\release\op_browser.exe "file:///C:/path/to/page.html"
+target\release\op_browser.exe "data:text/html,%3Ch1%3EHello%3C%2Fh1%3E"
 ```
 
 See:

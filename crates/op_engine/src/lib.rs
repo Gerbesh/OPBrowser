@@ -1,5 +1,6 @@
 use op_html::parse_document;
 use op_layout::layout_document;
+use op_net::{LoadError, LoadedDocument, NetworkContext};
 use op_paint::{DisplayList, build_display_list};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -10,14 +11,23 @@ pub enum EngineState {
 }
 
 #[derive(Debug)]
+pub struct RenderedPage {
+    pub address: String,
+    pub mime_type: String,
+    pub display_list: DisplayList,
+}
+
+#[derive(Debug)]
 pub struct Engine {
     state: EngineState,
+    network: NetworkContext,
 }
 
 impl Engine {
     pub fn new() -> Self {
         Self {
             state: EngineState::Created,
+            network: NetworkContext,
         }
     }
 
@@ -38,6 +48,31 @@ impl Engine {
         let document = parse_document(html);
         let layout = layout_document(&document, viewport_width);
         build_display_list(&layout, viewport_height)
+    }
+
+    pub fn render_source(
+        &self,
+        source: &str,
+        viewport_width: i32,
+        viewport_height: i32,
+    ) -> Result<RenderedPage, LoadError> {
+        let loaded = self.network.load_document(source)?;
+        Ok(self.render_loaded_document(loaded, viewport_width, viewport_height))
+    }
+
+    fn render_loaded_document(
+        &self,
+        loaded: LoadedDocument,
+        viewport_width: i32,
+        viewport_height: i32,
+    ) -> RenderedPage {
+        let display_list = self.render_html(&loaded.text, viewport_width, viewport_height);
+
+        RenderedPage {
+            address: loaded.address,
+            mime_type: loaded.mime_type,
+            display_list,
+        }
     }
 }
 
@@ -75,18 +110,32 @@ mod tests {
             600,
         );
 
-        assert!(display_list.commands.iter().any(|command| {
-            matches!(
-                command,
-                PaintCommand::Text { text, .. } if text == "OPBrowser"
-            )
-        }));
+        assert!(contains_text(&display_list, "OPBrowser"));
+        assert!(contains_text(&display_list, "Own engine."));
+    }
 
-        assert!(display_list.commands.iter().any(|command| {
+    #[test]
+    fn render_source_loads_data_html_before_rendering() {
+        let engine = Engine::new();
+        let page = engine
+            .render_source(
+                "data:text/html,%3Ch1%3EExternal%20source%3C%2Fh1%3E",
+                800,
+                600,
+            )
+            .unwrap();
+
+        assert_eq!(page.address, "data:text/html");
+        assert_eq!(page.mime_type, "text/html");
+        assert!(contains_text(&page.display_list, "External source"));
+    }
+
+    fn contains_text(display_list: &DisplayList, expected: &str) -> bool {
+        display_list.commands.iter().any(|command| {
             matches!(
                 command,
-                PaintCommand::Text { text, .. } if text == "Own engine."
+                PaintCommand::Text { text, .. } if text == expected
             )
-        }));
+        })
     }
 }

@@ -52,14 +52,18 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE Win32 GDI backend consuming OPBrowser display-list commands.
 - DONE first in-memory HTML page rendered by the complete OPBrowser pipeline.
 - DONE smoke test verifies WM_PAINT actually ran.
-- IN PROGRESS local file/data document loading.
-- NEXT URL parser and navigation state.
+- DONE local filesystem document loading.
+- DONE file: URL loading with percent decoding.
+- DONE data:text/html URL loading with percent and base64 decoding.
+- DONE startup source argument wired through op_net -> engine -> renderer.
+- NEXT navigation state/history around loaded sources.
+- NEXT URL parser suitable for network navigation.
 - NEXT HTTP(S) fetching.
 - NEXT basic image loading.
 - NEXT richer block/inline layout behavior.
 
 Exit condition: OPBrowser renders a non-trivial local HTML document using only its
-own HTML/DOM/layout/paint pipeline.
+own HTML/DOM/layout/paint pipeline. Achieved at the initial M1 level.
 
 ## M2 - CSS foundation
 

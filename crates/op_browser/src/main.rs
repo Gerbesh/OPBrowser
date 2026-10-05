@@ -10,18 +10,37 @@ const START_PAGE: &str = r#"
     <h1>OPBrowser</h1>
     <p>Первый видимый рендер нашего собственного движка.</p>
     <p>HTML → DOM → layout → display list → Win32.</p>
+    <p>Передай путь к .html или data:text/html,... первым аргументом.</p>
     <p>Chromium внутри: 0%.</p>
   </body>
 </html>
 "#;
 
+const VIEWPORT_WIDTH: i32 = 1280;
+const VIEWPORT_HEIGHT: i32 = 800;
+
 fn main() {
     let mut engine = Engine::new();
     engine.start();
 
-    let display_list = engine.render_html(START_PAGE, 1280, 800);
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let source = args.iter().find(|argument| !argument.starts_with("--"));
 
-    let window = match NativeBrowserWindow::create("OPBrowser", display_list) {
+    let (display_list, window_title) = match source {
+        Some(source) => match engine.render_source(source, VIEWPORT_WIDTH, VIEWPORT_HEIGHT) {
+            Ok(page) => (page.display_list, format!("OPBrowser - {}", page.address)),
+            Err(error) => {
+                eprintln!("OPBrowser document load failed: {error}");
+                std::process::exit(3);
+            }
+        },
+        None => (
+            engine.render_html(START_PAGE, VIEWPORT_WIDTH, VIEWPORT_HEIGHT),
+            "OPBrowser".to_owned(),
+        ),
+    };
+
+    let window = match NativeBrowserWindow::create(&window_title, display_list) {
         Ok(window) => window,
         Err(error) => {
             eprintln!("OPBrowser startup failed: {error}");
@@ -29,7 +48,7 @@ fn main() {
         }
     };
 
-    if std::env::args().any(|arg| arg == "--smoke-test") {
+    if args.iter().any(|argument| argument == "--smoke-test") {
         if !window.painted_once() {
             eprintln!("OPBrowser smoke test failed: WM_PAINT did not run");
             std::process::exit(2);

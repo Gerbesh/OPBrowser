@@ -25,14 +25,17 @@ Verification:
 - cargo run -p op_browser -- --smoke-test
 - manual native window launch
 
-## S1 - Static document to pixels
+## S1 - Local/data document to pixels
 
-Status: COMPLETE for in-memory HTML, IN PROGRESS for local-file navigation.
+Status: COMPLETE at initial M1 level.
 
 Current working path:
 
 ```text
-HTML string
+filesystem path / file: URL / data:text/html URL
+  -> op_net::NetworkContext::load_document
+  -> op_net::LoadedDocument
+  -> op_engine::Engine::render_source
   -> op_html::Tokenizer
   -> op_html::parse_document/tree builder
   -> op_dom::Document
@@ -46,35 +49,37 @@ HTML string
 
 Implemented:
 
-- tokenizer foundation
-- DOM arena and attributes
-- initial tree builder
-- void-element handling for the current subset
-- initial malformed nesting recovery
+- direct and relative filesystem paths
+- Windows drive-path recognition
+- file: URLs
+- percent decoding for file/data URLs
+- UTF-8 BOM stripping
+- data:text/html with UTF-8 percent encoding
+- data:text/html;base64
+- tokenizer and DOM pipeline
 - basic text layout and word wrapping
-- heading/paragraph default styles
 - display-list background/text commands
 - Win32 paint backend
 - synchronous UpdateWindow startup paint
 - smoke verification that WM_PAINT executed
 
-Missing before the original local-document S1 goal is fully complete:
+Verification:
 
-- local file/data source loader
-- navigation state around that source
-- richer block/inline semantics
+- cargo run -p op_browser -- --smoke-test examples\hello.html
+- cargo run -p op_browser -- --smoke-test "data:text/html,%3Ch1%3EData%20URL%20works%3C%2Fh1%3E"
 
-## S2 - URL navigation to static page
+## S2 - Navigation to static page
 
-Status: PLANNED NEXT.
+Status: NEXT.
 
 ```text
 address/navigation request
-  -> URL parser
+  -> NavigationState/history
+  -> source/URL parser
   -> op_net request
-  -> HTTP(S) response
+  -> local/data now; HTTP(S) next
   -> MIME/encoding
-  -> S1 static document pipeline
+  -> S1 rendering pipeline
 ```
 
 ## S3 - CSS-styled document
