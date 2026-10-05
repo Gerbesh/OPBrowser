@@ -8,8 +8,15 @@ impl NodeId {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Attribute {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ElementData {
     pub tag_name: String,
+    pub attributes: Vec<Attribute>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,8 +63,17 @@ impl Document {
     }
 
     pub fn create_element(&mut self, tag_name: impl Into<String>) -> NodeId {
+        self.create_element_with_attributes(tag_name, Vec::new())
+    }
+
+    pub fn create_element_with_attributes(
+        &mut self,
+        tag_name: impl Into<String>,
+        attributes: Vec<Attribute>,
+    ) -> NodeId {
         self.push_node(NodeKind::Element(ElementData {
             tag_name: tag_name.into(),
+            attributes,
         }))
     }
 
@@ -89,6 +105,19 @@ impl Document {
 
     pub fn node(&self, id: NodeId) -> Option<&Node> {
         self.nodes.get(id.index())
+    }
+
+    pub fn children(&self, id: NodeId) -> &[NodeId] {
+        self.node(id)
+            .map(|node| node.children.as_slice())
+            .unwrap_or_default()
+    }
+
+    pub fn element(&self, id: NodeId) -> Option<&ElementData> {
+        match &self.node(id)?.kind {
+            NodeKind::Element(element) => Some(element),
+            _ => None,
+        }
     }
 
     pub fn len(&self) -> usize {

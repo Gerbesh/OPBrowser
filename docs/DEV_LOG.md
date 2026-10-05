@@ -63,3 +63,14 @@ This file is append-only project history.
 - Enabled the GitHub Wiki feature.
 - Kept wiki/ in the main repository as the canonical wiki source; GitHub creates the
   separate wiki Git repository only after the first wiki page exists.
+
+## 2026-10-05 - HTML tree builder
+
+- Added element attributes to the DOM model.
+- Added op_html -> op_dom dependency for tree construction.
+- Added parse_document(), which converts tokenizer output into op_dom::Document.
+- Added an open-elements stack, current-parent selection, text coalescing, void
+  element handling, and initial mismatched-end-tag recovery.
+- Added regression tests for nested DOM construction, attributes, void elements, and
+  malformed nesting.
+- Verified rustfmt, Clippy, and all workspace tests.

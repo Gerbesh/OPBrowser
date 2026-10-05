@@ -34,7 +34,7 @@ Target path:
 ```text
 HTML source bytes/string
   -> op_html::Tokenizer
-  -> op_html::TreeBuilder
+  -> op_html::parse_document/tree builder
   -> op_dom::Document
   -> style defaults / op_css
   -> layout tree
@@ -47,10 +47,13 @@ Implemented:
 
 - tokenizer foundation
 - DOM arena foundation
+- DOM attributes
+- initial tree builder
+- mismatched-end-tag recovery for the current subset
+- void-element handling for the current subset
 
 Missing:
 
-- tree builder
 - layout primitives
 - display list
 - painting bridge

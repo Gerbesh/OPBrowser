@@ -42,9 +42,9 @@ Status: DONE at initial level.
 Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixels.
 
 - DONE initial HTML tokenizer state machine.
-- DONE initial DOM arena with stable NodeId values and parent/child relationships.
-- IN PROGRESS HTML tree builder.
-- NEXT document text extraction/layout tree.
+- DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
+- DONE initial HTML tree builder from tokenizer output into op_dom::Document.
+- IN PROGRESS document-to-layout pipeline.
 - NEXT minimal block/inline layout.
 - NEXT paint/display-list primitives.
 - NEXT Win32 surface painting of engine-generated content.

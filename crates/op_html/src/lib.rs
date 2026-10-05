@@ -1,3 +1,6 @@
+mod tree_builder;
+pub use tree_builder::parse_document;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attribute {
     pub name: String,

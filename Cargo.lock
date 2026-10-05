@@ -32,6 +32,9 @@ dependencies = [
 [[package]]
 name = "op_html"
 version = "0.1.0"
+dependencies = [
+ "op_dom",
+]
 
 [[package]]
 name = "op_js"

@@ -25,6 +25,7 @@ graph TD
     E --> C
     E --> J
     E --> N
+    H --> D
 ```
 
 No browser engine or ready-made JavaScript engine is below this graph.
@@ -53,15 +54,23 @@ classDiagram
         +new()
         +root()
         +create_element()
+        +create_element_with_attributes()
         +create_text()
         +append_child()
         +node()
+        +children()
+        +element()
     }
 
     class Node {
         +NodeKind kind
         +Option~NodeId~ parent
         +Vec~NodeId~ children
+    }
+
+    class ElementData {
+        +String tag_name
+        +Vec~Attribute~ attributes
     }
 
     class Tokenizer {
@@ -80,10 +89,18 @@ classDiagram
         Eof
     }
 
+    class parse_document {
+        <<function>>
+        +parse_document(input) Document
+    }
+
     Engine --> Document
     Engine --> Tokenizer
     Document --> Node
+    Node --> ElementData
     Tokenizer --> Token
+    Tokenizer --> parse_document
+    parse_document --> Document
 ```
 
 ## Current ownership boundaries
@@ -92,7 +109,7 @@ classDiagram
 - op_platform_win owns Windows-specific window/input/surface/process glue.
 - op_engine owns orchestration between web-engine subsystems.
 - op_html owns HTML tokenization and tree construction rules.
-- op_dom owns document/node storage and DOM invariants.
+- op_dom owns document/node storage, element attributes, and DOM invariants.
 - op_css will own parsing, cascade, computed style, and style data.
 - op_js will own the original ECMAScript implementation.
 - op_net will own navigation networking, HTTP(S), cache, cookies, and filtering.
@@ -101,5 +118,5 @@ classDiagram
 
 The next graph expansion will connect:
 
-op_html::TreeBuilder -> op_dom::Document -> layout tree -> display list ->
+op_dom::Document -> op_layout -> op_paint display list ->
 op_platform_win paint surface.
