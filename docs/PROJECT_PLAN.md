@@ -34,8 +34,8 @@ Status: DONE at initial level.
 - DONE non-interactive Win32 startup smoke test.
 - DONE documented dependency policy.
 - DONE project documentation workflow, code graph, code slices, and local wiki.
-- IN PROGRESS public GitHub mirror and continuous commit/push workflow.
-- NEXT GitHub Actions Windows CI.
+- DONE public GitHub repository: https://github.com/Gerbesh/OPBrowser
+- DONE GitHub Actions Windows CI and continuous commit/push workflow.
 
 ## M1 - First static document pipeline
 

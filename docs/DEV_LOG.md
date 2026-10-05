@@ -52,3 +52,14 @@ This file is append-only project history.
 - Added a repository-local wiki source.
 - Defined every coherent engineering update to end in tests, a Git commit, and a push
   to the public remote once configured.
+
+## 2026-10-05 - Public repository and CI
+
+- Created public GitHub repository: https://github.com/Gerbesh/OPBrowser
+- Renamed the default local branch to main and configured origin/main tracking.
+- Pushed the complete foundation as the first public commit.
+- Added Windows GitHub Actions CI for rustfmt, Clippy, tests, Win32 smoke startup,
+  and release build.
+- Enabled the GitHub Wiki feature.
+- Kept wiki/ in the main repository as the canonical wiki source; GitHub creates the
+  separate wiki Git repository only after the first wiki page exists.
