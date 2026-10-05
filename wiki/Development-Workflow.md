@@ -15,6 +15,13 @@ Red builds are not considered completed updates.
 
 See AGENTS.md for the exact repository rules.
 
+The test suite includes bounded loopback HTTP fixtures and native control dispatch /
+repaint coverage. `cargo run -p op_browser -- --navigation-smoke-test` additionally
+checks Enter input -> command channel -> navigation worker -> result channel ->
+native repaint using an offline data URL; CI runs it after the startup smoke.
+External network verification is separate:
+`cargo run -p op_browser -- --navigation-smoke-test https://example.com`.
+
 ## Current GitHub Actions status
 
 The Windows CI workflow is committed and GitHub discovers it correctly, but remote

@@ -52,6 +52,9 @@ dependencies = [
 [[package]]
 name = "op_net"
 version = "0.1.0"
+dependencies = [
+ "windows-sys",
+]
 
 [[package]]
 name = "op_paint"

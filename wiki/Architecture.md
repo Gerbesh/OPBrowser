@@ -5,7 +5,7 @@ not collapse into one dependency knot.
 
 Current crates:
 
-- op_browser: application/browser-process entry point.
+- op_browser: entry point, native-event routing and navigation worker/channels.
 - op_engine: subsystem orchestration.
 - op_platform_win: Win32 integration and current temporary GDI backend.
 - op_dom: document/node storage and element attributes.
@@ -14,7 +14,8 @@ Current crates:
 - op_layout: platform-neutral text/layout geometry.
 - op_paint: platform-neutral display list.
 - op_js: original ECMAScript runtime.
-- op_net: networking and future request filtering.
+- op_net: source loading, initial owned HTTP URL parsing, bounded WinHTTP transport
+  and response validation; future cache/cookies/request filtering.
 
 The first visible renderer path is live:
 
@@ -28,7 +29,13 @@ The current tree builder and layout are early subsets, not complete WHATWG/CSS
 implementations. Compatibility work will progressively replace subset behavior with
 specification-defined algorithms.
 
-Display-list storage is currently process-global because M1 has one browser window.
+External HTML travels from address input through a worker-owned Engine and op_net
+into the same original renderer. Structural containers preserve nested heading /
+paragraph defaults. Windows WinHTTP supplies HTTP/TLS/proxy/framing/decompression
+only; it is an OS infrastructure API, not a browser engine. TLS certificate checks
+remain enabled. The UI owns window handles and updates them only on its own thread.
+
+Display-list and scroll storage are currently process-global because M1 has one browser window.
 Multi-window and multi-process work will replace this with explicit per-window /
 per-renderer ownership.
 

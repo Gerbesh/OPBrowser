@@ -1,14 +1,14 @@
 # Rendering Pipeline
 
-OPBrowser now has a complete initial local-document rendering slice.
+OPBrowser has a complete initial local/data/external static-document rendering slice.
 
 ## Current pipeline
 
 ```text
-filesystem path / file: URL / data:text/html URL
+HTTP(S) URL / filesystem path / file: URL / data:text/html URL
   -> op_net::NetworkContext::load_document
   -> LoadedDocument
-  -> Engine::render_source
+  -> Engine::navigate / render_source (navigation worker)
   -> op_html::Tokenizer
   -> op_html::parse_document
   -> op_dom::Document
@@ -16,7 +16,7 @@ filesystem path / file: URL / data:text/html URL
   -> LayoutTree
   -> op_paint::build_display_list
   -> DisplayList
-  -> op_platform_win
+  -> UI result channel -> op_platform_win::NativeBrowserWindow::present
   -> WM_PAINT
   -> Win32 GDI
 ```
@@ -41,9 +41,11 @@ The source loader currently accepts:
 - file: URLs with percent decoding;
 - data:text/html URLs using percent-encoded UTF-8;
 - data:text/html;base64 URLs.
+- HTTP/HTTPS UTF-8 HTML via the system WinHTTP transport/TLS/proxy API.
 
-HTTP and HTTPS are intentionally rejected as unsupported until the network-navigation
-slice exists.
+Network loads validate status, media type and charset, limit decoded HTML to 2 MiB,
+and follow at most five redirects. See [Document Source Loading](Document-Source-Loading.md)
+for the precise initial URL/encoding/timeout limits.
 
 ## Current layout subset
 
@@ -52,6 +54,7 @@ The M1 layout layer currently provides:
 - body-root selection;
 - hidden head/style/script content filtering;
 - basic h1/h2/h3/p defaults;
+- block traversal inside div/main/section and other structural containers;
 - approximate word wrapping;
 - vertical text flow;
 - platform-neutral text boxes.
@@ -64,5 +67,8 @@ path to pixels before expanding CSS/layout complexity.
 NativeBrowserWindow::create calls UpdateWindow after ShowWindow. The WM_PAINT handler
 sets an atomic painted-once flag. The --smoke-test mode fails if that flag is not set.
 
-The repository also smoke-tests both examples\hello.html and an HTML data URL through
-the complete source-to-pixels startup path.
+The repository also smoke-tests examples\hello.html and an HTML data URL through
+the source-to-pixels path. --navigation-smoke-test uses queued native Enter input,
+worker navigation and display-list replacement, then checks real replacement
+painting. Passing https://example.com additionally verifies external HTTPS without
+making normal CI tests depend on public network access.

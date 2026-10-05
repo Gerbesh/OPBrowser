@@ -76,6 +76,22 @@ Run the non-interactive Win32 startup smoke test:
 
     cargo run -p op_browser -- --smoke-test
 
+Run the asynchronous address-input/worker/repaint smoke test (offline data URL):
+
+    cargo run -p op_browser -- --navigation-smoke-test
+
+Open an external site interactively:
+
+    cargo run -p op_browser -- https://example.com
+
+Verify external HTTPS through the same native input and worker path:
+
+    cargo run -p op_browser -- --navigation-smoke-test https://example.com
+
+Network tests use loopback TCP fixtures and do not require external access. WinHTTP
+bindings reuse the existing windows-sys dependency; no new third-party package or
+ready-made browser/JavaScript engine is added.
+
 Debug executable:
 
     target\debug\op_browser.exe

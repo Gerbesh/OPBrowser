@@ -1,7 +1,8 @@
 //! Document source loading, URL networking, cache, cookies and request filtering.
 //!
-//! M1 intentionally starts with local files and HTML data URLs. HTTP(S) is added
-//! later behind the same source-loading boundary.
+//! Local/data loading and bounded HTTP(S) document requests via Windows WinHTTP.
+
+mod http;
 
 use std::fmt;
 use std::fs;
@@ -11,6 +12,7 @@ use std::path::{Path, PathBuf};
 pub enum SourceKind {
     File,
     DataUrl,
+    Http,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +32,12 @@ pub enum LoadError {
     UnsupportedDataMime(String),
     Io { path: PathBuf, message: String },
     InvalidUtf8 { source: String },
+    InvalidHttpUrl(String),
+    Network(String),
+    HttpStatus(u32),
+    UnsupportedContentType(String),
+    UnsupportedCharset(String),
+    DocumentTooLarge,
 }
 
 impl fmt::Display for LoadError {
@@ -50,6 +58,16 @@ impl fmt::Display for LoadError {
             Self::InvalidUtf8 { source } => {
                 write!(formatter, "{source} is not valid UTF-8")
             }
+            Self::InvalidHttpUrl(message) => write!(formatter, "invalid HTTP URL: {message}"),
+            Self::Network(message) => write!(formatter, "network request failed: {message}"),
+            Self::HttpStatus(status) => write!(formatter, "server returned HTTP {status}"),
+            Self::UnsupportedContentType(mime) => {
+                write!(formatter, "unsupported document type: {mime}")
+            }
+            Self::UnsupportedCharset(charset) => {
+                write!(formatter, "unsupported document charset: {charset}")
+            }
+            Self::DocumentTooLarge => write!(formatter, "document exceeds the 2 MiB limit"),
         }
     }
 }
@@ -87,6 +105,12 @@ pub fn load_document(source: &str) -> Result<LoadedDocument, LoadError> {
 
     if looks_like_windows_path(source) || !has_uri_scheme(source) {
         return load_file_path(PathBuf::from(source));
+    }
+
+    if source.split_once(':').is_some_and(|(scheme, _)| {
+        scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
+    }) {
+        return http::load(source);
     }
 
     let scheme = source
@@ -368,10 +392,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_http_until_network_navigation_exists() {
+    fn rejects_unsupported_schemes() {
         assert_eq!(
-            load_document("https://example.com").unwrap_err(),
-            LoadError::UnsupportedScheme("https".into())
+            load_document("ftp://example.com").unwrap_err(),
+            LoadError::UnsupportedScheme("ftp".into())
         );
     }
 

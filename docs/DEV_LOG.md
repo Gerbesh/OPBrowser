@@ -126,3 +126,30 @@ This file is append-only project history.
 - Failed navigation leaves the previous history byte-for-byte unchanged.
 - Startup external sources now enter navigation through Engine::navigate().
 - Added regression coverage for all navigation invariants and no-target operations.
+
+## 2026-10-05 - External HTTP(S) sites and native address navigation
+
+- Completed the address-driven static-page slice so a user can open an external
+  site such as https://example.com from the window or a startup URL.
+- Added an owned HTTP URL subset parser and a private WinHTTP transport module in
+  op_net. Reused windows-sys bindings; added no new third-party package or engine.
+- Added system proxy and certificate-validated HTTPS, bounded redirects with
+  HTTPS downgrade rejection, gzip/deflate and HTTP framing through the OS API.
+- Added response status/MIME/charset validation, a 2 MiB decoded-body limit,
+  operation timeouts and between-read elapsed checks. Cookies and automatic
+  authentication are disabled; limits are documented rather than claiming full
+  URL/encoding/web compatibility.
+- Connected native address Enter/Go, Back/Forward/Reload, Ctrl+L and F5 to a
+  worker-owned Engine over command/result channels. UI polling runs only while
+  loading, and errors preserve the last displayed page and history.
+- Added display-list replacement, native repaint, status feedback, mouse-wheel
+  scrolling and structural-container block traversal for real static site markup.
+- Added loopback transport and engine/history tests plus native button/Enter /
+  repaint/scroll tests. Added --navigation-smoke-test for the asynchronous input-to-
+  pixels path and included its offline data-URL form in CI.
+- Verified external https://example.com through native Enter input, the navigation
+  worker, own HTML/DOM/layout/paint pipeline and real WM_PAINT.
+- Final verification passed: rustfmt check, warning-free workspace Clippy, all 35
+  workspace tests, startup/local-file/offline navigation smoke tests, external HTTP
+  navigation smoke, release build and release external HTTPS navigation smoke.
+- Produced target/release/op_browser.exe (283,648 bytes on this build).

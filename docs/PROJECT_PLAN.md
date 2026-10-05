@@ -59,14 +59,21 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE navigation history core with navigate/back/forward/reload.
 - DONE failed navigations leave history unchanged.
 - DONE new navigation after Back discards the old forward branch.
-- IN PROGRESS post-startup native navigation/event path.
-- NEXT URL parser suitable for network navigation.
-- NEXT HTTP(S) fetching.
+- DONE post-startup native address input, Go/Back/Forward/Reload, display replacement.
+- DONE initial owned HTTP(S) URL parser (ASCII hosts, ports, IPv6, UTF-8 paths/query).
+- DONE bounded HTTP(S) HTML fetching using WinHTTP transport and system TLS/proxy.
+- DONE worker-thread loading with visible loading/errors and history rollback.
+- DONE mouse-wheel scrolling and block defaults inside structural HTML containers.
+- DONE external https://example.com navigation + native repaint verified.
+- NEXT clickable hyperlinks and relative URL resolution.
+- NEXT broader HTML decoding/charset and URL conformance.
 - NEXT basic image loading.
 - NEXT richer block/inline layout behavior.
 
 Exit condition: OPBrowser renders a non-trivial local HTML document using only its
-own HTML/DOM/layout/paint pipeline. Achieved at the initial M1 level.
+own HTML/DOM/layout/paint pipeline. Achieved at the initial M1 level. The current
+iteration also opens external UTF-8 HTML sites through the address bar; full CSS,
+images, scripting, and modern-site compatibility remain later milestones.
 
 ## M2 - CSS foundation
 

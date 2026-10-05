@@ -39,7 +39,7 @@ Verified with examples\hello.html and data:text/html startup smoke tests.
 
 ## S2 - Navigation to static page
 
-Status: IN PROGRESS.
+Status: COMPLETE for address-driven static HTML navigation.
 
 Working core:
 
@@ -70,12 +70,32 @@ Implemented:
 - forward-branch truncation after new navigation
 - failed-navigation rollback by commit-after-success design
 
-Still missing for a user-visible browser navigation slice:
+User-visible path:
 
-- native window events/address input
-- display-list replacement + invalidation after navigation
-- URL parser for network navigation
-- HTTP(S)
+```text
+address Enter / Go / Back / Forward / Reload / startup URL
+  -> Win32 NavigationEvent
+  -> op_browser command channel
+  -> worker-owned Engine navigation
+  -> op_net HTTP URL parser
+  -> WinHTTP GET + TLS + redirect/framing/decompression
+  -> validated, bounded UTF-8 HTML
+  -> own tokenizer/DOM/block text layout/display list
+  -> result channel polled only during loading
+  -> NativeBrowserWindow::present + status/address/history controls
+  -> WM_PAINT/GDI pixels
+```
+
+Ctrl+L focuses/selects the address, F5 reloads, and wheel input scrolls. Failure
+preserves the previous display list and history. Native button/Enter dispatch and
+replacement painting have an automated Win32 test. Loopback HTTP tests cover GET,
+redirects, cookie suppression, gzip, chunked bodies, status/MIME errors, size limits,
+redirect loops, rendered text and history preservation after failed navigation,
+back and reload. The asynchronous external HTTPS path is manually smoke-tested with
+`--navigation-smoke-test https://example.com`; normal CI uses offline/local fixtures.
+
+Limits: initial URL subset and UTF-8 HTML only; no CSS, images, scripts or clickable
+page links yet. Resizing moves controls but text reflow occurs on next navigation.
 
 ## S3 - CSS-styled document
 

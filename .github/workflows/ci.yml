@@ -30,5 +30,8 @@ jobs:
       - name: Win32 startup smoke test
         run: cargo run -p op_browser -- --smoke-test
 
+      - name: Native navigation smoke test
+        run: cargo run -p op_browser -- --navigation-smoke-test
+
       - name: Release build
         run: cargo build -p op_browser --release

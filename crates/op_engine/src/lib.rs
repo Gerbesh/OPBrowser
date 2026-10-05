@@ -244,6 +244,16 @@ mod tests {
     }
 
     #[test]
+    fn nested_site_containers_keep_heading_and_paragraph_blocks() {
+        let display_list = Engine::new().render_html(
+            "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,
+        );
+        assert!(display_list.commands.iter().any(|command| matches!(command, PaintCommand::Text { text, font_size: 34, bold: true, .. } if text == "Example Domain")));
+        assert!(contains_text(&display_list, "Visible text"));
+        assert!(!contains_text(&display_list, "hidden"));
+    }
+
+    #[test]
     fn render_source_loads_data_html_before_rendering() {
         let engine = Engine::new();
         let page = engine
@@ -335,8 +345,91 @@ mod tests {
             .unwrap();
 
         let before = engine.navigation().clone();
-        assert!(engine.navigate("https://example.com", 800, 600).is_err());
+        assert!(engine.navigate("ftp://example.com", 800, 600).is_err());
         assert_eq!(*engine.navigation(), before);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn http_navigation_renders_and_preserves_history_on_failed_operations() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::time::{Duration, Instant};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let server = std::thread::spawn(move || {
+            for status in [200, 404, 200, 200, 200, 200, 500, 500] {
+                let started = Instant::now();
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(started.elapsed() < Duration::from_secs(5));
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("{error}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut request = String::new();
+                while !request.ends_with("\r\n\r\n") {
+                    let mut buffer = [0; 1024];
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0 && request.len() < 32 * 1024);
+                    request.push_str(std::str::from_utf8(&buffer[..count]).unwrap());
+                }
+                let text = if request.starts_with("GET /one ") {
+                    "One"
+                } else {
+                    "Two"
+                };
+                let body = format!("<h1>{text}</h1>");
+                write!(stream, "HTTP/1.1 {status} Test\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        let mut engine = Engine::new();
+        let first = engine
+            .navigate(&format!("{address}/one"), 800, 600)
+            .unwrap();
+        assert!(contains_text(&first.display_list, "One"));
+        let before = engine.navigation().clone();
+        assert_eq!(
+            engine
+                .navigate(&format!("{address}/missing"), 800, 600)
+                .unwrap_err(),
+            LoadError::HttpStatus(404)
+        );
+        assert_eq!(*engine.navigation(), before);
+        engine
+            .navigate(&format!("{address}/two"), 800, 600)
+            .unwrap();
+        assert!(contains_text(
+            &engine.go_back(800, 600).unwrap().unwrap().display_list,
+            "One"
+        ));
+        assert!(contains_text(
+            &engine.go_forward(800, 600).unwrap().unwrap().display_list,
+            "Two"
+        ));
+        assert!(contains_text(
+            &engine.reload(800, 600).unwrap().unwrap().display_list,
+            "Two"
+        ));
+        let before = engine.navigation().clone();
+        assert_eq!(
+            engine.go_back(800, 600).unwrap_err(),
+            LoadError::HttpStatus(500)
+        );
+        assert_eq!(*engine.navigation(), before);
+        assert_eq!(
+            engine.reload(800, 600).unwrap_err(),
+            LoadError::HttpStatus(500)
+        );
+        assert_eq!(*engine.navigation(), before);
+        server.join().unwrap();
     }
 
     #[test]

@@ -19,6 +19,7 @@ graph TD
     P[op_paint<br/>display list]
     J[op_js<br/>ECMAScript VM]
     N[op_net<br/>source/network stack]
+    T[Windows WinHTTP<br/>HTTP framing + TLS + proxy]
 
     B --> E
     B --> W
@@ -29,6 +30,7 @@ graph TD
     E --> P
     E --> J
     E --> N
+    N --> T
     H --> D
     L --> D
     P --> L
@@ -95,7 +97,27 @@ classDiagram
         +create(title, display_list)
         +hwnd()
         +painted_once()
-        +run_message_loop()
+        +viewport_size()
+        +submit_address()
+        +present()
+        +set_navigation_state()
+        +set_status()
+        +run_message_loop(on_event)
+    }
+
+    class NavigationEvent {
+        Navigate(source)
+        Back
+        Forward
+        Reload
+        Poll
+    }
+
+    class HttpUrl {
+        secure
+        host
+        port
+        target
     }
 
     class Document
@@ -106,12 +128,14 @@ classDiagram
     NavigationState --> NavigationEntry
     Engine --> NetworkContext
     NetworkContext --> LoadedDocument
+    NetworkContext --> HttpUrl
     Engine --> RenderedPage
     LoadedDocument --> Engine : render
     Document --> LayoutTree : layout_document
     LayoutTree --> DisplayList : build_display_list
     RenderedPage --> DisplayList
     NativeBrowserWindow --> DisplayList
+    NativeBrowserWindow --> NavigationEvent
 ```
 
 ## Navigation invariants
@@ -124,16 +148,20 @@ classDiagram
 
 ## Current ownership boundaries
 
-- op_browser owns process bootstrap and will own browser-level UI/session input.
+- op_browser owns bootstrap, UI command/result channels and a single worker thread.
+  The worker owns Engine and serializes navigation; only the UI thread touches HWNDs.
 - op_platform_win owns Windows-specific window/input/surface/process glue and consumes
   platform-neutral display lists.
 - op_engine currently owns per-page navigation state plus orchestration between loading
   and web-engine subsystems. This state will later become per-tab.
-- op_net owns document-source interpretation/loading, and later URL networking, HTTP(S),
-  cache, cookies and filtering.
+- op_net owns document-source interpretation, an initial HTTP URL parser, bounded
+  HTTP(S) loading, response validation and errors. Its private http::windows module
+  uses RAII WinHTTP handles for transport/TLS/proxy/framing/decompression. Cache,
+  cookies and request filtering remain future work.
 - op_html owns HTML tokenization and tree construction rules.
 - op_dom owns document/node storage, element attributes, and DOM invariants.
-- op_layout owns current text-flow geometry and will grow into full layout.
+- op_layout owns current text-flow geometry and structural-container block traversal,
+  and will grow into full layout.
 - op_paint owns platform-neutral paint commands/display lists.
 - op_css will own parsing, cascade, computed style, and style data.
 - op_js will own the original ECMAScript implementation.
@@ -141,16 +169,19 @@ classDiagram
 ## Temporary architectural constraints
 
 - The initial Windows renderer uses GDI as an OS drawing backend.
-- Display-list storage is currently process-global because M1 has one window.
+- Display-list and scroll storage are currently process-global because M1 has one window.
 - Navigation state is single-page/single-tab for now.
-- Source navigation from the UI is not wired yet; startup navigation uses the same
-  history API that the UI will call.
+- A single in-flight navigation disables navigation buttons; the window continues
+  processing paint/input/close messages. A 30 ms Win32 timer polls worker results
+  only while loading and is removed when loading completes (no idle timer).
+- Win32 events are queued before calling application code, so the window procedure
+  never performs networking or mutates engine history.
+- HTTP URL parsing is a documented subset, not full WHATWG URL conformance.
 - Later browser/window isolation will move display-list and navigation state to
   per-window/per-tab/per-renderer ownership.
 
 ## Active graph changes
 
-The next graph expansion will connect:
-
-Win32 navigation events -> op_browser event loop -> Engine navigation ->
-updated DisplayList -> NativeBrowserWindow repaint.
+Connected: Win32 navigation events -> op_browser command channel -> worker-owned
+Engine -> op_net/WinHTTP -> own document pipeline -> result channel -> UI-thread
+NativeBrowserWindow::present -> WM_PAINT. Next: link hit testing and relative URLs.

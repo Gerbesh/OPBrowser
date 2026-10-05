@@ -77,6 +77,30 @@ impl LayoutContext<'_> {
                     return;
                 }
 
+                // Real documents wrap headings/paragraphs in structural containers.
+                // Keep their block defaults instead of flattening an entire div to text.
+                if matches!(
+                    element.tag_name.as_str(),
+                    "html"
+                        | "body"
+                        | "div"
+                        | "main"
+                        | "article"
+                        | "section"
+                        | "nav"
+                        | "header"
+                        | "footer"
+                        | "aside"
+                        | "ul"
+                        | "ol"
+                        | "blockquote"
+                ) {
+                    for child in &node.children {
+                        self.layout_top_level(*child);
+                    }
+                    return;
+                }
+
                 let text = visible_text_content(self.document, node_id);
                 let text = normalize_whitespace(&text);
                 if text.is_empty() {

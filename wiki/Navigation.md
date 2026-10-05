@@ -1,8 +1,12 @@
 # Navigation
 
-OPBrowser now has an engine-level navigation history core. It is intentionally
-separate from the native Windows UI so the same rules can later be used by tabs,
-keyboard shortcuts, address-bar navigation and scripted navigation.
+OPBrowser connects its engine-level navigation history to a native address bar,
+Go/Back/Forward/Reload buttons and keyboard shortcuts. The engine remains separate
+from Windows controls so the same history rules can later be used by tabs.
+
+Start `target\release\op_browser.exe`, enter `https://example.com` and press Enter
+or Go. An explicit HTTP/HTTPS URL can also be the first command-line argument.
+Ctrl+L selects the address, F5 reloads, and the mouse wheel scrolls the document.
 
 ## State
 
@@ -33,13 +37,23 @@ browser-session behavior.
 
 Back, forward and reload do not create duplicate entries.
 
-## Next wiring step
+## Native event path
 
-The engine API exists, but the Win32 window currently receives only its initial
-DisplayList. The next step is an application event path that can:
+The window translates Enter and button/shortcut input into NavigationEvent values.
+Button commands are queued out of the window procedure to avoid callback reentry.
+op_browser sends a command plus viewport dimensions to a single worker that owns
+Engine. It loads/renders and sends the page and history-button flags to the UI.
+Only the UI thread replaces the display list, updates controls and repaints.
 
-1. receive native navigation commands;
-2. call Engine navigation methods;
-3. replace the window DisplayList;
-4. invalidate/repaint the native surface;
-5. update visible address/navigation controls.
+A Win32 timer polls results every 30 ms while loading; it is stopped when loading
+finishes. The status line shows Loading, Ready or the load error. Navigation is
+serialized: buttons are disabled and further navigation shortcuts are ignored
+while a request is in flight. Paint, address editing, scroll and close stay live.
+A failed load keeps the previous page and history, allowing correction of the URL.
+
+## Current limits
+
+Pages show static HTML text with heading/paragraph defaults, including blocks inside
+structural containers. CSS, images, JavaScript and clickable page links are future
+work. Resizing moves the address controls; document text reflows on next navigation.
+Back/Forward fetch the historical request again; there is no page cache yet.
