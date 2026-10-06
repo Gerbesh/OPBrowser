@@ -44,6 +44,14 @@ pub enum TextAlign {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerticalAlign {
+    Baseline,
+    Top,
+    Middle,
+    Bottom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhiteSpace {
     Normal,
     NoWrap,
@@ -260,6 +268,7 @@ pub struct ComputedStyle {
     pub font_style: FontStyle,
     pub line_height: ComputedLineHeight,
     pub text_align: TextAlign,
+    pub vertical_align: VerticalAlign,
     pub white_space: WhiteSpace,
     pub text_decoration_line: TextDecorationLine,
     pub letter_spacing_px: f32,
@@ -340,6 +349,7 @@ impl ComputedStyle {
             font_style: FontStyle::Normal,
             line_height: ComputedLineHeight::Normal,
             text_align: TextAlign::Start,
+            vertical_align: VerticalAlign::Baseline,
             white_space: WhiteSpace::Normal,
             text_decoration_line: TextDecorationLine::NONE,
             letter_spacing_px: 0.0,
@@ -1253,6 +1263,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             font_style: parent.font_style,
             line_height: parent.line_height,
             text_align: parent.text_align,
+            vertical_align: initial.vertical_align,
             white_space: parent.white_space,
             text_decoration_line: parent.text_decoration_line,
             letter_spacing_px: parent.letter_spacing_px,
@@ -1473,6 +1484,13 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.text_align),
             TextAlign::Start,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "vertical-align", parse_vertical_align) {
+        style.vertical_align = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.vertical_align),
+            VerticalAlign::Baseline,
         );
     }
     if let Some((_, value)) = winning_value(declarations, "white-space", parse_white_space) {
@@ -1822,6 +1840,19 @@ fn parse_text_align(tokens: &[TokenKind]) -> Option<Specified<TextAlign>> {
         "left" => Some(Specified::Value(TextAlign::Left)),
         "right" => Some(Specified::Value(TextAlign::Right)),
         "center" => Some(Specified::Value(TextAlign::Center)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_vertical_align(tokens: &[TokenKind]) -> Option<Specified<VerticalAlign>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "baseline" => Some(Specified::Value(VerticalAlign::Baseline)),
+        "top" => Some(Specified::Value(VerticalAlign::Top)),
+        "middle" => Some(Specified::Value(VerticalAlign::Middle)),
+        "bottom" => Some(Specified::Value(VerticalAlign::Bottom)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
         "unset" => Some(Specified::Unset),
@@ -3533,6 +3564,7 @@ mod tests {
             ("font-style", "italic"),
             ("line-height", "2"),
             ("text-align", "right"),
+            ("vertical-align", "middle"),
             ("white-space", "pre"),
             ("text-decoration", "underline"),
             ("text-decoration-line", "line-through"),
@@ -4824,6 +4856,35 @@ mod tests {
             .unwrap();
         assert_eq!(inherited.border_collapse, BorderCollapse::Collapse);
         assert_eq!(inherited.border_spacing, custom.border_spacing);
+    }
+
+    #[test]
+    fn vertical_align_is_non_inherited_but_explicit_inherit_uses_parent() {
+        let document = parse_document(
+            "<style>
+               #parent { vertical-align:bottom }
+               #middle { vertical-align:middle }
+               #inherit { vertical-align:inherit }
+             </style>
+             <div id='parent'>
+               <span id='plain'>plain</span>
+               <span id='middle'>middle</span>
+               <span id='inherit'>inherit</span>
+             </div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+
+        let parent = computed.style_for(find_by_id(&document, "parent")).unwrap();
+        let plain = computed.style_for(find_by_id(&document, "plain")).unwrap();
+        let middle = computed.style_for(find_by_id(&document, "middle")).unwrap();
+        let inherited = computed
+            .style_for(find_by_id(&document, "inherit"))
+            .unwrap();
+
+        assert_eq!(parent.vertical_align, VerticalAlign::Bottom);
+        assert_eq!(plain.vertical_align, VerticalAlign::Baseline);
+        assert_eq!(middle.vertical_align, VerticalAlign::Middle);
+        assert_eq!(inherited.vertical_align, VerticalAlign::Bottom);
     }
 
     #[test]

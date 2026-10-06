@@ -1363,3 +1363,25 @@ This file is append-only project history.
 - Updated project plan, code graph/slices and CSS/rendering/HTML/box-model wiki documentation.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 312 workspace tests,
   native startup smoke and optimized release build. The release executable is 858,624 bytes.
+
+## 2026-10-06 - Table-cell vertical alignment
+
+- Added computed vertical-align support for the table-relevant baseline/top/middle/bottom keywords.
+  The property is non-inherited by default; explicit inherit still uses the parent value, while
+  initial/unset return to baseline.
+- Table cell layout now records the text/image/decoration ranges emitted by each cell. Once row and
+  rowspan heights are known, top/middle/bottom alignment shifts the whole nested content together
+  without moving the cell border box.
+- Baseline-aligned cells measure their first laid-out text line (or first image/fallback content
+  edge) and participate in per-row baseline geometry. Cells with different font sizes therefore
+  share one row baseline instead of merely being pinned to the top.
+- Vertical free space accounts for cell padding/borders and actual content height, including
+  explicit cell height constraints and final row/span expansion.
+- Added CSS cascade/non-inheritance coverage, deterministic layout tests for top/middle/bottom,
+  nested-decoration movement and mixed-font baseline alignment, plus an Engine regression proving
+  the resulting Y coordinates reach the display list.
+- The current vertical-align slice intentionally does not implement inline sub/super/text-top/
+  text-bottom or length/percentage offsets yet.
+- Updated project plan, code graph/slices and CSS/rendering/HTML/box-model wiki documentation.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 316 workspace tests,
+  native startup smoke and optimized release build. The release executable is 862,208 bytes.

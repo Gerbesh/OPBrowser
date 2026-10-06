@@ -124,9 +124,11 @@ style/decorations, text transforms, letter/word spacing and the expanded
 [block box model](CSS-Box-Model.md). Native table roles enter a dedicated grid formatter.
 It measures cell text/images for min/max track preferences, honors cell/col/colgroup width hints,
 distributes the available table width across those preferences, applies horizontal/vertical
-border-spacing and performs initial per-segment collapsed cell-border conflict resolution.
-Full CSS Tables percentage/intrinsic algorithms, non-cell collapsed-border precedence,
-vertical-align and anonymous table boxes are not implemented yet. Transformed text is
+border-spacing, performs initial per-segment collapsed cell-border conflict resolution and then
+repositions each cell's nested output for baseline/top/middle/bottom vertical-align after final
+row heights are known. Full CSS Tables percentage/intrinsic algorithms, non-cell collapsed-border
+precedence, anonymous table boxes and inline-table are not implemented yet. Inline vertical-align
+values such as sub/super/text-top/text-bottom/length/% are also still unsupported. Transformed text is
 measured before line placement; op_paint carries italic/decoration/spacing metadata and Win32
 uses matching text advances while drawing measured decoration/link segments. It resolves used widths/min/max/auto margins,
 box-sizing, padding, independent border edges, fixed height constraints and sibling margin

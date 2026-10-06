@@ -6,7 +6,7 @@ use op_css::{
     BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, ComputedFontWeight,
     ComputedLineHeight, ComputedStyle, ComputedStyleMap, Display, FontStyle as CssFontStyle,
     LengthPercentage, MarginEdges, MarginValue, PaddingEdges, PseudoElement, TextAlign,
-    TextTransform, WhiteSpace,
+    TextTransform, VerticalAlign, WhiteSpace,
 };
 
 pub(super) fn layout(
@@ -132,6 +132,7 @@ struct UsedBlockHorizontal {
 struct Style {
     inline: InlineStyle,
     text_align: TextAlign,
+    vertical_align: VerticalAlign,
     margin: MarginEdges,
     padding: PaddingEdges,
     background: TextColor,
@@ -169,6 +170,16 @@ struct TableCellLayout {
     row: usize,
     rowspan: usize,
     natural_height: i32,
+    content_height: i32,
+    vertical_extras: i32,
+    vertical_align: VerticalAlign,
+    baseline_from_top: Option<i32>,
+    decoration_start: usize,
+    decoration_end: usize,
+    text_start: usize,
+    text_end: usize,
+    image_start: usize,
+    image_end: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -503,10 +514,12 @@ impl<'a> Context<'a, '_> {
             let collapsed_borders = (style.border_collapse == BorderCollapse::Collapse)
                 .then(|| self.collapsed_table_borders(&grid, style));
             let mut row_heights = vec![0; grid.rows.len()];
+            let mut row_baselines = vec![None; grid.rows.len()];
             let mut cell_layouts = Vec::new();
             let mut row_top = self.y.saturating_add(vertical_spacing);
 
             for (row, row_height) in row_heights.iter_mut().enumerate() {
+                let row_cells_start = cell_layouts.len();
                 for placement in grid.cells.iter().filter(|cell| cell.row == row) {
                     let slot_width = table_cell_slot_width(
                         &column_widths,
@@ -532,6 +545,21 @@ impl<'a> Context<'a, '_> {
                     *row_height = (*row_height).max(layout.natural_height);
                     cell_layouts.push(layout);
                 }
+                let mut baseline = 0i32;
+                let mut below_baseline = 0i32;
+                let mut has_baseline = false;
+                for cell in &cell_layouts[row_cells_start..] {
+                    if let Some(cell_baseline) = cell.baseline_from_top {
+                        has_baseline = true;
+                        baseline = baseline.max(cell_baseline);
+                        below_baseline =
+                            below_baseline.max(cell.natural_height.saturating_sub(cell_baseline));
+                    }
+                }
+                if has_baseline {
+                    *row_height = (*row_height).max(baseline.saturating_add(below_baseline));
+                    row_baselines[row] = Some(baseline);
+                }
                 *row_height = (*row_height).max(1);
                 row_top = row_top
                     .saturating_add(*row_height)
@@ -539,9 +567,6 @@ impl<'a> Context<'a, '_> {
             }
 
             for cell in cell_layouts {
-                let Some(index) = cell.decoration else {
-                    continue;
-                };
                 let end = cell.row.saturating_add(cell.rowspan).min(row_heights.len());
                 let span_height = row_heights[cell.row..end]
                     .iter()
@@ -549,8 +574,29 @@ impl<'a> Context<'a, '_> {
                     .fold(0i32, i32::saturating_add)
                     .saturating_add(
                         vertical_spacing.saturating_mul(end.saturating_sub(cell.row + 1) as i32),
-                    );
-                self.decorations[index].height = span_height.max(cell.natural_height);
+                    )
+                    .max(cell.natural_height);
+                if let Some(index) = cell.decoration {
+                    self.decorations[index].height = span_height;
+                }
+
+                let free_space = span_height
+                    .saturating_sub(cell.vertical_extras)
+                    .saturating_sub(cell.content_height)
+                    .max(0);
+                let offset = match cell.vertical_align {
+                    VerticalAlign::Top => 0,
+                    VerticalAlign::Middle => free_space / 2,
+                    VerticalAlign::Bottom => free_space,
+                    VerticalAlign::Baseline => row_baselines
+                        .get(cell.row)
+                        .and_then(|baseline| *baseline)
+                        .zip(cell.baseline_from_top)
+                        .map_or(0, |(row_baseline, cell_baseline)| {
+                            row_baseline.saturating_sub(cell_baseline).min(free_space)
+                        }),
+                };
+                self.shift_table_cell_content(cell, offset);
             }
 
             self.y = row_top;
@@ -1027,6 +1073,66 @@ impl<'a> Context<'a, '_> {
         }
     }
 
+    fn shift_table_cell_content(&mut self, cell: TableCellLayout, offset: i32) {
+        if offset <= 0 {
+            return;
+        }
+        for decoration in &mut self.decorations[cell.decoration_start..cell.decoration_end] {
+            decoration.y = decoration.y.saturating_add(offset);
+        }
+        for text in &mut self.text[cell.text_start..cell.text_end] {
+            text.y = text.y.saturating_add(offset);
+        }
+        for image in &mut self.images_out[cell.image_start..cell.image_end] {
+            image.y = image.y.saturating_add(offset);
+        }
+    }
+
+    fn table_cell_baseline_from_top(
+        &mut self,
+        row_top: i32,
+        text_start: usize,
+        text_end: usize,
+        image_start: usize,
+        image_end: usize,
+        fallback: i32,
+    ) -> i32 {
+        if let Some((y, text, font_size, weight, font_style)) = self
+            .text
+            .get(text_start..text_end)
+            .and_then(|items| items.first())
+            .map(|item| {
+                (
+                    item.y,
+                    item.text.clone(),
+                    item.font_size,
+                    item.weight,
+                    item.style,
+                )
+            })
+        {
+            let ascent = self
+                .measurer
+                .measure(&text, font_size, weight, font_style)
+                .ascent;
+            return y.saturating_add(ascent).saturating_sub(row_top).max(0);
+        }
+
+        if let Some(image) = self
+            .images_out
+            .get(image_start..image_end)
+            .and_then(|items| items.first())
+        {
+            return image
+                .y
+                .saturating_add(image.height)
+                .saturating_sub(row_top)
+                .max(0);
+        }
+
+        fallback.max(0)
+    }
+
     fn layout_table_cell(
         &mut self,
         placement: TableCellPlacement,
@@ -1042,6 +1148,16 @@ impl<'a> Context<'a, '_> {
                 row: placement.row,
                 rowspan: placement.rowspan,
                 natural_height: 1,
+                content_height: 0,
+                vertical_extras: 0,
+                vertical_align: VerticalAlign::Baseline,
+                baseline_from_top: None,
+                decoration_start: self.decorations.len(),
+                decoration_end: self.decorations.len(),
+                text_start: self.text.len(),
+                text_end: self.text.len(),
+                image_start: self.images_out.len(),
+                image_end: self.images_out.len(),
             };
         };
         let style = self.element_style(placement.node, &element.tag_name, inherited);
@@ -1093,6 +1209,10 @@ impl<'a> Context<'a, '_> {
             None
         };
 
+        let decoration_start = self.decorations.len();
+        let text_start = self.text.len();
+        let image_start = self.images_out.len();
+
         let saved_y = self.y;
         let saved_margin = self.pending_margin.take();
         let content_x = x
@@ -1127,7 +1247,22 @@ impl<'a> Context<'a, '_> {
         self.emit(&mut items, style, content_x, content_width);
         self.flush_pending_margin();
 
+        let decoration_end = self.decorations.len();
+        let text_end = self.text.len();
+        let image_end = self.images_out.len();
         let natural_content_height = self.y.saturating_sub(content_top).max(0);
+        let baseline_from_top = (style.vertical_align == VerticalAlign::Baseline).then(|| {
+            self.table_cell_baseline_from_top(
+                row_top,
+                text_start,
+                text_end,
+                image_start,
+                image_end,
+                content_top
+                    .saturating_sub(row_top)
+                    .saturating_add(natural_content_height),
+            )
+        });
         let target_content_height = resolve_block_content_height(
             style,
             natural_content_height,
@@ -1135,12 +1270,12 @@ impl<'a> Context<'a, '_> {
             padding.bottom,
             border,
         );
-        let natural_height = target_content_height
-            .saturating_add(padding.top)
+        let vertical_extras = padding
+            .top
             .saturating_add(padding.bottom)
             .saturating_add(border.top.width)
-            .saturating_add(border.bottom.width)
-            .max(1);
+            .saturating_add(border.bottom.width);
+        let natural_height = target_content_height.saturating_add(vertical_extras).max(1);
 
         self.y = saved_y;
         self.pending_margin = saved_margin;
@@ -1150,6 +1285,16 @@ impl<'a> Context<'a, '_> {
             row: placement.row,
             rowspan: placement.rowspan,
             natural_height,
+            content_height: natural_content_height,
+            vertical_extras,
+            vertical_align: style.vertical_align,
+            baseline_from_top,
+            decoration_start,
+            decoration_end,
+            text_start,
+            text_end,
+            image_start,
+            image_end,
         }
     }
 
@@ -2166,6 +2311,7 @@ fn computed_style(style: ComputedStyle) -> Style {
             boxes: None,
         },
         text_align: style.text_align,
+        vertical_align: style.vertical_align,
         margin: style.margin,
         padding: style.padding,
         background: style.background_color.into(),
@@ -2272,6 +2418,7 @@ fn default_style() -> Style {
             boxes: None,
         },
         text_align: TextAlign::Start,
+        vertical_align: VerticalAlign::Baseline,
         margin: MarginEdges::ZERO,
         padding: PaddingEdges::ZERO,
         background: TextColor {
@@ -2305,6 +2452,7 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
     Style {
         inline: fallback_inline_style(tag, inherited.inline),
         text_align: inherited.text_align,
+        vertical_align: VerticalAlign::Baseline,
         margin: MarginEdges {
             top: MarginValue::Length(LengthPercentage::Px(top as f32)),
             right: MarginValue::ZERO,

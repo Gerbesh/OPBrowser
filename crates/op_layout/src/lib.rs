@@ -1788,6 +1788,126 @@ mod tests {
     }
 
     #[test]
+    fn table_cell_vertical_align_moves_content_inside_shared_row_height() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:420px; border-spacing:0 }
+               td { height:90px; padding:0 }
+               #top { vertical-align:top; background:#ff0000 }
+               #middle { vertical-align:middle; background:#0000ff }
+               #bottom { vertical-align:bottom; background:#00ff00 }
+               #inner { background:#ffff00; padding:1px }
+             </style>
+             <table><tr>
+               <td id='top'>top</td>
+               <td id='middle'>middle</td>
+               <td id='bottom'><span id='inner'>bottom</span></td>
+             </tr></table>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let text = |value: &str| {
+            layout
+                .text_boxes
+                .iter()
+                .find(|text| text.text == value)
+                .unwrap()
+        };
+        let top = text("top");
+        let middle = text("middle");
+        let bottom = text("bottom");
+
+        assert!(top.y < middle.y);
+        assert!(middle.y < bottom.y);
+        assert!((middle.y - top.y - (bottom.y - middle.y)).abs() <= 1);
+
+        let cell = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let top_cell = cell(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let middle_cell = cell(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+        let bottom_cell = cell(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+        let inner = cell(TextColor {
+            red: 255,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+
+        assert_eq!(top_cell.y, middle_cell.y);
+        assert_eq!(middle_cell.y, bottom_cell.y);
+        assert_eq!(top_cell.height, middle_cell.height);
+        assert_eq!(middle_cell.height, bottom_cell.height);
+        assert!(inner.y > bottom_cell.y + bottom_cell.height / 2);
+    }
+
+    #[test]
+    fn table_cell_baseline_aligns_first_line_across_font_sizes() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:320px; border-spacing:0 }
+               td { padding:0; vertical-align:baseline }
+               #big { font-size:40px }
+               #small { font-size:16px }
+             </style>
+             <table><tr>
+               <td id='big'>BIG</td>
+               <td id='small'>small</td>
+             </tr></table>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let big = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "BIG")
+            .unwrap();
+        let small = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "small")
+            .unwrap();
+
+        let big_baseline = big.y + big.font_size * 4 / 5;
+        let small_baseline = small.y + small.font_size * 4 / 5;
+        assert_eq!(big_baseline, small_baseline);
+        assert!(small.y > big.y);
+    }
+
+    #[test]
     fn wraps_link_spans_without_losing_unicode_or_nested_labels() {
         let mut document = Document::new();
         let p = document.create_element("p");

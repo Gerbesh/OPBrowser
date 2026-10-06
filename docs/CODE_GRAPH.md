@@ -585,9 +585,12 @@ classDiagram
   split equally. Inherited border-spacing supplies separate horizontal/vertical gaps; collapse
   mode suppresses spacing and resolves cell-cell border conflicts per grid segment by choosing
   one winning edge, assigning each internal boundary to one adjacent cell so paint does not
-  double it. Caption flow, cell backgrounds/borders/padding and span geometry reach ordinary
-  BoxDecoration/text/image output. Whitespace-only text between block siblings is suppressed
-  before it can create anonymous line geometry.
+  double it. Table cells also retain output ranges for their nested decorations/text/images so
+  baseline/top/middle/bottom vertical alignment can reposition the whole cell content after final
+  row/span heights are known. Baseline cells compare first-line baselines across the row. Caption
+  flow, cell backgrounds/borders/padding and span geometry reach ordinary BoxDecoration/text/image
+  output. Whitespace-only text between block siblings is suppressed before it can create
+  anonymous line geometry.
   op_layout::replaced resolves raster intrinsic/explicit/auto sizes and min/max ratio conflicts.
   flow converts CSS percentage-width/font-relative/content-vs-border-box sizes and applies
   the existing available-width/4096-height fitting policy after CSS used sizes.
@@ -618,7 +621,8 @@ classDiagram
   row-group, row and cell roles; the HTML UA defaults assign native table elements those roles,
   center captions, bold th cells, give td/th 1px padding, make table sizing border-box and give
   tables the 2px separate-border spacing default. Computed properties include inherited
-  border-spacing and border-collapse alongside color, font-size/font-weight, background-color,
+  border-spacing and border-collapse plus non-inherited vertical-align
+  (baseline/top/middle/bottom) alongside color, font-size/font-weight, background-color,
   margin/padding edges, independent border edges, width/height min/max and box-sizing.
   Box shorthand/longhand
   candidates are compared by normal cascade priority;

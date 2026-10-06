@@ -15,7 +15,7 @@ pub use computed::{
     ComputedFontWeight, ComputedLineHeight, ComputedPseudoStyle, ComputedQuotes, ComputedStyle,
     ComputedStyleMap, CssColor, CustomPropertyMap, Display, FontStyle, GeneratedContentItem,
     LengthPercentage, MarginEdges, MarginValue, PaddingEdges, TextAlign, TextDecorationLine,
-    TextTransform, WhiteSpace, compute_styles,
+    TextTransform, VerticalAlign, WhiteSpace, compute_styles,
 };
 pub use parser::{parse_declaration_list, parse_stylesheet};
 pub use style::{

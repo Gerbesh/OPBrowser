@@ -91,8 +91,9 @@ background propagation and general alpha composition remain later rendering work
 - no `border-radius`, outlines, shadows, background images or multiple backgrounds;
 - percentage height needs a definite-height containing-block propagation pass;
 - table layout is implemented as a dedicated initial formatter with intrinsic content tracks,
-  colspan/rowspan, border-spacing and cell-edge collapse; full CSS Tables percentage algorithms,
-  non-cell collapsed-border precedence, vertical-align and anonymous table boxes remain later;
+  colspan/rowspan, border-spacing, cell-edge collapse and table-cell
+  baseline/top/middle/bottom alignment; full CSS Tables percentage algorithms, non-cell
+  collapsed-border precedence, anonymous table boxes and inline-table remain later;
 - no floats, positioning, flexbox or CSS Grid yet;
 - no complete stacking-context/background-propagation model.
 

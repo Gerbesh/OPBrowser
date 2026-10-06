@@ -861,6 +861,44 @@ mod tests {
     }
 
     #[test]
+    fn table_cell_vertical_align_reaches_display_list_geometry() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               table { width:360px; border-spacing:0 }
+               td { height:84px; padding:0 }
+               #top { vertical-align:top }
+               #middle { vertical-align:middle }
+               #bottom { vertical-align:bottom }
+             </style>
+             <table><tr>
+               <td id='top'>top</td>
+               <td id='middle'>middle</td>
+               <td id='bottom'>bottom</td>
+             </tr></table>",
+            800,
+            600,
+        );
+
+        let y = |needle: &str| {
+            display_list
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::Text { y, text, .. } if text == needle => Some(*y),
+                    _ => None,
+                })
+                .expect("table cell text must reach paint")
+        };
+
+        let top = y("top");
+        let middle = y("middle");
+        let bottom = y("bottom");
+        assert!(top < middle);
+        assert!(middle < bottom);
+        assert!((middle - top - (bottom - middle)).abs() <= 1);
+    }
+
+    #[test]
     fn table_foster_parenting_and_cell_text_reach_display_list() {
         let display_list =
             Engine::new().render_html("<table>outside<tr><td>cell</td></tr></table>tail", 800, 600);

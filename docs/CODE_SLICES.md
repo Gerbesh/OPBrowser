@@ -81,9 +81,12 @@ header boldness reach native paint. Track widths now use measured cell text/imag
 width/min/max preferences plus col/colgroup width hints; colspan deficits are shared across its
 tracks. border-spacing is inherited and controls real horizontal/vertical gaps. collapse mode
 removes those gaps and resolves shared cell-edge conflicts per grid segment so only one winning
-border reaches paint. Mode-specific layout quirks, processing instructions, template/frameset
-modes, foreign-content context, full CSS Tables intrinsic/percentage rules, non-cell collapsed
-border precedence, vertical-align, anonymous table boxes and inline-table remain later.
+border reaches paint. Table-cell vertical-align now supports baseline/top/middle/bottom: after
+row/span heights are resolved, text, images and nested decorations move together while the cell
+border box stays fixed; baseline cells align their first line across the row. Mode-specific layout
+quirks, processing instructions, template/frameset modes, foreign-content context, full CSS Tables
+intrinsic/percentage rules, non-cell collapsed border precedence, anonymous table boxes and
+inline-table remain later.
 
 ## S2 - Navigation to static page
 

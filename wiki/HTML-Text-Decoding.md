@@ -161,10 +161,11 @@ from table mode return to that table mode after text parsing. The resulting tabl
 the initial table formatting context: row groups/rows/cells form a two-dimensional grid,
 colspan/rowspan affect occupied tracks, captions flow above the grid, and table/cell
 backgrounds, borders, padding and text reach paint. Columns now use measured cell content and
-CSS sizing hints instead of equal shares, author border-spacing controls grid gaps, and collapse
-mode resolves shared cell borders to a single winning edge. Template/frameset modes,
-foreign-content parsing and remaining advanced table layout such as full percentage/intrinsic
-rules, non-cell collapsed-border precedence, vertical-align and anonymous table boxes remain
+CSS sizing hints instead of equal shares, author border-spacing controls grid gaps, collapse
+mode resolves shared cell borders to a single winning edge, and table-cell
+baseline/top/middle/bottom alignment repositions content after row sizing. Template/frameset
+modes, foreign-content parsing and remaining advanced table layout such as full
+percentage/intrinsic rules, non-cell collapsed-border precedence and anonymous table boxes remain
 future work.
 
 Unknown <! declarations and CDATA-like declarations in the current HTML-only context become
