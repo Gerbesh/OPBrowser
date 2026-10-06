@@ -1058,3 +1058,21 @@ This file is append-only project history.
   later work. Current RGBA paint precision and white-page alpha composition are unchanged.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 239 workspace tests,
   native startup/CSS demo smoke (244 commands) and optimized workspace release build.
+
+## 2026-10-06 - Complete compact CSS named-color table
+
+- Replaced the basic named-color match with all 148 opaque CSS named colors and aliases,
+  imported from the pinned 2026-09-30 W3C CSS Color 4 table. Import checks hexadecimal/
+  decimal column agreement, 139 distinct RGB values, aliases and input SHA-256.
+- Added op_css::named with packed names, six-byte offset/length/RGB records and allocation-
+  free ASCII case-insensitive binary search. Static table storage is 2,210 bytes; unknown/
+  oversized/non-ASCII names fail without lowercase-string allocation. Transparent and
+  currentcolor remain special computed keywords outside the opaque table.
+- Checked in named-colors.tsv and a Python standard-library offline generator/checker;
+  normal Cargo builds require neither Python nor network access. Added generator check to CI.
+- Exhaustive tests verify all names/case variants/source values and table storage. Added
+  cascade/inheritance/var()/escaped-pseudo/currentcolor-border and Engine paint/reflow tests.
+  Updated the CSS demo, README, plan, graph/slices and developer/CSS workflow documentation.
+- Final verification passed rustfmt, offline generated-table check, warning-free workspace
+  Clippy, all 243 workspace tests, native startup/CSS demo smoke (250 commands) and optimized
+  workspace release build.

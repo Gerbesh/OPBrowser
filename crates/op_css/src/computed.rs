@@ -2632,34 +2632,16 @@ fn parse_color_token(token: &TokenKind) -> Option<CssColor> {
 }
 
 fn named_color(value: &str) -> Option<CssColor> {
-    let (red, green, blue, alpha) = match value.to_ascii_lowercase().as_str() {
-        "black" => (0, 0, 0, 255),
-        "silver" => (192, 192, 192, 255),
-        "gray" | "grey" => (128, 128, 128, 255),
-        "white" => (255, 255, 255, 255),
-        "maroon" => (128, 0, 0, 255),
-        "red" => (255, 0, 0, 255),
-        "purple" => (128, 0, 128, 255),
-        "fuchsia" | "magenta" => (255, 0, 255, 255),
-        "green" => (0, 128, 0, 255),
-        "lime" => (0, 255, 0, 255),
-        "olive" => (128, 128, 0, 255),
-        "yellow" => (255, 255, 0, 255),
-        "navy" => (0, 0, 128, 255),
-        "blue" => (0, 0, 255, 255),
-        "teal" => (0, 128, 128, 255),
-        "aqua" | "cyan" => (0, 255, 255, 255),
-        "orange" => (255, 165, 0, 255),
-        "rebeccapurple" => (102, 51, 153, 255),
-        "transparent" => (0, 0, 0, 0),
-        _ => return None,
-    };
-    Some(CssColor {
-        red,
-        green,
-        blue,
-        alpha,
-    })
+    if value.eq_ignore_ascii_case("transparent") {
+        Some(CssColor {
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: 0,
+        })
+    } else {
+        crate::named::lookup(value)
+    }
 }
 
 fn parse_rgb_function(tokens: &[&TokenKind]) -> Option<CssColor> {
@@ -3763,6 +3745,54 @@ mod tests {
                 "{source}"
             );
         }
+    }
+
+    #[test]
+    fn all_named_colors_feed_cascade_variables_borders_and_escaped_pseudo_styles() {
+        let document = parse_document(
+            r"<style>#p { --accent:StEeLbLuE;color:var(--accent);background:PapayaWhip;border:2px solid CornFlowerBlue;border-right-color:currentcolor } #p::before { content:'[';color:dArKsLaTeGrEy } #p::after { content:']';background:TRANSPARENT;color:\72 eBeCcApUrPlE }</style><p id=p><span id=child>Body</span></p><p id=invalid style='color:green;color:steelbluer'>Fallback</p>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let node = find_by_id(&document, "p");
+        let style = computed.style_for(node).unwrap();
+        let rgb = |red, green, blue| CssColor {
+            red,
+            green,
+            blue,
+            alpha: 255,
+        };
+        assert_eq!(style.color, rgb(70, 130, 180));
+        assert_eq!(style.background_color, rgb(255, 239, 213));
+        assert_eq!(style.border.top.color, rgb(100, 149, 237));
+        assert_eq!(style.border.right.color, style.color);
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "child"))
+                .unwrap()
+                .color,
+            style.color
+        );
+        assert_eq!(
+            computed
+                .pseudo_style_for(node, PseudoElement::Before)
+                .unwrap()
+                .style
+                .color,
+            rgb(47, 79, 79)
+        );
+        let after = &computed
+            .pseudo_style_for(node, PseudoElement::After)
+            .unwrap()
+            .style;
+        assert_eq!(after.color, rgb(102, 51, 153));
+        assert_eq!(after.background_color.alpha, 0);
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "invalid"))
+                .unwrap()
+                .color,
+            rgb(0, 128, 0)
+        );
     }
 
     #[test]

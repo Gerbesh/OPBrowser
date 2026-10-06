@@ -93,7 +93,7 @@ before choosing the winner, allowing a lower-priority valid declaration to apply
 The current computed subset includes display, text color/font sizing/weight, block
 backgrounds, margin/padding/border edges, width/height min/max and box-sizing. A color-only
 `background` shorthand shares cascade winner selection with `background-color`. Color accepts
-#RGB(A)/#RRGGBB(AA), CSS basic named colors plus rebeccapurple, legacy comma and modern
+#RGB(A)/#RRGGBB(AA), all 148 opaque CSS named colors (including aliases/rebeccapurple), legacy comma and modern
 space/slash rgb()/rgba(), hsl()/hsla() and modern hwb() with hue angle units and alpha. HWB
 whiteness/blackness accept percentages or numbers on the 0..100 reference scale; nonnegative
 values above 100 normalize to gray rather than clamp individually. none components resolve
@@ -260,3 +260,10 @@ HWB uses shared unquantized HSL channels before final 8-bit sRGB conversion. Hue
 normalize before unit scaling, so large finite turns cannot overflow the color conversion.
 Missing-component preservation for interpolation/serialization, relative colors and calc()
 inside colors remain later work. Reference: [CSS Color 4 HWB](https://www.w3.org/TR/css-color-4/#the-hwb-notation).
+
+Named colors use allocation-free ASCII case-insensitive binary search in op_css::named.
+Packed names plus six-byte RGB records total 2,210 static bytes. The full source is pinned
+in crates/op_css/data/named-colors.tsv; the offline generator verifies 148 names/139 distinct
+RGB values, aliases and import-time hexadecimal/decimal agreement. Normal builds use the
+checked-in Rust data. Transparent/currentcolor remain separate special keywords.
+Reference: [pinned CSS Color named colors](https://www.w3.org/TR/2026/CRD-css-color-4-20260930/#named-colors).

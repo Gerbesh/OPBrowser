@@ -320,6 +320,12 @@ classDiagram
         background
         border_edges
     }
+    class NamedColorEntry {
+        u16 name offset
+        u8 name length
+        three RGB bytes
+        six-byte record
+    }
     class InlineBoxes {
         parent-linked arena nodes
         cached cumulative edges and depth
@@ -459,6 +465,7 @@ classDiagram
     InlineImage --> BoxDecoration : transparent failed replacements preserve CSS geometry
     ComputedPseudoStyle --> InlineBoxStyle : pseudo decoration identity + box style
     InlineBoxes --> InlineBoxStyle : one style per owned node / parent index
+    NamedColorEntry --> CssColor : binary search in packed names / opaque RGB result
     InlineStyle --> InlineBoxes : one stack index per character or image
     InlineBoxes --> BoxDecoration : per-line nested fragments / outer-before-inner allocation
     ComputedPseudoStyle --> EmptyInline : decorated empty generated strings
@@ -566,9 +573,13 @@ classDiagram
   background-color, margin/padding edges, independent border edges, width/height min/max and
   box-sizing. Box shorthand/longhand candidates are compared by normal cascade priority;
   length parsing covers percent, em/rem and CSS absolute units. One CssColor parser now
-  handles hex/basic names plus legacy/modern RGB/HSL and modern HWB for text/background/borders.
+  handles hex/all 148 opaque named colors plus RGB/HSL/HWB for text/background/borders.
   Unquantized HSL channels feed HWB white/black mixing before final CssColor byte conversion.
   Hue units normalize in wider arithmetic before scaling, avoiding overflow for large angles.
+  op_css::named owns allocation-free ASCII case-insensitive binary search through packed
+  names and six-byte records (2,210 static bytes). Its generated named::data comes from pinned
+  crates/op_css/data/named-colors.tsv; tools/generate_css_named_colors.py regenerates/checks
+  it offline. Transparent/currentcolor stay special computed keywords outside the opaque table.
   UA defaults mirror M1 block/hidden tags and heading typography; heading/paragraph/list spacing is represented
   as computed margins instead of a separate layout spacing table.
 - op_engine::styles walks link nodes during page preparation, applies the initial

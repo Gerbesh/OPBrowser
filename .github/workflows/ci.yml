@@ -24,6 +24,9 @@ jobs:
       - name: Verify generated HTML reference table
         run: python tools/generate_html_entities.py --check
 
+      - name: Verify generated CSS named color table
+        run: python tools/generate_css_named_colors.py --check
+
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 

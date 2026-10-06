@@ -5,6 +5,7 @@
 
 mod computed;
 mod custom;
+mod named;
 mod parser;
 mod style;
 mod tokenizer;

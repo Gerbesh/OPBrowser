@@ -88,13 +88,16 @@ type/class/ID/universal selectors, attribute selectors, descendant/child/adjacen
 sibling combinators, :root/:first-child/:last-child/:only-child/:empty/:link plus
 `:is()`/`:where()`/`:not()`/`:nth-child()`/`:nth-last-child()` (including `of` filters)
 and terminal `::before`/`::after`, cascade/inheritance,
-`display` inline/block/none, #hex/basic named colors, legacy/modern rgb()/rgba()/hsl()/hsla(),
+`display` inline/block/none, #hex/all 148 opaque CSS named colors, legacy/modern rgb()/rgba()/hsl()/hsla(),
 modern hwb() hue/whiteness/blackness with alpha and used-value none components,
+the separate `transparent` keyword,
 relative/absolute font-size lengths, numeric/normal/bold font weight, inherited text-align,
 real line-height geometry, italic/oblique font style, underline/line-through decoration,
 white-space normal/nowrap/pre/pre-wrap/pre-line, letter/word spacing and text-transform
 none/uppercase/lowercase/capitalize. Inline non-replaced elements also form real
 background/padding/solid-border fragments that participate in wrapping and alignment.
+Named lookup uses a compact 2,210-byte static table and allocation-free ASCII case-insensitive
+binary search; source and generator are pinned.
 Nested decorated inline ancestors remain visible around text, images, empty boxes and pseudos;
 each wrapped line reserves all ancestor edges and paints outer backgrounds before inner ones.
 CSS URL tokens preserve unquoted paths/data URLs and escaped characters; quoted url()

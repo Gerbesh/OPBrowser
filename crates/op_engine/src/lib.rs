@@ -1303,6 +1303,30 @@ mod tests {
     }
 
     #[test]
+    fn expanded_named_colors_reach_paint_and_retained_reflow() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page("<style>p { --accent:StEeLbLuE;color:var(--accent);background:PapayaWhip;border:2px solid CornFlowerBlue } p::before { content:'[named] ';color:DarkSlateGrey }</style><p>Body</p>", 800, 600);
+        assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::Text { text, color, .. } if text == "Body" && *color == (op_paint::Color { r:70, g:130, b:180 }))));
+        assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::Text { text, color, .. } if text.contains("[named]") && *color == (op_paint::Color { r:47, g:79, b:79 }))));
+        for expected in [
+            op_paint::Color {
+                r: 255,
+                g: 239,
+                b: 213,
+            },
+            op_paint::Color {
+                r: 100,
+                g: 149,
+                b: 237,
+            },
+        ] {
+            assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { color, .. } if *color == expected)));
+        }
+        engine.reflow(240, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn nested_inline_backgrounds_paint_outer_first_and_survive_reflow() {
         let html = "<p><a href=next style='padding:2px 3px;background:red'>A<span style='padding:4px 5px;background:blue'><b>nested label wraps across lines</b></span>Z</a></p>";
         let mut engine = Engine::new();

@@ -32,6 +32,13 @@ Cargo tests cover every source spelling in text/attributes/RCDATA and prefix rec
 checks Unicode text and decoded links through native painting and click dispatch.
 See [HTML Text Decoding](HTML-Text-Decoding.md) for provenance and supported rules.
 
+CSS named colors are pinned in crates/op_css/data/named-colors.tsv. CI runs
+`python tools/generate_css_named_colors.py --check`; use the same command after changing the
+table representation. The Python standard-library generator validates count/aliases and
+regenerates packed Rust data without network access. Normal builds need no Python. Cargo
+tests exhaust every name/case variant and verify the six-byte record/static-data budget.
+See [CSS Syntax Foundation](CSS-Syntax-Foundation.md).
+
 ## Image checks
 
 Image fixtures in examples/images use only generated color pixels. Normal tests

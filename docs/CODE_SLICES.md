@@ -250,8 +250,8 @@ normal/bold backend), font-style normal/italic/oblique, text-align start/end/lef
 line-height normal/unitless/percent/length, white-space normal/nowrap/pre/pre-wrap/pre-line,
 text-decoration-line none/underline/line-through combinations, letter/word spacing lengths,
 text-transform none/uppercase/lowercase/capitalize, color-only `background` shorthand,
-#RGB(A)/#RRGGBB(AA), CSS basic named colors plus
-rebeccapurple, and legacy/modern rgb()/rgba()/hsl()/hsla(). Functional RGB accepts numeric
+#RGB(A)/#RRGGBB(AA), all 148 opaque CSS named colors with aliases, transparent,
+and legacy/modern rgb()/rgba()/hsl()/hsla(). Functional RGB accepts numeric
 or percentage channels plus number/percentage alpha; HSL accepts deg/grad/rad/turn hue,
 percentage saturation/lightness and alpha. Channels clamp to the CSS output range. The
 global keywords inherit/initial/unset remain shared. color/font-size/font-weight/font-style/line-height/text-align/white-space/letter-spacing/word-spacing/text-transform inherit; display
@@ -345,6 +345,13 @@ large-angle overflow. Missing components become zero for current used-color pain
 preserving missing components for interpolation/serialization, calc() and relative colors
 remain later work. CSS/Engine tests check primary examples, invalid-value cascade recovery,
 custom-property substitution, native display-list colors and retained reflow.
+
+Named colors follow identifier/escape tokenization -> allocation-free ASCII case-insensitive
+op_css::named binary search -> CssColor -> normal cascade/inheritance/var()/pseudo/box paint.
+Pinned W3C TSV input and offline generator produce packed names and six-byte RGB records;
+all 148 spellings and uppercase variants are exhaustively checked against source values.
+Transparent/currentcolor remain special keywords outside the opaque table. Engine coverage
+verifies expanded text/background/border names and stable retained reflow.
 
 Planned next path:
 

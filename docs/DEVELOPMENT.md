@@ -120,6 +120,18 @@ to a local file, then use `python tools/generate_html_entities.py --import-json 
 The import validates codepoints against source characters and retains the source
 SHA-256. Preserve third_party/WHATWG-HTML-LICENSE.txt with derived data and binaries.
 
+The complete opaque CSS named-color table is separately pinned in
+crates/op_css/data/named-colors.tsv. Regenerate or verify it offline with:
+
+    python tools/generate_css_named_colors.py
+    python tools/generate_css_named_colors.py --check
+
+Normal builds require neither Python nor networking. CI verifies generated output; tests
+check all 148 names/case variants and the 2,210-byte packed table budget. Intentional source
+refreshes can download the pinned W3C CSS Color snapshot cited in the TSV, then run
+`python tools/generate_css_named_colors.py --import-html PATH`. Import validates named/
+hexadecimal/decimal columns, counts and aliases and retains the downloaded HTML SHA-256.
+
 Open an external site interactively:
 
     cargo run -p op_browser -- https://example.com
