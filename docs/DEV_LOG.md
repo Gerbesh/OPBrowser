@@ -1325,3 +1325,16 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 306 workspace tests,
   native startup smoke and optimized release build. The release executable is 837,120 bytes.
   The full verification passed without the generated-image socket flake.
+
+## 2026-10-06 - Disable remote GitHub Actions CI
+
+- Removed .github/workflows/ci.yml so pushes and pull requests no longer create GitHub Actions
+  runs. The remote account billing state prevented the Windows runner from starting, so the
+  workflow produced failure notifications without executing any project checks.
+- Kept the project completion gate local: rustfmt, warning-free Clippy and the complete workspace
+  test suite remain mandatory, with targeted native smoke/release checks when the changed area
+  requires them.
+- Updated the development-workflow wiki to remove statements that CI runs generated-data and
+  image/navigation smoke checks; those checks are now documented as local developer commands.
+- Repository verification after removing the workflow passed rustfmt, warning-free workspace
+  Clippy and all 306 workspace tests.
