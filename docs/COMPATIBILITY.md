@@ -75,6 +75,16 @@ Initial baseline:
 
 This is a score for the named static subset, not full WPT conformance.
 
+Current measured result after the first CSS Color 4 failure-family pass:
+
+- 200 reftests checked;
+- 126 passed;
+- 74 failed;
+- 0 render/infrastructure errors;
+- **63.00% WPT Static v1**.
+
+The manifest and upstream revision are unchanged, so the 43.00% -> 63.00% change is directly comparable. Two pinned Rec.2020 tests still encode the older piecewise Rec.2020 transfer expectation; OPBrowser follows the current 2026 CSS Color 4 BT.1886 gamma-2.40 definition instead of special-casing those tests. Near-zero OKLab/OKLCH failures are left for real gamut mapping rather than threshold hacks.
+
 ## GitHub Actions and public metrics
 
 The CI workflow has separate responsibilities:

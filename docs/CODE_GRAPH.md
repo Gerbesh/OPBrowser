@@ -756,6 +756,10 @@ Engine preparation now connects parsed DOM -> bounded external stylesheet loadin
 DOM-order linked/embedded CSS collection -> selector matching -> cascade/inheritance ->
 retained ComputedStyleMap -> CSS-aware layout -> display-list text styling -> Win32 pixels.
 Reflow reuses author candidates and computed values without refetching/reparsing CSS.
+CSS color parsing now feeds op_css::color for Lab/LCH/OKLab/OKLCH and predefined RGB/XYZ
+space conversion -> D50/D65 adaptation where required -> encoded sRGB CssColor -> existing
+layout/paint commands. currentColor is resolved after the element's own foreground color so
+background/border use the same computed color without a platform-specific color path.
 Separately, op_js now has source -> tokenize -> AST -> bytecode -> VM as an executable
 standalone language slice, and op_browser_core has tab -> lifecycle/protection -> discard
 candidate -> restore-state flow ready for later UI/renderer integration.

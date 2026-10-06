@@ -1600,3 +1600,24 @@ This file is append-only project history.
   test suite, native startup smoke, optimized release build, deterministic manifest regeneration
   and both external subset runs; the WPT/Test262 scores repeated exactly.
 
+## 2026-10-07 - CSS Color 4 measured WPT pass
+
+- Used WPT Static v1 as the work queue instead of another milestone estimate; the dominant
+  failing family was CSS Color 4 device-independent and predefined color spaces.
+- Added `op_css::color` with D50/D65 adaptation, Lab/LCH and OKLab/OKLCH conversion plus
+  sRGB, linear sRGB, Display P3/linear P3, A98 RGB, ProPhoto RGB, Rec.2020 and XYZ conversion
+  into the existing 8-bit sRGB `CssColor` paint path.
+- Extended computed color parsing with `lab()`, `lch()`, `oklab()`, `oklch()` and the broader
+  `color()` predefined-space set, including percentage reference ranges and alpha/none handling.
+- Added `currentColor` resolution for `color`, `background-color`/color-only `background` and
+  the existing border color path, with computed-style regression tests based on WPT examples.
+- Kept Rec.2020 on the current CSS Color 4 BT.1886 gamma-2.40 transfer rather than changing the
+  engine to satisfy two pinned tests that still encode the older piecewise transfer expectation.
+  Near-zero OKLab/OKLCH failures likewise remain queued for real gamut mapping instead of a
+  threshold special case.
+- WPT Static v1 improved on the unchanged 200-test manifest from 86/200 (43.00%) to 126/200
+  (63.00%), with zero render/infrastructure errors.
+- Final local verification passed rustfmt, warning-free workspace Clippy, the full workspace test
+  suite, Win32 startup smoke, optimized release build, `git diff --check` and a repeated external
+  compatibility run with the same 126/200 WPT result and unchanged 364/1983 Test262 parser result.
+

@@ -3,6 +3,7 @@
 //! Parsing, selector matching, the first author cascade and inheritance live here.
 //! Layout integration and broader CSS coverage remain separate milestones.
 
+mod color;
 mod computed;
 mod custom;
 mod named;

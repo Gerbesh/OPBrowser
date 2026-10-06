@@ -1,3 +1,4 @@
+use crate::color::{lab_to_srgb, oklab_to_srgb, predefined_to_srgb};
 use crate::custom::{contains_var, resolve_custom_values, substitute_vars};
 use crate::{MatchedDeclaration, PseudoElement, Specificity, StyleMap, StyleSource, TokenKind};
 use op_dom::{Document, ElementData, NodeId};
@@ -1611,7 +1612,7 @@ fn apply_author_declarations(
             TextTransform::None,
         );
     }
-    if let Some((_, value)) = winning_background_color(declarations) {
+    if let Some((_, value)) = winning_background_color(declarations, style.color) {
         style.background_color = resolve_non_inherited(
             value,
             parent_style.map(|parent| parent.background_color),
@@ -2881,13 +2882,16 @@ fn top_level_components(tokens: &[TokenKind]) -> Option<Vec<&[TokenKind]>> {
 
 fn winning_background_color(
     declarations: &[MatchedDeclaration],
+    current_color: CssColor,
 ) -> Option<(&MatchedDeclaration, Specified<CssColor>)> {
     declarations
         .iter()
         .filter_map(|matched| {
             let value = match matched.declaration.name.as_str() {
-                "background-color" => parse_color(&matched.declaration.value),
-                "background" => parse_background_color(&matched.declaration.value),
+                "background-color" => {
+                    parse_background_color(&matched.declaration.value, current_color)
+                }
+                "background" => parse_background_color(&matched.declaration.value, current_color),
                 _ => return None,
             };
             let value = parsed_or_unset(matched, value)?;
@@ -2896,12 +2900,20 @@ fn winning_background_color(
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
 }
 
-fn parse_background_color(tokens: &[TokenKind]) -> Option<Specified<CssColor>> {
+fn parse_background_color(
+    tokens: &[TokenKind],
+    current_color: CssColor,
+) -> Option<Specified<CssColor>> {
     if let Some(keyword) = global_keyword(tokens) {
         return Some(keyword.map(|()| CssColor::TRANSPARENT));
     }
-    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("none")) {
-        return Some(Specified::Value(CssColor::TRANSPARENT));
+    if let Some(value) = single_ident(tokens) {
+        if value.eq_ignore_ascii_case("none") {
+            return Some(Specified::Value(CssColor::TRANSPARENT));
+        }
+        if value.eq_ignore_ascii_case("currentcolor") {
+            return Some(Specified::Value(current_color));
+        }
     }
     parse_css_color(tokens).map(Specified::Value)
 }
@@ -2909,6 +2921,9 @@ fn parse_background_color(tokens: &[TokenKind]) -> Option<Specified<CssColor>> {
 fn parse_color(tokens: &[TokenKind]) -> Option<Specified<CssColor>> {
     if let Some(keyword) = global_keyword(tokens) {
         return Some(keyword.map(|()| CssColor::BLACK));
+    }
+    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("currentcolor")) {
+        return Some(Specified::Inherit);
     }
     parse_css_color(tokens).map(Specified::Value)
 }
@@ -2930,6 +2945,10 @@ fn parse_css_color(tokens: &[TokenKind]) -> Option<CssColor> {
         "rgb" | "rgba" => parse_rgb_function(arguments),
         "hsl" | "hsla" => parse_hsl_function(arguments),
         "hwb" => parse_hwb_function(arguments),
+        "lab" => parse_lab_function(arguments),
+        "lch" => parse_lch_function(arguments),
+        "oklab" => parse_oklab_function(arguments),
+        "oklch" => parse_oklch_function(arguments),
         "color" => parse_predefined_color_function(arguments),
         _ => None,
     }
@@ -3115,42 +3134,166 @@ fn modern_color_components<'a>(tokens: &[&'a TokenKind]) -> Option<([&'a TokenKi
     }
 }
 
+fn css_color_from_srgb(channels: [f64; 3], alpha: u8) -> CssColor {
+    CssColor {
+        red: fraction_byte(channels[0] as f32),
+        green: fraction_byte(channels[1] as f32),
+        blue: fraction_byte(channels[2] as f32),
+        alpha,
+    }
+}
+
+fn parse_lab_lightness(token: &TokenKind) -> Option<f64> {
+    let value = match token {
+        TokenKind::Number(number) => f64::from(parse_number(number)?),
+        TokenKind::Percentage(number) => f64::from(parse_number(number)?),
+        _ if missing_color_component(token) => 0.0,
+        _ => return None,
+    };
+    Some(value.clamp(0.0, 100.0))
+}
+
+fn parse_lab_axis(token: &TokenKind) -> Option<f64> {
+    match token {
+        TokenKind::Number(number) => Some(f64::from(parse_number(number)?)),
+        TokenKind::Percentage(number) => Some(f64::from(parse_number(number)?) * 1.25),
+        _ if missing_color_component(token) => Some(0.0),
+        _ => None,
+    }
+}
+
+fn parse_lch_chroma(token: &TokenKind) -> Option<f64> {
+    let value = match token {
+        TokenKind::Number(number) => f64::from(parse_number(number)?),
+        TokenKind::Percentage(number) => f64::from(parse_number(number)?) * 1.5,
+        _ if missing_color_component(token) => 0.0,
+        _ => return None,
+    };
+    Some(value.max(0.0))
+}
+
+fn parse_ok_lightness(token: &TokenKind) -> Option<f64> {
+    let value = match token {
+        TokenKind::Number(number) => f64::from(parse_number(number)?),
+        TokenKind::Percentage(number) => f64::from(parse_number(number)?) / 100.0,
+        _ if missing_color_component(token) => 0.0,
+        _ => return None,
+    };
+    Some(value.clamp(0.0, 1.0))
+}
+
+fn parse_ok_axis(token: &TokenKind) -> Option<f64> {
+    match token {
+        TokenKind::Number(number) => Some(f64::from(parse_number(number)?)),
+        TokenKind::Percentage(number) => Some(f64::from(parse_number(number)?) * 0.004),
+        _ if missing_color_component(token) => Some(0.0),
+        _ => None,
+    }
+}
+
+fn parse_ok_chroma(token: &TokenKind) -> Option<f64> {
+    let value = match token {
+        TokenKind::Number(number) => f64::from(parse_number(number)?),
+        TokenKind::Percentage(number) => f64::from(parse_number(number)?) * 0.004,
+        _ if missing_color_component(token) => 0.0,
+        _ => return None,
+    };
+    Some(value.max(0.0))
+}
+
+fn parse_polar_hue(token: &TokenKind) -> Option<f64> {
+    if missing_color_component(token) {
+        Some(0.0)
+    } else {
+        Some(f64::from(parse_hue(token)?))
+    }
+}
+
+fn parse_lab_function(tokens: &[&TokenKind]) -> Option<CssColor> {
+    let (components, alpha) = modern_color_components(tokens)?;
+    let lightness = parse_lab_lightness(components[0])?;
+    if lightness <= 0.0 {
+        return Some(css_color_from_srgb([0.0; 3], alpha));
+    }
+    if lightness >= 100.0 {
+        return Some(css_color_from_srgb([1.0; 3], alpha));
+    }
+    let lab = [
+        lightness,
+        parse_lab_axis(components[1])?,
+        parse_lab_axis(components[2])?,
+    ];
+    Some(css_color_from_srgb(lab_to_srgb(lab), alpha))
+}
+
+fn parse_lch_function(tokens: &[&TokenKind]) -> Option<CssColor> {
+    let (components, alpha) = modern_color_components(tokens)?;
+    let lightness = parse_lab_lightness(components[0])?;
+    if lightness <= 0.0 {
+        return Some(css_color_from_srgb([0.0; 3], alpha));
+    }
+    if lightness >= 100.0 {
+        return Some(css_color_from_srgb([1.0; 3], alpha));
+    }
+    let chroma = parse_lch_chroma(components[1])?;
+    let hue = parse_polar_hue(components[2])?.to_radians();
+    let lab = [lightness, chroma * hue.cos(), chroma * hue.sin()];
+    Some(css_color_from_srgb(lab_to_srgb(lab), alpha))
+}
+
+fn parse_oklab_function(tokens: &[&TokenKind]) -> Option<CssColor> {
+    let (components, alpha) = modern_color_components(tokens)?;
+    let lightness = parse_ok_lightness(components[0])?;
+    if lightness <= 0.0 {
+        return Some(css_color_from_srgb([0.0; 3], alpha));
+    }
+    if lightness >= 1.0 {
+        return Some(css_color_from_srgb([1.0; 3], alpha));
+    }
+    let oklab = [
+        lightness,
+        parse_ok_axis(components[1])?,
+        parse_ok_axis(components[2])?,
+    ];
+    Some(css_color_from_srgb(oklab_to_srgb(oklab), alpha))
+}
+
+fn parse_oklch_function(tokens: &[&TokenKind]) -> Option<CssColor> {
+    let (components, alpha) = modern_color_components(tokens)?;
+    let lightness = parse_ok_lightness(components[0])?;
+    if lightness <= 0.0 {
+        return Some(css_color_from_srgb([0.0; 3], alpha));
+    }
+    if lightness >= 1.0 {
+        return Some(css_color_from_srgb([1.0; 3], alpha));
+    }
+    let chroma = parse_ok_chroma(components[1])?;
+    let hue = parse_polar_hue(components[2])?.to_radians();
+    let oklab = [lightness, chroma * hue.cos(), chroma * hue.sin()];
+    Some(css_color_from_srgb(oklab_to_srgb(oklab), alpha))
+}
+
 fn parse_predefined_color_function(tokens: &[&TokenKind]) -> Option<CssColor> {
     let (space, arguments) = tokens.split_first()?;
     let TokenKind::Ident(space) = space else {
         return None;
     };
-    let linear = if space.eq_ignore_ascii_case("srgb") {
-        false
-    } else if space.eq_ignore_ascii_case("srgb-linear") {
-        true
-    } else {
-        return None;
-    };
     let (components, alpha) = modern_color_components(arguments)?;
-    let channel = |token: &TokenKind| {
-        let value = match token {
-            TokenKind::Number(number) => f64::from(parse_number(number)?),
-            TokenKind::Percentage(number) => f64::from(parse_number(number)?) / 100.0,
-            _ if missing_color_component(token) => 0.0,
-            _ => return None,
-        }
-        .clamp(0.0, 1.0);
-        let encoded = if !linear {
-            value
-        } else if value <= 0.003_130_8 {
-            value * 12.92
-        } else {
-            1.055 * value.powf(1.0 / 2.4) - 0.055
-        };
-        Some(fraction_byte(encoded as f32))
+    let component = |token: &TokenKind| match token {
+        TokenKind::Number(number) => Some(f64::from(parse_number(number)?)),
+        TokenKind::Percentage(number) => Some(f64::from(parse_number(number)?) / 100.0),
+        _ if missing_color_component(token) => Some(0.0),
+        _ => None,
     };
-    Some(CssColor {
-        red: channel(components[0])?,
-        green: channel(components[1])?,
-        blue: channel(components[2])?,
-        alpha,
-    })
+    let srgb = predefined_to_srgb(
+        space,
+        [
+            component(components[0])?,
+            component(components[1])?,
+            component(components[2])?,
+        ],
+    )?;
+    Some(css_color_from_srgb(srgb, alpha))
 }
 
 fn missing_color_component(token: &TokenKind) -> bool {
@@ -4230,6 +4373,50 @@ mod tests {
     }
 
     #[test]
+    fn color4_lab_oklab_and_predefined_spaces_reach_computed_srgb() {
+        let document = parse_document(
+            "<style>             #lab{background:lab(70% -45 0)}             #lch{background:lch(46.2775% 67.9892 134.3912)}             #oklab{background:oklab(50% .05 0)}             #oklch{background:oklch(50% .2 0)}             #p3{background:color(display-p3 .21604 .49418 .13151)}             #xyz{background:color(xyz-d65 .21661 .14602 .59452)}             </style>             <div id=lab></div><div id=lch></div><div id=oklab></div>             <div id=oklch></div><div id=p3></div><div id=xyz></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let background = |id| {
+            computed
+                .style_for(find_by_id(&document, id))
+                .unwrap()
+                .background_color
+        };
+        let rgb = |red, green, blue| CssColor {
+            red,
+            green,
+            blue,
+            alpha: 255,
+        };
+
+        assert_eq!(background("lab"), rgb(27, 193, 169));
+        assert_eq!(background("lch"), rgb(0, 128, 0));
+        assert_eq!(background("oklab"), rgb(124, 87, 98));
+        assert_eq!(background("oklch"), rgb(180, 6, 95));
+        assert_eq!(background("p3"), rgb(0, 128, 0));
+        assert_eq!(background("xyz"), rgb(118, 84, 205));
+    }
+
+    #[test]
+    fn currentcolor_uses_the_same_elements_computed_color() {
+        let document = parse_document(
+            "<style>             #outer{color:red}             #inner{color:green;background-color:currentColor;border:2px solid currentColor}             #inherited{color:currentColor}             </style>             <div id=outer><div id=inner></div><span id=inherited></span></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let inner = computed.style_for(find_by_id(&document, "inner")).unwrap();
+        let inherited = computed
+            .style_for(find_by_id(&document, "inherited"))
+            .unwrap();
+
+        assert_eq!(inner.color, CssColor::GREEN);
+        assert_eq!(inner.background_color, CssColor::GREEN);
+        assert_eq!(inner.border.top.color, CssColor::GREEN);
+        assert_eq!(inherited.color, CssColor::RED);
+    }
+
+    #[test]
     fn predefined_colors_use_normal_cascade_and_reject_unsupported_spaces_and_syntax() {
         for invalid in [
             "color(1 0 0)",
@@ -4240,7 +4427,6 @@ mod tests {
             "color(srgb 1px 0 0)",
             "color(srgb 1 0 0 / 1deg)",
             "color(srgb 1 0 0 / .5 / .5)",
-            "color(display-p3 1 0 0)",
             "color(--profile 1 0 0)",
             "color(from red srgb r g b)",
             "color(srgb calc(.5) 0 0)",

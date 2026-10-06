@@ -271,7 +271,9 @@ Status: IN PROGRESS.
 - DONE versioned WPT Static v1 measurement with 200 pinned HTML/CSS reftests and an initial 86/200 (43.00%) baseline.
 - DONE versioned Test262 Parser v1 measurement with 2,000 pinned language paths and an initial 364/1983 (18.36%) executable baseline; module entries are skipped.
 - DONE GitHub Actions publishes compatibility artifacts and README badge data after successful main pushes.
-- NEXT use WPT Static v1 failure families as a measured CSS/layout work queue, then version any future scope changes.
+- DONE CSS Color 4 Lab/LCH/OKLab/OKLCH plus display-p3/display-p3-linear, A98 RGB, ProPhoto RGB, Rec.2020 and XYZ predefined-space conversion to the current 8-bit sRGB paint target; `currentColor` now resolves for color/background/borders.
+- DONE first metric-driven WPT pass raised WPT Static v1 from 86/200 (43.00%) to 126/200 (63.00%) without changing the manifest.
+- NEXT continue from the remaining WPT Static v1 failure families; gamut mapping, relative colors, color-mix, system colors/@supports and layout/display gaps are now measurable work queues.
 
 ## M3 - Original JavaScript engine
 

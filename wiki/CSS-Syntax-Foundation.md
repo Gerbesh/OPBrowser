@@ -285,15 +285,17 @@ RGB values, aliases and import-time hexadecimal/decimal agreement. Normal builds
 checked-in Rust data. Transparent/currentcolor remain separate special keywords.
 Reference: [pinned CSS Color named colors](https://www.w3.org/TR/2026/CRD-css-color-4-20260930/#named-colors).
 
-color(srgb ...)/color(srgb-linear ...) now accept three number/percentage channels on the
-0..1 reference range, optional slash alpha and none components. Linear-light channels use
-the sRGB transfer curve, so linear .5 encodes near 188/255 whereas srgb .5 encodes near
-128/255. Shared modern argument parsing rejects commas, unsupported spaces and malformed
-argument counts. The current used-color model clips channels and rounds to 8-bit RGBA;
-wide-gamut spaces, perceptual gamut mapping, interpolation/serialization precision, calc()
-and relative syntax remain later work. The same values feed text/background/border/pseudo
-cascade, var() substitution, painting and retained reflow.
-Reference: [CSS Color predefined spaces](https://www.w3.org/TR/css-color-4/#predefined).
+CSS Color 4 device-independent and predefined spaces now participate in ordinary computed
+color: lab(), lch(), oklab(), oklch(), color(srgb ...), color(srgb-linear ...), display-p3,
+display-p3-linear, a98-rgb, prophoto-rgb, rec2020 and xyz/xyz-d50/xyz-d65. Percentage
+reference ranges, D50/D65 chromatic adaptation, RGB transfer curves and matrix conversions
+live in op_css::color; final used colors are clipped/rounded to the current 8-bit sRGB paint
+target. currentColor resolves from the same element's computed color for background/borders,
+and on the color property behaves as inherited color. Shared modern argument parsing still
+rejects commas and malformed counts. Perceptual gamut mapping, missing-component preservation,
+interpolation/serialization precision, calc(), relative colors and color-mix remain later work.
+The same values feed text/background/border/pseudo cascade, var() substitution, painting and
+retained reflow. Reference: [CSS Color predefined spaces](https://www.w3.org/TR/css-color-4/#predefined).
 
 Modern RGB/HSL also accept none channels/alpha through the shared modern argument parser.
 RGB may mix numeric and percentage channels in modern syntax; comma syntax requires all
