@@ -566,7 +566,9 @@ classDiagram
   background-color, margin/padding edges, independent border edges, width/height min/max and
   box-sizing. Box shorthand/longhand candidates are compared by normal cascade priority;
   length parsing covers percent, em/rem and CSS absolute units. One CssColor parser now
-  handles hex/basic names plus legacy/modern RGB/HSL functions for text/background/borders.
+  handles hex/basic names plus legacy/modern RGB/HSL and modern HWB for text/background/borders.
+  Unquantized HSL channels feed HWB white/black mixing before final CssColor byte conversion.
+  Hue units normalize in wider arithmetic before scaling, avoiding overflow for large angles.
   UA defaults mirror M1 block/hidden tags and heading typography; heading/paragraph/list spacing is represented
   as computed margins instead of a separate layout spacing table.
 - op_engine::styles walks link nodes during page preparation, applies the initial

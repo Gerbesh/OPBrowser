@@ -1042,3 +1042,19 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 236 workspace tests,
   startup smoke, failed/styled/nested generated image smoke (79 commands), native image-link
   navigation and optimized workspace release build.
+
+## 2026-10-06 - HWB computed colors and bounded hue conversion
+
+- Added modern hwb() colors with hue units, percentage/number whiteness/blackness, optional
+  alpha and none components resolved to zero for current used-color painting. W+B >= 100%
+  normalizes to gray; components above 100% retain their relative contribution.
+- Extracted unquantized HSL channels for shared conversion and rounds only final sRGB bytes.
+  Hue unit normalization now uses wider intermediates and reduces turns before scaling,
+  preventing overflow/NaN from large finite HSL/HWB angle values.
+- Added primary CSS Color 4/WPT expected-color cases, malformed syntax/cascade recovery,
+  custom-property substitution, text/background/border/pseudo display-list and retained
+  reflow tests. Updated the CSS demo, README, plan, graph/slices and CSS syntax wiki.
+- Missing-component interpolation/serialization, relative colors and color calc() remain
+  later work. Current RGBA paint precision and white-page alpha composition are unchanged.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 239 workspace tests,
+  native startup/CSS demo smoke (244 commands) and optimized workspace release build.

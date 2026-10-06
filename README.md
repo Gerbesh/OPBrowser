@@ -89,6 +89,7 @@ sibling combinators, :root/:first-child/:last-child/:only-child/:empty/:link plu
 `:is()`/`:where()`/`:not()`/`:nth-child()`/`:nth-last-child()` (including `of` filters)
 and terminal `::before`/`::after`, cascade/inheritance,
 `display` inline/block/none, #hex/basic named colors, legacy/modern rgb()/rgba()/hsl()/hsla(),
+modern hwb() hue/whiteness/blackness with alpha and used-value none components,
 relative/absolute font-size lengths, numeric/normal/bold font weight, inherited text-align,
 real line-height geometry, italic/oblique font style, underline/line-through decoration,
 white-space normal/nowrap/pre/pre-wrap/pre-line, letter/word spacing and text-transform

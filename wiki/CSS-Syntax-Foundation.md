@@ -94,7 +94,10 @@ The current computed subset includes display, text color/font sizing/weight, blo
 backgrounds, margin/padding/border edges, width/height min/max and box-sizing. A color-only
 `background` shorthand shares cascade winner selection with `background-color`. Color accepts
 #RGB(A)/#RRGGBB(AA), CSS basic named colors plus rebeccapurple, legacy comma and modern
-space/slash rgb()/rgba(), and hsl()/hsla() with hue angle units and alpha. The same color
+space/slash rgb()/rgba(), hsl()/hsla() and modern hwb() with hue angle units and alpha. HWB
+whiteness/blackness accept percentages or numbers on the 0..100 reference scale; nonnegative
+values above 100 normalize to gray rather than clamp individually. none components resolve
+to zero for current used-color painting. Comma HWB syntax is invalid. The same color
 parser feeds text, background and borders. Font-size accepts percentages, px/em/rem,
 absolute CSS length units and the current keyword set. Global inherit/initial/unset handling
 is shared by the supported properties.
@@ -252,3 +255,8 @@ parser and indexing arithmetic, with same_type metadata instead of an authored o
 Other element types and text do not affect positions. All five contribute one class-level
 specificity component; typed nth functions do not accept `of` arguments. Namespace-aware
 typed selector behavior remains outside the current HTML-only selector subset.
+
+HWB uses shared unquantized HSL channels before final 8-bit sRGB conversion. Hue angles
+normalize before unit scaling, so large finite turns cannot overflow the color conversion.
+Missing-component preservation for interpolation/serialization, relative colors and calc()
+inside colors remain later work. Reference: [CSS Color 4 HWB](https://www.w3.org/TR/css-color-4/#the-hwb-notation).

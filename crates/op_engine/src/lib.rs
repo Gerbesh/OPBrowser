@@ -1283,6 +1283,26 @@ mod tests {
     }
 
     #[test]
+    fn hwb_colors_reach_text_background_borders_generated_runs_and_reflow() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page("<style>#p { --hue:120;color:hwb(var(--hue) 30 50 / 50%);background:hwb(240 0 0);border:2px solid hwb(45 40% 80%) } #p::before { content:'HWB ';color:hwb(0 0 0) }</style><p id=p>Body</p>", 800, 600);
+        assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::Text { text, color, .. } if text == "Body" && *color == (op_paint::Color { r:166, g:191, b:166 }))));
+        assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::Text { text, color, .. } if text.contains("HWB") && *color == (op_paint::Color { r:255, g:0, b:0 }))));
+        for expected in [
+            op_paint::Color { r: 0, g: 0, b: 255 },
+            op_paint::Color {
+                r: 85,
+                g: 85,
+                b: 85,
+            },
+        ] {
+            assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { color, .. } if *color == expected)));
+        }
+        engine.reflow(240, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn nested_inline_backgrounds_paint_outer_first_and_survive_reflow() {
         let html = "<p><a href=next style='padding:2px 3px;background:red'>A<span style='padding:4px 5px;background:blue'><b>nested label wraps across lines</b></span>Z</a></p>";
         let mut engine = Engine::new();

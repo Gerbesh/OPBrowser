@@ -133,6 +133,8 @@ Status: IN PROGRESS.
 - DONE expand color values with legacy/modern `rgb()`/`rgba()` and `hsl()`/`hsla()`,
   percentage/alpha channels, hue angle units, clamping, CSS basic named colors plus
   `rebeccapurple`, and functional colors in border shorthand/longhands.
+- DONE modern `hwb()` percentage/number whiteness and blackness, gray normalization,
+  hue units, alpha and used-value none components through text/background/border/pseudo paint.
 - DONE richer initial typography: inherited `text-align` start/end/left/right/center,
   `line-height` normal/number/percent/length with real line-box geometry, and numeric
   `font-weight` 1-1000 plus bolder/lighter mapped onto the current normal/bold backend.

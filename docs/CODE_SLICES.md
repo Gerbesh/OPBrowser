@@ -337,6 +337,15 @@ key instead of fixed application order. Alpha
 still composites against the current white page background in op_paint, so true layered
 translucent backgrounds remain later rendering work.
 
+Modern hwb() resolves percentage/number whiteness/blackness, hue units, optional alpha and
+none components through the same cascade and text/background/border/pseudo path. White+black
+at or above 100% becomes normalized gray, including individual values above 100%. Shared
+unquantized HSL channels avoid intermediate byte rounding; hue-unit normalization prevents
+large-angle overflow. Missing components become zero for current used-color painting;
+preserving missing components for interpolation/serialization, calc() and relative colors
+remain later work. CSS/Engine tests check primary examples, invalid-value cascade recovery,
+custom-property substitution, native display-list colors and retained reflow.
+
 Planned next path:
 
 ```text

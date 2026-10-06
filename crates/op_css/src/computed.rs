@@ -2618,6 +2618,7 @@ fn parse_css_color(tokens: &[TokenKind]) -> Option<CssColor> {
     match name.to_ascii_lowercase().as_str() {
         "rgb" | "rgba" => parse_rgb_function(arguments),
         "hsl" | "hsla" => parse_hsl_function(arguments),
+        "hwb" => parse_hwb_function(arguments),
         _ => None,
     }
 }
@@ -2749,6 +2750,16 @@ fn parse_hsl_function(tokens: &[&TokenKind]) -> Option<CssColor> {
             )
         };
 
+    let [red, green, blue] = hsl_channels(hue, saturation, lightness);
+    Some(CssColor {
+        red: fraction_byte(red),
+        green: fraction_byte(green),
+        blue: fraction_byte(blue),
+        alpha: alpha.unwrap_or(255),
+    })
+}
+
+fn hsl_channels(hue: f32, saturation: f32, lightness: f32) -> [f32; 3] {
     let hue = hue.rem_euclid(360.0) / 60.0;
     let saturation = saturation.clamp(0.0, 1.0);
     let lightness = lightness.clamp(0.0, 1.0);
@@ -2764,12 +2775,51 @@ fn parse_hsl_function(tokens: &[&TokenKind]) -> Option<CssColor> {
     };
     let m = lightness - chroma / 2.0;
 
+    [r1 + m, g1 + m, b1 + m]
+}
+
+fn parse_hwb_function(tokens: &[&TokenKind]) -> Option<CssColor> {
+    let (components, alpha) = match tokens {
+        [hue, white, black] => ([*hue, *white, *black], 255),
+        [hue, white, black, TokenKind::Delim('/'), alpha] => (
+            [*hue, *white, *black],
+            if missing_color_component(alpha) {
+                0
+            } else {
+                parse_alpha(alpha)?
+            },
+        ),
+        _ => return None,
+    };
+    let hue = if missing_color_component(components[0]) {
+        0.0
+    } else {
+        parse_hue(components[0])?
+    };
+    let white_black = |token: &TokenKind| match token {
+        TokenKind::Percentage(number) | TokenKind::Number(number) => {
+            Some(parse_number(number)?.max(0.0) / 100.0)
+        }
+        _ if missing_color_component(token) => Some(0.0),
+        _ => None,
+    };
+    let white = white_black(components[1])?;
+    let black = white_black(components[2])?;
+    let channels = if white + black >= 1.0 {
+        [white / (white + black); 3]
+    } else {
+        hsl_channels(hue, 1.0, 0.5).map(|channel| channel * (1.0 - white - black) + white)
+    };
     Some(CssColor {
-        red: fraction_byte(r1 + m),
-        green: fraction_byte(g1 + m),
-        blue: fraction_byte(b1 + m),
-        alpha: alpha.unwrap_or(255),
+        red: fraction_byte(channels[0]),
+        green: fraction_byte(channels[1]),
+        blue: fraction_byte(channels[2]),
+        alpha,
     })
+}
+
+fn missing_color_component(token: &TokenKind) -> bool {
+    matches!(token, TokenKind::Ident(value) if value.eq_ignore_ascii_case("none"))
 }
 
 fn split_comma_groups<'a>(tokens: &'a [&'a TokenKind]) -> Option<Vec<Vec<&'a TokenKind>>> {
@@ -2813,20 +2863,21 @@ fn parse_percentage_fraction(token: &TokenKind) -> Option<f32> {
 }
 
 fn parse_hue(token: &TokenKind) -> Option<f32> {
-    match token {
-        TokenKind::Number(number) => parse_number(number),
+    let degrees = match token {
+        TokenKind::Number(number) => f64::from(parse_number(number)?),
         TokenKind::Dimension { number, unit } => {
-            let value = parse_number(number)?;
+            let value = f64::from(parse_number(number)?);
             match unit.to_ascii_lowercase().as_str() {
-                "deg" => Some(value),
-                "grad" => Some(value * 0.9),
-                "rad" => Some(value * 180.0 / std::f32::consts::PI),
-                "turn" => Some(value * 360.0),
-                _ => None,
+                "deg" => value,
+                "grad" => value.rem_euclid(400.0) * 0.9,
+                "rad" => value.rem_euclid(std::f64::consts::TAU) * 180.0 / std::f64::consts::PI,
+                "turn" => value.rem_euclid(1.0) * 360.0,
+                _ => return None,
             }
         }
-        _ => None,
-    }
+        _ => return None,
+    };
+    Some(degrees.rem_euclid(360.0) as f32)
 }
 
 fn fraction_byte(value: f32) -> u8 {
@@ -3675,6 +3726,110 @@ mod tests {
                 blue: 0x56,
                 alpha: 255,
             }
+        );
+    }
+
+    #[test]
+    fn hwb_resolves_hues_white_black_normalization_alpha_and_missing_components() {
+        // Independent expected sRGB values include CSS Color 4 examples and WPT cases.
+        for (source, expected) in [
+            ("hwb(0 0% 0%)", (255, 0, 0, 255)),
+            ("HWB(120 30% 50%)", (77, 128, 77, 255)),
+            ("hwb(150 20% 10%)", (51, 230, 140, 255)),
+            ("hwb(45 40% 80%)", (85, 85, 85, 255)),
+            ("hwb(0 200% 100%)", (170, 170, 170, 255)),
+            ("hwb(0 50% 150%)", (64, 64, 64, 255)),
+            ("hwb(0 260% 260%)", (128, 128, 128, 255)),
+            ("hwb(120 30 50 / 50%)", (77, 128, 77, 128)),
+            ("hwb(90 12.5% 50% / .2)", (80, 128, 32, 51)),
+            ("hwb(-120deg -20% -30% / 200%)", (0, 0, 255, 255)),
+            ("hwb(.5turn 0 0 / -1)", (0, 255, 255, 0)),
+            ("hwb(200grad 0 0)", (0, 255, 255, 255)),
+            ("hwb(3.14159265359rad 0 0)", (0, 255, 255, 255)),
+            ("hwb(none none none)", (255, 0, 0, 255)),
+            ("hwb(120 none 50% / none)", (0, 128, 0, 0)),
+            ("hwb(1e38turn 0 0)", (255, 0, 0, 255)),
+            ("hsl(1e38turn 100% 50%)", (255, 0, 0, 255)),
+        ] {
+            let tokens = crate::tokenize(source)
+                .tokens
+                .into_iter()
+                .map(|token| token.kind)
+                .collect::<Vec<_>>();
+            let color = parse_css_color(&tokens).unwrap_or_else(|| panic!("{source}"));
+            assert_eq!(
+                (color.red, color.green, color.blue, color.alpha),
+                expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn hwb_rejects_invalid_syntax_before_cascade_and_styles_all_color_properties() {
+        for invalid in [
+            "hwb(0,0%,0%)",
+            "hwb(0 0%)",
+            "hwb(0 0% 0% .5)",
+            "hwb(0 0% 0% /)",
+            "hwb(0 0% 0% / .5 / .5)",
+            "hwb(20% 0% 0%)",
+            "hwb(0px 0 0)",
+            "hwb(0 1px 0)",
+            "hwb(0 0 0 / 1deg)",
+            "hwb(0 calc(10%) 0)",
+        ] {
+            let document = parse_document(&format!(
+                "<p id=p style='color:red;color:{invalid};background:blue;background:{invalid};border:2px solid green;border-color:{invalid}'>X</p>"
+            ));
+            let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+            let style = computed.style_for(find_by_id(&document, "p")).unwrap();
+            assert_eq!(style.color, CssColor::RED, "{invalid}");
+            assert_eq!(style.background_color, CssColor::BLUE, "{invalid}");
+            assert_eq!(
+                style.border.top.color,
+                named_color("green").unwrap(),
+                "{invalid}"
+            );
+        }
+        let tokens = crate::tokenize("hwb(0 0 0) red")
+            .tokens
+            .into_iter()
+            .map(|token| token.kind)
+            .collect::<Vec<_>>();
+        assert!(parse_css_color(&tokens).is_none());
+        let document = parse_document(
+            "<style>#p { --hue:120; color:hwb(var(--hue) 30 50 / .5);background:hwb(240 0% 0%);border:2px solid hwb(0 0 0);border-right-color:hwb(45 40% 80%) } #p::before { content:'P';color:hwb(120 none none) }</style><p id=p>X</p>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let node = find_by_id(&document, "p");
+        let style = computed.style_for(node).unwrap();
+        assert_eq!(
+            (
+                style.color.red,
+                style.color.green,
+                style.color.blue,
+                style.color.alpha
+            ),
+            (77, 128, 77, 128)
+        );
+        assert_eq!(style.background_color, CssColor::BLUE);
+        assert_eq!(style.border.top.color, CssColor::RED);
+        assert_eq!(
+            (
+                style.border.right.color.red,
+                style.border.right.color.green,
+                style.border.right.color.blue
+            ),
+            (85, 85, 85)
+        );
+        assert_eq!(
+            computed
+                .pseudo_style_for(node, PseudoElement::Before)
+                .unwrap()
+                .style
+                .color,
+            named_color("lime").unwrap()
         );
     }
 
