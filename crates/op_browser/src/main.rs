@@ -21,6 +21,10 @@ h1 { color: #6d28d9; font-size: 42px; }
 .generated-demo::after { content: " ✓ after"; color: #087a35; font-weight: bold; }
 .var-demo { width:70%; margin:12px auto; padding:var(--op-gap); color:var(--op-accent); background:var(--op-surface); border:2px solid var(--op-edge); font-weight:bold; }
 .var-demo::before { --var-label:"[var() inherited] "; content:var(--var-label); color:var(--op-edge); }
+.counter-demo { width:70%; margin:12px auto; padding:8px; counter-reset:step; background:#f8fafc; border:2px solid #0f766e; box-sizing:border-box; }
+.counter-demo p { counter-increment:step; margin:4px 0; }
+.counter-demo p::before { content:attr(data-label) " " counter(step, decimal-leading-zero) ": "; color:#0f766e; font-weight:bold; }
+.counter-demo::after { content:"Generated total: " counter(step); color:#087a35; font-weight:bold; }
 .hidden-proof { display: none; }
 a { font-weight: bold; }
 </style></head><body>
@@ -40,6 +44,7 @@ white-space:pre-wrap preserves this newline and  double spaces.</div>
 <p class="functional-demo"><span class="hot">:is + odd</span> <span class="hot skip">:not blocks this</span> <span id="functional-third" class="warm">third + :where bold</span></p>
 <p class="generated-demo">Real DOM text between generated pseudo-elements.</p>
 <div class="var-demo">Custom properties feed color, background, padding, border and generated content; missing values can use var() fallbacks.</div>
+<div class="counter-demo"><p data-label="Stage">Generated attr() + counter() content</p><p data-label="Stage">The counter increments in document order</p></div>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>

@@ -246,6 +246,18 @@ classDiagram
         style
         content
     }
+    class CounterContext {
+        counter_name -> value_stack
+        +reset(name,value)
+        +set(name,value)
+        +increment(name,amount)
+        +current(name)
+        +values(name)
+    }
+    class CounterOperation {
+        name
+        value
+    }
     class ComputedStyle {
         display
         color
@@ -353,6 +365,11 @@ classDiagram
     CustomPropertyMap --> CustomPropertyMap : recursive var() substitution / fallback resolution
     CustomPropertyMap --> ComputedStyleMap : retained host + pseudo snapshots
     StyleMap --> ComputedStyleMap : host + pseudo cascade / substituted value parsing
+    StyleMap --> CounterOperation : counter-reset/set/increment winner parsing
+    CounterOperation --> CounterContext : document-order scoped counter mutation
+    Document --> CounterContext : sibling-aware nested scope traversal
+    CounterContext --> ComputedPseudoStyle : counter()/counters() generated text
+    Document --> ComputedPseudoStyle : attr() reads originating element attributes
     ComputedStyleMap --> ComputedStyle
     ComputedStyleMap --> ComputedPseudoStyle
     ComputedPseudoStyle --> PseudoElement : keyed generated target

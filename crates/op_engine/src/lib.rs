@@ -932,6 +932,43 @@ mod tests {
     }
 
     #[test]
+    fn generated_attr_and_counters_reach_native_display_list() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               #outline { counter-reset:chapter }
+               .item { counter-increment:chapter }
+               .item::before { content:attr(data-label) ' ' counter(chapter, upper-roman) ': '; color:#b42318 }
+               #outline::after { content:' total=' counter(chapter); color:#087a35; font-weight:bold }
+             </style>
+             <div id='outline'>
+               <p class='item' data-label='Chapter'>One</p>
+               <p class='item' data-label='Chapter'>Two</p>
+             </div>",
+            800,
+            600,
+        );
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, color, .. }
+                if text.contains("Chapter I:")
+                    && *color == op_paint::Color { r: 180, g: 35, b: 24 }
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, color, .. }
+                if text.contains("Chapter II:")
+                    && *color == op_paint::Color { r: 180, g: 35, b: 24 }
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, bold: true, color, .. }
+                if text.contains("total=2")
+                    && *color == op_paint::Color { r: 8, g: 122, b: 53 }
+        )));
+    }
+
+    #[test]
     fn custom_properties_and_var_reach_native_display_list() {
         let display_list = Engine::new().render_html(
             "<style>

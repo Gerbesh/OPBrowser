@@ -95,8 +95,10 @@ DOM source order, inline declarations join the author cascade, functional select
 `::before`/`::after` declarations are collected in separate `(NodeId, PseudoElement)` buckets.
 Before normal value parsing, custom-property winners build inherited per-target token maps and
 recursive `var()` substitution resolves references/fallbacks; the computed map retains those
-custom maps plus generated pseudo styles alongside host styles. Inheritance produces per-node
-styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
+custom maps plus generated pseudo styles alongside host styles. During the same parent-first
+walk, `counter-reset`/`counter-set`/`counter-increment` maintain scoped value stacks; `attr()`
+reads the originating DOM element and `counter()`/`counters()` materialize final pseudo text.
+Inheritance produces per-node styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 
 op_layout consumes that map for display:none/block/inline, mixed inline text runs,
@@ -105,8 +107,8 @@ letter/word spacing and the expanded [block box model](CSS-Box-Model.md). Transf
 measured before line placement; op_paint carries italic/decoration/spacing metadata and Win32
 uses matching text advances while drawing measured decoration/link segments. It resolves used widths/min/max/auto margins,
 box-sizing, padding, independent border edges, fixed height constraints and sibling margin
-collapse, then emits BoxDecoration records. The inline formatter injects generated before/after
-quoted strings around real DOM children and emits the same BoxDecoration shape for
+collapse, then emits BoxDecoration records. The inline formatter injects already-resolved
+generated before/after text (strings, attributes or counters) around real DOM children and emits the same BoxDecoration shape for
 padded/background/bordered host or pseudo text fragments, so block and inline boxes share one
 platform-neutral paint path. op_paint expands them into side-specific FillRect
 commands before text/images; Win32 remains only the native drawing backend.

@@ -106,9 +106,14 @@ a custom property while `inherit`/`unset` reuse the parent's computed value.
 Pseudo buckets cascade independently from their host. A generated pseudo starts from the
 host's inherited text and custom properties, applies its own declarations, and becomes a
 `ComputedPseudoStyle { style, content }` only when a supported `content` value generates text.
-The current `content` subset concatenates quoted strings; `none` and `normal` suppress
-creation. Because `var()` substitution happens first, generated content may come from inherited
-or pseudo-local custom properties. PreparedDocument retains both the author StyleCollection and
+The current `content` subset concatenates quoted strings with `attr(name)`, `counter()` and
+`counters()`. `attr()` reads the originating element's DOM attribute and returns an empty string
+when that attribute is absent. `counter-reset`, `counter-set` and `counter-increment` mutate a
+scoped document-order CounterContext before generated content is resolved; nested reset stacks
+feed `counters()` while sibling increments remain visible inside the same scope. Decimal,
+decimal-leading-zero, lower/upper alpha/latin and lower/upper roman formats are supported.
+`none` and `normal` suppress creation. Because `var()` substitution happens first, generated
+content and counter declarations may come from inherited or pseudo-local custom properties. PreparedDocument retains both the author StyleCollection and
 ComputedStyleMap, including host/pseudo CustomPropertyMap snapshots.
 Resize reflow therefore does not reparse, rematch or recascade CSS.
 
@@ -150,11 +155,13 @@ Initial text alignment, line-height, font-style, underline/line-through, white-s
 letter/word spacing, text-transform and inline background/padding/solid-border fragments now
 reach layout/native paint. Functional `:is()`/`:where()`/`:not()` and `:nth-child(An+B)` now
 participate in selector matching with their initial specificity rules. Terminal
-`::before`/`::after`, quoted-string generated `content`, inherited custom properties and
-`var()` fallbacks now reach native layout/paint too. The initial `var()` slice deliberately
+`::before`/`::after`, generated strings/`attr()`/counters, inherited custom properties and
+`var()` fallbacks now reach native layout/paint too. Counter traversal computes `::before`
+before children and `::after` after completed child counter work. The initial `var()` slice deliberately
 reuses OPBrowser's current invalid-value filtering, so a declaration whose substitution fails
 can expose a lower valid candidate instead of full CSS invalid-at-computed-value-time behavior;
-full dependency-graph cycle semantics are also later. Next S3 work moves into generated
-`attr()`/counters/quotes/images and fuller pseudo block-box geometry, then forgiving selector-list
+full dependency-graph cycle semantics are also later. Generated `url()` images, quote keywords,
+custom counter styles and complete counter scoping remain later. Next S3 work moves into generated
+replaced content and fuller pseudo block-box geometry, then forgiving selector-list
 recovery, nth-child `of`, advanced color spaces, at-rules, media queries and full CSS
 conformance remain later.

@@ -709,3 +709,35 @@ This file is append-only project history.
   release attempt was blocked only because an older `target/release/op_browser.exe` process was
   still running; that workspace process was stopped and the rebuild then passed.
 - Rebuilt `target/release/op_browser.exe`; this build is 655,360 bytes.
+
+## 2026-10-06 - Generated attr() and CSS counters
+
+- Expanded generated `content` beyond quoted strings with `attr(name)`, `counter()` and
+  `counters()` function parsing. Mixed strings/functions concatenate into one final pseudo text
+  payload before layout.
+- `attr()` reads the originating element's DOM attributes case-insensitively for HTML names;
+  a missing attribute contributes an empty string in this initial subset.
+- Added initial `counter-reset`, `counter-set` and `counter-increment` parsing after custom-property
+  `var()` substitution. Counter properties use the existing author cascade winner order and accept
+  explicit integer values with CSS-like reset/set/increment defaults.
+- Added a scoped CounterContext with per-name value stacks. Resets created by an element remain
+  visible to following siblings in that parent group, descendant-created scopes are truncated
+  when leaving the group, while increments to existing outer counters remain visible.
+- `::before` counter/content work now runs before child traversal and `::after` runs after completed
+  child traversal, so after-content can observe counter increments performed by descendants.
+- Added generated counter formatting for decimal, decimal-leading-zero, lower/upper alpha/latin and
+  lower/upper roman styles. `counters(name, separator)` joins all active reset-stack values.
+- Added CSS regressions for attribute content, sibling/nested counter scopes, `counter-set`,
+  `counters()` and formatter edge cases plus an Engine display-list regression proving attr/counter
+  text reaches native painting with pseudo colors/weight intact.
+- Updated the built-in start page and `examples/css` with visible counter demos; the CSS demo smoke
+  now emits 168 paint commands.
+- Updated README, project plan, code graph/slices and CSS/inline/rendering wiki documentation.
+- Deliberate limits remain: typed/fallback `attr()` syntax, custom `@counter-style`, quote keywords,
+  generated `url()` images and the remaining counter-scope edge cases are deferred. Generated
+  `display:block` is still an initial line-boundary approximation rather than a full pseudo block.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 158 workspace tests,
+  normal startup smoke, the 168-command CSS demo smoke and optimized release build. The first
+  release attempt was blocked only by a running `target/release/op_browser.exe`; that workspace
+  process was stopped and the rebuild then passed.
+- Rebuilt `target/release/op_browser.exe`; this build is 676,864 bytes.

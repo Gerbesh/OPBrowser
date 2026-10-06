@@ -154,7 +154,10 @@ Status: IN PROGRESS.
 - DONE inherited case-sensitive CSS custom properties with author cascade/`!important`,
   computed per-element token values, recursive `var(--name, fallback)` substitution, simple cycle
   invalidation and pseudo-element inheritance/overrides before normal property value parsing.
-- NEXT generated `content:attr()/counter()/url()` and fuller pseudo block-box geometry.
+- DONE generated `content` functions for `attr(name)`, `counter()` and `counters()` plus
+  initial `counter-reset`/`counter-set`/`counter-increment`, nested counter scopes and decimal,
+  decimal-leading-zero, alpha/latin and roman formatting.
+- NEXT generated `url()`/quote content and fuller pseudo block-box/replaced-content geometry.
 - LATER complete invalid-at-computed-value-time `var()` semantics/custom-property cycle graph,
   forgiving functional-selector recovery, `:nth-child(... of ...)`, nested decorated-inline
   stacks/replaced inline decorations and fuller

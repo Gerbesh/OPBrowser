@@ -31,3 +31,10 @@ h1 { color: #6d28d9; font-size: 42px; }
 .generated-demo::after { content: " ✓ generated after"; color:#087a35; font-weight:bold; }
 .custom-props { width:68%; margin:12px auto; padding:var(--demo-gap); color:var(--demo-accent); background:var(--demo-surface); border:2px solid var(--demo-edge); font-weight:var(--missing-weight, bold); box-sizing:border-box; }
 .custom-props::before { --label:"[custom property] "; content:var(--label); color:var(--demo-edge); }
+.counter-outline { width:68%; margin:12px auto; padding:10px; counter-reset:chapter; background:#f0fdfa; border:2px solid #0f766e; box-sizing:border-box; }
+.counter-outline > p { counter-increment:chapter; margin:4px 0; }
+.counter-outline > p::before { content:attr(data-label) " " counter(chapter, upper-roman) ": "; color:#0f766e; font-weight:bold; }
+.counter-nested { margin:8px; padding:8px; counter-reset:chapter; background:#ffffff; border:1px solid #14b8a6; }
+.counter-nested p { counter-increment:chapter; margin:3px 0; }
+.counter-nested p::before { content:"Nested " counters(chapter, ".") ": "; color:#115e59; font-weight:bold; }
+.counter-outline::after { content:"Outer total: " counter(chapter); color:#087a35; font-weight:bold; }

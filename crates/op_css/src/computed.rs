@@ -1,5 +1,5 @@
 use crate::{MatchedDeclaration, PseudoElement, Specificity, StyleMap, StyleSource, TokenKind};
-use op_dom::{Document, NodeId};
+use op_dom::{Document, ElementData, NodeId};
 use std::collections::{HashMap, HashSet};
 
 pub type CustomPropertyMap = HashMap<String, Vec<TokenKind>>;
@@ -321,10 +321,84 @@ impl ComputedStyleMap {
     }
 }
 
+#[derive(Debug, Default)]
+struct CounterContext {
+    stacks: HashMap<String, Vec<i32>>,
+}
+
+impl CounterContext {
+    fn snapshot_lengths(&self) -> HashMap<String, usize> {
+        self.stacks
+            .iter()
+            .map(|(name, stack)| (name.clone(), stack.len()))
+            .collect()
+    }
+
+    fn restore_lengths(&mut self, snapshot: &HashMap<String, usize>) {
+        self.stacks.retain(|name, stack| {
+            let Some(length) = snapshot.get(name).copied() else {
+                return false;
+            };
+            stack.truncate(length);
+            true
+        });
+    }
+
+    fn reset(&mut self, name: &str, value: i32) {
+        self.stacks.entry(name.to_owned()).or_default().push(value);
+    }
+
+    fn set(&mut self, name: &str, value: i32) {
+        let stack = self.stacks.entry(name.to_owned()).or_default();
+        if let Some(current) = stack.last_mut() {
+            *current = value;
+        } else {
+            stack.push(value);
+        }
+    }
+
+    fn increment(&mut self, name: &str, amount: i32) {
+        let stack = self.stacks.entry(name.to_owned()).or_default();
+        if stack.is_empty() {
+            stack.push(0);
+        }
+        if let Some(current) = stack.last_mut() {
+            *current = current.saturating_add(amount);
+        }
+    }
+
+    fn current(&self, name: &str) -> i32 {
+        self.stacks
+            .get(name)
+            .and_then(|stack| stack.last())
+            .copied()
+            .unwrap_or(0)
+    }
+
+    fn values(&self, name: &str) -> Vec<i32> {
+        self.stacks.get(name).cloned().unwrap_or_else(|| vec![0])
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CounterOperation {
+    name: String,
+    value: i32,
+}
+
 pub fn compute_styles(document: &Document, author_styles: &StyleMap) -> ComputedStyleMap {
     let mut computed = ComputedStyleMap::default();
+    let mut counters = CounterContext::default();
     for child in document.children(document.root()) {
-        compute_subtree(document, *child, None, None, author_styles, &mut computed);
+        compute_subtree(
+            document,
+            *child,
+            None,
+            None,
+            author_styles,
+            &mut counters,
+            &mut computed,
+        );
     }
     computed
 }
@@ -335,6 +409,7 @@ fn compute_subtree(
     parent_style: Option<ComputedStyle>,
     parent_custom: Option<CustomPropertyMap>,
     author_styles: &StyleMap,
+    counters: &mut CounterContext,
     computed: &mut ComputedStyleMap,
 ) {
     let current = document.element(node).map(|element| {
@@ -344,9 +419,21 @@ fn compute_subtree(
         let mut style = inherited_base(parent_style);
         apply_ua_defaults(&mut style, element.tag_name.as_str());
         apply_author_declarations(&mut style, parent_style, &resolved);
+        apply_counter_declarations(counters, &resolved);
         computed.entries.insert(node, style);
         computed.custom_properties.insert(node, custom.clone());
-        compute_pseudo_styles(node, style, &custom, author_styles, computed);
+        compute_pseudo_style(
+            node,
+            PseudoElement::Before,
+            PseudoHost {
+                element,
+                style,
+                custom: &custom,
+            },
+            author_styles,
+            counters,
+            computed,
+        );
         (style, custom)
     });
 
@@ -355,6 +442,8 @@ fn compute_subtree(
         .as_ref()
         .map(|(_, custom)| custom.clone())
         .or(parent_custom);
+
+    let child_scope = counters.snapshot_lengths();
     for child in document.children(node) {
         compute_subtree(
             document,
@@ -362,37 +451,156 @@ fn compute_subtree(
             inherited_style,
             inherited_custom.clone(),
             author_styles,
+            counters,
+            computed,
+        );
+    }
+    counters.restore_lengths(&child_scope);
+
+    if let Some((style, custom)) = current.as_ref()
+        && let Some(element) = document.element(node)
+    {
+        compute_pseudo_style(
+            node,
+            PseudoElement::After,
+            PseudoHost {
+                element,
+                style: *style,
+                custom,
+            },
+            author_styles,
+            counters,
             computed,
         );
     }
 }
 
-fn compute_pseudo_styles(
+struct PseudoHost<'a> {
+    element: &'a ElementData,
+    style: ComputedStyle,
+    custom: &'a CustomPropertyMap,
+}
+
+fn compute_pseudo_style(
     node: NodeId,
-    host_style: ComputedStyle,
-    host_custom: &CustomPropertyMap,
+    pseudo: PseudoElement,
+    host: PseudoHost<'_>,
     author_styles: &StyleMap,
+    counters: &mut CounterContext,
     computed: &mut ComputedStyleMap,
 ) {
-    for pseudo in [PseudoElement::Before, PseudoElement::After] {
-        let declarations = author_styles.declarations_for_pseudo(node, pseudo);
-        let custom = compute_custom_properties(Some(host_custom), declarations);
-        let resolved = substitute_declarations(declarations, &custom);
-        let Some(content) = winning_generated_content(&resolved) else {
-            continue;
-        };
-        let Some(content) = content else {
-            continue;
-        };
-        let mut style = inherited_base(Some(host_style));
-        apply_author_declarations(&mut style, Some(host_style), &resolved);
-        computed
-            .pseudo_entries
-            .insert((node, pseudo), ComputedPseudoStyle { style, content });
-        computed
-            .pseudo_custom_properties
-            .insert((node, pseudo), custom);
+    let declarations = author_styles.declarations_for_pseudo(node, pseudo);
+    let custom = compute_custom_properties(Some(host.custom), declarations);
+    let resolved = substitute_declarations(declarations, &custom);
+
+    let pseudo_scope = counters.snapshot_lengths();
+    apply_counter_declarations(counters, &resolved);
+    let content = winning_generated_content(&resolved, host.element, counters);
+    counters.restore_lengths(&pseudo_scope);
+
+    let Some(content) = content else {
+        return;
+    };
+    let Some(content) = content else {
+        return;
+    };
+
+    let mut style = inherited_base(Some(host.style));
+    apply_author_declarations(&mut style, Some(host.style), &resolved);
+    computed
+        .pseudo_entries
+        .insert((node, pseudo), ComputedPseudoStyle { style, content });
+    computed
+        .pseudo_custom_properties
+        .insert((node, pseudo), custom);
+}
+
+fn apply_counter_declarations(counters: &mut CounterContext, declarations: &[MatchedDeclaration]) {
+    if let Some(operations) = winning_counter_operations(declarations, "counter-reset", 0) {
+        for operation in operations {
+            counters.reset(&operation.name, operation.value);
+        }
     }
+    if let Some(operations) = winning_counter_operations(declarations, "counter-set", 0) {
+        for operation in operations {
+            counters.set(&operation.name, operation.value);
+        }
+    }
+    if let Some(operations) = winning_counter_operations(declarations, "counter-increment", 1) {
+        for operation in operations {
+            counters.increment(&operation.name, operation.value);
+        }
+    }
+}
+
+fn winning_counter_operations(
+    declarations: &[MatchedDeclaration],
+    property: &str,
+    default_value: i32,
+) -> Option<Vec<CounterOperation>> {
+    declarations
+        .iter()
+        .filter(|matched| matched.declaration.name == property)
+        .filter_map(|matched| {
+            parse_counter_operations(&matched.declaration.value, default_value)
+                .map(|value| (matched, value))
+        })
+        .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
+        .map(|(_, value)| value)
+}
+
+fn parse_counter_operations(
+    tokens: &[TokenKind],
+    default_value: i32,
+) -> Option<Vec<CounterOperation>> {
+    if let Some(keyword) = single_ident(tokens) {
+        if matches!(
+            keyword.to_ascii_lowercase().as_str(),
+            "none" | "initial" | "unset"
+        ) {
+            return Some(Vec::new());
+        }
+        if keyword.eq_ignore_ascii_case("inherit") {
+            return None;
+        }
+    }
+
+    let tokens: Vec<&TokenKind> = significant_tokens(tokens).collect();
+    let mut operations = Vec::new();
+    let mut index = 0;
+    while index < tokens.len() {
+        let TokenKind::Ident(name) = tokens[index] else {
+            return None;
+        };
+        if is_reserved_counter_name(name) {
+            return None;
+        }
+        index += 1;
+
+        let value = if let Some(TokenKind::Number(number)) = tokens.get(index).copied() {
+            index += 1;
+            parse_counter_integer(number)?
+        } else {
+            default_value
+        };
+        operations.push(CounterOperation {
+            name: name.clone(),
+            value,
+        });
+    }
+    (!operations.is_empty()).then_some(operations)
+}
+
+fn parse_counter_integer(number: &str) -> Option<i32> {
+    let value = number.parse::<i64>().ok()?;
+    i32::try_from(value).ok()
+}
+
+fn is_reserved_counter_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "none" | "initial" | "inherit" | "unset" | "revert" | "revert-layer"
+    )
 }
 
 fn compute_custom_properties(
@@ -588,18 +796,27 @@ fn trim_token_whitespace(mut tokens: &[TokenKind]) -> &[TokenKind] {
     tokens
 }
 
-fn winning_generated_content(declarations: &[MatchedDeclaration]) -> Option<Option<String>> {
+fn winning_generated_content(
+    declarations: &[MatchedDeclaration],
+    element: &ElementData,
+    counters: &CounterContext,
+) -> Option<Option<String>> {
     declarations
         .iter()
         .filter(|matched| matched.declaration.name == "content")
         .filter_map(|matched| {
-            parse_generated_content(&matched.declaration.value).map(|value| (matched, value))
+            parse_generated_content(&matched.declaration.value, element, counters)
+                .map(|value| (matched, value))
         })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
         .map(|(_, value)| value)
 }
 
-fn parse_generated_content(tokens: &[TokenKind]) -> Option<Option<String>> {
+fn parse_generated_content(
+    tokens: &[TokenKind],
+    element: &ElementData,
+    counters: &CounterContext,
+) -> Option<Option<String>> {
     if let Some(ident) = single_ident(tokens)
         && matches!(
             ident.to_ascii_lowercase().as_str(),
@@ -610,15 +827,253 @@ fn parse_generated_content(tokens: &[TokenKind]) -> Option<Option<String>> {
     }
 
     let mut content = String::new();
-    let mut saw_string = false;
-    for token in significant_tokens(tokens) {
-        let TokenKind::String(value) = token else {
-            return None;
-        };
-        content.push_str(value);
-        saw_string = true;
+    let mut saw_piece = false;
+    let mut index = 0;
+    while index < tokens.len() {
+        if matches!(tokens[index], TokenKind::Whitespace) {
+            index += 1;
+            continue;
+        }
+
+        match &tokens[index] {
+            TokenKind::String(value) => {
+                content.push_str(value);
+                saw_piece = true;
+                index += 1;
+            }
+            TokenKind::Function(name) => {
+                let end = find_function_end(tokens, index)?;
+                let arguments = &tokens[index + 1..end];
+                let piece = match name.to_ascii_lowercase().as_str() {
+                    "attr" => generated_attr(arguments, element)?,
+                    "counter" => generated_counter(arguments, counters)?,
+                    "counters" => generated_counters(arguments, counters)?,
+                    _ => return None,
+                };
+                content.push_str(&piece);
+                saw_piece = true;
+                index = end + 1;
+            }
+            _ => return None,
+        }
     }
-    saw_string.then_some(Some(content))
+
+    saw_piece.then_some(Some(content))
+}
+
+fn find_function_end(tokens: &[TokenKind], start: usize) -> Option<usize> {
+    let mut depth = 1_u32;
+    for (index, token) in tokens.iter().enumerate().skip(start + 1) {
+        match token {
+            TokenKind::Function(_) | TokenKind::OpenParen => depth = depth.saturating_add(1),
+            TokenKind::CloseParen => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn generated_attr(tokens: &[TokenKind], element: &ElementData) -> Option<String> {
+    let tokens = trim_token_whitespace(tokens);
+    let [TokenKind::Ident(name)] = tokens else {
+        return None;
+    };
+    Some(
+        element
+            .attributes
+            .iter()
+            .find(|attribute| attribute.name.eq_ignore_ascii_case(name))
+            .map(|attribute| attribute.value.clone())
+            .unwrap_or_default(),
+    )
+}
+
+fn generated_counter(tokens: &[TokenKind], counters: &CounterContext) -> Option<String> {
+    let arguments = split_function_arguments(tokens)?;
+    if !(1..=2).contains(&arguments.len()) {
+        return None;
+    }
+    let name = single_argument_ident(arguments[0])?;
+    if is_reserved_counter_name(name) {
+        return None;
+    }
+    let style = if arguments.len() == 2 {
+        parse_counter_style(single_argument_ident(arguments[1])?)?
+    } else {
+        CounterStyle::Decimal
+    };
+    Some(format_counter(counters.current(name), style))
+}
+
+fn generated_counters(tokens: &[TokenKind], counters: &CounterContext) -> Option<String> {
+    let arguments = split_function_arguments(tokens)?;
+    if !(2..=3).contains(&arguments.len()) {
+        return None;
+    }
+    let name = single_argument_ident(arguments[0])?;
+    if is_reserved_counter_name(name) {
+        return None;
+    }
+    let separator_tokens = trim_token_whitespace(arguments[1]);
+    let [TokenKind::String(separator)] = separator_tokens else {
+        return None;
+    };
+    let style = if arguments.len() == 3 {
+        parse_counter_style(single_argument_ident(arguments[2])?)?
+    } else {
+        CounterStyle::Decimal
+    };
+    Some(
+        counters
+            .values(name)
+            .into_iter()
+            .map(|value| format_counter(value, style))
+            .collect::<Vec<_>>()
+            .join(separator),
+    )
+}
+
+fn split_function_arguments(tokens: &[TokenKind]) -> Option<Vec<&[TokenKind]>> {
+    let mut arguments = Vec::new();
+    let mut start = 0;
+    let mut depth = 0_u32;
+    for (index, token) in tokens.iter().enumerate() {
+        match token {
+            TokenKind::Function(_) | TokenKind::OpenParen => depth = depth.saturating_add(1),
+            TokenKind::CloseParen => {
+                if depth == 0 {
+                    return None;
+                }
+                depth -= 1;
+            }
+            TokenKind::Comma if depth == 0 => {
+                let argument = trim_token_whitespace(&tokens[start..index]);
+                if argument.is_empty() {
+                    return None;
+                }
+                arguments.push(argument);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    let final_argument = trim_token_whitespace(&tokens[start..]);
+    if final_argument.is_empty() {
+        return None;
+    }
+    arguments.push(final_argument);
+    Some(arguments)
+}
+
+fn single_argument_ident(tokens: &[TokenKind]) -> Option<&str> {
+    let [TokenKind::Ident(value)] = trim_token_whitespace(tokens) else {
+        return None;
+    };
+    Some(value)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CounterStyle {
+    Decimal,
+    DecimalLeadingZero,
+    LowerAlpha,
+    UpperAlpha,
+    LowerRoman,
+    UpperRoman,
+}
+
+fn parse_counter_style(name: &str) -> Option<CounterStyle> {
+    match name.to_ascii_lowercase().as_str() {
+        "decimal" => Some(CounterStyle::Decimal),
+        "decimal-leading-zero" => Some(CounterStyle::DecimalLeadingZero),
+        "lower-alpha" | "lower-latin" => Some(CounterStyle::LowerAlpha),
+        "upper-alpha" | "upper-latin" => Some(CounterStyle::UpperAlpha),
+        "lower-roman" => Some(CounterStyle::LowerRoman),
+        "upper-roman" => Some(CounterStyle::UpperRoman),
+        _ => None,
+    }
+}
+
+fn format_counter(value: i32, style: CounterStyle) -> String {
+    match style {
+        CounterStyle::Decimal => value.to_string(),
+        CounterStyle::DecimalLeadingZero => {
+            if (0..=9).contains(&value) {
+                format!("0{value}")
+            } else if (-9..=-1).contains(&value) {
+                format!("-0{}", value.unsigned_abs())
+            } else {
+                value.to_string()
+            }
+        }
+        CounterStyle::LowerAlpha => format_alpha_counter(value, false),
+        CounterStyle::UpperAlpha => format_alpha_counter(value, true),
+        CounterStyle::LowerRoman => format_roman_counter(value, false),
+        CounterStyle::UpperRoman => format_roman_counter(value, true),
+    }
+}
+
+fn format_alpha_counter(value: i32, uppercase: bool) -> String {
+    if value <= 0 {
+        return value.to_string();
+    }
+
+    let mut value = i64::from(value);
+    let mut chars = Vec::new();
+    while value > 0 {
+        value -= 1;
+        let ch = (b'a' + (value % 26) as u8) as char;
+        chars.push(if uppercase {
+            ch.to_ascii_uppercase()
+        } else {
+            ch
+        });
+        value /= 26;
+    }
+    chars.into_iter().rev().collect()
+}
+
+fn format_roman_counter(value: i32, uppercase: bool) -> String {
+    if !(1..=3999).contains(&value) {
+        return value.to_string();
+    }
+
+    const ROMAN: &[(i32, &str)] = &[
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut remaining = value;
+    let mut output = String::new();
+    for &(amount, numeral) in ROMAN {
+        while remaining >= amount {
+            remaining -= amount;
+            output.push_str(numeral);
+        }
+    }
+    if uppercase {
+        output
+    } else {
+        output.to_ascii_lowercase()
+    }
 }
 
 fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
@@ -2853,6 +3308,85 @@ mod tests {
                 .pseudo_style_for(note, PseudoElement::After)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn generated_content_reads_originating_element_attributes() {
+        let document = parse_document(
+            "<style>
+               #badge::before { content:'[' attr(data-kind) '] ' attr(title) ' ' attr(missing) }
+             </style>
+             <p id='badge' data-kind='ready' title='Launch'>Body</p>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let badge = find_by_id(&document, "badge");
+        let before = computed
+            .pseudo_style_for(badge, PseudoElement::Before)
+            .expect("attr() content should generate before text");
+
+        assert_eq!(before.content, "[ready] Launch ");
+    }
+
+    #[test]
+    fn generated_counters_follow_sibling_and_nested_reset_scopes() {
+        let document = parse_document(
+            "<style>
+               #outline { counter-reset: chapter }
+               .item { counter-increment: chapter }
+               .item::before { content:attr(data-label) ' ' counter(chapter, upper-roman) ': ' }
+               .set { counter-set:chapter 9 }
+               .set::before { content:'set=' counter(chapter, decimal-leading-zero) ' ' }
+               .nested { counter-reset:chapter }
+               .nested .sub { counter-increment:chapter }
+               .nested .sub::before { content:counters(chapter, '.') ' ' }
+               #outline::after { content:' total=' counter(chapter) }
+             </style>
+             <div id='outline'>
+               <p id='one' class='item' data-label='Chapter'>One</p>
+               <p id='two' class='item' data-label='Chapter'>Two</p>
+               <p id='set' class='set'>Nine</p>
+               <div class='nested'>
+                 <p id='sub-one' class='sub'>Nested one</p>
+                 <p id='sub-two' class='sub'>Nested two</p>
+               </div>
+             </div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+
+        let before = |id: &str| {
+            computed
+                .pseudo_style_for(find_by_id(&document, id), PseudoElement::Before)
+                .expect("expected generated before content")
+                .content
+                .clone()
+        };
+
+        assert_eq!(before("one"), "Chapter I: ");
+        assert_eq!(before("two"), "Chapter II: ");
+        assert_eq!(before("set"), "set=09 ");
+        assert_eq!(before("sub-one"), "9.1 ");
+        assert_eq!(before("sub-two"), "9.2 ");
+        assert_eq!(
+            computed
+                .pseudo_style_for(find_by_id(&document, "outline"), PseudoElement::After)
+                .expect("after content should observe completed child counter work")
+                .content,
+            " total=9"
+        );
+    }
+
+    #[test]
+    fn counter_formatters_cover_alpha_roman_and_leading_zero() {
+        assert_eq!(format_counter(0, CounterStyle::DecimalLeadingZero), "00");
+        assert_eq!(format_counter(7, CounterStyle::DecimalLeadingZero), "07");
+        assert_eq!(format_counter(-3, CounterStyle::DecimalLeadingZero), "-03");
+        assert_eq!(format_counter(27, CounterStyle::LowerAlpha), "aa");
+        assert_eq!(format_counter(28, CounterStyle::UpperAlpha), "AB");
+        assert_eq!(format_counter(9, CounterStyle::UpperRoman), "IX");
+        assert_eq!(format_counter(14, CounterStyle::LowerRoman), "xiv");
+        assert_eq!(format_counter(4000, CounterStyle::UpperRoman), "4000");
     }
 
     #[test]

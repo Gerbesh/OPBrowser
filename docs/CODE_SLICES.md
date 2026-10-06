@@ -326,15 +326,17 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> generated content functions / fuller pseudo block geometry
+  -> generated url()/quotes + fuller pseudo block/replaced-content geometry
   -> full invalid-at-computed-value-time var() / custom-property cycle semantics
   -> nested/replaced inline decoration stacks
   -> additional computed properties
 ```
 
-Generated content currently accepts one or more quoted strings; `none`/`normal` suppress the
-pseudo box. `attr()`/counters/quotes/images are later. `display:block` generated content is an
-initial line-boundary approximation rather than a full virtual block box, empty-string pseudo
+Generated content accepts mixed quoted strings, `attr(name)`, `counter()` and `counters()`;
+`none`/`normal` suppress the pseudo box. Counter state comes from initial
+`counter-reset`/`counter-set`/`counter-increment` parsing with sibling-aware nested scopes and
+basic decimal/alpha/roman formatting. Generated `url()` images and quote keywords remain later.
+`display:block` generated content is an initial line-boundary approximation rather than a full virtual block box, empty-string pseudo
 boxes do not yet materialize decoration without glyph items, and replaced elements do not yet
 receive generated pseudos. Broader property/value coverage, `@import`, media queries and CSS
 `url(...)` resources remain later work.

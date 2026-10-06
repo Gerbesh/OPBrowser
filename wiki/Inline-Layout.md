@@ -50,8 +50,10 @@ emits this sequence instead of painting all text before all images.
   Their horizontal extras participate in fitting and alignment; vertical extras enlarge the
   safe line box, and wrapped fragments become independent BoxDecoration records. An ordinary
   nested `<b>/<em>/<a>` without its own box continues the outer decorated fragment.
-- Generated `::before`/`::after` quoted strings are converted to ordinary InlineChar items at
-  the host's child boundaries. They inherit host typography, can carry their own text/box
+- Generated `::before`/`::after` text from quoted strings, `attr()` and CSS counters is converted
+  to ordinary InlineChar items at the host's child boundaries. Counter state is resolved before
+  layout, so the formatter only sees final generated Unicode text. Pseudos inherit host typography,
+  can carry their own text/box
   styles, and use `(NodeId, PseudoElement)` identity so a pseudo fragment cannot merge into an
   identically styled host fragment. Generated content inside a link inherits the href and the
   normal hit-testing path.
@@ -85,8 +87,9 @@ word-spacing targets processed ASCII spaces, and spaced native painting advances
 scalar while layout width stays anchored to whole-run GDI measurement plus CSS spacing.
 Inline replaced elements do not yet fully honor nowrap semantics or receive these box
 fragments/generated pseudos. Generated `display:block` currently forces a line boundary but is
-not yet a full virtual block box; an empty generated string does not materialize a decoration,
-and `content:attr()`/counters/quotes/images are not implemented. Only one decorated inline
+not yet a full virtual block box; an empty generated string does not materialize a decoration.
+Generated `url()` images, quote keywords, custom counter styles and fully spec-complete counter
+scope edge cases are not implemented. Only one decorated inline
 ancestor is represented at a time; a nested inline with
 its own box replaces the outer decoration for that nested run. Fragment edges currently clone
 on each wrapped line rather than implementing `box-decoration-break: slice`. Floats/tables/
