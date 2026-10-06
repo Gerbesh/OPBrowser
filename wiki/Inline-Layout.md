@@ -3,14 +3,14 @@
 DOM image content sizes come from computed CSS width/height/min/max/box-sizing around the
 intrinsic raster ratio. HTML size attributes are hints before author cascade; CSS auto resets
 them. Percent widths/font-relative units and definite heights are supported. Percentage
-height propagation and unavailable replaced-image boxes remain later work. Existing viewport
+height propagation remains later work. Existing viewport
 fitting still runs after CSS constraints and can shrink below minima.
 
 DOM img elements now carry their own padding/background/solid-border box. The outer width
 participates in atomic wrapping/alignment; raster fitting reserves horizontal edge space.
 The border-box bottom aligns to the text baseline and vertical edges expand safe line ascent.
 Decorations use exact image bounds. nowrap suppresses soft wrapping of image items. Nested
-ancestor box stacks and unavailable replaced-image boxes remain later work; native image
+ancestor box stacks remain around image boxes; native image
 click regions still cover the painted raster rectangle.
 
 Inline before/after with exactly one parsed URL now uses the same CSS dimensions and own
@@ -114,9 +114,10 @@ still materialize decorations. Empty generated strings and ordinary childless in
 with their own box carry EmptyInline items: edge width affects wrapping/nowrap/alignment and
 font/vertical-edge metrics affect line geometry. They emit BoxDecoration without TextBox glyphs.
 Generated `url()` images share ordered inline text/image lists, baselines, atomic wrapping,
-intrinsic sizes and anchor click identity. Missing generated resources add no inline image;
-surrounding text remains. Unavailable replacement box geometry,
-language-aware automatic quote selection, custom counter styles and fully spec-complete counter
+intrinsic sizes and anchor click identity. Missing sole-URL replacements preserve CSS geometry
+around zero natural dimensions without pixels; mixed failures skip images and preserve text/
+empty pseudo boxes. Nonempty DOM alt receives its own inline styling or ordinary block geometry.
+Language-aware automatic quote selection, custom counter styles and fully spec-complete counter
 scope edge cases are not implemented. Fragment edges currently clone
 on each wrapped line rather than implementing `box-decoration-break: slice`. Floats/tables/
 flex/grid also remain future work. Hyperlinks use computed text color/decoration, with UA

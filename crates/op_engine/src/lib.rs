@@ -1320,6 +1320,25 @@ mod tests {
     }
 
     #[test]
+    fn unavailable_replaced_boxes_paint_css_without_rasters_and_survive_reflow() {
+        let html = "<style>a::before { content:url(missing);display:block;width:80px;height:30px;box-sizing:border-box;padding:4px;border:2px solid red;background:blue;margin:8px auto 12px }</style><a href=next>Alt link</a><img src=missing alt='' style='width:40px;height:20px;padding:2px;border:1px solid green;background:red'><img src=missing alt='Fallback' style='padding:3px;border:1px solid blue'>";
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(html, 800, 600);
+        assert!(
+            !original
+                .commands
+                .iter()
+                .any(|command| matches!(command, PaintCommand::Image { .. }))
+        );
+        assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { width:80, height:30, color, .. } if *color == (op_paint::Color { r:0, g:0, b:255 }))));
+        assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { width:46, height:26, color, .. } if *color == (op_paint::Color { r:255, g:0, b:0 }))));
+        assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::Text { text, links, .. } if text == "Alt link" && links[0].href == "next")));
+        assert!(contains_text(&original, "Fallback"));
+        engine.reflow(240, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn legacy_document_text_and_entity_decoded_links_reach_paint() {
         let mut engine = Engine::new();
         let page = engine.navigate("data:text/html;charset=windows-1251,%3Ch1%3E%CF%F0%E8%E2%E5%F2%3C%2Fh1%3E%3Cp%3E%26copy%3B%3C%2Fp%3E%3Cp%3E%3Ca%20href%3D%27https%3A%2F%2Fexample.com%2F%3Fa%3D1%26amp%3Bb%3D2%27%3EGo%3C%2Fa%3E%3C%2Fp%3E", 800, 600).unwrap();

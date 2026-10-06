@@ -1,4 +1,6 @@
-use super::inline::{InlineBoxStyle, InlineBoxes, InlineChar, InlineStyle, Item, Lines};
+use super::inline::{
+    InlineBoxStyle, InlineBoxes, InlineChar, InlineImage, InlineStyle, Item, Lines,
+};
 use super::*;
 use op_css::{
     BorderEdges, BorderStyle, BoxSizing, ComputedFontWeight, ComputedLineHeight, ComputedStyle,
@@ -89,6 +91,7 @@ struct Context<'a, 'm> {
 enum BlockContent {
     Element(NodeId),
     Generated(NodeId, PseudoElement),
+    ImageAlt(NodeId),
 }
 
 #[derive(Clone, Copy)]
@@ -262,6 +265,11 @@ impl<'a> Context<'a, '_> {
             BlockContent::Generated(id, pseudo) => {
                 self.collect_generated_items((id, pseudo), href, style, content_width, &mut items)
             }
+            BlockContent::ImageAlt(id) => {
+                if let Some(element) = self.document.element(id) {
+                    self.collect_image(id, element, href, style, content_width, &mut items);
+                }
+            }
         }
         self.emit(&mut items, style, content_x, content_width);
         // Parent/child margin collapse is intentionally deferred; consume the final
@@ -332,7 +340,10 @@ impl<'a> Context<'a, '_> {
                 }
                 let mut current = self.element_style(id, tag, inherited);
                 if display == Display::Inline {
-                    current.inline.boxes = if tag == "img" {
+                    current.inline.boxes = if tag == "img"
+                        && (self.images.contains_key(&id)
+                            || attribute(element, "alt").is_none_or(str::is_empty))
+                    {
                         inherited.inline.boxes
                     } else {
                         resolve_inline_box_style(id, None, current, containing_width)
@@ -351,26 +362,24 @@ impl<'a> Context<'a, '_> {
                 if tag == "img" {
                     if display == Display::Block {
                         self.emit(items, inherited, containing_x, containing_width);
-                        if let Some(image) = self.images.get(&id).cloned() {
+                        let image = self.images.get(&id).cloned();
+                        if image.is_some() || attribute(element, "alt").is_none_or(str::is_empty) {
                             self.block_image(
                                 (id, None),
                                 href,
                                 current,
-                                &image,
+                                image.as_ref(),
                                 (containing_x, containing_width),
                             );
                             return;
                         }
-                        let mut image_items = Vec::new();
-                        self.collect_image(
-                            id,
-                            element,
+                        self.block(
+                            BlockContent::ImageAlt(id),
                             href,
                             current,
+                            containing_x,
                             containing_width,
-                            &mut image_items,
                         );
-                        self.emit(&mut image_items, current, containing_x, containing_width);
                     } else {
                         self.collect_image(id, element, href, current, containing_width, items);
                     }
@@ -462,12 +471,10 @@ impl<'a> Context<'a, '_> {
         }
 
         let mut style = computed_style(generated.style);
-        if generated.replaced_image
-            && generated.style.display == Display::Block
-            && let Some(image) = self.generated_images.get(&(id, pseudo, 0)).cloned()
-        {
+        if generated.replaced_image && generated.style.display == Display::Block {
+            let image = self.generated_images.get(&(id, pseudo, 0)).cloned();
             self.emit(items, host_style, containing_x, containing_width);
-            self.block_image((id, Some(pseudo)), href, style, &image, containing);
+            self.block_image((id, Some(pseudo)), href, style, image.as_ref(), containing);
             return;
         }
         if generated.style.display == Display::Block {
@@ -490,7 +497,11 @@ impl<'a> Context<'a, '_> {
             }
             return;
         }
+        let initial_len = items.len();
         self.collect_generated_items((id, pseudo), href, style, containing_width, items);
+        if items.len() == initial_len && style.inline.boxes.is_some() {
+            items.push(Item::EmptyInline(style.inline));
+        }
     }
 
     fn collect_generated_items(
@@ -514,7 +525,8 @@ impl<'a> Context<'a, '_> {
                     })
                 })),
                 op_css::GeneratedContentItem::Image { .. } => {
-                    if let Some(image) = self.generated_images.get(&(target.0, target.1, index)) {
+                    let image = self.generated_images.get(&(target.0, target.1, index));
+                    if image.is_some() || generated.replaced_image {
                         let mut image_style = style.inline;
                         let mut own_box = None;
                         let sizing = if generated.replaced_image
@@ -537,7 +549,7 @@ impl<'a> Context<'a, '_> {
                         };
                         let Some((width, height)) = resolve_image_size(
                             sizing,
-                            image,
+                            image.map_or((0, 0), |pixels| (pixels.width(), pixels.height())),
                             own_box,
                             containing_width,
                             containing_width
@@ -546,12 +558,10 @@ impl<'a> Context<'a, '_> {
                             continue;
                         };
                         items.push(Item::Image(
-                            ImageBox {
-                                x: 0,
-                                y: 0,
+                            InlineImage {
                                 width,
                                 height,
-                                image: image.clone(),
+                                image: image.cloned(),
                                 href: href.map(str::to_owned),
                             },
                             image_style,
@@ -572,12 +582,13 @@ impl<'a> Context<'a, '_> {
         available_width: i32,
         items: &mut Vec<Item<'a>>,
     ) {
-        if let Some(image) = self.images.get(&id) {
+        let image = self.images.get(&id);
+        if image.is_some() || attribute(element, "alt").is_none_or(str::is_empty) {
             let image_style = style.inline;
             let own_box = resolve_inline_box_style(id, None, style, available_width);
             let Some((width, height)) = resolve_image_size(
                 style,
-                image,
+                image.map_or((0, 0), |pixels| (pixels.width(), pixels.height())),
                 own_box,
                 available_width,
                 available_width.saturating_sub(self.inline_boxes.horizontal(image_style.boxes)),
@@ -585,12 +596,10 @@ impl<'a> Context<'a, '_> {
                 return;
             };
             items.push(Item::Image(
-                ImageBox {
-                    x: 0,
-                    y: 0,
+                InlineImage {
                     width,
                     height,
-                    image: image.clone(),
+                    image: image.cloned(),
                     href: href.map(str::to_owned),
                 },
                 image_style,
@@ -606,7 +615,7 @@ impl<'a> Context<'a, '_> {
             }
             items.extend(
                 attribute(element, "alt")
-                    .unwrap_or("[image]")
+                    .unwrap_or_default()
                     .chars()
                     .map(|ch| {
                         Item::Char(InlineChar {
@@ -624,7 +633,7 @@ impl<'a> Context<'a, '_> {
         target: (NodeId, Option<PseudoElement>),
         href: Option<&str>,
         style: Style,
-        image: &Arc<RasterImage>,
+        image: Option<&Arc<RasterImage>>,
         containing: (i32, i32),
     ) {
         let (containing_x, containing_width) = containing;
@@ -638,9 +647,13 @@ impl<'a> Context<'a, '_> {
         let fit_width = containing_width
             .saturating_sub(margin_left.unwrap_or(0))
             .saturating_sub(margin_right.unwrap_or(0));
-        let Some((width, height)) =
-            resolve_image_size(style, image, box_style, containing_width, fit_width)
-        else {
+        let Some((width, height)) = resolve_image_size(
+            style,
+            image.map_or((0, 0), |pixels| (pixels.width(), pixels.height())),
+            box_style,
+            containing_width,
+            fit_width,
+        ) else {
             return;
         };
         let outer_width = width.saturating_add(left).saturating_add(right);
@@ -666,15 +679,17 @@ impl<'a> Context<'a, '_> {
                 border_left: box_style.border_left,
             });
         }
-        self.order.push(LayoutItem::Image(self.images_out.len()));
-        self.images_out.push(ImageBox {
-            x: x.saturating_add(left),
-            y: self.y.saturating_add(top),
-            width,
-            height,
-            image: image.clone(),
-            href: href.map(str::to_owned),
-        });
+        if let Some(image) = image {
+            self.order.push(LayoutItem::Image(self.images_out.len()));
+            self.images_out.push(ImageBox {
+                x: x.saturating_add(left),
+                y: self.y.saturating_add(top),
+                width,
+                height,
+                image: image.clone(),
+                href: href.map(str::to_owned),
+            });
+        }
         self.y = self.y.saturating_add(outer_height);
         self.pending_margin = Some(resolve_vertical_margin(
             style.margin.bottom,
@@ -699,7 +714,7 @@ impl<'a> Context<'a, '_> {
 
 fn resolve_image_size(
     style: Style,
-    image: &RasterImage,
+    natural: (u32, u32),
     box_style: Option<InlineBoxStyle>,
     available_width: i32,
     fit_width: i32,
@@ -722,7 +737,7 @@ fn resolve_image_size(
         LengthPercentage::Percent(_) => None,
     };
     let (width, height) = super::replaced::dimensions(
-        (image.width(), image.height()),
+        natural,
         style.width.map(width_value),
         style.height.and_then(height_value),
         (
@@ -734,18 +749,26 @@ fn resolve_image_size(
             style.max_height.and_then(height_value),
         ),
     );
-    if width == 0 || height == 0 {
+    let transparent = natural == (0, 0);
+    if (!transparent && (width == 0 || height == 0))
+        || (transparent
+            && width == 0
+            && height == 0
+            && horizontal_extras == 0
+            && vertical_extras == 0)
+    {
         return None;
     }
     let (mut width, mut height) = (width as u32, height as u32);
     let available_width = fit_width.saturating_sub(horizontal_extras).max(1) as u32;
     if width > available_width {
-        height = (u64::from(height) * u64::from(available_width) / u64::from(width)).max(1) as u32;
+        height = (u64::from(height) * u64::from(available_width) / u64::from(width))
+            .max(u64::from(height > 0)) as u32;
         width = available_width;
     }
     if height > op_image::MAX_DIMENSION {
-        width = (u64::from(width) * u64::from(op_image::MAX_DIMENSION) / u64::from(height)).max(1)
-            as u32;
+        width = (u64::from(width) * u64::from(op_image::MAX_DIMENSION) / u64::from(height))
+            .max(u64::from(width > 0)) as u32;
         height = op_image::MAX_DIMENSION;
     }
     Some((width as i32, height as i32))

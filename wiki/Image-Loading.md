@@ -70,8 +70,9 @@ shrink proportionally to fit content width and cap displayed height at 4096.
 DOM img padding/background/solid borders form atomic inline boxes around those content
 dimensions. Width fitting reserves edge space, the border-box bottom aligns to baseline,
 and nowrap keeps image boxes on the current line. Image hit regions cover the raster content.
-Surrounding text retains order; unavailable/blocked/over-budget images use `alt`
-(or `[image]` when alt is absent). An explicitly empty alt remains empty.
+Surrounding text retains order; unavailable/blocked/over-budget images with nonempty `alt`
+use styled text fallback. Empty/absent alt uses transparent replacement geometry around zero
+natural dimensions. CSS sizes/min/max/padding/borders still apply, without a fake raster or label.
 An image failure does not fail document navigation or roll back history.
 
 ImageBox and Image paint commands carry Arc pixels and inherited anchor hrefs.
@@ -81,7 +82,7 @@ skipped. Image rectangles use the existing toolbar/scroll-aware click/cursor hit
 testing and clear when the display list is replaced.
 
 Full CSS replaced-element layout, progressive loading, animation, srcset/picture,
-unavailable replacement box geometry, percentage-height propagation, SVG/WebP/AVIF, EXIF orientation
+full loading-state/quirks-mode fallback semantics, percentage-height propagation, SVG/WebP/AVIF, EXIF orientation
 and color management remain future work.
 
 ## CSS generated image content
@@ -98,17 +99,20 @@ PageImages retains generated Arc resources by (host NodeId, pseudo, item index) 
 images. Both share the cache and all bounds above; failed URLs remain cached. Generated
 images use intrinsic sizes, shrink to available content width, share normal text baselines,
 wrap atomically and can enter generated block flow. They inherit anchor href for native clicks.
-Unavailable generated images add no inline image or alt label. Their surrounding content
-still renders. Unavailable replacement box geometry, image modifiers/gradients and alternative-text
+Unavailable images in mixed lists add no image or alt label; their surrounding text/empty
+pseudo decorations still render. Image modifiers/gradients and alternative-text
 content syntax remain future work. In-memory render_html/set_html_page still perform no
 subresource loading; use source navigation for images.
 
 A content declaration consisting of exactly one URL marks an image replacement before text
 materialization. Inline image pseudos share DOM img CSS size/box-sizing/min/max/ratio/fitting
 and their own padding/background/border geometry. A URL beside even an empty string or quote
-action remains an anonymous image in a content list. Unavailable
-replaced-image box behavior remain later work; missing generated resources currently omit the
-image. Native hit regions continue to cover raster content pixels.
+action remains an anonymous image in a content list. Missing sole-URL replacements have zero
+natural dimensions and no ratio: CSS axes resolve independently, including zero content axes
+with nonzero padding/borders. Optional-pixel InlineImage carries geometry without generating
+ImageBox/paint/hit regions. Native hit regions continue to cover available raster content pixels.
+References: [invalid CSS image replacement](https://www.w3.org/TR/css-content-3/#content-property),
+[HTML image fallback](https://html.spec.whatwg.org/multipage/rendering.html#images-3).
 
 Inline DOM/sole-URL images retain decorated ancestor stacks and a separate atomic own box.
 Anonymous images in mixed pseudo lists remain inside the pseudo/host fragments. Available
@@ -118,8 +122,8 @@ block width. Outer backgrounds paint before inner image decorations and shared r
 Block DOM and sole-URL images share intrinsic/CSS sizing, auto horizontal margins and adjacent
 vertical margin collapse. Exact padding/border box height advances block flow without extra
 text-line leading; percent widths retain containing width as their basis while fitting leaves
-space for specified horizontal margins. Missing block DOM images retain the current alt-line
-fallback; unavailable generated replacement boxes remain future work.
+space for specified horizontal margins. Missing replacements share exact block geometry without
+anonymous line leading; nonempty DOM alt uses ordinary block sizing via BlockContent::ImageAlt.
 
     cargo run -p op_browser -- --image-smoke-test examples/css/generated-images.html
     cargo run -p op_browser -- --link-smoke-test examples/css/generated-images.html

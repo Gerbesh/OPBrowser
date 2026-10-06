@@ -4,3 +4,4 @@ body { color:#123456; }
 .mixed-images::before { --icon:url(../images/colors.png); content:"[before " var(--icon) " after] "; color:#087a35; }
 .block-image::after { content:url("../images/colors.png"); display:block; width:80px; height:40px; margin:8px auto; padding:6px; background:#eef2ff; border:1px solid #4338ca; }
 .failed-image::before { content:"[kept " url(missing.png) " text] "; color:#b42318; }
+.failed-image::after { content:url(missing.png); display:block; width:80px; height:30px; box-sizing:border-box; padding:4px; border:2px solid #4338ca; background:#eef2ff; margin:8px auto; }

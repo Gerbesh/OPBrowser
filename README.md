@@ -108,6 +108,8 @@ An inline before/after containing only one URL gets the same CSS sizes/decoratio
 mixed content images keep intrinsic anonymous item sizing.
 Block DOM/sole-URL images use intrinsic/CSS width, auto margins, precise border-box height
 and adjacent vertical margin collapsing through one replaced-image geometry path.
+Unavailable sole-URL images and DOM images without nonempty alt retain CSS geometry around
+zero natural dimensions, without raster paint. Nonempty alt uses styled text fallback.
 Author declarations retain their style/link/inline source node; the engine retains effective
 external stylesheet addresses after redirects, preparing correct CSS resource bases.
 `background` also supports the initial color-only shorthand subset. Inherited, case-sensitive
@@ -126,7 +128,7 @@ Adjacent sibling vertical margins collapse. External CSS is merged with embedded
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
 percentage-height propagation, broader custom-property grammar/registration and
 language-aware automatic quotes, full
-unavailable replacement box geometry, relational selectors, sliced inline decoration edges,
+full HTML image-state/quirks-mode fallback semantics, relational selectors, sliced inline decoration edges,
 advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources
 and JavaScript

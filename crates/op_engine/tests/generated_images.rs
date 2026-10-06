@@ -220,7 +220,7 @@ fn redirected_css_images_share_cache_and_skip_hidden_blocked_and_failed_sources(
         let responses: Vec<(&str, &str, &str, &[u8])> = vec![
             ("/index.html", "200 OK", "Content-Type: text/html\r\n", b"<link rel=stylesheet href='/theme.css'><p><a href='next.html'>Body</a><img src='/assets/icon.png'></p><div class=hidden>hidden</div><span class=off>Off</span><span class=failed>Body</span><span class=blocked>Blocked</span>"),
             ("/theme.css", "302 Found", "Location: /assets/theme.css\r\n", b""),
-            ("/assets/theme.css", "200 OK", "Content-Type: text/css\r\n", b"a::before { content:'Before' url(icon.png) 'After' } a::after { content:url('icon.png') } .hidden { display:none } .hidden::before { content:url(hidden.png) } .off::before { display:none; content:url(off.png) } .failed::before { content:'ok' url(missing.png) 'tail' url(missing.png) } .blocked::before { content:url('file:///C:/private.png') }"),
+            ("/assets/theme.css", "200 OK", "Content-Type: text/css\r\n", b"a::before { content:'Before' url(icon.png) 'After' } a::after { content:url('icon.png') } .hidden { display:none } .hidden::before { content:url(hidden.png) } .off::before { display:none; content:url(off.png) } .failed::before { content:'ok' url(missing.png) 'tail' url(missing.png) } .failed::after { content:url(missing.png);display:block;width:100px;height:40px;box-sizing:border-box;padding:4px;border:2px solid red;background:blue;margin:8px auto } .blocked::before { content:url('file:///C:/private.png');width:38px;height:20px;padding:2px;border:1px solid green;background:#123456 }"),
             ("/assets/icon.png", "200 OK", "Content-Type: image/png\r\n", include_bytes!("../../../examples/images/colors.png")),
             ("/assets/missing.png", "404 Missing", "", b""),
         ];
@@ -279,6 +279,8 @@ fn redirected_css_images_share_cache_and_skip_hidden_blocked_and_failed_sources(
     assert!(text.contains("oktailBody"));
     assert!(!text.contains("hidden"));
     assert!(!text.contains("[image]"));
+    assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { width:100, height:40, color, .. } if *color == (op_paint::Color { r:0, g:0, b:255 }))));
+    assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { width:44, height:26, color, .. } if *color == (op_paint::Color { r:18, g:52, b:86 }))));
     engine.reflow(240, 600).unwrap();
     assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
 }

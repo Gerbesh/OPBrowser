@@ -217,6 +217,143 @@ fn generated_replacements_and_mixed_lists_keep_host_and_pseudo_box_stacks() {
 }
 
 #[test]
+fn unavailable_generated_replacements_keep_atomic_css_boxes_inside_ancestors() {
+    let page = layout(
+        "<style>#s::before { content:url(missing);width:30px;height:20px;padding:2px;border:1px solid green;background:blue }</style><p><a id=s href=next style='padding:2px;border:1px solid red'>B</a>Z</p>",
+        300,
+        &mut Fixed,
+    );
+    assert!(page.image_boxes.is_empty());
+    assert_eq!(page.box_decorations.len(), 2);
+    assert_eq!(
+        (page.box_decorations[0].x, page.box_decorations[0].width),
+        (32, 52)
+    );
+    assert_eq!(
+        (
+            page.box_decorations[1].x,
+            page.box_decorations[1].width,
+            page.box_decorations[1].height
+        ),
+        (35, 36, 26)
+    );
+    assert_eq!(
+        page.text_boxes
+            .iter()
+            .map(|text| (text.text.as_str(), text.x))
+            .collect::<Vec<_>>(),
+        [("B", 71), ("Z", 84)]
+    );
+    assert_eq!(page.text_boxes[0].links[0].href, "next");
+}
+
+#[test]
+fn unavailable_block_replacements_use_exact_sizes_margins_and_zero_natural_axes() {
+    for content in [
+        "<style>span::before { content:url(missing);display:block;width:100px;height:40px;box-sizing:border-box;padding:4px;border:2px solid red;background:blue;margin:8px auto 12px }</style><span>Tail</span>",
+        "<img src=bad alt='' style='display:block;width:100px;height:40px;box-sizing:border-box;padding:4px;border:2px solid red;background:blue;margin:8px auto 12px'>Tail",
+        "<img src=bad style='display:block;width:100px;height:40px;box-sizing:border-box;padding:4px;border:2px solid red;background:blue;margin:8px auto 12px'>Tail",
+    ] {
+        let page = layout(content, 300, &mut Fixed);
+        assert!(page.image_boxes.is_empty());
+        let box_style = &page.box_decorations[0];
+        assert_eq!(
+            (box_style.x, box_style.y, box_style.width, box_style.height),
+            (100, 36, 100, 40)
+        );
+        assert_eq!(page.text_boxes.len(), 1);
+        assert_eq!(page.text_boxes[0].text, "Tail");
+        assert!(page.text_boxes[0].y >= 88);
+    }
+}
+
+#[test]
+fn unavailable_empty_alt_and_mixed_pseudos_keep_edges_without_fake_pixels_or_labels() {
+    let page = layout(
+        "<style>#s::before { content:'' url(missing);padding:3px;border:1px solid blue;width:100px }</style><p><img src=bad alt='' style='width:30px;padding:2px;border:1px solid red'><img src=bad alt='' style='height:10px;border:2px solid green'><span id=s></span>Z</p>",
+        300,
+        &mut Fixed,
+    );
+    assert!(page.image_boxes.is_empty());
+    assert_eq!(page.box_decorations.len(), 3);
+    assert_eq!(
+        page.box_decorations
+            .iter()
+            .map(|box_style| (box_style.x, box_style.width))
+            .collect::<Vec<_>>(),
+        [(32, 36), (68, 4), (72, 8)]
+    );
+    assert_eq!(
+        (
+            page.box_decorations[0].height,
+            page.box_decorations[1].height
+        ),
+        (6, 14)
+    );
+    assert_eq!(page.text_boxes.len(), 1);
+    assert_eq!(
+        (page.text_boxes[0].text.as_str(), page.text_boxes[0].x),
+        ("Z", 80)
+    );
+}
+
+#[test]
+fn failed_alt_text_has_own_inline_or_block_style_without_replaced_inline_dimensions() {
+    let page = layout(
+        "<p><span style='padding:2px;border:1px solid red'><img src=bad alt='XY' style='width:100px;height:50px;padding:3px;border:1px solid blue'></span>Z</p>",
+        300,
+        &mut Fixed,
+    );
+    assert_eq!(page.box_decorations.len(), 2);
+    assert_eq!(
+        (page.box_decorations[0].x, page.box_decorations[0].width),
+        (32, 34)
+    );
+    assert_eq!(
+        (page.box_decorations[1].x, page.box_decorations[1].width),
+        (35, 28)
+    );
+    assert_eq!(
+        page.text_boxes
+            .iter()
+            .map(|text| (text.text.as_str(), text.x))
+            .collect::<Vec<_>>(),
+        [("XY", 39), ("Z", 66)]
+    );
+    let page = layout(
+        "<img src=bad alt='XY' style='display:block;width:100px;height:40px;box-sizing:border-box;padding:4px;border:2px solid red;background:blue;margin:8px auto 12px'>Tail",
+        300,
+        &mut Fixed,
+    );
+    let box_style = &page.box_decorations[0];
+    assert_eq!(
+        (box_style.x, box_style.y, box_style.width, box_style.height),
+        (100, 36, 100, 40)
+    );
+    assert_eq!(page.text_boxes[0].x, 106);
+    assert!(page.text_boxes[1].y >= 88);
+}
+
+#[test]
+fn unavailable_inline_replacements_wrap_atomically_and_obey_nowrap() {
+    for (white_space, expected_x, wraps) in [("normal", 32, true), ("nowrap", 82, false)] {
+        let html = format!(
+            "<style>span::before {{ content:url(missing);width:30px;height:12px;padding:1px;border:1px solid blue }}</style><p style='width:60px;white-space:{white_space}'>1234 <span></span>Z</p>"
+        );
+        let page = layout(&html, 300, &mut Fixed);
+        assert!(page.image_boxes.is_empty());
+        assert_eq!(page.box_decorations.len(), 1);
+        let box_style = &page.box_decorations[0];
+        assert_eq!(
+            (box_style.x, box_style.width, box_style.height),
+            (expected_x, 34, 16)
+        );
+        assert_eq!(page.text_boxes[1].x, expected_x + 34);
+        assert_eq!(page.text_boxes[1].y > page.text_boxes[0].y, wraps);
+    }
+}
+
+#[test]
 fn shares_baseline_and_exact_horizontal_extents_between_text_image_and_unicode_link() {
     let page = layout(
         "<p>Before <a href='/next'><img src=ok width=40 height=32> Привет 😀</a> after</p>",

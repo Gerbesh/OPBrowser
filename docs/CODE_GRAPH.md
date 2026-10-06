@@ -334,7 +334,9 @@ classDiagram
         no glyph payload
     }
     class InlineImage {
-        ImageBox
+        used width and height
+        optional Arc RasterImage
+        href
         InlineStyle ancestor stack index
         optional own InlineBoxStyle
         atomic wrapping / nowrap
@@ -342,6 +344,7 @@ classDiagram
     class BlockContent {
         Element(NodeId)
         Generated(NodeId,PseudoElement)
+        ImageAlt(NodeId)
     }
     class BoxDecoration {
         bounds
@@ -452,6 +455,8 @@ classDiagram
     ComputedPseudoStyle --> BlockContent : display block retained text
     Document --> BlockContent : ordinary element child traversal
     BlockContent --> BoxDecoration : shared normal-flow block geometry / empty boxes
+    InlineImage --> ImageBox : only available raster payloads produce paint items
+    InlineImage --> BoxDecoration : transparent failed replacements preserve CSS geometry
     ComputedPseudoStyle --> InlineBoxStyle : pseudo decoration identity + box style
     InlineBoxes --> InlineBoxStyle : one style per owned node / parent index
     InlineStyle --> InlineBoxes : one stack index per character or image
@@ -626,4 +631,9 @@ participate in width fitting, wrap and alignment. Lines allocates outer decorati
 opening fragments, then fills bounds when closing, so nested opaque backgrounds paint in
 containment order. Image own boxes remain atomic inside ancestor fragments; fitting reserves
 ancestor edges while percentage dimensions retain the containing block width as their basis.
-Next: unavailable replaced-image boxes and sliced inline decoration edges.
+InlineImage separates used dimensions from optional pixels. Missing sole-URL and DOM empty/
+absent-alt images use zero natural dimensions, independent CSS size axes and shared atomic/
+block decorations without allocating pixels or native image hit regions. Nonempty alt uses
+the styled inline formatter or BlockContent::ImageAlt normal block path. Mixed generated
+failures omit anonymous images while preserving empty pseudo decorations.
+Next: sliced inline decoration edges and broader computed values.

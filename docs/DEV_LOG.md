@@ -1021,3 +1021,24 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 229 workspace tests,
   startup smoke, nested/generated image smoke (56 commands), native image-only link navigation
   and optimized workspace release build.
+
+## 2026-10-06 - Unavailable replacement and styled alt geometry
+
+- Added private InlineImage used dimensions with optional Arc pixels. Missing sole-URL CSS
+  replacements and DOM images with empty/absent alt use zero natural dimensions and shared
+  inline/block box placement, without manufacturing raster buffers or image hit regions.
+- Replaced sizing resolves axes independently when a natural dimension is zero. CSS size/
+  min/max/box-sizing/padding/borders still apply; width/height fitting preserves zero axes.
+  Atomic wrapping, nowrap, nested ancestor fragments, auto margins and exact block height
+  work for transparent replacements through the same paths as decoded images.
+- Nonempty DOM alt keeps its own inline box styling or uses BlockContent::ImageAlt normal
+  block geometry. Mixed generated failures skip anonymous images while retaining text and
+  empty pseudo decorations. Removed the fabricated [image] label for absent alt.
+- Added zero-natural-axis sizing, exact missing inline/block/alt/empty/mixed coordinates,
+  atomic wrap/nowrap, Engine no-raster paint/reflow regressions and failed/blocked HTTP cache
+  assertions. Updated fixtures, README, plan, graph/slices and inline/box/image wiki.
+- Consulted primary CSS Generated Content and HTML rendering rules. Full loading-state and
+  quirks-mode HTML fallback semantics remain later work; native image hit regions require pixels.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 236 workspace tests,
+  startup smoke, failed/styled/nested generated image smoke (79 commands), native image-link
+  navigation and optimized workspace release build.

@@ -143,10 +143,17 @@ pub(super) struct InlineChar<'a> {
     pub style: InlineStyle,
 }
 
+pub(super) struct InlineImage {
+    pub width: i32,
+    pub height: i32,
+    pub image: Option<std::sync::Arc<op_image::RasterImage>>,
+    pub href: Option<String>,
+}
+
 pub(super) enum Item<'a> {
     Char(InlineChar<'a>),
     EmptyInline(InlineStyle),
-    Image(ImageBox, InlineStyle, Option<InlineBoxStyle>),
+    Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
     Break,
 }
 
@@ -155,7 +162,7 @@ enum BoxItem<'a> {
         chars: Vec<InlineChar<'a>>,
         width: i32,
     },
-    Image(ImageBox, InlineStyle, Option<InlineBoxStyle>),
+    Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
     EmptyInline(InlineStyle),
 }
 
@@ -171,7 +178,7 @@ struct PreparedText {
 
 enum PreparedBox {
     Text(PreparedText),
-    Image(ImageBox, InlineStyle, Option<InlineBoxStyle>),
+    Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
 }
 
 pub(super) struct Lines<'a, 'm> {
@@ -458,7 +465,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         }
     }
 
-    fn image(&mut self, image: ImageBox, style: InlineStyle, own_box: Option<InlineBoxStyle>) {
+    fn image(&mut self, image: InlineImage, style: InlineStyle, own_box: Option<InlineBoxStyle>) {
         let space = if self.boxes.is_empty() {
             None
         } else {
@@ -694,7 +701,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             }
 
             match item {
-                PreparedBox::Image(mut image, _, own_box) => {
+                PreparedBox::Image(image, _, own_box) => {
                     if let Some(box_style) = own_box {
                         let left = box_style.left_extra();
                         let right = box_style.right_extra();
@@ -713,13 +720,21 @@ impl<'a, 'm> Lines<'a, 'm> {
                         });
                         x = x.saturating_add(left);
                     }
-                    image.x = x;
-                    image.y =
-                        baseline - image.height - own_box.map_or(0, InlineBoxStyle::bottom_extra);
+                    if let Some(pixels) = image.image {
+                        self.order.push(LayoutItem::Image(self.image_boxes.len()));
+                        self.image_boxes.push(ImageBox {
+                            x,
+                            y: baseline
+                                - image.height
+                                - own_box.map_or(0, InlineBoxStyle::bottom_extra),
+                            width: image.width,
+                            height: image.height,
+                            image: pixels,
+                            href: image.href,
+                        });
+                    }
                     x += image.width;
                     x = x.saturating_add(own_box.map_or(0, InlineBoxStyle::right_extra));
-                    self.order.push(LayoutItem::Image(self.image_boxes.len()));
-                    self.image_boxes.push(image);
                 }
                 PreparedBox::Text(text) => {
                     if text.text.is_empty() {

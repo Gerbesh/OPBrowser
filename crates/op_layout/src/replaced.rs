@@ -19,6 +19,14 @@ pub(super) fn dimensions(
     let natural_height = f64::from(natural.1);
     let clamp_width = |value: f64| value.clamp(min_width, max_width);
     let clamp_height = |value: f64| value.clamp(min_height, max_height);
+    // A missing/invalid image has zero natural dimensions and no usable ratio.
+    // Resolve its axes independently instead of dividing by a zero dimension.
+    if natural.0 == 0 || natural.1 == 0 {
+        return (
+            clamp_width(width.map_or(natural_width, f64::from)) as i32,
+            clamp_height(height.map_or(natural_height, f64::from)) as i32,
+        );
+    }
     let (width, height) = match (width, height) {
         (Some(width), Some(height)) => (
             clamp_width(f64::from(width)),
@@ -55,6 +63,32 @@ pub(super) fn dimensions(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unavailable_natural_dimensions_have_no_ratio_and_keep_css_axes_independent() {
+        for (width, height, limits, expected) in [
+            (None, None, ((0, None), (0, None)), (0, 0)),
+            (Some(80), None, ((0, None), (0, None)), (80, 0)),
+            (None, Some(30), ((0, None), (0, None)), (0, 30)),
+            (Some(80), Some(30), ((0, None), (0, None)), (80, 30)),
+            (None, None, ((20, None), (10, None)), (20, 10)),
+            (
+                Some(80),
+                Some(30),
+                ((0, Some(40)), (50, Some(20))),
+                (40, 50),
+            ),
+        ] {
+            assert_eq!(
+                dimensions((0, 0), width, height, limits.0, limits.1),
+                expected
+            );
+        }
+        assert_eq!(
+            dimensions((0, 20), Some(40), None, (0, None), (0, None)),
+            (40, 20)
+        );
+    }
 
     #[test]
     fn resolves_natural_explicit_auto_and_zero_dimensions() {

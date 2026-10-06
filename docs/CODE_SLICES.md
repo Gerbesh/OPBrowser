@@ -141,7 +141,8 @@ loaded HTML -> DOM img src (character references already decoded)
   -> image rectangle / scroll-aware hit test / click -> S2 navigation
 ```
 
-Failed/blocked/over-budget images produce alt text (or `[image]` without alt) and
+Failed/blocked/over-budget images produce styled nonempty alt text or transparent replacement
+geometry with empty/absent alt, and
 allow document navigation/history to succeed. Hidden head/script/style/template
 subtrees do not request images. Budgets limit node count, unique attempts, accepted
 encoded bytes and decoded pixel storage; caches are local to each rendered page.
@@ -340,7 +341,7 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> unavailable replaced-image boxes / sliced inline decoration edges
+  -> sliced inline decoration edges / broader computed values
   -> broader custom-property grammar/registration/animation-taint semantics
   -> additional computed properties
 ```
@@ -379,10 +380,10 @@ content strings / URL tokens / quoted url() / var() / quotes / counters
   -> retained Arc resources reused by reflow without requests or decoding
 ```
 
-Invalid/unavailable generated URLs add no inline image while surrounding text remains.
+Invalid/unavailable URLs in mixed generated lists skip images while surrounding text/boxes remain.
 Hidden subtrees/pseudos do not request resources. Ordinary and generated URLs share the
-32-candidate, 8-request, 8 MiB encoded and 32 MiB decoded budgets/cache. Unavailable replacement
-box geometry, gradients/image modifiers and alternative-text syntax remain future work.
+32-candidate, 8-request, 8 MiB encoded and 32 MiB decoded budgets/cache. Gradients/image
+modifiers and alternative-text syntax remain future work.
 The native generated image/link fixture is examples/css/generated-images.html.
 
 DOM img items carry InlineStyle ancestor indices and a separate own InlineBoxStyle. Padding/solid borders reserve
@@ -414,8 +415,8 @@ ComputedPseudoStyle.replaced_image records exactly one parsed URL before empty t
 materialization. Sole-URL inline pseudos use the DOM image resolve_image_size path for CSS
 dimensions, box-sizing, ratio constraints and fitting; their own pseudo InlineBoxStyle adds
 padding/background/borders and atomic baseline/wrapping geometry. Mixed content images remain
-anonymous intrinsic items, even when adjacent text happens to resolve empty. Unavailable
-replaced image boxes remain later work.
+anonymous intrinsic items, even when adjacent text happens to resolve empty. Missing sole-URL
+images use transparent zero-natural-size replacements and preserve CSS axes/box edges.
 
 Block DOM/sole-URL images use Context::block_image: intrinsic/CSS dimensions and exact
 border-box bounds, auto horizontal margins and adjacent vertical-margin collapse. Percentage
@@ -439,6 +440,21 @@ runs. Image fitting reserves ancestor edges without changing CSS percentage base
 mixed generated content share the same path; no repeated inherited box or fake glyph is added.
 Deterministic coverage checks exact nested text/image/pseudo/empty geometry, wrap boundaries,
 percentage fitting, 128 decorated levels, native display-list paint order and stable reflow.
+
+Unavailable replacement slice:
+
+```text
+failed/missing resource -> zero natural dimensions, no intrinsic ratio
+  -> independent CSS axes/min/max/box-sizing -> optional-raster InlineImage
+  -> shared atomic wrap/nowrap/ancestor fragments or exact block size/margins
+  -> background/border decorations, no raster allocation/paint/hit region
+nonempty DOM alt -> styled text with inherited href -> inline fragments or ImageAlt block
+mixed generated failure -> skip anonymous image, retain text/empty pseudo decoration
+```
+
+Zero natural axes remain zero when the other CSS axis is specified; padding/borders still
+have geometry. Missing/blocked/cache-reused HTTP sources are covered through Engine paint
+and retained reflow. Full loading-state/quirks-mode HTML fallback rules remain later work.
 
 ## S4 - Scripted page
 

@@ -186,7 +186,11 @@ Status: IN PROGRESS.
   margins, padding/borders, precise box height and adjacent vertical margin collapsing.
 - DONE nested decorated-inline stacks with parent-linked arena indices, cumulative edge
   geometry, shared text/image/empty/pseudo fragments and outer-before-inner background paint.
-- NEXT unavailable replaced-image box geometry.
+- DONE unavailable sole-URL/empty-or-absent-alt image geometry with zero natural sizes,
+  independent CSS axes, transparent atomic/block boxes and no fake raster allocation.
+- DONE styled nonempty alt fallback through ordinary inline fragments or block sizing;
+  mixed generated failures skip only images while retaining empty pseudo decorations.
+- NEXT sliced inline decoration edges and broader computed values.
 - DONE DOM image padding/background/solid borders as atomic inline boxes, edge-aware
   width fitting, border-box baseline extents, text alignment and nowrap behavior.
 - DONE declaration source-node provenance and retained effective external stylesheet
