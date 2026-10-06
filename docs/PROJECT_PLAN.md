@@ -130,7 +130,10 @@ Status: IN PROGRESS.
 - DONE expand selector syntax/matching with attribute selectors (`[a]`, =, ~=, |=, ^=,
   $=, *=, i/s flags), adjacent/general sibling combinators and structural pseudo-classes
   :root/:first-child/:last-child/:only-child/:empty/:link.
-- NEXT broaden value syntax/colors/functions and add inline box fragments/decorations.
+- DONE expand color values with legacy/modern `rgb()`/`rgba()` and `hsl()`/`hsla()`,
+  percentage/alpha channels, hue angle units, clamping, CSS basic named colors plus
+  `rebeccapurple`, and functional colors in border shorthand/longhands.
+- NEXT add inline box fragments/decorations and richer typography values.
 - LATER functional pseudo-classes (:is/:where/:not/:nth-child), pseudo-elements and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.

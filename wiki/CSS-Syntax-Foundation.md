@@ -77,8 +77,10 @@ specificity, then source order. Invalid values for a supported property are filt
 before choosing the winner, allowing a lower-priority valid declaration to apply.
 
 The current computed subset includes display, text color/font sizing/weight, block
-backgrounds, margin/padding/border edges, width/height min/max and box-sizing. Color is still
-a small named set plus #RGB(A)/#RRGGBB(AA); font-size accepts percentages, px/em/rem,
+backgrounds, margin/padding/border edges, width/height min/max and box-sizing. Color accepts
+#RGB(A)/#RRGGBB(AA), CSS basic named colors plus rebeccapurple, legacy comma and modern
+space/slash rgb()/rgba(), and hsl()/hsla() with hue angle units and alpha. The same color
+parser feeds text, background and borders. Font-size accepts percentages, px/em/rem,
 absolute CSS length units and the current keyword set. Global inherit/initial/unset handling
 is shared by the supported properties.
 
@@ -117,5 +119,6 @@ The local demonstration page is `examples/css/index.html`; it now links a real
 The built-in start page also describes the supported subset in a normal release launch.
 
 The expanded block-level box model is documented in [CSS Block Box Model](CSS-Box-Model.md).
-Next S3 work moves into richer color/value functions and inline box fragments. Functional
-pseudos, pseudo-elements, at-rules, media queries and full CSS conformance remain later.
+Next S3 work moves into inline box fragments/decorations and richer typography values.
+Functional pseudos, pseudo-elements, advanced color spaces, at-rules, media queries and full
+CSS conformance remain later.

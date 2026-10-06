@@ -408,8 +408,9 @@ classDiagram
   ComputedStyleMap. Properties now include display, color, font-size/font-weight,
   background-color, margin/padding edges, independent border edges, width/height min/max and
   box-sizing. Box shorthand/longhand candidates are compared by normal cascade priority;
-  length parsing covers percent, em/rem and CSS absolute units. UA defaults mirror M1
-  block/hidden tags and heading typography; heading/paragraph/list spacing is represented
+  length parsing covers percent, em/rem and CSS absolute units. One CssColor parser now
+  handles hex/basic names plus legacy/modern RGB/HSL functions for text/background/borders.
+  UA defaults mirror M1 block/hidden tags and heading typography; heading/paragraph/list spacing is represented
   as computed margins instead of a separate layout spacing table.
 - op_engine::styles walks link nodes during page preparation, applies the initial
   stylesheet-link activation subset, resolves against the effective document address,

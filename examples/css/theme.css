@@ -14,3 +14,5 @@ h1 { color: #6d28d9; font-size: 42px; }
 .selector-demo[data-state=ready i] > span:first-child + span[data-kind~=accent] { color: #b42318; font-weight: bold; }
 .selector-seed ~ .selector-tail[title$='target'] { color: #0369a1; font-weight: bold; }
 .empty-demo:empty { width: 55%; min-height: 18px; margin: 10px auto; padding: 8px; background-color: #f5f3ff; border: 2px solid #7c3aed; box-sizing: border-box; }
+.color-functions { width: 62%; margin: 12px auto; padding: 10px 14px; color: rgb(180 35 24); background-color: hsl(245 100% 97%); border: 3px solid rgb(67 56 202); }
+.color-functions span { color: rgba(3, 105, 161, .65); }

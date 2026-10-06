@@ -640,6 +640,49 @@ mod tests {
     }
 
     #[test]
+    fn functional_colors_reach_text_background_and_border_paint() {
+        let display_list = Engine::new().render_html(
+            "<div style='color:rgb(255 0 0 / 50%); background-color:hsl(240 100% 50%); border:2px solid rgb(10 20 30); padding:4px'>colors</div>",
+            800,
+            600,
+        );
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text {
+                text,
+                color: op_paint::Color { r: 255, g: 127, b: 127 },
+                ..
+            } if text == "colors"
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::FillRect {
+                color: op_paint::Color { r: 0, g: 0, b: 255 },
+                ..
+            }
+        )));
+        assert!(
+            display_list
+                .commands
+                .iter()
+                .filter(|command| matches!(
+                    command,
+                    PaintCommand::FillRect {
+                        color: op_paint::Color {
+                            r: 10,
+                            g: 20,
+                            b: 30
+                        },
+                        ..
+                    }
+                ))
+                .count()
+                >= 4
+        );
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,

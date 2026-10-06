@@ -21,6 +21,7 @@ a { font-weight: bold; }
 <p>Работают <span class="accent">color, font-size, font-weight</span> и <span class="demo-block">display: block / inline / none.</span></p>
 <div class="box-demo">Box model: width/max-width + margin:auto + %/em padding + box-sizing + independent borders.</div>
 <p>Selectors: attributes, + / ~ siblings and :root/:first-child/:last-child/:only-child/:empty/:link now match in the author cascade.</p>
+<p style="color:rgb(180 35 24); background-color:hsl(245 100% 97%); border:2px solid rgb(67 56 202); padding:8px">Colors: legacy/modern rgb()/rgba() and hsl()/hsla() now feed text, background and borders.</p>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>

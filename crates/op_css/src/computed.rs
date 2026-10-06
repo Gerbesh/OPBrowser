@@ -983,32 +983,31 @@ fn parse_border_shorthand(
     let mut width = None;
     let mut style = None;
     let mut color = None;
-    let mut consumed = 0usize;
-    for token in significant_tokens(tokens) {
+    let components = top_level_components(tokens)?;
+    if components.is_empty() {
+        return None;
+    }
+    for component in components {
         if width.is_none()
-            && let Some(value) = parse_border_width_token(token, font_px)
+            && component.len() == 1
+            && let Some(value) = parse_border_width_token(&component[0], font_px)
         {
             width = Some(value);
-            consumed += 1;
             continue;
         }
         if style.is_none()
-            && let Some(value) = parse_border_style_token(token)
+            && component.len() == 1
+            && let Some(value) = parse_border_style_token(&component[0])
         {
             style = Some(value);
-            consumed += 1;
             continue;
         }
         if color.is_none()
-            && let Some(value) = parse_border_color_token(token, current_color)
+            && let Some(value) = parse_border_color_component(component, current_color)
         {
             color = Some(value);
-            consumed += 1;
             continue;
         }
-        return None;
-    }
-    if consumed == 0 {
         return None;
     }
 
@@ -1046,8 +1045,9 @@ fn parse_border_color_list(
     if let Some(keyword) = global_keyword(tokens) {
         return Some(keyword.map(|()| [current_color; 4]));
     }
-    let values = significant_tokens(tokens)
-        .map(|token| parse_border_color_token(token, current_color))
+    let values = top_level_components(tokens)?
+        .into_iter()
+        .map(|component| parse_border_color_component(component, current_color))
         .collect::<Option<Vec<_>>>()?;
     expand_four(&values).map(Specified::Value)
 }
@@ -1073,7 +1073,7 @@ fn parse_border_color_value(
     if let Some(keyword) = global_keyword(tokens) {
         return Some(keyword.map(|()| current_color));
     }
-    parse_border_color_token(single_significant_token(tokens)?, current_color).map(Specified::Value)
+    parse_border_color_component(tokens, current_color).map(Specified::Value)
 }
 
 fn parse_border_width_token(token: &TokenKind, font_px: f32) -> Option<f32> {
@@ -1102,11 +1102,11 @@ fn parse_border_style_token(token: &TokenKind) -> Option<BorderStyle> {
     }
 }
 
-fn parse_border_color_token(token: &TokenKind, current_color: CssColor) -> Option<CssColor> {
-    if matches!(token, TokenKind::Ident(value) if value.eq_ignore_ascii_case("currentcolor")) {
+fn parse_border_color_component(tokens: &[TokenKind], current_color: CssColor) -> Option<CssColor> {
+    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("currentcolor")) {
         Some(current_color)
     } else {
-        parse_color_token(token)
+        parse_css_color(tokens)
     }
 }
 
@@ -1305,39 +1305,276 @@ impl<T> Specified<T> {
     }
 }
 
+fn top_level_components(tokens: &[TokenKind]) -> Option<Vec<&[TokenKind]>> {
+    let mut components = Vec::new();
+    let mut index = 0usize;
+    while index < tokens.len() {
+        while index < tokens.len() && matches!(tokens[index], TokenKind::Whitespace) {
+            index += 1;
+        }
+        if index == tokens.len() {
+            break;
+        }
+
+        let start = index;
+        if matches!(tokens[index], TokenKind::Function(_)) {
+            let mut depth = 1usize;
+            index += 1;
+            while index < tokens.len() && depth > 0 {
+                match tokens[index] {
+                    TokenKind::Function(_) | TokenKind::OpenParen => depth += 1,
+                    TokenKind::CloseParen => depth -= 1,
+                    _ => {}
+                }
+                index += 1;
+            }
+            if depth != 0 {
+                return None;
+            }
+        } else {
+            index += 1;
+        }
+        components.push(&tokens[start..index]);
+    }
+    Some(components)
+}
+
 fn parse_color(tokens: &[TokenKind]) -> Option<Specified<CssColor>> {
-    if let Some(ident) = single_ident(tokens) {
-        return match ident.to_ascii_lowercase().as_str() {
-            "black" => Some(Specified::Value(CssColor::BLACK)),
-            "white" => Some(Specified::Value(CssColor::WHITE)),
-            "red" => Some(Specified::Value(CssColor::RED)),
-            "green" => Some(Specified::Value(CssColor::GREEN)),
-            "blue" => Some(Specified::Value(CssColor::BLUE)),
-            "transparent" => Some(Specified::Value(CssColor::TRANSPARENT)),
-            "inherit" => Some(Specified::Inherit),
-            "initial" => Some(Specified::Initial),
-            "unset" => Some(Specified::Unset),
-            _ => None,
-        };
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| CssColor::BLACK));
+    }
+    parse_css_color(tokens).map(Specified::Value)
+}
+
+fn parse_css_color(tokens: &[TokenKind]) -> Option<CssColor> {
+    if let Some(token) = single_significant_token(tokens) {
+        return parse_color_token(token);
     }
 
-    parse_color_token(single_significant_token(tokens)?).map(Specified::Value)
+    let significant: Vec<&TokenKind> = significant_tokens(tokens).collect();
+    let TokenKind::Function(name) = significant.first()? else {
+        return None;
+    };
+    if !matches!(significant.last(), Some(TokenKind::CloseParen)) {
+        return None;
+    }
+    let arguments = &significant[1..significant.len() - 1];
+    match name.to_ascii_lowercase().as_str() {
+        "rgb" | "rgba" => parse_rgb_function(arguments),
+        "hsl" | "hsla" => parse_hsl_function(arguments),
+        _ => None,
+    }
 }
 
 fn parse_color_token(token: &TokenKind) -> Option<CssColor> {
     match token {
-        TokenKind::Ident(value) => match value.to_ascii_lowercase().as_str() {
-            "black" => Some(CssColor::BLACK),
-            "white" => Some(CssColor::WHITE),
-            "red" => Some(CssColor::RED),
-            "green" => Some(CssColor::GREEN),
-            "blue" => Some(CssColor::BLUE),
-            "transparent" => Some(CssColor::TRANSPARENT),
-            _ => None,
-        },
+        TokenKind::Ident(value) => named_color(value),
         TokenKind::Hash { value, .. } => parse_hex_color(value),
         _ => None,
     }
+}
+
+fn named_color(value: &str) -> Option<CssColor> {
+    let (red, green, blue, alpha) = match value.to_ascii_lowercase().as_str() {
+        "black" => (0, 0, 0, 255),
+        "silver" => (192, 192, 192, 255),
+        "gray" | "grey" => (128, 128, 128, 255),
+        "white" => (255, 255, 255, 255),
+        "maroon" => (128, 0, 0, 255),
+        "red" => (255, 0, 0, 255),
+        "purple" => (128, 0, 128, 255),
+        "fuchsia" | "magenta" => (255, 0, 255, 255),
+        "green" => (0, 128, 0, 255),
+        "lime" => (0, 255, 0, 255),
+        "olive" => (128, 128, 0, 255),
+        "yellow" => (255, 255, 0, 255),
+        "navy" => (0, 0, 128, 255),
+        "blue" => (0, 0, 255, 255),
+        "teal" => (0, 128, 128, 255),
+        "aqua" | "cyan" => (0, 255, 255, 255),
+        "orange" => (255, 165, 0, 255),
+        "rebeccapurple" => (102, 51, 153, 255),
+        "transparent" => (0, 0, 0, 0),
+        _ => return None,
+    };
+    Some(CssColor {
+        red,
+        green,
+        blue,
+        alpha,
+    })
+}
+
+fn parse_rgb_function(tokens: &[&TokenKind]) -> Option<CssColor> {
+    let (channels, alpha) = if tokens.iter().any(|token| matches!(token, TokenKind::Comma)) {
+        let groups = split_comma_groups(tokens)?;
+        if !(3..=4).contains(&groups.len()) || groups.iter().any(|group| group.len() != 1) {
+            return None;
+        }
+        let alpha = if groups.len() == 4 {
+            Some(parse_alpha(groups[3][0])?)
+        } else {
+            None
+        };
+        (
+            [
+                parse_rgb_channel(groups[0][0])?,
+                parse_rgb_channel(groups[1][0])?,
+                parse_rgb_channel(groups[2][0])?,
+            ],
+            alpha,
+        )
+    } else {
+        let slash = tokens
+            .iter()
+            .position(|token| matches!(token, TokenKind::Delim('/')));
+        let color_end = slash.unwrap_or(tokens.len());
+        if color_end != 3 {
+            return None;
+        }
+        let alpha = match slash {
+            Some(index) if index + 2 == tokens.len() => Some(parse_alpha(tokens[index + 1])?),
+            Some(_) => return None,
+            None => None,
+        };
+        (
+            [
+                parse_rgb_channel(tokens[0])?,
+                parse_rgb_channel(tokens[1])?,
+                parse_rgb_channel(tokens[2])?,
+            ],
+            alpha,
+        )
+    };
+
+    Some(CssColor {
+        red: channels[0],
+        green: channels[1],
+        blue: channels[2],
+        alpha: alpha.unwrap_or(255),
+    })
+}
+
+fn parse_hsl_function(tokens: &[&TokenKind]) -> Option<CssColor> {
+    let (hue, saturation, lightness, alpha) =
+        if tokens.iter().any(|token| matches!(token, TokenKind::Comma)) {
+            let groups = split_comma_groups(tokens)?;
+            if !(3..=4).contains(&groups.len()) || groups.iter().any(|group| group.len() != 1) {
+                return None;
+            }
+            (
+                parse_hue(groups[0][0])?,
+                parse_percentage_fraction(groups[1][0])?,
+                parse_percentage_fraction(groups[2][0])?,
+                if groups.len() == 4 {
+                    Some(parse_alpha(groups[3][0])?)
+                } else {
+                    None
+                },
+            )
+        } else {
+            let slash = tokens
+                .iter()
+                .position(|token| matches!(token, TokenKind::Delim('/')));
+            let color_end = slash.unwrap_or(tokens.len());
+            if color_end != 3 {
+                return None;
+            }
+            let alpha = match slash {
+                Some(index) if index + 2 == tokens.len() => Some(parse_alpha(tokens[index + 1])?),
+                Some(_) => return None,
+                None => None,
+            };
+            (
+                parse_hue(tokens[0])?,
+                parse_percentage_fraction(tokens[1])?,
+                parse_percentage_fraction(tokens[2])?,
+                alpha,
+            )
+        };
+
+    let hue = hue.rem_euclid(360.0) / 60.0;
+    let saturation = saturation.clamp(0.0, 1.0);
+    let lightness = lightness.clamp(0.0, 1.0);
+    let chroma = (1.0_f32 - (2.0_f32 * lightness - 1.0_f32).abs()) * saturation;
+    let x = chroma * (1.0 - (hue.rem_euclid(2.0) - 1.0).abs());
+    let (r1, g1, b1) = match hue {
+        value if value < 1.0 => (chroma, x, 0.0),
+        value if value < 2.0 => (x, chroma, 0.0),
+        value if value < 3.0 => (0.0, chroma, x),
+        value if value < 4.0 => (0.0, x, chroma),
+        value if value < 5.0 => (x, 0.0, chroma),
+        _ => (chroma, 0.0, x),
+    };
+    let m = lightness - chroma / 2.0;
+
+    Some(CssColor {
+        red: fraction_byte(r1 + m),
+        green: fraction_byte(g1 + m),
+        blue: fraction_byte(b1 + m),
+        alpha: alpha.unwrap_or(255),
+    })
+}
+
+fn split_comma_groups<'a>(tokens: &'a [&'a TokenKind]) -> Option<Vec<Vec<&'a TokenKind>>> {
+    let mut groups = vec![Vec::new()];
+    for token in tokens {
+        if matches!(token, TokenKind::Comma) {
+            if groups.last().is_none_or(Vec::is_empty) {
+                return None;
+            }
+            groups.push(Vec::new());
+        } else {
+            groups.last_mut()?.push(*token);
+        }
+    }
+    (!groups.last()?.is_empty()).then_some(groups)
+}
+
+fn parse_rgb_channel(token: &TokenKind) -> Option<u8> {
+    let value = match token {
+        TokenKind::Number(number) => parse_number(number)?.clamp(0.0, 255.0),
+        TokenKind::Percentage(number) => parse_number(number)?.clamp(0.0, 100.0) * 2.55,
+        _ => return None,
+    };
+    Some(value.round().clamp(0.0, 255.0) as u8)
+}
+
+fn parse_alpha(token: &TokenKind) -> Option<u8> {
+    let fraction = match token {
+        TokenKind::Number(number) => parse_number(number)?.clamp(0.0, 1.0),
+        TokenKind::Percentage(number) => parse_number(number)?.clamp(0.0, 100.0) / 100.0,
+        _ => return None,
+    };
+    Some(fraction_byte(fraction))
+}
+
+fn parse_percentage_fraction(token: &TokenKind) -> Option<f32> {
+    let TokenKind::Percentage(number) = token else {
+        return None;
+    };
+    Some((parse_number(number)? / 100.0).clamp(0.0, 1.0))
+}
+
+fn parse_hue(token: &TokenKind) -> Option<f32> {
+    match token {
+        TokenKind::Number(number) => parse_number(number),
+        TokenKind::Dimension { number, unit } => {
+            let value = parse_number(number)?;
+            match unit.to_ascii_lowercase().as_str() {
+                "deg" => Some(value),
+                "grad" => Some(value * 0.9),
+                "rad" => Some(value * 180.0 / std::f32::consts::PI),
+                "turn" => Some(value * 360.0),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn fraction_byte(value: f32) -> u8 {
+    (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
 fn parse_hex_color(hex: &str) -> Option<CssColor> {
@@ -1666,6 +1903,94 @@ mod tests {
                 red: 0x12,
                 green: 0x34,
                 blue: 0x56,
+                alpha: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn parses_legacy_and_modern_rgb_hsl_colors_across_box_properties() {
+        let document = parse_document(
+            "<div id='modern' style='color:rgb(300 -10 50 / 50%); background-color:hsl(240 100% 50%); border:2px solid rgb(10 20 30); border-right-color:hsla(120,100%,25%,.5)'>x</div>
+             <div id='legacy' style='color:rgba(255, 0, 128, .25); background-color:hsl(.5turn, 100%, 50%); border-color:rgb(100%,0%,0%) rebeccapurple hsl(60 100% 50%) cyan'>y</div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let modern = computed.style_for(find_by_id(&document, "modern")).unwrap();
+        let legacy = computed.style_for(find_by_id(&document, "legacy")).unwrap();
+
+        assert_eq!(
+            modern.color,
+            CssColor {
+                red: 255,
+                green: 0,
+                blue: 50,
+                alpha: 128,
+            }
+        );
+        assert_eq!(modern.background_color, CssColor::BLUE);
+        assert_eq!(
+            modern.border.top.color,
+            CssColor {
+                red: 10,
+                green: 20,
+                blue: 30,
+                alpha: 255,
+            }
+        );
+        assert_eq!(
+            modern.border.right.color,
+            CssColor {
+                red: 0,
+                green: 128,
+                blue: 0,
+                alpha: 128,
+            }
+        );
+
+        assert_eq!(
+            legacy.color,
+            CssColor {
+                red: 255,
+                green: 0,
+                blue: 128,
+                alpha: 64,
+            }
+        );
+        assert_eq!(
+            legacy.background_color,
+            CssColor {
+                red: 0,
+                green: 255,
+                blue: 255,
+                alpha: 255,
+            }
+        );
+        assert_eq!(legacy.border.top.color, CssColor::RED);
+        assert_eq!(
+            legacy.border.right.color,
+            CssColor {
+                red: 102,
+                green: 51,
+                blue: 153,
+                alpha: 255,
+            }
+        );
+        assert_eq!(
+            legacy.border.bottom.color,
+            CssColor {
+                red: 255,
+                green: 255,
+                blue: 0,
+                alpha: 255,
+            }
+        );
+        assert_eq!(
+            legacy.border.left.color,
+            CssColor {
+                red: 0,
+                green: 255,
+                blue: 255,
                 alpha: 255,
             }
         );

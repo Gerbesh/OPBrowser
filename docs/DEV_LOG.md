@@ -491,3 +491,26 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 127 workspace tests,
   normal startup smoke, the 44-command selector demo smoke and optimized release build.
 - Rebuilt `target/release/op_browser.exe`; this build is 564,224 bytes.
+
+## 2026-10-06 - Functional CSS colors
+
+- Reworked supported color parsing through one shared CssColor value path used by text,
+  backgrounds and border color/shorthand parsing instead of property-specific color logic.
+- Added legacy comma and modern space/slash `rgb()`/`rgba()` syntax with numeric or percentage
+  channels, number/percentage alpha and CSS-style output clamping.
+- Added legacy/modern `hsl()`/`hsla()` with percentage saturation/lightness, alpha and hue in
+  unitless degrees, deg, grad, rad or turn; HSL is converted to sRGB computed channels.
+- Expanded named colors to the CSS basic set plus aliases and `rebeccapurple`; transparent
+  and existing #RGB(A)/#RRGGBB(AA) remain supported.
+- Updated border component splitting so functional colors remain one top-level value inside
+  `border`, per-side border shorthands and one-to-four `border-color` lists.
+- Added computed-style regressions covering legacy/modern functional syntax, clamping,
+  functional border shorthands/lists, alpha and multiple hue units, plus a full engine test
+  proving rgb/hsl reach text/background/border native display-list output.
+- Updated the built-in start page and CSS demo with visible rgb/rgba/hsl functional colors;
+  the CSS demo smoke now produces 52 paint commands.
+- Updated project plan, code slices/graph, README and CSS syntax wiki with the shared functional
+  color path and remaining advanced Color 4 / layered alpha limitations.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 129 workspace tests,
+  normal startup smoke, the 52-command functional-color demo smoke and optimized release build.
+- Rebuilt `target/release/op_browser.exe`; this build is 571,904 bytes.

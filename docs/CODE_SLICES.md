@@ -228,9 +228,12 @@ HTML
   -> resize reflow reuses retained DOM/images/author/computed styles
 ```
 
-The first value subset accepts display inline/block/none, font-size in bounded px,
-font-weight normal/bold/400/700, a small named-color set plus #RGB(A)/#RRGGBB(AA), and
-the global keywords inherit/initial/unset. color/font-size/font-weight inherit; display
+The value subset accepts display inline/block/none, font-size keywords/percent/lengths,
+font-weight normal/bold/400/700, #RGB(A)/#RRGGBB(AA), CSS basic named colors plus
+rebeccapurple, and legacy/modern rgb()/rgba()/hsl()/hsla(). Functional RGB accepts numeric
+or percentage channels plus number/percentage alpha; HSL accepts deg/grad/rad/turn hue,
+percentage saturation/lightness and alpha. Channels clamp to the CSS output range. The
+global keywords inherit/initial/unset remain shared. color/font-size/font-weight inherit; display
 does not unless explicitly set to inherit. Unsupported/invalid values are discarded
 before cascade winner selection so a lower-priority valid declaration may still win.
 UA defaults preserve M1 block/hidden behavior and heading typography. Former semantic
@@ -273,13 +276,18 @@ that ignore intervening text nodes, and :root/:first-child/:last-child/:only-chi
 Attribute and pseudo-class selectors contribute class-level specificity. Functional pseudos,
 pseudo-elements and namespaces remain later work.
 
+Functional colors feed the same computed CssColor path for text, backgrounds, border-color
+longhands/lists and border shorthands. This avoids property-specific color parsers. Alpha
+still composites against the current white page background in op_paint, so true layered
+translucent backgrounds remain later rendering work.
+
 Planned next path:
 
 ```text
-Value/rendering expansion
-  -> rgb()/rgba() and broader named/function colors
-  -> richer typography values
+Rendering/property expansion
   -> inline box fragments/decorations
+  -> richer typography values
+  -> additional computed properties
 ```
 
 Broader property/value coverage, `@import`, media queries and CSS `url(...)` resources
