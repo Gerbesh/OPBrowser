@@ -77,10 +77,13 @@ encountered in tables return to the original table mode after text parsing. That
 an initial CSS table formatting context: native table tags receive table display roles, captions
 flow above the grid, row groups supply rows, colspan/rowspan occupy multiple tracks, cells share
 row geometry instead of ordinary vertical block flow, and cell padding/backgrounds/borders plus
-header boldness reach native paint. Columns currently divide the used table width evenly with
-the 2px UA spacing. Mode-specific layout quirks, processing instructions, template/frameset
-modes, foreign-content context, content-driven intrinsic table sizing, border-collapse,
-author border-spacing, col/colgroup sizing, vertical-align and anonymous table boxes remain later.
+header boldness reach native paint. Track widths now use measured cell text/images and CSS
+width/min/max preferences plus col/colgroup width hints; colspan deficits are shared across its
+tracks. border-spacing is inherited and controls real horizontal/vertical gaps. collapse mode
+removes those gaps and resolves shared cell-edge conflicts per grid segment so only one winning
+border reaches paint. Mode-specific layout quirks, processing instructions, template/frameset
+modes, foreign-content context, full CSS Tables intrinsic/percentage rules, non-cell collapsed
+border precedence, vertical-align, anonymous table boxes and inline-table remain later.
 
 ## S2 - Navigation to static page
 

@@ -3,9 +3,10 @@ use super::inline::{
 };
 use super::*;
 use op_css::{
-    BorderEdges, BorderStyle, BoxSizing, ComputedFontWeight, ComputedLineHeight, ComputedStyle,
-    ComputedStyleMap, Display, FontStyle as CssFontStyle, LengthPercentage, MarginEdges,
-    MarginValue, PaddingEdges, PseudoElement, TextAlign, TextTransform, WhiteSpace,
+    BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, ComputedFontWeight,
+    ComputedLineHeight, ComputedStyle, ComputedStyleMap, Display, FontStyle as CssFontStyle,
+    LengthPercentage, MarginEdges, MarginValue, PaddingEdges, PseudoElement, TextAlign,
+    TextTransform, WhiteSpace,
 };
 
 pub(super) fn layout(
@@ -104,7 +105,7 @@ struct Edges {
     left: i32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct UsedBorderSide {
     width: i32,
     color: TextColor,
@@ -142,9 +143,9 @@ struct Style {
     min_height: LengthPercentage,
     max_height: Option<LengthPercentage>,
     box_sizing: BoxSizing,
+    border_collapse: BorderCollapse,
+    border_spacing: BorderSpacing,
 }
-
-const TABLE_BORDER_SPACING: i32 = 2;
 
 #[derive(Debug, Clone, Copy)]
 struct TableCellPlacement {
@@ -168,6 +169,100 @@ struct TableCellLayout {
     row: usize,
     rowspan: usize,
     natural_height: i32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TableColumnIntrinsic {
+    min: i32,
+    max: i32,
+}
+
+impl Default for TableColumnIntrinsic {
+    fn default() -> Self {
+        Self { min: 1, max: 1 }
+    }
+}
+
+#[derive(Debug)]
+struct TableCollapsedBorders {
+    rows: usize,
+    columns: usize,
+    vertical: Vec<UsedBorderSide>,
+    horizontal: Vec<UsedBorderSide>,
+}
+
+impl TableCollapsedBorders {
+    fn new(rows: usize, columns: usize) -> Self {
+        Self {
+            rows,
+            columns,
+            vertical: vec![
+                empty_used_border_side();
+                rows.saturating_mul(columns.saturating_add(1))
+            ],
+            horizontal: vec![
+                empty_used_border_side();
+                rows.saturating_add(1).saturating_mul(columns)
+            ],
+        }
+    }
+
+    fn vertical_mut(&mut self, row: usize, boundary: usize) -> Option<&mut UsedBorderSide> {
+        if row >= self.rows || boundary > self.columns {
+            return None;
+        }
+        let stride = self.columns.saturating_add(1);
+        self.vertical
+            .get_mut(row.saturating_mul(stride).saturating_add(boundary))
+    }
+
+    fn horizontal_mut(&mut self, boundary: usize, column: usize) -> Option<&mut UsedBorderSide> {
+        if boundary > self.rows || column >= self.columns {
+            return None;
+        }
+        self.horizontal
+            .get_mut(boundary.saturating_mul(self.columns).saturating_add(column))
+    }
+
+    fn vertical_winner(&self, row_start: usize, row_end: usize, boundary: usize) -> UsedBorderSide {
+        let mut winner = empty_used_border_side();
+        if boundary > self.columns {
+            return winner;
+        }
+        let stride = self.columns.saturating_add(1);
+        for row in row_start.min(self.rows)..row_end.min(self.rows) {
+            if let Some(candidate) = self
+                .vertical
+                .get(row.saturating_mul(stride).saturating_add(boundary))
+                .copied()
+            {
+                choose_collapsed_border(&mut winner, candidate);
+            }
+        }
+        winner
+    }
+
+    fn horizontal_winner(
+        &self,
+        boundary: usize,
+        column_start: usize,
+        column_end: usize,
+    ) -> UsedBorderSide {
+        let mut winner = empty_used_border_side();
+        if boundary > self.rows {
+            return winner;
+        }
+        for column in column_start.min(self.columns)..column_end.min(self.columns) {
+            if let Some(candidate) = self
+                .horizontal
+                .get(boundary.saturating_mul(self.columns).saturating_add(column))
+                .copied()
+            {
+                choose_collapsed_border(&mut winner, candidate);
+            }
+        }
+        winner
+    }
 }
 
 impl<'a> Context<'a, '_> {
@@ -399,28 +494,48 @@ impl<'a> Context<'a, '_> {
 
         let grid = self.build_table_grid(id);
         if !grid.rows.is_empty() && grid.columns > 0 {
-            let column_widths = table_column_widths(content_width, grid.columns);
-            let column_offsets = table_column_offsets(content_x, &column_widths);
+            let (horizontal_spacing, vertical_spacing) = used_table_spacing(style);
+            let intrinsic =
+                self.table_intrinsic_columns(id, &grid, style, content_width, horizontal_spacing);
+            let column_widths = table_column_widths(content_width, &intrinsic, horizontal_spacing);
+            let column_offsets =
+                table_column_offsets(content_x, &column_widths, horizontal_spacing);
+            let collapsed_borders = (style.border_collapse == BorderCollapse::Collapse)
+                .then(|| self.collapsed_table_borders(&grid, style));
             let mut row_heights = vec![0; grid.rows.len()];
             let mut cell_layouts = Vec::new();
-            let mut row_top = self.y.saturating_add(TABLE_BORDER_SPACING);
+            let mut row_top = self.y.saturating_add(vertical_spacing);
 
             for (row, row_height) in row_heights.iter_mut().enumerate() {
                 for placement in grid.cells.iter().filter(|cell| cell.row == row) {
-                    let slot_width =
-                        table_cell_slot_width(&column_widths, placement.column, placement.colspan);
+                    let slot_width = table_cell_slot_width(
+                        &column_widths,
+                        placement.column,
+                        placement.colspan,
+                        horizontal_spacing,
+                    );
                     let x = column_offsets
                         .get(placement.column)
                         .copied()
                         .unwrap_or(content_x);
-                    let layout = self.layout_table_cell(*placement, x, row_top, slot_width, style);
+                    let collapsed_border = collapsed_borders
+                        .as_ref()
+                        .map(|borders| self.collapsed_border_for_cell(*placement, &grid, borders));
+                    let layout = self.layout_table_cell(
+                        *placement,
+                        x,
+                        row_top,
+                        slot_width,
+                        style,
+                        collapsed_border,
+                    );
                     *row_height = (*row_height).max(layout.natural_height);
                     cell_layouts.push(layout);
                 }
                 *row_height = (*row_height).max(1);
                 row_top = row_top
                     .saturating_add(*row_height)
-                    .saturating_add(TABLE_BORDER_SPACING);
+                    .saturating_add(vertical_spacing);
             }
 
             for cell in cell_layouts {
@@ -433,8 +548,7 @@ impl<'a> Context<'a, '_> {
                     .copied()
                     .fold(0i32, i32::saturating_add)
                     .saturating_add(
-                        TABLE_BORDER_SPACING
-                            .saturating_mul(end.saturating_sub(cell.row + 1) as i32),
+                        vertical_spacing.saturating_mul(end.saturating_sub(cell.row + 1) as i32),
                     );
                 self.decorations[index].height = span_height.max(cell.natural_height);
             }
@@ -571,6 +685,348 @@ impl<'a> Context<'a, '_> {
         columns
     }
 
+    fn table_intrinsic_columns(
+        &mut self,
+        table: NodeId,
+        grid: &TableGrid,
+        inherited: Style,
+        content_width: i32,
+        spacing: i32,
+    ) -> Vec<TableColumnIntrinsic> {
+        let mut columns = vec![TableColumnIntrinsic::default(); grid.columns];
+        self.apply_table_column_width_hints(table, inherited, content_width, &mut columns);
+
+        for placement in grid.cells.iter().filter(|cell| cell.colspan == 1) {
+            let (min, max) =
+                self.table_cell_intrinsic_widths(placement.node, inherited, content_width);
+            if let Some(column) = columns.get_mut(placement.column) {
+                column.min = column.min.max(min);
+                column.max = column.max.max(max).max(column.min);
+            }
+        }
+
+        for placement in grid.cells.iter().filter(|cell| cell.colspan > 1) {
+            let end = placement
+                .column
+                .saturating_add(placement.colspan)
+                .min(columns.len());
+            if placement.column >= end {
+                continue;
+            }
+
+            let (required_min, required_max) =
+                self.table_cell_intrinsic_widths(placement.node, inherited, content_width);
+            let internal_spacing =
+                spacing.saturating_mul(end.saturating_sub(placement.column + 1) as i32);
+            grow_intrinsic_span(
+                &mut columns[placement.column..end],
+                required_min.saturating_sub(internal_spacing).max(1),
+                required_max.saturating_sub(internal_spacing).max(1),
+            );
+        }
+
+        columns
+    }
+
+    fn apply_table_column_width_hints(
+        &self,
+        table: NodeId,
+        inherited: Style,
+        content_width: i32,
+        columns: &mut [TableColumnIntrinsic],
+    ) {
+        let mut cursor = 0usize;
+        for child in self.document.children(table) {
+            let Some(element) = self.document.element(*child) else {
+                continue;
+            };
+            match self.element_display(*child, &element.tag_name) {
+                Display::TableColumn => {
+                    let style = self.element_style(*child, &element.tag_name, inherited);
+                    let hint = style
+                        .width
+                        .map(|value| resolve_length(value, content_width).max(1));
+                    let span = table_span(element, "span", 1, 1000).max(1);
+                    apply_column_hint(columns, &mut cursor, span, hint);
+                }
+                Display::TableColumnGroup => {
+                    let group_style = self.element_style(*child, &element.tag_name, inherited);
+                    let group_hint = group_style
+                        .width
+                        .map(|value| resolve_length(value, content_width).max(1));
+                    let mut child_columns = 0usize;
+                    for column in self.document.children(*child) {
+                        let Some(column_element) = self.document.element(*column) else {
+                            continue;
+                        };
+                        if self.element_display(*column, &column_element.tag_name)
+                            != Display::TableColumn
+                        {
+                            continue;
+                        }
+                        let style =
+                            self.element_style(*column, &column_element.tag_name, group_style);
+                        let hint = style
+                            .width
+                            .map(|value| resolve_length(value, content_width).max(1))
+                            .or(group_hint);
+                        let span = table_span(column_element, "span", 1, 1000).max(1);
+                        apply_column_hint(columns, &mut cursor, span, hint);
+                        child_columns = child_columns.saturating_add(span);
+                    }
+
+                    if child_columns == 0 {
+                        let span = table_span(element, "span", 1, 1000).max(1);
+                        let per_column = group_hint
+                            .map(|hint| (hint / i32::try_from(span).unwrap_or(i32::MAX)).max(1));
+                        apply_column_hint(columns, &mut cursor, span, per_column);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn table_cell_intrinsic_widths(
+        &mut self,
+        node: NodeId,
+        inherited: Style,
+        width_basis: i32,
+    ) -> (i32, i32) {
+        let Some(element) = self.document.element(node) else {
+            return (1, 1);
+        };
+        let style = self.element_style(node, &element.tag_name, inherited);
+        let padding = Edges {
+            top: resolve_length(style.padding.top, width_basis).max(0),
+            right: resolve_length(style.padding.right, width_basis).max(0),
+            bottom: resolve_length(style.padding.bottom, width_basis).max(0),
+            left: resolve_length(style.padding.left, width_basis).max(0),
+        };
+        let border = resolve_border_edges(style.border);
+        let extras = padding
+            .left
+            .saturating_add(padding.right)
+            .saturating_add(border.left.width)
+            .saturating_add(border.right.width);
+
+        let mut text = String::new();
+        for child in self.document.children(node) {
+            self.collect_table_intrinsic_text(*child, &mut text);
+        }
+        let (text_min, text_max) = self.measure_table_intrinsic_text(&text, style.inline);
+        let image_width = self.table_intrinsic_image_width(node, style, width_basis);
+        let mut min = text_min.max(image_width).saturating_add(extras).max(1);
+        let mut max = text_max
+            .max(text_min)
+            .max(image_width)
+            .saturating_add(extras)
+            .max(min);
+
+        let border_box_width = |value: LengthPercentage| {
+            let resolved = resolve_length(value, width_basis).max(0);
+            match style.box_sizing {
+                BoxSizing::ContentBox => resolved.saturating_add(extras),
+                BoxSizing::BorderBox => resolved.max(extras),
+            }
+        };
+
+        if let Some(width) = style.width {
+            let width = border_box_width(width).max(1);
+            min = min.max(width);
+            max = max.max(width);
+        }
+
+        let min_constraint = border_box_width(style.min_width).max(1);
+        min = min.max(min_constraint);
+        max = max.max(min);
+
+        if let Some(max_width) = style.max_width {
+            let cap = border_box_width(max_width).max(1);
+            max = max.min(cap).max(min);
+        }
+
+        (min, max)
+    }
+
+    fn collect_table_intrinsic_text(&self, node: NodeId, output: &mut String) {
+        let Some(node_data) = self.document.node(node) else {
+            return;
+        };
+        match &node_data.kind {
+            NodeKind::Text(text) => output.push_str(text),
+            NodeKind::Element(element) => {
+                let display = self.element_display(node, &element.tag_name);
+                if display == Display::None {
+                    return;
+                }
+                if element.tag_name == "img" {
+                    if !self.images.contains_key(&node)
+                        && let Some(alt) = attribute(element, "alt")
+                    {
+                        output.push_str(alt);
+                    }
+                    return;
+                }
+                if element.tag_name == "br" {
+                    output.push('\n');
+                    return;
+                }
+
+                let block_boundary =
+                    display == Display::Block || is_table_internal_display(display);
+                if block_boundary && !output.ends_with([' ', '\n']) {
+                    output.push('\n');
+                }
+                for child in self.document.children(node) {
+                    self.collect_table_intrinsic_text(*child, output);
+                }
+                if block_boundary && !output.ends_with([' ', '\n']) {
+                    output.push('\n');
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn table_intrinsic_image_width(&self, node: NodeId, inherited: Style, width_basis: i32) -> i32 {
+        let Some(node_data) = self.document.node(node) else {
+            return 0;
+        };
+        let NodeKind::Element(element) = &node_data.kind else {
+            return 0;
+        };
+        if self.element_display(node, &element.tag_name) == Display::None {
+            return 0;
+        }
+
+        let style = self.element_style(node, &element.tag_name, inherited);
+        if element.tag_name == "img" {
+            if let Some(image) = self.images.get(&node)
+                && let Some((width, _)) = resolve_image_size(
+                    style,
+                    (image.width(), image.height()),
+                    None,
+                    width_basis,
+                    width_basis,
+                )
+            {
+                return width.max(0);
+            }
+            if let Some(width) = style.width {
+                return resolve_length(width, width_basis).max(0);
+            }
+            return 0;
+        }
+
+        self.document
+            .children(node)
+            .iter()
+            .map(|child| self.table_intrinsic_image_width(*child, style, width_basis))
+            .max()
+            .unwrap_or(0)
+    }
+
+    fn measure_table_intrinsic_text(&mut self, text: &str, style: InlineStyle) -> (i32, i32) {
+        if text.is_empty() {
+            return (0, 0);
+        }
+
+        let normalized = match style.white_space {
+            WhiteSpace::Pre | WhiteSpace::PreWrap => text.to_owned(),
+            WhiteSpace::Normal | WhiteSpace::NoWrap | WhiteSpace::PreLine => {
+                collapse_intrinsic_whitespace(text)
+            }
+        };
+
+        let max = normalized
+            .lines()
+            .map(|line| measure_intrinsic_text_run(self.measurer, line, style))
+            .max()
+            .unwrap_or(0);
+
+        if matches!(style.white_space, WhiteSpace::NoWrap | WhiteSpace::Pre) {
+            return (max, max);
+        }
+
+        let min = normalized
+            .split_whitespace()
+            .map(|word| measure_intrinsic_text_run(self.measurer, word, style))
+            .max()
+            .unwrap_or(0);
+        (min.min(max), max.max(min))
+    }
+
+    fn collapsed_table_borders(&self, grid: &TableGrid, inherited: Style) -> TableCollapsedBorders {
+        let mut borders = TableCollapsedBorders::new(grid.rows.len(), grid.columns);
+
+        for placement in &grid.cells {
+            let Some(element) = self.document.element(placement.node) else {
+                continue;
+            };
+            let style = self.element_style(placement.node, &element.tag_name, inherited);
+            let cell = resolve_border_edges(style.border);
+            let column_end = placement
+                .column
+                .saturating_add(placement.colspan)
+                .min(grid.columns);
+            let row_end = placement
+                .row
+                .saturating_add(placement.rowspan)
+                .min(grid.rows.len());
+
+            for row in placement.row..row_end {
+                if let Some(boundary) = borders.vertical_mut(row, placement.column) {
+                    choose_collapsed_border(boundary, cell.left);
+                }
+                if let Some(boundary) = borders.vertical_mut(row, column_end) {
+                    choose_collapsed_border(boundary, cell.right);
+                }
+            }
+            for column in placement.column..column_end {
+                if let Some(boundary) = borders.horizontal_mut(placement.row, column) {
+                    choose_collapsed_border(boundary, cell.top);
+                }
+                if let Some(boundary) = borders.horizontal_mut(row_end, column) {
+                    choose_collapsed_border(boundary, cell.bottom);
+                }
+            }
+        }
+
+        borders
+    }
+
+    fn collapsed_border_for_cell(
+        &self,
+        placement: TableCellPlacement,
+        grid: &TableGrid,
+        borders: &TableCollapsedBorders,
+    ) -> UsedBorderEdges {
+        let column_end = placement
+            .column
+            .saturating_add(placement.colspan)
+            .min(grid.columns);
+        let row_end = placement
+            .row
+            .saturating_add(placement.rowspan)
+            .min(grid.rows.len());
+
+        UsedBorderEdges {
+            top: borders.horizontal_winner(placement.row, placement.column, column_end),
+            right: if column_end == grid.columns {
+                borders.vertical_winner(placement.row, row_end, column_end)
+            } else {
+                empty_used_border_side()
+            },
+            bottom: if row_end == grid.rows.len() {
+                borders.horizontal_winner(row_end, placement.column, column_end)
+            } else {
+                empty_used_border_side()
+            },
+            left: borders.vertical_winner(placement.row, row_end, placement.column),
+        }
+    }
+
     fn layout_table_cell(
         &mut self,
         placement: TableCellPlacement,
@@ -578,6 +1034,7 @@ impl<'a> Context<'a, '_> {
         row_top: i32,
         slot_width: i32,
         inherited: Style,
+        border_override: Option<UsedBorderEdges>,
     ) -> TableCellLayout {
         let Some(element) = self.document.element(placement.node) else {
             return TableCellLayout {
@@ -594,7 +1051,7 @@ impl<'a> Context<'a, '_> {
             bottom: resolve_length(style.padding.bottom, slot_width).max(0),
             left: resolve_length(style.padding.left, slot_width).max(0),
         };
-        let border = resolve_border_edges(style.border);
+        let border = border_override.unwrap_or_else(|| resolve_border_edges(style.border));
         let horizontal_extras = padding
             .left
             .saturating_add(padding.right)
@@ -1235,39 +1692,253 @@ fn table_span(element: &op_dom::ElementData, name: &str, default: usize, maximum
         .unwrap_or(default)
 }
 
-fn table_column_widths(content_width: i32, columns: usize) -> Vec<i32> {
-    if columns == 0 {
+fn apply_column_hint(
+    columns: &mut [TableColumnIntrinsic],
+    cursor: &mut usize,
+    span: usize,
+    hint: Option<i32>,
+) {
+    for _ in 0..span {
+        if let Some(column) = columns.get_mut(*cursor)
+            && let Some(hint) = hint
+        {
+            column.min = column.min.max(hint);
+            column.max = column.max.max(hint).max(column.min);
+        }
+        *cursor = cursor.saturating_add(1);
+    }
+}
+
+fn grow_intrinsic_span(columns: &mut [TableColumnIntrinsic], required_min: i32, required_max: i32) {
+    if columns.is_empty() {
+        return;
+    }
+
+    let current_min = columns
+        .iter()
+        .map(|column| column.min)
+        .fold(0i32, i32::saturating_add);
+    let min_deficit = required_min.saturating_sub(current_min).max(0);
+    distribute_intrinsic_deficit(columns, min_deficit, true);
+
+    for column in columns.iter_mut() {
+        column.max = column.max.max(column.min);
+    }
+
+    let current_max = columns
+        .iter()
+        .map(|column| column.max)
+        .fold(0i32, i32::saturating_add);
+    let max_deficit = required_max
+        .max(required_min)
+        .saturating_sub(current_max)
+        .max(0);
+    distribute_intrinsic_deficit(columns, max_deficit, false);
+}
+
+fn distribute_intrinsic_deficit(columns: &mut [TableColumnIntrinsic], amount: i32, minimum: bool) {
+    if columns.is_empty() || amount <= 0 {
+        return;
+    }
+
+    let count = i32::try_from(columns.len()).unwrap_or(i32::MAX).max(1);
+    let each = amount / count;
+    let mut remainder = amount % count;
+    for column in columns {
+        let extra = each.saturating_add(i32::from(remainder > 0));
+        remainder = remainder.saturating_sub(1).max(0);
+        if minimum {
+            column.min = column.min.saturating_add(extra);
+            column.max = column.max.max(column.min);
+        } else {
+            column.max = column.max.saturating_add(extra).max(column.min);
+        }
+    }
+}
+
+fn collapse_intrinsic_whitespace(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut pending_space = false;
+    for ch in text.chars() {
+        if matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{c}') {
+            pending_space = !output.is_empty();
+            continue;
+        }
+        if pending_space {
+            output.push(' ');
+            pending_space = false;
+        }
+        output.push(ch);
+    }
+    output
+}
+
+fn transform_intrinsic_text(text: &str, transform: TextTransform) -> String {
+    let mut output = String::new();
+    let mut capitalize_next = true;
+    for ch in text.chars() {
+        match transform {
+            TextTransform::None => output.push(ch),
+            TextTransform::Uppercase => output.extend(ch.to_uppercase()),
+            TextTransform::Lowercase => output.extend(ch.to_lowercase()),
+            TextTransform::Capitalize if capitalize_next && ch.is_alphabetic() => {
+                output.extend(ch.to_uppercase());
+            }
+            TextTransform::Capitalize => output.push(ch),
+        }
+        capitalize_next = ch.is_whitespace();
+    }
+    output
+}
+
+fn measure_intrinsic_text_run(
+    measurer: &mut dyn TextMeasurer,
+    text: &str,
+    style: InlineStyle,
+) -> i32 {
+    if text.is_empty() {
+        return 0;
+    }
+
+    let text = transform_intrinsic_text(text, style.text_transform);
+    let base = measurer
+        .measure(&text, style.font_size, style.weight, style.font_style)
+        .width;
+    let gaps = text.chars().count().saturating_sub(1) as i32;
+    let spaces = text.chars().filter(|ch| *ch == ' ').count() as i32;
+    base.saturating_add(style.letter_spacing.saturating_mul(gaps))
+        .saturating_add(style.word_spacing.saturating_mul(spaces))
+        .max(0)
+}
+
+fn used_table_spacing(style: Style) -> (i32, i32) {
+    if style.border_collapse == BorderCollapse::Collapse {
+        return (0, 0);
+    }
+
+    (
+        style
+            .border_spacing
+            .horizontal_px
+            .round()
+            .clamp(0.0, 1_000_000.0) as i32,
+        style
+            .border_spacing
+            .vertical_px
+            .round()
+            .clamp(0.0, 1_000_000.0) as i32,
+    )
+}
+
+fn table_column_widths(
+    content_width: i32,
+    intrinsic: &[TableColumnIntrinsic],
+    spacing: i32,
+) -> Vec<i32> {
+    if intrinsic.is_empty() {
         return Vec::new();
     }
 
-    let spacing = TABLE_BORDER_SPACING.saturating_mul(columns.saturating_add(1) as i32);
-    let usable = content_width.saturating_sub(spacing).max(columns as i32);
-    let base = usable / columns as i32;
-    let remainder = usable % columns as i32;
-    (0..columns)
-        .map(|column| base.saturating_add(((column as i32) < remainder) as i32))
-        .collect()
+    let columns = intrinsic.len();
+    let total_spacing = spacing.saturating_mul(columns.saturating_add(1) as i32);
+    let usable = content_width
+        .saturating_sub(total_spacing)
+        .max(columns as i32);
+
+    let min_sum = intrinsic
+        .iter()
+        .map(|column| column.min.max(1))
+        .fold(0i32, i32::saturating_add);
+    let max_sum = intrinsic
+        .iter()
+        .map(|column| column.max.max(column.min).max(1))
+        .fold(0i32, i32::saturating_add);
+
+    if usable <= min_sum {
+        let mut widths = vec![1; columns];
+        let weights: Vec<i32> = intrinsic
+            .iter()
+            .map(|column| column.min.saturating_sub(1).max(0))
+            .collect();
+        distribute_table_width(&mut widths, &weights, usable.saturating_sub(columns as i32));
+        return widths;
+    }
+
+    if usable < max_sum {
+        let mut widths: Vec<i32> = intrinsic.iter().map(|column| column.min.max(1)).collect();
+        let weights: Vec<i32> = intrinsic
+            .iter()
+            .map(|column| column.max.saturating_sub(column.min).max(0))
+            .collect();
+        distribute_table_width(&mut widths, &weights, usable.saturating_sub(min_sum));
+        return widths;
+    }
+
+    let mut widths: Vec<i32> = intrinsic
+        .iter()
+        .map(|column| column.max.max(column.min).max(1))
+        .collect();
+    let weights: Vec<i32> = widths.clone();
+    distribute_table_width(&mut widths, &weights, usable.saturating_sub(max_sum));
+    widths
 }
 
-fn table_column_offsets(content_x: i32, widths: &[i32]) -> Vec<i32> {
+fn distribute_table_width(widths: &mut [i32], weights: &[i32], amount: i32) {
+    if widths.is_empty() || amount <= 0 {
+        return;
+    }
+
+    let weight_sum: i64 = weights
+        .iter()
+        .map(|weight| i64::from((*weight).max(0)))
+        .sum();
+    let even = weight_sum == 0;
+    let denominator = if even {
+        widths.len() as i64
+    } else {
+        weight_sum
+    }
+    .max(1);
+
+    let mut assigned = 0i32;
+    for (index, width) in widths.iter_mut().enumerate() {
+        let weight = if even {
+            1i64
+        } else {
+            i64::from(weights.get(index).copied().unwrap_or(0).max(0))
+        };
+        let extra =
+            ((i64::from(amount) * weight) / denominator).clamp(0, i64::from(i32::MAX)) as i32;
+        *width = width.saturating_add(extra);
+        assigned = assigned.saturating_add(extra);
+    }
+
+    let mut remainder = amount.saturating_sub(assigned);
+    let mut index = 0usize;
+    while remainder > 0 && !widths.is_empty() {
+        widths[index] = widths[index].saturating_add(1);
+        remainder -= 1;
+        index = (index + 1) % widths.len();
+    }
+}
+
+fn table_column_offsets(content_x: i32, widths: &[i32], spacing: i32) -> Vec<i32> {
     let mut offsets = Vec::with_capacity(widths.len());
-    let mut x = content_x.saturating_add(TABLE_BORDER_SPACING);
+    let mut x = content_x.saturating_add(spacing);
     for width in widths {
         offsets.push(x);
-        x = x
-            .saturating_add(*width)
-            .saturating_add(TABLE_BORDER_SPACING);
+        x = x.saturating_add(*width).saturating_add(spacing);
     }
     offsets
 }
 
-fn table_cell_slot_width(widths: &[i32], column: usize, colspan: usize) -> i32 {
+fn table_cell_slot_width(widths: &[i32], column: usize, colspan: usize, spacing: i32) -> i32 {
     let end = column.saturating_add(colspan).min(widths.len());
     widths[column.min(widths.len())..end]
         .iter()
         .copied()
         .fold(0i32, i32::saturating_add)
-        .saturating_add(TABLE_BORDER_SPACING.saturating_mul(end.saturating_sub(column + 1) as i32))
+        .saturating_add(spacing.saturating_mul(end.saturating_sub(column + 1) as i32))
         .max(1)
 }
 
@@ -1394,6 +2065,29 @@ fn size_to_content_width(
     }
 }
 
+fn empty_used_border_side() -> UsedBorderSide {
+    UsedBorderSide {
+        width: 0,
+        color: TextColor {
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: 0,
+        },
+    }
+}
+
+fn choose_collapsed_border(current: &mut UsedBorderSide, candidate: UsedBorderSide) {
+    if candidate.width > current.width
+        || (candidate.width == current.width
+            && candidate.width > 0
+            && current.color.alpha == 0
+            && candidate.color.alpha > 0)
+    {
+        *current = candidate;
+    }
+}
+
 fn resolve_border_edges(border: BorderEdges) -> UsedBorderEdges {
     UsedBorderEdges {
         top: resolve_border_side(border.top),
@@ -1483,6 +2177,8 @@ fn computed_style(style: ComputedStyle) -> Style {
         min_height: style.min_height,
         max_height: style.max_height,
         box_sizing: style.box_sizing,
+        border_collapse: style.border_collapse,
+        border_spacing: style.border_spacing,
     }
 }
 
@@ -1592,6 +2288,8 @@ fn default_style() -> Style {
         min_height: LengthPercentage::ZERO,
         max_height: None,
         box_sizing: BoxSizing::ContentBox,
+        border_collapse: BorderCollapse::Separate,
+        border_spacing: BorderSpacing::ZERO,
     }
 }
 
@@ -1623,6 +2321,15 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         min_height: LengthPercentage::ZERO,
         max_height: None,
         box_sizing: BoxSizing::ContentBox,
+        border_collapse: inherited.border_collapse,
+        border_spacing: if tag == "table" {
+            BorderSpacing {
+                horizontal_px: 2.0,
+                vertical_px: 2.0,
+            }
+        } else {
+            inherited.border_spacing
+        },
     }
 }
 

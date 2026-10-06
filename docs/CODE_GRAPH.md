@@ -579,12 +579,15 @@ classDiagram
   widths, independent border sides, block height minima/maxima and adjacent-sibling vertical
   margin collapse. Table layout consumes computed Table/TableCaption/TableColumnGroup/
   TableColumn/TableHeaderGroup/TableRowGroup/TableFooterGroup/TableRow/TableCell roles,
-  collects rows across row groups, builds an occupancy grid for colspan/rowspan, assigns
-  equal-width column tracks within the table used width, places cells in two dimensions and
-  reuses existing block/inline layout inside each cell. Caption flow, the 2px UA spacing,
-  cell backgrounds/borders/padding and span geometry reach ordinary BoxDecoration/text/image
-  output. Whitespace-only text between block siblings is suppressed before it can create
-  anonymous line geometry.
+  collects rows across row groups, builds an occupancy grid for colspan/rowspan and computes
+  per-column min/max preferences from measured cell text, images, width/min/max constraints and
+  col/colgroup hints. Available width is distributed between those preferences instead of being
+  split equally. Inherited border-spacing supplies separate horizontal/vertical gaps; collapse
+  mode suppresses spacing and resolves cell-cell border conflicts per grid segment by choosing
+  one winning edge, assigning each internal boundary to one adjacent cell so paint does not
+  double it. Caption flow, cell backgrounds/borders/padding and span geometry reach ordinary
+  BoxDecoration/text/image output. Whitespace-only text between block siblings is suppressed
+  before it can create anonymous line geometry.
   op_layout::replaced resolves raster intrinsic/explicit/auto sizes and min/max ratio conflicts.
   flow converts CSS percentage-width/font-relative/content-vs-border-box sizes and applies
   the existing available-width/4096-height fitting policy after CSS used sizes.
@@ -613,9 +616,11 @@ classDiagram
   specificity and source order, then applies inheritance/global keywords into a
   ComputedStyleMap. Display now distinguishes inline/block/none plus table, caption, column,
   row-group, row and cell roles; the HTML UA defaults assign native table elements those roles,
-  center captions, bold th cells, give td/th 1px padding and make table sizing border-box.
-  Properties also include color, font-size/font-weight, background-color, margin/padding edges,
-  independent border edges, width/height min/max and box-sizing. Box shorthand/longhand
+  center captions, bold th cells, give td/th 1px padding, make table sizing border-box and give
+  tables the 2px separate-border spacing default. Computed properties include inherited
+  border-spacing and border-collapse alongside color, font-size/font-weight, background-color,
+  margin/padding edges, independent border edges, width/height min/max and box-sizing.
+  Box shorthand/longhand
   candidates are compared by normal cascade priority;
   length parsing covers percent, em/rem and CSS absolute units. One CssColor parser now
   handles hex/all 148 opaque named colors plus RGB/HSL/HWB for text/background/borders.

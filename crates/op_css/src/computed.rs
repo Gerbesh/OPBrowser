@@ -232,6 +232,25 @@ pub enum BoxSizing {
     BorderBox,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BorderCollapse {
+    Separate,
+    Collapse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BorderSpacing {
+    pub horizontal_px: f32,
+    pub vertical_px: f32,
+}
+
+impl BorderSpacing {
+    pub const ZERO: Self = Self {
+        horizontal_px: 0.0,
+        vertical_px: 0.0,
+    };
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ComputedStyle {
     pub display: Display,
@@ -257,6 +276,8 @@ pub struct ComputedStyle {
     pub min_height: LengthPercentage,
     pub max_height: Option<LengthPercentage>,
     pub box_sizing: BoxSizing,
+    pub border_collapse: BorderCollapse,
+    pub border_spacing: BorderSpacing,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -335,6 +356,8 @@ impl ComputedStyle {
             min_height: LengthPercentage::ZERO,
             max_height: None,
             box_sizing: BoxSizing::ContentBox,
+            border_collapse: BorderCollapse::Separate,
+            border_spacing: BorderSpacing::ZERO,
         }
     }
 }
@@ -1246,6 +1269,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             min_height: initial.min_height,
             max_height: initial.max_height,
             box_sizing: initial.box_sizing,
+            border_collapse: parent.border_collapse,
+            border_spacing: parent.border_spacing,
         },
         None => initial,
     }
@@ -1274,6 +1299,10 @@ fn apply_ua_defaults(style: &mut ComputedStyle, element: &ElementData) {
     match tag {
         "table" => {
             style.box_sizing = BoxSizing::BorderBox;
+            style.border_spacing = BorderSpacing {
+                horizontal_px: 2.0,
+                vertical_px: 2.0,
+            };
         }
         "td" | "th" => {
             let one = LengthPercentage::Px(1.0);
@@ -1498,6 +1527,23 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.box_sizing),
             BoxSizing::ContentBox,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "border-collapse", parse_border_collapse)
+    {
+        style.border_collapse = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.border_collapse),
+            BorderCollapse::Separate,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "border-spacing", |tokens| {
+        parse_border_spacing(tokens, style.font_size_px)
+    }) {
+        style.border_spacing = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.border_spacing),
+            BorderSpacing::ZERO,
         );
     }
 
@@ -1861,6 +1907,47 @@ fn parse_box_sizing(tokens: &[TokenKind]) -> Option<Specified<BoxSizing>> {
         "unset" => Some(Specified::Unset),
         _ => None,
     }
+}
+
+fn parse_border_collapse(tokens: &[TokenKind]) -> Option<Specified<BorderCollapse>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "separate" => Some(Specified::Value(BorderCollapse::Separate)),
+        "collapse" => Some(Specified::Value(BorderCollapse::Collapse)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_border_spacing(tokens: &[TokenKind], font_px: f32) -> Option<Specified<BorderSpacing>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| BorderSpacing::ZERO));
+    }
+
+    let values: Vec<&TokenKind> = significant_tokens(tokens).collect();
+    if !(1..=2).contains(&values.len()) {
+        return None;
+    }
+
+    let parse = |token: &TokenKind| -> Option<f32> {
+        match parse_length_percentage_token(token, font_px, false, false)? {
+            LengthPercentage::Px(value) if value.is_finite() && value <= 1_000_000.0 => Some(value),
+            LengthPercentage::Percent(_) => None,
+            _ => None,
+        }
+    };
+
+    let horizontal_px = parse(values[0])?;
+    let vertical_px = if values.len() == 2 {
+        parse(values[1])?
+    } else {
+        horizontal_px
+    };
+    Some(Specified::Value(BorderSpacing {
+        horizontal_px,
+        vertical_px,
+    }))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3455,6 +3542,8 @@ mod tests {
             ("background", "red"),
             ("background-color", "blue"),
             ("box-sizing", "border-box"),
+            ("border-collapse", "collapse"),
+            ("border-spacing", "5px 7px"),
             ("width", "100px"),
             ("min-width", "40px"),
             ("max-width", "90px"),
@@ -4695,6 +4784,46 @@ mod tests {
 
         let td = computed.style_for(find_by_id(&document, "td")).unwrap();
         assert_eq!(td.padding.left, LengthPercentage::Px(1.0));
+    }
+
+    #[test]
+    fn table_border_spacing_and_collapse_parse_cascade_and_inherit() {
+        let document = parse_document(
+            "<style>
+               #custom { border-collapse:collapse; border-spacing:6px 9px }
+               #inherit { border-collapse:inherit; border-spacing:inherit }
+             </style>
+             <table id='ua'><tr><td>x</td></tr></table>
+             <table id='custom'><tr><td id='inherit'>y</td></tr></table>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+
+        let ua = computed.style_for(find_by_id(&document, "ua")).unwrap();
+        assert_eq!(ua.border_collapse, BorderCollapse::Separate);
+        assert_eq!(
+            ua.border_spacing,
+            BorderSpacing {
+                horizontal_px: 2.0,
+                vertical_px: 2.0,
+            }
+        );
+
+        let custom = computed.style_for(find_by_id(&document, "custom")).unwrap();
+        assert_eq!(custom.border_collapse, BorderCollapse::Collapse);
+        assert_eq!(
+            custom.border_spacing,
+            BorderSpacing {
+                horizontal_px: 6.0,
+                vertical_px: 9.0,
+            }
+        );
+
+        let inherited = computed
+            .style_for(find_by_id(&document, "inherit"))
+            .unwrap();
+        assert_eq!(inherited.border_collapse, BorderCollapse::Collapse);
+        assert_eq!(inherited.border_spacing, custom.border_spacing);
     }
 
     #[test]

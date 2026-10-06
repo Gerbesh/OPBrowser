@@ -1338,3 +1338,28 @@ This file is append-only project history.
   image/navigation smoke checks; those checks are now documented as local developer commands.
 - Repository verification after removing the workflow passed rustfmt, warning-free workspace
   Clippy and all 306 workspace tests.
+
+## 2026-10-06 - Intrinsic table tracks, spacing and collapsed cell borders
+
+- Added inherited computed border-spacing and border-collapse properties. border-spacing accepts
+  one or two nonnegative supported lengths; border-collapse accepts separate/collapse. Native
+  tables retain the 2px/2px separate-border UA default while CSS initial remains zero spacing.
+- Replaced equal table-column splitting with bounded content-driven min/max track preferences.
+  Cell text uses the active TextMeasurer plus transform/letter/word spacing; loaded images,
+  fallback image widths, padding/borders, width/min/max constraints and box-sizing contribute
+  to cell intrinsic widths.
+- Single-column cells establish direct track preferences. Colspan cells distribute unmet min/max
+  requirements across their occupied tracks, and col/colgroup width hints participate before
+  final available-width distribution.
+- Authored horizontal/vertical border-spacing now controls real column and row gaps. In collapsed
+  mode spacing becomes zero.
+- Added initial collapsed cell-border conflict resolution on per-grid-boundary segments. Adjacent
+  cell sides compete by used width; one winning edge is assigned to one side of the shared
+  boundary so ordinary BoxDecoration paint does not double internal borders. Table/row-group/
+  row/column border precedence remains a later CSS Tables layer.
+- Added CSS cascade/inheritance coverage, deterministic layout regressions for intrinsic track
+  sizing, col hints, horizontal/vertical spacing and collapsed border conflicts, plus an Engine
+  regression proving content-driven track widths and spacing reach FillRect display-list geometry.
+- Updated project plan, code graph/slices and CSS/rendering/HTML/box-model wiki documentation.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 312 workspace tests,
+  native startup smoke and optimized release build. The release executable is 858,624 bytes.

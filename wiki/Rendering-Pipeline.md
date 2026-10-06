@@ -121,9 +121,12 @@ op_layout consumes that map for display:none/block/inline plus table/table-capti
 table-column-group/table-column/table-header-group/table-row-group/table-footer-group/table-row/
 table-cell, mixed inline text runs, line-height/text-align/white-space geometry, font
 style/decorations, text transforms, letter/word spacing and the expanded
-[block box model](CSS-Box-Model.md). Native table roles enter a dedicated grid formatter;
-advanced intrinsic table sizing, border-collapse, configurable border-spacing, vertical-align
-and anonymous table boxes are not implemented yet. Transformed text is
+[block box model](CSS-Box-Model.md). Native table roles enter a dedicated grid formatter.
+It measures cell text/images for min/max track preferences, honors cell/col/colgroup width hints,
+distributes the available table width across those preferences, applies horizontal/vertical
+border-spacing and performs initial per-segment collapsed cell-border conflict resolution.
+Full CSS Tables percentage/intrinsic algorithms, non-cell collapsed-border precedence,
+vertical-align and anonymous table boxes are not implemented yet. Transformed text is
 measured before line placement; op_paint carries italic/decoration/spacing metadata and Win32
 uses matching text advances while drawing measured decoration/link segments. It resolves used widths/min/max/auto margins,
 box-sizing, padding, independent border edges, fixed height constraints and sibling margin

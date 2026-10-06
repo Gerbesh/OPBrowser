@@ -819,6 +819,48 @@ mod tests {
     }
 
     #[test]
+    fn intrinsic_table_tracks_and_spacing_reach_display_list() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               table { width:400px; border-spacing:10px 4px }
+               td { padding:0 }
+               #short { background:#ff0000 }
+               #long { background:#0000ff }
+             </style>
+             <table><tr>
+               <td id='short'>x</td>
+               <td id='long'>a considerably longer table cell value</td>
+             </tr></table>",
+            800,
+            600,
+        );
+
+        let rect = |expected: op_paint::Color| {
+            display_list
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::FillRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        color,
+                    } if *color == expected => Some((*x, *y, *width, *height)),
+                    _ => None,
+                })
+                .expect("colored table cell must reach paint")
+        };
+
+        let short = rect(op_paint::Color { r: 255, g: 0, b: 0 });
+        let long = rect(op_paint::Color { r: 0, g: 0, b: 255 });
+
+        assert_eq!(short.1, long.1);
+        assert!(long.2 > short.2 * 2);
+        assert_eq!(long.0 - (short.0 + short.2), 10);
+    }
+
+    #[test]
     fn table_foster_parenting_and_cell_text_reach_display_list() {
         let display_list =
             Engine::new().render_html("<table>outside<tr><td>cell</td></tr></table>tail", 800, 600);

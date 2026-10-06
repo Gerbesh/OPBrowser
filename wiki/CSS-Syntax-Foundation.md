@@ -137,7 +137,10 @@ ComputedStyleMap is now consumed by op_layout. display:none removes the subtree 
 layout, display:block creates a flow boundary, display:inline stays in the current inline
 flow, and table/table-caption/table-column-group/table-column/table-header-group/
 table-row-group/table-footer-group/table-row/table-cell feed the initial table formatting
-context. font-size, font-weight/style, line-height, decoration, spacing, transform and
+context. border-spacing accepts one/two nonnegative lengths and inherits; border-collapse
+accepts separate/collapse and inherits. Table UA style starts separate at 2px/2px. Both values
+reach the table grid formatter, including zero spacing and shared-cell border resolution in
+collapse mode. font-size, font-weight/style, line-height, decoration, spacing, transform and
 color are carried on inline character runs. text-align offsets completed lines, while
 white-space controls collapse/newline preservation/soft wrapping. text-transform is applied
 before measurement and link-range reconstruction; spacing changes wrapping and native paint.

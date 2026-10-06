@@ -1538,6 +1538,256 @@ mod tests {
     }
 
     #[test]
+    fn table_intrinsic_content_and_col_hints_drive_track_widths() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:420px; border-spacing:4px }
+               td { padding:2px }
+               #short { background:#ff0000 }
+               #long { background:#0000ff }
+             </style>
+             <table>
+               <tr>
+                 <td id='short'>x</td>
+                 <td id='long'>a much much longer table cell value</td>
+               </tr>
+             </table>
+             <table style='width:420px'>
+               <colgroup><col style='width:260px'><col></colgroup>
+               <tr>
+                 <td id='hinted' style='background:#00ff00'>a</td>
+                 <td id='rest' style='background:#ffff00'>b</td>
+               </tr>
+             </table>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let short = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let long = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+        let hinted = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+        let rest = decoration(TextColor {
+            red: 255,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+
+        assert!(long.width > short.width * 2);
+        assert!(hinted.width > rest.width);
+        assert!(hinted.width >= 250);
+    }
+
+    #[test]
+    fn table_border_spacing_controls_real_horizontal_and_vertical_gaps() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:320px; border-spacing:12px 7px }
+               td { padding:0; background:#ff0000 }
+               #b { background:#0000ff }
+               #c { background:#00ff00 }
+             </style>
+             <table>
+               <tr><td id='a'>A</td><td id='b'>B</td></tr>
+               <tr><td id='c'>C</td><td>D</td></tr>
+             </table>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let a = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let b = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+        let c = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+
+        assert_eq!(b.x - (a.x + a.width), 12);
+        assert_eq!(c.y - (a.y + a.height), 7);
+    }
+
+    #[test]
+    fn collapsed_table_mode_removes_separate_border_spacing() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:320px; border-collapse:collapse; border-spacing:30px 20px }
+               td { padding:0; background:#ff0000 }
+               #b { background:#0000ff }
+               #c { background:#00ff00 }
+             </style>
+             <table>
+               <tr><td id='a'>A</td><td id='b'>B</td></tr>
+               <tr><td id='c'>C</td><td>D</td></tr>
+             </table>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let a = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let b = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+        let c = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+
+        assert_eq!(b.x, a.x + a.width);
+        assert_eq!(c.y, a.y + a.height);
+    }
+
+    #[test]
+    fn collapsed_table_borders_choose_one_winning_shared_edge() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:320px; border-collapse:collapse }
+               td { padding:0 }
+               #a { background:#ff0000; border-right:2px solid #ff0000; border-bottom:3px solid #ff0000 }
+               #b { background:#0000ff; border-left:5px solid #0000ff }
+               #c { background:#00ff00; border-top:6px solid #00ff00 }
+             </style>
+             <table>
+               <tr><td id='a'>A</td><td id='b'>B</td></tr>
+               <tr><td id='c'>C</td><td>D</td></tr>
+             </table>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let a = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let b = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+        let c = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+
+        assert_eq!(a.border_right.width, 0);
+        assert_eq!(b.border_left.width, 5);
+        assert_eq!(
+            b.border_left.color,
+            TextColor {
+                red: 0,
+                green: 0,
+                blue: 255,
+                alpha: 255,
+            }
+        );
+        assert_eq!(a.border_bottom.width, 0);
+        assert_eq!(c.border_top.width, 6);
+        assert_eq!(
+            c.border_top.color,
+            TextColor {
+                red: 0,
+                green: 255,
+                blue: 0,
+                alpha: 255,
+            }
+        );
+    }
+
+    #[test]
     fn wraps_link_spans_without_losing_unicode_or_nested_labels() {
         let mut document = Document::new();
         let p = document.create_element("p");

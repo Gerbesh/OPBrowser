@@ -90,7 +90,10 @@ background propagation and general alpha composition remain later rendering work
 - no parent/child or empty-block margin collapse;
 - no `border-radius`, outlines, shadows, background images or multiple backgrounds;
 - percentage height needs a definite-height containing-block propagation pass;
-- no floats, positioning, tables, flexbox or grid yet;
+- table layout is implemented as a dedicated initial formatter with intrinsic content tracks,
+  colspan/rowspan, border-spacing and cell-edge collapse; full CSS Tables percentage algorithms,
+  non-cell collapsed-border precedence, vertical-align and anonymous table boxes remain later;
+- no floats, positioning, flexbox or CSS Grid yet;
 - no complete stacking-context/background-propagation model.
 
 Unsupported or invalid values are ignored before cascade winner selection, so a valid lower
