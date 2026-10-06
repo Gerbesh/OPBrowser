@@ -1361,6 +1361,26 @@ mod tests {
     }
 
     #[test]
+    fn html_comments_do_not_paint_or_change_empty_selector_geometry() {
+        let style = "<style>span:empty{padding:2px;border:1px solid red;background:blue}</style>";
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(&format!("<!--hidden-->{style}<p>a<!--<img src=missing>--><span><!--empty--></span>b</p><!--unfinished"), 800, 600);
+        let mut reference = Engine::new();
+        assert_eq!(
+            original,
+            reference.set_html_page(&format!("{style}<p>a<span></span>b</p>"), 800, 600)
+        );
+        assert!(!contains_text(&original, "hidden"));
+        assert!(!contains_text(&original, "empty"));
+        for width in [240, 800] {
+            assert_eq!(
+                engine.reflow(width, 600).unwrap().display_list,
+                reference.reflow(width, 600).unwrap().display_list
+            );
+        }
+    }
+
+    #[test]
     fn empty_inline_descendant_frames_paint_without_hidden_text_and_survive_reflow() {
         let mut engine = Engine::new();
         let original = engine.set_html_page("<p><span style='padding:2px;border:1px solid red;background:blue'><em style='display:none'>hidden</em></span>Tail</p><p><span style='padding:2px;border:1px solid green;background:red'> \n </span></p>",800,600);

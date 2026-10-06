@@ -1,6 +1,81 @@
 use op_html::{Attribute, Token, Tokenizer};
 
 #[test]
+fn comments_preserve_data_without_parsing_markup_or_references() {
+    assert_eq!(
+        Tokenizer::new("a<!-- <p>&amp;\0</p> -->b").tokenize(),
+        vec![
+            Token::Character('a'),
+            Token::Comment(" <p>&amp;\u{fffd}</p> ".into()),
+            Token::Character('b'),
+            Token::Eof
+        ]
+    );
+}
+
+#[test]
+fn comment_closing_and_eof_recovery_follow_pending_punctuation_states() {
+    for (source, expected) in [
+        ("<!-->", ""),
+        ("<!--->", ""),
+        ("<!---->", ""),
+        ("<!--x--!>", "x"),
+        ("<!--x---!>", "x-"),
+        ("<!--", ""),
+        ("<!---", ""),
+        ("<!--x-", "x"),
+        ("<!--x--", "x"),
+        ("<!--x--!", "x"),
+        ("<!--x--!y-->", "x--!y"),
+        ("<!--x--!->", "x--!->"),
+        ("<!--x<!--y-->", "x<!--y"),
+        ("<!--<!-->", "<!"),
+        ("<!--<<<!!-->", "<<<!!"),
+        ("<!--x<-y-->", "x<-y"),
+    ] {
+        assert_eq!(
+            Tokenizer::new(source).tokenize(),
+            vec![Token::Comment(expected.into()), Token::Eof],
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn comment_markers_in_text_modes_and_attributes_remain_literal() {
+    for tag in ["script", "style", "title", "textarea"] {
+        let tokens =
+            Tokenizer::new(&format!("<{tag}><!--&amp;--></{tag}><!--hidden-->")).tokenize();
+        let text: String = tokens
+            .iter()
+            .filter_map(|token| match token {
+                Token::Character(ch) => Some(*ch),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            text,
+            if matches!(tag, "title" | "textarea") {
+                "<!--&-->"
+            } else {
+                "<!--&amp;-->"
+            }
+        );
+        assert_eq!(
+            tokens
+                .iter()
+                .filter(|token| matches!(token, Token::Comment(_)))
+                .count(),
+            1
+        );
+    }
+    let tokens = Tokenizer::new("<p title='<!--literal-->'>x</p>").tokenize();
+    assert!(
+        matches!(&tokens[0], Token::StartTag { attributes, .. } if attributes[0].value == "<!--literal-->")
+    );
+}
+
+#[test]
 fn tokenizes_basic_tags_text_and_attributes() {
     let tokens = Tokenizer::new("<DIV ID=\"main\" disabled data-n=42 />Hi</DIV>").tokenize();
 

@@ -528,6 +528,11 @@ classDiagram
   tables and a bounded initial HTML meta prescan. HTTP/file/data loaders share it;
   unsupported labels and malformed Unicode remain typed errors.
 - op_html owns HTML tokenization and tree construction rules. Its private
+  comments module implements iterative comment start/body/less-than/end states and
+  emits Token::Comment(String). The initial tree builder discards these tokens, leaving
+  text buffering/open elements unchanged; DOM comment nodes and doctype modes remain later.
+  Comment detection occurs only in normal tag-open context, preserving raw-text/RCDATA.
+  Its private
   references module consumes the full named-reference table and numeric references
   before text/attribute tokens enter the DOM. Characters carries one or two Unicode
   scalars. references::named contains a generated sorted table of eight-byte

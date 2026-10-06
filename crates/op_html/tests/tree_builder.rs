@@ -2,6 +2,20 @@ use op_dom::NodeKind;
 use op_html::parse_document;
 
 #[test]
+fn comments_do_not_create_text_elements_or_change_open_elements() {
+    let document = parse_document("<!--before--><p>a<!--</p><img src=x>-->b<!--unfinished");
+    let children = document.children(document.root());
+    assert_eq!(children.len(), 1);
+    let paragraph = children[0];
+    assert_eq!(document.element(paragraph).unwrap().tag_name, "p");
+    let children = document.children(paragraph);
+    assert_eq!(children.len(), 1);
+    assert!(
+        matches!(&document.node(children[0]).unwrap().kind, NodeKind::Text(text) if text == "ab")
+    );
+}
+
+#[test]
 fn builds_nested_dom_and_preserves_attributes() {
     let document = parse_document(
         "<html><body><h1 id='title'>Hello <em>OP</em></h1><p data-x=42>World</p></body></html>",

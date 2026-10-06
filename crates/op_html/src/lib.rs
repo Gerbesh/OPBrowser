@@ -1,3 +1,4 @@
+mod comments;
 mod references;
 mod tree_builder;
 pub use tree_builder::parse_document;
@@ -19,6 +20,7 @@ pub enum Token {
         name: String,
     },
     Character(char),
+    Comment(String),
     Eof,
 }
 
@@ -117,6 +119,11 @@ impl Tokenizer {
                     }
                 },
                 State::TagOpen => match self.next_char() {
+                    Some('!') if self.input[self.cursor..].starts_with(&['-', '-']) => {
+                        self.cursor += 2;
+                        output.push(Token::Comment(self.consume_comment()));
+                        self.state = State::Data;
+                    }
                     Some('/') => self.state = State::EndTagOpen,
                     Some(character) if character.is_ascii_alphabetic() => {
                         self.begin_tag(false);

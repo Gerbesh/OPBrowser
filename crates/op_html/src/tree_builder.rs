@@ -10,6 +10,8 @@ pub fn parse_document(input: &str) -> Document {
     for token in Tokenizer::new(input).tokenize() {
         match token {
             Token::Character(character) => text_buffer.push(character),
+            // Comment nodes are not exposed by the initial DOM arena yet.
+            Token::Comment(_) => {}
             Token::StartTag {
                 name,
                 attributes,

@@ -1122,3 +1122,16 @@ This file is append-only project history.
   that HTML comments are currently rendered as literal text; declaration-token work follows.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 252 workspace tests,
   native startup/CSS demo smoke (268 commands) and optimized workspace release build.
+
+## 2026-10-06 - Owned HTML comment states and invisible comment rendering
+
+- Added an iterative private comment state machine and typed Comment tokens. Previously
+  comments became literal visible text, including fixture descriptions. The tree builder
+  now discards comment tokens without changing text buffering or open elements.
+- Covered normal/abrupt/--!> closing, pending punctuation at EOF, nested markers, literal
+  references/markup and NUL replacement; raw-text/RCDATA and attributes retain markers.
+- Added DOM and Engine regressions comparing comment-free paint lists, CSS :empty geometry
+  and retained reflow. Updated plan, graph/slices and HTML wiki. DOM comment storage,
+  doctype/document modes and other declarations are explicit remaining parser work.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 257 workspace tests,
+  native startup/CSS demo smoke (268 commands) and optimized workspace release build.

@@ -97,3 +97,14 @@ then follow its decoded Unicode query link. CI also runs the native click smoke:
 
 The GDI text backend's existing font/shaping limits still apply; scalar preservation
 does not imply complete typography or complete HTML parser conformance.
+
+HTML comments beginning with <!-- in normal HTML are tokenized separately and omitted
+by the initial tree builder. Tags, references and NULs inside them cannot create visible
+text or elements; token data keeps literal references and replaces NUL with U+FFFD.
+The owned iterative state machine handles abrupt empty closing, --!>, pending dashes,
+nested markers and EOF recovery according to the
+[WHATWG comment states](https://html.spec.whatwg.org/multipage/parsing.html#comment-start-state).
+Comments do not affect CSS :empty, text coalescing, open elements or retained reflow.
+Markers in script/style/title/textarea and quoted attributes stay literal; RCDATA still
+decodes references. Comment DOM nodes, doctype/document modes, other declarations and
+the full script-data escape state machine remain future parser work.

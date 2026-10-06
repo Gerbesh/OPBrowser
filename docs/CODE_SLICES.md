@@ -37,6 +37,13 @@ filesystem path / file: URL / data:text/html URL
 
 Verified with examples\hello.html and data:text/html startup smoke tests.
 
+HTML comments follow Tokenizer::consume_comment -> Token::Comment -> tree-builder
+discard, so their text/markup cannot enter layout, image loading or painting. Comments
+inside otherwise empty elements preserve CSS :empty and empty inline frames. Normal,
+abrupt and EOF closing recovery has tokenizer coverage; Engine compares exact display
+lists against comment-free source before/after reflow. Raw-text/RCDATA comment markers
+remain literal text. DOM comment storage, doctype modes and other declarations remain later.
+
 ## S2 - Navigation to static page
 
 Status: COMPLETE for address-driven static HTML navigation.
