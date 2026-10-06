@@ -217,6 +217,7 @@ HTML
   -> inheritance + initial/inherit/unset
   -> ComputedStyleMap { display, color, font-size, font-weight/font-style,
                         line-height, text-align, white-space, text-decoration-line,
+                        letter-spacing, word-spacing, text-transform,
                         background-color, margin/padding edges, border edges,
                         width/height min/max, box-sizing }
   -> retained in PreparedDocument
@@ -233,19 +234,21 @@ The value subset accepts display inline/block/none, font-size keywords/percent/l
 font-weight normal/bold/bolder/lighter and numeric 1-1000 (currently mapped to the native
 normal/bold backend), font-style normal/italic/oblique, text-align start/end/left/right/center,
 line-height normal/unitless/percent/length, white-space normal/nowrap/pre/pre-wrap/pre-line,
-text-decoration-line none/underline/line-through combinations, #RGB(A)/#RRGGBB(AA), CSS basic named colors plus
+text-decoration-line none/underline/line-through combinations, letter/word spacing lengths,
+text-transform none/uppercase/lowercase/capitalize, #RGB(A)/#RRGGBB(AA), CSS basic named colors plus
 rebeccapurple, and legacy/modern rgb()/rgba()/hsl()/hsla(). Functional RGB accepts numeric
 or percentage channels plus number/percentage alpha; HSL accepts deg/grad/rad/turn hue,
 percentage saturation/lightness and alpha. Channels clamp to the CSS output range. The
-global keywords inherit/initial/unset remain shared. color/font-size/font-weight/font-style/line-height/text-align/white-space inherit; display
+global keywords inherit/initial/unset remain shared. color/font-size/font-weight/font-style/line-height/text-align/white-space/letter-spacing/word-spacing/text-transform inherit; display
 does not unless explicitly set to inherit. Unsupported/invalid values are discarded
 before cascade winner selection so a lower-priority valid declaration may still win.
 UA defaults preserve M1 block/hidden behavior and heading typography. Former semantic
 heading/paragraph/list spacing now lives in computed margins and goes through the same
 block geometry path as author margins. Inline text runs may differ in size, weight/style,
-line-height, decoration and color while sharing a baseline. text-align offsets each completed
-line inside its actual content box. white-space now controls collapse, preserved newlines,
-preserved spaces and soft wrapping in the owned formatter. RGBA text and box colors are currently composited
+line-height, decoration, spacing, transform and color while sharing a baseline. text-align
+offsets each completed line inside its actual content box. white-space controls collapse,
+preserved newlines/spaces and soft wrapping. text-transform runs before measurement so
+Unicode expansions and link byte ranges stay aligned with the transformed display text. RGBA text and box colors are currently composited
 over the white page background before native painting. Existing hyperlink glyphs/underlines
 still use the native default link blue;
 author link color is deferred until link styling is represented without breaking the
@@ -292,7 +295,7 @@ Planned next path:
 ```text
 Rendering/property expansion
   -> inline box fragments/decorations
-  -> letter/word spacing + text-transform
+  -> richer inline backgrounds/borders
   -> additional computed properties
 ```
 

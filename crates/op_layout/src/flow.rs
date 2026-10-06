@@ -3,7 +3,7 @@ use super::*;
 use op_css::{
     BorderEdges, BorderStyle, BoxSizing, ComputedFontWeight, ComputedLineHeight, ComputedStyle,
     ComputedStyleMap, Display, FontStyle as CssFontStyle, LengthPercentage, MarginEdges,
-    MarginValue, PaddingEdges, TextAlign, WhiteSpace,
+    MarginValue, PaddingEdges, TextAlign, TextTransform, WhiteSpace,
 };
 
 pub(super) fn layout(
@@ -612,6 +612,9 @@ fn computed_style(style: ComputedStyle) -> Style {
                 line_through: style.text_decoration_line.line_through,
             },
             white_space: style.white_space,
+            letter_spacing: style.letter_spacing_px.round().clamp(-4096.0, 4096.0) as i32,
+            word_spacing: style.word_spacing_px.round().clamp(-4096.0, 4096.0) as i32,
+            text_transform: style.text_transform,
             color: style.color.into(),
         },
         text_align: style.text_align,
@@ -683,6 +686,9 @@ fn default_style() -> Style {
             font_style: FontStyle::Normal,
             decoration: TextDecoration::NONE,
             white_space: WhiteSpace::Normal,
+            letter_spacing: 0,
+            word_spacing: 0,
+            text_transform: TextTransform::None,
             color: TextColor {
                 red: 0,
                 green: 0,

@@ -639,6 +639,8 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
             italic,
             underline,
             line_through,
+            letter_spacing,
+            word_spacing,
             color,
             links,
         } => {
@@ -694,7 +696,15 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
                 let Some(label) = text.get(link.start..link.end) else {
                     continue;
                 };
-                let plain_width = paint_text_segment(hdc, cursor_x, *y, plain, *color);
+                let plain_width = paint_text_segment(
+                    hdc,
+                    cursor_x,
+                    *y,
+                    plain,
+                    *color,
+                    *letter_spacing,
+                    *word_spacing,
+                );
                 paint_text_decorations(
                     hdc,
                     cursor_x,
@@ -705,7 +715,15 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
                     (*underline, *line_through),
                 );
                 cursor_x += plain_width;
-                let width = paint_text_segment(hdc, cursor_x, *y, label, Color::LINK);
+                let width = paint_text_segment(
+                    hdc,
+                    cursor_x,
+                    *y,
+                    label,
+                    Color::LINK,
+                    *letter_spacing,
+                    *word_spacing,
+                );
                 paint_text_decorations(
                     hdc,
                     cursor_x,
@@ -727,7 +745,15 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
                 cursor_x += width;
                 offset = link.end;
             }
-            let tail_width = paint_text_segment(hdc, cursor_x, *y, &text[offset..], *color);
+            let tail_width = paint_text_segment(
+                hdc,
+                cursor_x,
+                *y,
+                &text[offset..],
+                *color,
+                *letter_spacing,
+                *word_spacing,
+            );
             paint_text_decorations(
                 hdc,
                 cursor_x,
@@ -789,17 +815,55 @@ fn paint_text_decorations(
     unsafe { DeleteObject(brush) };
 }
 
-fn paint_text_segment(hdc: *mut c_void, x: i32, y: i32, text: &str, color: Color) -> i32 {
+fn paint_text_segment(
+    hdc: *mut c_void,
+    x: i32,
+    y: i32,
+    text: &str,
+    color: Color,
+    letter_spacing: i32,
+    word_spacing: i32,
+) -> i32 {
     let wide_text: Vec<u16> = text.encode_utf16().collect();
     let mut size: SIZE = unsafe { zeroed() };
-    if !wide_text.is_empty() {
+    if wide_text.is_empty() {
+        return 0;
+    }
+    unsafe {
+        SetTextColor(hdc, color_ref(color));
+        GetTextExtentPoint32W(hdc, wide_text.as_ptr(), wide_text.len() as i32, &mut size);
+    }
+
+    let char_count = text.chars().count();
+    let spaces = text.chars().filter(|ch| *ch == ' ').count() as i32;
+    let target_width = size
+        .cx
+        .saturating_add(letter_spacing.saturating_mul(char_count.saturating_sub(1) as i32))
+        .saturating_add(word_spacing.saturating_mul(spaces))
+        .max(0);
+
+    if letter_spacing == 0 && word_spacing == 0 {
+        unsafe { TextOutW(hdc, x, y, wide_text.as_ptr(), wide_text.len() as i32) };
+        return target_width;
+    }
+
+    let mut cursor = x;
+    for (index, ch) in text.chars().enumerate() {
+        let units: Vec<u16> = ch.encode_utf16(&mut [0; 2]).to_vec();
+        let mut char_size: SIZE = unsafe { zeroed() };
         unsafe {
-            SetTextColor(hdc, color_ref(color));
-            TextOutW(hdc, x, y, wide_text.as_ptr(), wide_text.len() as i32);
-            GetTextExtentPoint32W(hdc, wide_text.as_ptr(), wide_text.len() as i32, &mut size);
+            TextOutW(hdc, cursor, y, units.as_ptr(), units.len() as i32);
+            GetTextExtentPoint32W(hdc, units.as_ptr(), units.len() as i32, &mut char_size);
+        }
+        cursor = cursor.saturating_add(char_size.cx);
+        if ch == ' ' {
+            cursor = cursor.saturating_add(word_spacing);
+        }
+        if index + 1 < char_count {
+            cursor = cursor.saturating_add(letter_spacing);
         }
     }
-    size.cx
+    target_width
 }
 
 fn color_ref(color: Color) -> u32 {
@@ -917,6 +981,8 @@ mod tests {
                                     italic: false,
                                     underline: false,
                                     line_through: false,
+                                    letter_spacing: 0,
+                                    word_spacing: 0,
                                     color: Color::BLACK,
                                     links: vec![op_paint::LinkSpan {
                                         start: 7,
@@ -1035,6 +1101,8 @@ mod tests {
                                 italic: false,
                                 underline: false,
                                 line_through: false,
+                                letter_spacing: 0,
+                                word_spacing: 0,
                                 color: Color::BLACK,
                                 links: vec![op_paint::LinkSpan {
                                     start: 0,

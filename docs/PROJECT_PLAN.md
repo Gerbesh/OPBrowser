@@ -139,7 +139,10 @@ Status: IN PROGRESS.
 - DONE `font-style` normal/italic/oblique through GDI font realization/measurement, initial
   `text-decoration`/`text-decoration-line` underline + line-through native painting, and
   `white-space` normal/nowrap/pre/pre-wrap/pre-line behavior in the owned line formatter.
-- NEXT add inline box fragments/decorations plus letter/word spacing and text-transform.
+- DONE inherited `letter-spacing`/`word-spacing` lengths plus `text-transform`
+  none/uppercase/lowercase/capitalize; transformed Unicode text is measured before layout,
+  spacing affects wrapping/alignment/link bounds, and Win32 paints matching visual advances.
+- NEXT add inline box fragments/decorations and richer inline background/border geometry.
 - LATER functional pseudo-classes (:is/:where/:not/:nth-child), pseudo-elements and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.

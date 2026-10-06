@@ -2,7 +2,7 @@ use super::{
     FontStyle, FontWeight, ImageBox, LayoutItem, LinkSpan, TextBox, TextColor, TextDecoration,
     TextMeasurer, TextMetrics,
 };
-use op_css::{TextAlign, WhiteSpace};
+use op_css::{TextAlign, TextTransform, WhiteSpace};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct InlineStyle {
@@ -12,6 +12,9 @@ pub(super) struct InlineStyle {
     pub font_style: FontStyle,
     pub decoration: TextDecoration,
     pub white_space: WhiteSpace,
+    pub letter_spacing: i32,
+    pub word_spacing: i32,
+    pub text_transform: TextTransform,
     pub color: TextColor,
 }
 
@@ -159,13 +162,17 @@ impl<'a, 'm> Lines<'a, 'm> {
                 .iter()
                 .position(|ch| ch.href != href || ch.style != style)
                 .map_or(chars.len(), |n| start + n);
-            let text: String = chars[start..end].iter().map(|ch| ch.ch).collect();
-            width = width.saturating_add(
-                self.measurer
-                    .measure(&text, style.font_size, style.weight, style.font_style)
-                    .width
-                    .max(0),
-            );
+            let text = transformed_text(&chars[start..end], style.text_transform);
+            let measured = self
+                .measurer
+                .measure(&text, style.font_size, style.weight, style.font_style)
+                .width;
+            width = width.saturating_add(spaced_width(
+                measured,
+                &text,
+                style.letter_spacing,
+                style.word_spacing,
+            ));
             start = end;
         }
         width
@@ -320,9 +327,10 @@ impl<'a, 'm> Lines<'a, 'm> {
         let width = self.text_width(chars);
         let mut text = String::new();
         let mut links: Vec<LinkSpan> = Vec::new();
+        let mut capitalize_next = true;
         for ch in chars {
             let start = text.len();
-            text.push(ch.ch);
+            append_transformed_char(&mut text, ch.ch, style.text_transform, &mut capitalize_next);
             if let Some(href) = ch.href {
                 if let Some(last) = links.last_mut()
                     && last.end == start
@@ -427,6 +435,8 @@ impl<'a, 'm> Lines<'a, 'm> {
                         weight: text.style.weight,
                         style: text.style.font_style,
                         decoration: text.style.decoration,
+                        letter_spacing: text.style.letter_spacing,
+                        word_spacing: text.style.word_spacing,
                         color: text.style.color,
                         links: text.links,
                     });
@@ -438,4 +448,39 @@ impl<'a, 'm> Lines<'a, 'm> {
         self.y += ascent + descent;
         self.line_width = 0;
     }
+}
+
+fn transformed_text(chars: &[InlineChar<'_>], transform: TextTransform) -> String {
+    let mut text = String::new();
+    let mut capitalize_next = true;
+    for ch in chars {
+        append_transformed_char(&mut text, ch.ch, transform, &mut capitalize_next);
+    }
+    text
+}
+
+fn append_transformed_char(
+    output: &mut String,
+    ch: char,
+    transform: TextTransform,
+    capitalize_next: &mut bool,
+) {
+    match transform {
+        TextTransform::None => output.push(ch),
+        TextTransform::Uppercase => output.extend(ch.to_uppercase()),
+        TextTransform::Lowercase => output.extend(ch.to_lowercase()),
+        TextTransform::Capitalize if *capitalize_next && ch.is_alphabetic() => {
+            output.extend(ch.to_uppercase());
+        }
+        TextTransform::Capitalize => output.push(ch),
+    }
+    *capitalize_next = ch.is_whitespace();
+}
+
+fn spaced_width(base: i32, text: &str, letter_spacing: i32, word_spacing: i32) -> i32 {
+    let gaps = text.chars().count().saturating_sub(1) as i32;
+    let spaces = text.chars().filter(|ch| *ch == ' ').count() as i32;
+    base.saturating_add(letter_spacing.saturating_mul(gaps))
+        .saturating_add(word_spacing.saturating_mul(spaces))
+        .max(0)
 }

@@ -90,6 +90,8 @@ pub struct TextBox {
     pub weight: FontWeight,
     pub style: FontStyle,
     pub decoration: TextDecoration,
+    pub letter_spacing: i32,
+    pub word_spacing: i32,
     pub color: TextColor,
     pub links: Vec<LinkSpan>,
 }
@@ -571,6 +573,44 @@ mod tests {
         assert_eq!(styled.style, FontStyle::Italic);
         assert!(styled.decoration.underline);
         assert!(styled.decoration.line_through);
+    }
+
+    #[test]
+    fn text_transform_and_spacing_change_output_width_and_link_ranges() {
+        let document = op_html::parse_document(
+            "<div style='text-transform:uppercase; letter-spacing:3px; word-spacing:7px'><a href='next'>straße test</a></div>
+             <div style='text-transform:capitalize'>hello world</div>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            500,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let transformed = layout
+            .text_boxes
+            .iter()
+            .find(|line| line.text == "STRASSE TEST")
+            .unwrap();
+        assert_eq!(transformed.letter_spacing, 3);
+        assert_eq!(transformed.word_spacing, 7);
+        assert!(transformed.width > 120);
+        assert_eq!(transformed.links.len(), 1);
+        assert_eq!(
+            &transformed.text[transformed.links[0].start..transformed.links[0].end],
+            "STRASSE TEST"
+        );
+        assert_eq!(transformed.links[0].href, "next");
+        assert!(
+            layout
+                .text_boxes
+                .iter()
+                .any(|line| line.text == "Hello World")
+        );
     }
 
     #[test]

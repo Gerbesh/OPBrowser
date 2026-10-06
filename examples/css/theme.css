@@ -21,3 +21,5 @@ h1 { color: #6d28d9; font-size: 42px; }
 .inline-style-demo { width: 62%; margin: 12px auto; padding: 10px; font-style: italic; text-decoration: underline line-through; background-color: #fefce8; border: 2px solid #ca8a04; box-sizing: border-box; }
 .pre-demo { width: 62%; margin: 12px auto; padding: 10px; white-space: pre-wrap; background-color: #f0fdf4; border: 2px solid #16a34a; box-sizing: border-box; }
 .nowrap-demo { width: 220px; margin: 12px auto; padding: 8px; white-space: nowrap; background-color: #eff6ff; border: 2px solid #2563eb; box-sizing: border-box; }
+.spacing-demo { width: 66%; margin: 12px auto; padding: 10px; text-transform: uppercase; letter-spacing: 3px; word-spacing: 8px; background-color: #f0fdf4; border: 2px solid #16a34a; box-sizing: border-box; }
+.capitalize-demo { width: 66%; margin: 12px auto; padding: 10px; text-transform: capitalize; letter-spacing: -1px; background-color: #fdf4ff; border: 2px solid #c026d3; box-sizing: border-box; }

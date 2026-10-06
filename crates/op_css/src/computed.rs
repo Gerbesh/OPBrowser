@@ -41,6 +41,14 @@ pub enum WhiteSpace {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextTransform {
+    None,
+    Uppercase,
+    Lowercase,
+    Capitalize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextDecorationLine {
     pub underline: bool,
     pub line_through: bool,
@@ -217,6 +225,9 @@ pub struct ComputedStyle {
     pub text_align: TextAlign,
     pub white_space: WhiteSpace,
     pub text_decoration_line: TextDecorationLine,
+    pub letter_spacing_px: f32,
+    pub word_spacing_px: f32,
+    pub text_transform: TextTransform,
     pub background_color: CssColor,
     pub margin: MarginEdges,
     pub padding: PaddingEdges,
@@ -242,6 +253,9 @@ impl ComputedStyle {
             text_align: TextAlign::Start,
             white_space: WhiteSpace::Normal,
             text_decoration_line: TextDecorationLine::NONE,
+            letter_spacing_px: 0.0,
+            word_spacing_px: 0.0,
+            text_transform: TextTransform::None,
             background_color: CssColor::TRANSPARENT,
             margin: MarginEdges::ZERO,
             padding: PaddingEdges::ZERO,
@@ -322,6 +336,9 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             text_align: parent.text_align,
             white_space: parent.white_space,
             text_decoration_line: parent.text_decoration_line,
+            letter_spacing_px: parent.letter_spacing_px,
+            word_spacing_px: parent.word_spacing_px,
+            text_transform: parent.text_transform,
             background_color: initial.background_color,
             margin: initial.margin,
             padding: initial.padding,
@@ -495,6 +512,31 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.text_decoration_line),
             TextDecorationLine::NONE,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "letter-spacing", |tokens| {
+        parse_spacing(tokens, style.font_size_px, false)
+    }) {
+        style.letter_spacing_px = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.letter_spacing_px),
+            0.0,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "word-spacing", |tokens| {
+        parse_spacing(tokens, style.font_size_px, true)
+    }) {
+        style.word_spacing_px = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.word_spacing_px),
+            0.0,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "text-transform", parse_text_transform) {
+        style.text_transform = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.text_transform),
+            TextTransform::None,
         );
     }
     if let Some((_, value)) = winning_value(declarations, "background-color", parse_color) {
@@ -727,6 +769,41 @@ fn parse_text_decoration_line(tokens: &[TokenKind]) -> Option<Specified<TextDeco
         saw_value = true;
     }
     saw_value.then_some(Specified::Value(decoration))
+}
+
+fn parse_text_transform(tokens: &[TokenKind]) -> Option<Specified<TextTransform>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "none" => Some(Specified::Value(TextTransform::None)),
+        "uppercase" => Some(Specified::Value(TextTransform::Uppercase)),
+        "lowercase" => Some(Specified::Value(TextTransform::Lowercase)),
+        "capitalize" => Some(Specified::Value(TextTransform::Capitalize)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_spacing(
+    tokens: &[TokenKind],
+    font_px: f32,
+    allow_percent: bool,
+) -> Option<Specified<f32>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| 0.0));
+    }
+    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("normal")) {
+        return Some(Specified::Value(0.0));
+    }
+    let value = match single_significant_token(tokens)? {
+        TokenKind::Number(number) if parse_number(number).is_some_and(|value| value == 0.0) => 0.0,
+        TokenKind::Percentage(number) if allow_percent => font_px * parse_number(number)? / 100.0,
+        TokenKind::Dimension { number, unit } => {
+            absolute_or_font_relative_px(parse_number(number)?, unit, font_px)?
+        }
+        _ => return None,
+    };
+    (value.is_finite() && (-4096.0..=4096.0).contains(&value)).then_some(Specified::Value(value))
 }
 
 fn parse_text_align(tokens: &[TokenKind]) -> Option<Specified<TextAlign>> {
@@ -2318,6 +2395,36 @@ mod tests {
                 .white_space,
             WhiteSpace::Pre
         );
+    }
+
+    #[test]
+    fn computes_spacing_and_text_transform_with_inheritance_and_relative_units() {
+        let document = parse_document(
+            "<div id='parent' style='font-size:20px; letter-spacing:0.1em; word-spacing:25%; text-transform:uppercase'>
+                <span id='child'>straße test</span>
+                <span id='override' style='font-size:10px; letter-spacing:-1px; word-spacing:2em; text-transform:lowercase'>HELLO WORLD</span>
+                <span id='caps' style='text-transform:capitalize'>hello world</span>
+             </div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let parent = computed.style_for(find_by_id(&document, "parent")).unwrap();
+        let child = computed.style_for(find_by_id(&document, "child")).unwrap();
+        let override_style = computed
+            .style_for(find_by_id(&document, "override"))
+            .unwrap();
+        let caps = computed.style_for(find_by_id(&document, "caps")).unwrap();
+
+        assert_eq!(parent.letter_spacing_px, 2.0);
+        assert_eq!(parent.word_spacing_px, 5.0);
+        assert_eq!(parent.text_transform, TextTransform::Uppercase);
+        assert_eq!(child.letter_spacing_px, 2.0);
+        assert_eq!(child.word_spacing_px, 5.0);
+        assert_eq!(child.text_transform, TextTransform::Uppercase);
+        assert_eq!(override_style.letter_spacing_px, -1.0);
+        assert_eq!(override_style.word_spacing_px, 20.0);
+        assert_eq!(override_style.text_transform, TextTransform::Lowercase);
+        assert_eq!(caps.text_transform, TextTransform::Capitalize);
     }
 
     #[test]

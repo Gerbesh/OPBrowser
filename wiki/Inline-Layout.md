@@ -41,10 +41,11 @@ emits this sequence instead of painting all text before all images.
   rectangles retain inherited hrefs and use existing scroll-aware hit testing.
 - Computed display:none/block/inline participates in flow. Heading/paragraph/list spacing
   is now represented as temporary UA computed margins in the block box-model path.
-- Computed font-size, font-weight, font-style, line-height, text decoration and text color
-  can change inside one inline line. Italic/oblique use italic GDI font realization for both
-  measurement and paint. Underline/line-through are carried through the display list and
-  painted over measured segment widths. `text-align` offsets each completed line.
+- Computed font-size, font-weight, font-style, line-height, text decoration, spacing,
+  text-transform and text color can change inside one inline line. Italic/oblique use italic
+  GDI font realization for both measurement and paint. Underline/line-through are carried
+  through the display list and painted over measured segment widths. `text-align` offsets
+  each completed line. letter/word spacing participates in wrapping and native advances.
 
 Image source policy, dimensions, viewport fitting and pixel budgets are described
 in [Image Loading](Image-Loading.md).
@@ -68,8 +69,11 @@ This is still an initial left-to-right subset. Mixed computed inline size/weight
 is supported, but inline padding/background/border fragments are not. Block-level box-model
 support, including adjacent sibling margin collapse, is described in
 [CSS Block Box Model](CSS-Box-Model.md). Parent/child margin collapse, font families,
-letter/word spacing, text-transform, decoration color/style/thickness, `tab-size`, advanced
-shaping/font fallback, bidi and grapheme-aware/full Unicode line breaking remain future work.
+decoration color/style/thickness, `tab-size`, advanced shaping/font fallback, bidi and
+grapheme-aware/full Unicode line breaking remain future work. `text-transform: capitalize`
+currently uses whitespace word starts rather than full locale/context-sensitive CSS rules;
+word-spacing targets processed ASCII spaces, and spaced native painting advances per Unicode
+scalar while layout width stays anchored to whole-run GDI measurement plus CSS spacing.
 Inline replaced elements do not yet fully honor nowrap semantics and there are no inline
 box fragments/backgrounds/borders yet. Floats/tables/flex/grid also remain future work. Hyperlink glyph color is
 still the native default blue. These tests do not claim complete CSS conformance.

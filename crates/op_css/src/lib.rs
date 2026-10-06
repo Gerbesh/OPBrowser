@@ -11,7 +11,8 @@ mod tokenizer;
 pub use computed::{
     BorderEdges, BorderStyle, BoxSizing, ComputedBorder, ComputedFontWeight, ComputedLineHeight,
     ComputedStyle, ComputedStyleMap, CssColor, Display, FontStyle, LengthPercentage, MarginEdges,
-    MarginValue, PaddingEdges, TextAlign, TextDecorationLine, WhiteSpace, compute_styles,
+    MarginValue, PaddingEdges, TextAlign, TextDecorationLine, TextTransform, WhiteSpace,
+    compute_styles,
 };
 pub use parser::{parse_declaration_list, parse_stylesheet};
 pub use style::{

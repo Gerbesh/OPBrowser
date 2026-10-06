@@ -88,8 +88,9 @@ type/class/ID/universal selectors, attribute selectors, descendant/child/adjacen
 sibling combinators, :root/:first-child/:last-child/:only-child/:empty/:link, cascade/inheritance,
 `display` inline/block/none, #hex/basic named colors, legacy/modern rgb()/rgba()/hsl()/hsla(),
 relative/absolute font-size lengths, numeric/normal/bold font weight, inherited text-align,
-real line-height geometry, italic/oblique font style, underline/line-through decoration and
-white-space normal/nowrap/pre/pre-wrap/pre-line. The block box model includes
+real line-height geometry, italic/oblique font style, underline/line-through decoration,
+white-space normal/nowrap/pre/pre-wrap/pre-line, letter/word spacing and text-transform
+none/uppercase/lowercase/capitalize. The block box model includes
 margin/padding shorthands and side longhands,
 auto/negative/percentage margins, background color, independent solid/none border sides,
 width/height with min/max, `box-sizing`, percentages, em/rem and CSS absolute length units.

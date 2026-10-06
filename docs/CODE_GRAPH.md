@@ -232,6 +232,9 @@ classDiagram
         text_align
         white_space
         text_decoration_line
+        letter_spacing_px
+        word_spacing_px
+        text_transform
         background_color
         margin_edges
         padding_edges
@@ -321,7 +324,7 @@ classDiagram
     PreparedDocument --> Document : DOM snapshot
     PreparedDocument --> RasterImage : shared Arc image resources
     Document --> LayoutTree : flow grouping / inline lines
-    ComputedStyleMap --> LayoutTree : display/text style + line-height/alignment/white-space/decorations + block box geometry
+    ComputedStyleMap --> LayoutTree : display/text style + line-height/alignment/white-space/decorations/spacing/transform + block box geometry
     LayoutTree --> BoxDecoration : block backgrounds / solid borders
     BoxDecoration --> DisplayList : background + four border FillRects
     LayoutTree --> DisplayList : styled text / image paint commands

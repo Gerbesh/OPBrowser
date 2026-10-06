@@ -562,3 +562,29 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 135 workspace tests,
   native Windows tests, normal startup smoke, the 85-command CSS demo smoke and release build.
 - Rebuilt `target/release/op_browser.exe`; this build is 583,680 bytes.
+
+## 2026-10-06 - Text transform and character/word spacing
+
+- Added inherited `letter-spacing` and `word-spacing` computed values with normal/global
+  keywords plus signed CSS lengths; word-spacing also accepts percentages against the
+  current computed font size in this initial subset.
+- Added inherited `text-transform: none|uppercase|lowercase|capitalize`. Transform runs
+  before measurement and final TextBox/link-span construction, so Unicode expansions such
+  as `ß -> SS` produce valid transformed UTF-8 link byte ranges instead of stale offsets.
+- Inline layout now includes letter/word spacing in measured run widths, wrapping, text-align
+  offsets and final TextBox geometry. Positive and negative spacing therefore affect real
+  line breaking rather than only painter metadata.
+- PaintCommand carries the same spacing values. Win32 draws nonzero-spaced text per Unicode
+  scalar while keeping returned segment/link widths anchored to whole-run GDI measurement
+  plus the CSS spacing adjustment; decoration widths follow the spaced segment bounds.
+- Added computed/layout/Engine regressions for inheritance, em/%/negative spacing,
+  uppercase/lowercase/capitalize, transformed Unicode text and link byte-range preservation.
+- Updated the built-in start page and CSS demo with uppercase/capitalize plus positive and
+  negative spacing examples; the CSS demo smoke now emits 99 paint commands.
+- Updated project plan, code graph/slices, README and CSS/rendering/inline-layout wiki pages.
+- Deliberate limits remain: capitalize uses whitespace word starts instead of full locale/
+  context-sensitive CSS rules, word spacing targets processed ASCII spaces, and per-scalar
+  GDI paint can differ slightly from whole-run kerning used as the layout width baseline.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 138 workspace tests,
+  native Windows tests, normal startup smoke, the 99-command CSS demo smoke and release build.
+- Rebuilt `target/release/op_browser.exe`; this build is 596,992 bytes.

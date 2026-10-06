@@ -59,6 +59,8 @@ pub enum PaintCommand {
         italic: bool,
         underline: bool,
         line_through: bool,
+        letter_spacing: i32,
+        word_spacing: i32,
         color: Color,
         links: Vec<LinkSpan>,
     },
@@ -101,6 +103,8 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
                     italic: text_box.style == FontStyle::Italic,
                     underline: text_box.decoration.underline,
                     line_through: text_box.decoration.line_through,
+                    letter_spacing: text_box.letter_spacing,
+                    word_spacing: text_box.word_spacing,
                     color: composite_text_color(text_box.color),
                     links: text_box.links.clone(),
                 });
@@ -388,6 +392,8 @@ mod tests {
                     underline: true,
                     line_through: true,
                 },
+                letter_spacing: 2,
+                word_spacing: 3,
                 color: TextColor {
                     red: 12,
                     green: 34,
@@ -423,6 +429,8 @@ mod tests {
                 italic: true,
                 underline: true,
                 line_through: true,
+                letter_spacing: 2,
+                word_spacing: 3,
                 color: Color {
                     r: 12,
                     g: 34,

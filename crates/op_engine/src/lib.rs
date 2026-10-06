@@ -753,6 +753,28 @@ mod tests {
     }
 
     #[test]
+    fn text_transform_and_spacing_reach_display_list() {
+        let display_list = Engine::new().render_html(
+            "<p style='text-transform:uppercase;letter-spacing:3px;word-spacing:6px'><a href='next'>straße test</a></p>",
+            800,
+            600,
+        );
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text {
+                text,
+                letter_spacing: 3,
+                word_spacing: 6,
+                links,
+                ..
+            } if text == "STRASSE TEST"
+                && links.len() == 1
+                && &text[links[0].start..links[0].end] == "STRASSE TEST"
+        )));
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,
