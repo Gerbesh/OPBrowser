@@ -140,9 +140,16 @@ processed against the stored head element without discarding the current body st
 Body/html end tags now move through after-body/after-after-body states without popping that
 stack. Comments after body attach to html, comments after html attach to Document, specified
 whitespace/html tokens delegate to in-body, and unexpected trailing content re-enters
-in-body for recovery. Active formatting elements and the adoption agency algorithm are
-intentionally the next separate parser layer rather than being approximated by ordinary
-stack popping. Table/template/frameset modes are still future work.
+in-body for recovery.
+
+Active formatting elements are now tracked separately from the open-element stack for
+a/b/big/code/em/font/i/nobr/s/small/strike/strong/tt/u. Stale entries are reconstructed
+before relevant in-body insertion, identical entries are bounded by the Noah's Ark rule,
+and formatting end tags run the bounded adoption agency algorithm instead of generic stack
+popping. That path handles the no-furthest-block case and the furthest-block case that
+clones/reparents DOM nodes. Repeated a/nobr starts use formatting recovery, while
+applet/marquee/object create marker boundaries that are cleared on their matching end tags.
+Table/template/frameset/foster-parenting modes are still future work.
 
 Unknown <! declarations and CDATA-like declarations in the current HTML-only context become
 Comment nodes and remain non-rendering. Raw-text/RCDATA and attributes still keep declaration

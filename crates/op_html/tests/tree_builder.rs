@@ -546,3 +546,131 @@ fn after_body_and_after_after_body_delegate_their_in_body_tokens() {
         NodeKind::Comment(data) if data == "document-tail"
     ));
 }
+
+#[test]
+fn adoption_agency_reconstructs_misnested_inline_formatting() {
+    let document = parse_document("<p>1<b>2<i>3</b>4</i>5");
+    let paragraph = child_element(&document, body(&document), "p");
+    let children = document.children(paragraph);
+
+    assert_eq!(children.len(), 4);
+    assert!(matches!(
+        &document.node(children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "1"
+    ));
+
+    let bold = children[1];
+    assert_eq!(document.element(bold).unwrap().tag_name, "b");
+    let bold_children = document.children(bold);
+    assert_eq!(bold_children.len(), 2);
+    assert!(matches!(
+        &document.node(bold_children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "2"
+    ));
+    let first_italic = bold_children[1];
+    assert_eq!(document.element(first_italic).unwrap().tag_name, "i");
+    assert!(matches!(
+        &document.node(document.children(first_italic)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "3"
+    ));
+
+    let reconstructed_italic = children[2];
+    assert_eq!(
+        document.element(reconstructed_italic).unwrap().tag_name,
+        "i"
+    );
+    assert!(matches!(
+        &document.node(document.children(reconstructed_italic)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "4"
+    ));
+    assert!(matches!(
+        &document.node(children[3]).unwrap().kind,
+        NodeKind::Text(text) if text == "5"
+    ));
+}
+
+#[test]
+fn adoption_agency_reparents_a_furthest_block() {
+    let document = parse_document("<b>1<p>2</b>3</p>");
+    let body = body(&document);
+    let children = document.children(body);
+
+    assert_eq!(children.len(), 2);
+    let original_bold = children[0];
+    assert_eq!(document.element(original_bold).unwrap().tag_name, "b");
+    assert!(matches!(
+        &document.node(document.children(original_bold)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "1"
+    ));
+
+    let paragraph = children[1];
+    assert_eq!(document.element(paragraph).unwrap().tag_name, "p");
+    let paragraph_children = document.children(paragraph);
+    assert_eq!(paragraph_children.len(), 2);
+    let adopted_bold = paragraph_children[0];
+    assert_eq!(document.element(adopted_bold).unwrap().tag_name, "b");
+    assert!(matches!(
+        &document.node(document.children(adopted_bold)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "2"
+    ));
+    assert!(matches!(
+        &document.node(paragraph_children[1]).unwrap().kind,
+        NodeKind::Text(text) if text == "3"
+    ));
+}
+
+#[test]
+fn repeated_anchor_start_tags_close_the_previous_active_anchor() {
+    let document = parse_document("<a href=a>one<a href=b>two</a>three");
+    let body = body(&document);
+    let children = document.children(body);
+
+    assert_eq!(children.len(), 3);
+    let first = children[0];
+    let second = children[1];
+    assert_eq!(document.element(first).unwrap().tag_name, "a");
+    assert_eq!(document.element(second).unwrap().tag_name, "a");
+    assert_eq!(document.element(first).unwrap().attributes[0].value, "a");
+    assert_eq!(document.element(second).unwrap().attributes[0].value, "b");
+    assert!(matches!(
+        &document.node(document.children(first)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "one"
+    ));
+    assert!(matches!(
+        &document.node(document.children(second)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "two"
+    ));
+    assert!(matches!(
+        &document.node(children[2]).unwrap().kind,
+        NodeKind::Text(text) if text == "three"
+    ));
+}
+
+#[test]
+fn formatting_markers_prevent_inner_formatting_from_leaking_past_object() {
+    let document = parse_document("<b>1<object><i>2</object>3</b>");
+    let body = body(&document);
+    let bold = document.children(body)[0];
+    assert_eq!(document.element(bold).unwrap().tag_name, "b");
+
+    let children = document.children(bold);
+    assert_eq!(children.len(), 3);
+    assert!(matches!(
+        &document.node(children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "1"
+    ));
+
+    let object = children[1];
+    assert_eq!(document.element(object).unwrap().tag_name, "object");
+    let italic = document.children(object)[0];
+    assert_eq!(document.element(italic).unwrap().tag_name, "i");
+    assert!(matches!(
+        &document.node(document.children(italic)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "2"
+    ));
+
+    assert!(matches!(
+        &document.node(children[2]).unwrap().kind,
+        NodeKind::Text(text) if text == "3"
+    ));
+}

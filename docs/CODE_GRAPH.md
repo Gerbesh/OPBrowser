@@ -548,8 +548,13 @@ classDiagram
   stored head pointer. Body/html end tags now switch insertion modes without popping the
   recovery stack; after-body comments attach to html, after-after-body comments attach to
   Document, and delegated/trailing tokens follow the specified in-body recovery path.
-  Active formatting/adoption-agency logic, foreign-content/CDATA and table/template/frameset
-  insertion modes remain later work.
+  TreeBuilder also owns an ActiveFormattingEntry list with marker boundaries and retained
+  start-tag attributes. Formatting starts use the Noah's Ark three-entry cap; reconstruction
+  recreates stale formatting entries on the open-element stack; formatting end tags use the
+  bounded adoption-agency algorithm, including furthest-block DOM reparenting and cloned
+  formatting nodes. Repeated anchors/nobr recover through the same path, while applet/marquee/
+  object add and clear formatting markers. Foreign-content/CDATA and table/template/frameset/
+  foster-parenting insertion modes remain later work.
   Its private
   references module consumes the full named-reference table and numeric references
   before text/attribute tokens enter the DOM. Characters carries one or two Unicode

@@ -776,6 +776,48 @@ mod tests {
     }
 
     #[test]
+    fn misnested_html_formatting_recovery_reaches_display_list() {
+        let display_list = Engine::new().render_html("<p>1<b>2<i>3</b>4</i>5</p>", 800, 600);
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text {
+                text,
+                bold: true,
+                italic: false,
+                ..
+            } if text == "2"
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text {
+                text,
+                bold: true,
+                italic: true,
+                ..
+            } if text == "3"
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text {
+                text,
+                bold: false,
+                italic: true,
+                ..
+            } if text == "4"
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text {
+                text,
+                bold: false,
+                italic: false,
+                ..
+            } if text == "5"
+        )));
+    }
+
+    #[test]
     fn text_transform_and_spacing_reach_display_list() {
         let display_list = Engine::new().render_html(
             "<p style='text-transform:uppercase;letter-spacing:3px;word-spacing:6px'><a href='next'>straße test</a></p>",

@@ -63,9 +63,14 @@ img. Head-only metadata/raw-text tokens encountered while in body are attached b
 stored head without losing the body stack. </body>/</html> now switch parser state without
 popping that stack; after-body comments attach to html, after-after-body comments attach to
 Document, whitespace/html tokens delegate through in-body, and unexpected trailing content
-re-enters in-body for recovery. Active formatting/adoption agency, mode-specific layout
-quirks, processing instructions, table/template/frameset modes and foreign-content context
-remain later.
+re-enters in-body for recovery. The in-body formatting path now keeps active formatting
+entries for a/b/big/code/em/font/i/nobr/s/small/strike/strong/tt/u, reconstructs entries
+that have fallen off the open-element stack, caps identical entries with the Noah's Ark rule
+and runs bounded adoption-agency recovery for formatting end tags. Misnested formatting can
+clone/reparent nodes around a furthest special block; repeated anchors/nobr are recovered and
+applet/marquee/object markers prevent inner formatting from leaking outward. Mode-specific
+layout quirks, processing instructions, table/template/frameset/foster-parenting modes and
+foreign-content context remain later.
 
 ## S2 - Navigation to static page
 

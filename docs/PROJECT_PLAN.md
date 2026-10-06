@@ -62,9 +62,11 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE after-body/after-after-body insertion modes: </body>/</html> switch parser state
   without destroying the recovery stack, comments land on html/document as specified,
   whitespace/html tokens delegate to in-body and stray trailing content re-enters in-body.
-- LATER active formatting elements/adoption agency, mode-specific legacy CSS/layout quirks,
-  processing instructions, foreign content/CDATA, table/template/frameset insertion modes
-  and complete script-data escape states.
+- DONE active formatting elements/adoption-agency slice: reconstruction for the HTML formatting
+  tag set, Noah's Ark three-entry cap, repeated-anchor/nobr recovery, applet/marquee/object
+  marker boundaries and furthest-block DOM reparenting for misnested formatting.
+- LATER mode-specific legacy CSS/layout quirks, processing instructions, foreign content/CDATA,
+  table/template/frameset/foster-parenting insertion modes and complete script-data escape states.
 - DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
 - DONE initial HTML tree builder from tokenizer output into op_dom::Document.
 - DONE initial document-to-layout pipeline with basic text flow and wrapping.

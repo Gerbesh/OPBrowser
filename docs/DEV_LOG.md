@@ -1248,3 +1248,25 @@ This file is append-only project history.
   native startup smoke and optimized release build. The release executable is 802,304 bytes.
   One pre-existing generated-image loopback test transiently hit WSAEWOULDBLOCK on the first
   full run; it passed standalone immediately afterward and the complete workspace retry passed.
+
+## 2026-10-06 - Active formatting elements and adoption agency
+
+- Added a separate active-formatting list retaining element NodeId, tag name and original
+  attributes for a/b/big/code/em/font/i/nobr/s/small/strike/strong/tt/u.
+- Formatting entries now reconstruct when they have fallen off the open-element stack.
+  Matching entries are bounded by the Noah's Ark three-entry rule, including an internal
+  regression for the cap.
+- Formatting end tags now run a bounded eight-pass adoption-agency algorithm. It handles the
+  simple no-furthest-block path plus the furthest-block path with cloned formatting nodes,
+  stack/list replacement and real DOM reparenting.
+- Repeated a/nobr starts use formatting recovery. applet/marquee/object create marker
+  boundaries and matching end tags clear formatting back to the marker.
+- Added four tree-builder regressions for crossed b/i formatting, furthest-block paragraph
+  adoption, duplicate anchors and object marker isolation. Added an Engine regression proving
+  recovered b/i structure reaches native display-list bold/italic runs.
+- Updated project plan, code graph/slices and the HTML parsing wiki. Table/template/frameset
+  modes, foster parenting, foreign content and mode-specific quirks remain separate work.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 293 workspace tests,
+  native startup smoke and optimized release build. The release executable is 813,056 bytes.
+  The pre-existing generated-image loopback test again transiently hit WSAEWOULDBLOCK on the
+  first full run; it passed standalone and the complete workspace retry passed.
