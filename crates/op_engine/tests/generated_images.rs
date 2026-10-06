@@ -25,7 +25,7 @@ fn decorated_dom_image_boxes_reach_paint_links_and_retained_reflow() {
         percent(include_bytes!("../../../examples/images/colors.png"))
     );
     let html = format!(
-        "<style>img {{ padding:4px; border:2px solid red; background:green }}</style><p><a href='next.html'><img src='{src}' width=30 height=20></a>Tail</p>"
+        "<style>img {{ padding:4px; border:2px solid red; background:green; box-sizing:border-box; width:42px; height:32px }}</style><p><a href='next.html'><img src='{src}' width=300 height=200></a>Tail</p>"
     );
     let mut engine = Engine::new();
     let original = engine

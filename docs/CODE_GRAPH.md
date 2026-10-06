@@ -518,6 +518,9 @@ classDiagram
   It resolves percent/auto/min/max/content-vs-border-box widths, independent border sides,
   block height minima/maxima and adjacent-sibling vertical margin collapse. Whitespace-only
   text between block siblings is suppressed before it can create anonymous line geometry.
+  op_layout::replaced resolves raster intrinsic/explicit/auto sizes and min/max ratio conflicts.
+  flow converts CSS percentage-width/font-relative/content-vs-border-box sizes and applies
+  the existing available-width/4096-height fitting policy after CSS used sizes.
 - op_paint owns platform-neutral paint commands/display lists, CSS color conversion and
   BoxDecoration -> FillRect expansion for backgrounds/four border sides. Computed UA link
   color/underline defaults and author overrides use ordinary text commands; LinkSpan carries

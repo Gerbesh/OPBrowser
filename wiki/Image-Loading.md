@@ -57,9 +57,15 @@ the owned buffer limits. No image timers or animation CPU run in the background.
 
 Images share measured lines with text, align their bottom edge to the text baseline
 and wrap as atomic boxes. See [Inline Layout](Inline-Layout.md). Natural sizes
-are used unless supported integer width/height attributes override them. One
-dimension preserves aspect ratio; two dimensions may stretch. Oversized attribute
-values above 4096 are ignored; zero dimensions suppress drawing/fallback. Boxes
+are used unless CSS sizes or supported integer width/height attributes override them.
+Attributes supply computed hints before author cascade, so CSS auto/global resets override
+them. Percentage widths use containing content width; font-relative units use computed font
+size. Definite heights, min/max sizes and content-box/border-box sizing are supported.
+One dimension preserves aspect ratio; two dimensions may stretch. Both-auto min/max
+constraints preserve ratio where compatible; conflicting constraints may stretch and minima
+win over smaller maxima. Percentage heights remain auto-like pending containing-height
+propagation. Oversized attribute values above 4096 are ignored; zero final dimensions suppress
+drawing/fallback. Existing viewport fitting can shrink below CSS minimum sizes. Boxes
 shrink proportionally to fit content width and cap displayed height at 4096.
 DOM img padding/background/solid borders form atomic inline boxes around those content
 dimensions. Width fitting reserves edge space, the border-box bottom aligns to baseline,
@@ -75,7 +81,8 @@ skipped. Image rectangles use the existing toolbar/scroll-aware click/cursor hit
 testing and clear when the display list is replaced.
 
 Full CSS replaced-element layout, progressive loading, animation, srcset/picture,
-CSS image sizing, SVG/WebP/AVIF, EXIF orientation and color management remain future work.
+generated replaced-image sizing, percentage-height propagation, SVG/WebP/AVIF, EXIF orientation
+and color management remain future work.
 
 ## CSS generated image content
 

@@ -178,7 +178,9 @@ Status: IN PROGRESS.
 - DONE generated `url()` images in ordered before/after text/image lists, stylesheet-relative
   bases including redirects/var() consumers, shared DOM/generated resource budgets/cache,
   intrinsic inline/block image flow, generated image links and retained reflow.
-- NEXT fuller replaced-content/CSS image sizing and nested-inline geometry.
+- DONE DOM image CSS width/height/min/max/box-sizing, inherited font-relative and percentage
+  width resolution, HTML size hints before author cascade and intrinsic ratio constraints.
+- NEXT generated replaced-image sizing/decorations and nested-inline geometry.
 - DONE DOM image padding/background/solid borders as atomic inline boxes, edge-aware
   width fitting, border-box baseline extents, text alignment and nowrap behavior.
 - DONE declaration source-node provenance and retained effective external stylesheet

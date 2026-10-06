@@ -340,7 +340,7 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> fuller replaced-content/CSS image sizing/nested-inline geometry
+  -> generated replaced-image sizing/decorations/nested-inline geometry
   -> broader custom-property grammar/registration/animation-taint semantics
   -> nested/generated replaced inline decoration stacks
   -> additional computed properties
@@ -393,6 +393,23 @@ ascent. Background/borders use precise image-box BoxDecoration geometry before r
 Text alignment includes the outer width; nowrap suppresses soft image wrapping. Generated
 anonymous image items retain intrinsic geometry; generated replaced decoration/sizing and
 nested ancestor box stacks remain later. Native click regions still cover painted image pixels.
+
+DOM image size slice:
+
+```text
+HTML bounded width/height attributes -> computed image size hints
+  -> author cascade (including auto/global/invalid-var resets)
+  -> CSS width percentages / font-relative lengths / definite heights / box-sizing
+  -> replaced::dimensions intrinsic ratio + min/max constraint resolution
+  -> content-width/draw-height fitting policy -> decorated atomic inline ImageBox
+  -> display list / raster paint / retained reflow
+```
+
+Both auto dimensions preserve ratio across compatible min/max bounds; conflicting bounds
+may stretch. One explicit side derives the auto side before its limits; two explicit sides
+can stretch. Minimum constraints win over smaller maxima. Percentage heights remain auto-like
+without containing-height propagation. Existing viewport fitting can shrink below CSS minima;
+zero final dimensions suppress drawing, including the previous zero-attribute fallback rule.
 
 ## S4 - Scripted page
 

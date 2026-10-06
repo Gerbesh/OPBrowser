@@ -227,10 +227,70 @@ impl TextMeasurer for ApproximateTextMeasurer {
 
 mod flow;
 mod inline;
+mod replaced;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn css_image_sizes_override_attributes_and_use_containing_width_box_sizing_and_limits() {
+        for (attributes, css, expected) in [
+            ("width=300 height=150", "width:80px;height:auto", (80, 40)),
+            ("width=300 height=150", "width:auto;height:auto", (100, 50)),
+            ("", "height:30px", (60, 30)),
+            ("", "width:50%", (100, 50)),
+            ("", "font-size:20px;width:2em", (40, 20)),
+            (
+                "",
+                "width:80px;height:50px;padding:6px;border:2px solid red;box-sizing:border-box",
+                (64, 34),
+            ),
+            ("", "width:auto;height:auto;max-width:60px", (60, 30)),
+            ("", "width:auto;height:auto;min-width:140px", (140, 70)),
+            ("", "width:80px;min-height:60px", (80, 60)),
+            ("", "width:80px;height:50%", (80, 40)),
+            (
+                "",
+                "width:auto;height:auto;min-width:100px;max-width:50px",
+                (100, 50),
+            ),
+            ("", "width:0;min-width:40px", (40, 20)),
+        ] {
+            let document = op_html::parse_document(&format!(
+                "<style>p {{ width:200px }} img {{ {css} }}</style><p><img {attributes}></p>"
+            ));
+            let computed =
+                compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+            let mut images = ImageResources::new();
+            let image = Arc::new(
+                RasterImage::from_premultiplied_bgra(100, 50, vec![255; 100 * 50 * 4]).unwrap(),
+            );
+            let mut nodes = vec![document.root()];
+            while let Some(node) = nodes.pop() {
+                if document
+                    .element(node)
+                    .is_some_and(|element| element.tag_name == "img")
+                {
+                    images.insert(node, image.clone());
+                }
+                nodes.extend(document.children(node));
+            }
+            let page = layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &images,
+                &computed,
+                &mut ApproximateTextMeasurer,
+            );
+            assert_eq!(page.image_boxes.len(), 1, "{css}");
+            assert_eq!(
+                (page.image_boxes[0].width, page.image_boxes[0].height),
+                expected,
+                "{attributes}: {css}"
+            );
+        }
+    }
 
     #[test]
     fn image_padding_borders_and_background_form_atomic_inline_boxes() {

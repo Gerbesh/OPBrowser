@@ -1250,6 +1250,19 @@ fn apply_ua_defaults(style: &mut ComputedStyle, element: &ElementData) {
     };
 
     match tag {
+        "img" => {
+            let dimension = |name: &str| {
+                element
+                    .attributes
+                    .iter()
+                    .find(|attribute| attribute.name.eq_ignore_ascii_case(name))
+                    .and_then(|attribute| attribute.value.trim().parse::<u32>().ok())
+                    .filter(|value| *value <= 4096)
+                    .map(|value| LengthPercentage::Px(value as f32))
+            };
+            style.width = dimension("width");
+            style.height = dimension("height");
+        }
         "a" if element
             .attributes
             .iter()
@@ -1452,14 +1465,11 @@ fn apply_author_declarations(
     apply_padding_declarations(style, parent_style, declarations);
     apply_border_declarations(style, parent_style, declarations);
 
-    style.width = resolve_optional_size_property(
-        declarations,
-        "width",
-        style.font_size_px,
-        parent_style.map(|parent| parent.width),
-        None,
-        true,
-    );
+    if let Some((_, value)) = winning_value(declarations, "width", |tokens| {
+        parse_optional_size(tokens, style.font_size_px, true)
+    }) {
+        style.width = resolve_non_inherited(value, parent_style.map(|parent| parent.width), None);
+    }
     style.min_width = resolve_size_property(
         declarations,
         "min-width",
@@ -1475,14 +1485,11 @@ fn apply_author_declarations(
         None,
         false,
     );
-    style.height = resolve_optional_size_property(
-        declarations,
-        "height",
-        style.font_size_px,
-        parent_style.map(|parent| parent.height),
-        None,
-        true,
-    );
+    if let Some((_, value)) = winning_value(declarations, "height", |tokens| {
+        parse_optional_size(tokens, style.font_size_px, true)
+    }) {
+        style.height = resolve_non_inherited(value, parent_style.map(|parent| parent.height), None);
+    }
     style.min_height = resolve_size_property(
         declarations,
         "min-height",
@@ -2901,6 +2908,27 @@ mod tests {
         }
 
         find(document, document.root(), id).expect("expected id")
+    }
+
+    #[test]
+    fn image_size_attributes_enter_before_author_cascade_and_reset_keywords() {
+        let document = parse_document(
+            "<style>#css { width:100px; height:auto } #reset { width:initial; height:unset } #variable { width:var(--missing) } #invalid { width:bad }</style><img id='hint' width=' 120 ' height=60><img id='css' width=300 height=30><img id='reset' width=200 height=100><img id='variable' width=200><img id='invalid' width=80><img id='large' width=5000><img id='zero' width=0>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        for (id, width, height) in [
+            ("hint", Some(120.0), Some(60.0)),
+            ("css", Some(100.0), None),
+            ("reset", None, None),
+            ("variable", None, None),
+            ("invalid", Some(80.0), None),
+            ("large", None, None),
+            ("zero", Some(0.0), None),
+        ] {
+            let style = computed.style_for(find_by_id(&document, id)).unwrap();
+            assert_eq!(style.width, width.map(LengthPercentage::Px), "{id}");
+            assert_eq!(style.height, height.map(LengthPercentage::Px), "{id}");
+        }
     }
 
     #[test]

@@ -1,5 +1,14 @@
 # CSS Block Box Model
 
+DOM img sizes now use computed width/height/min/max and box-sizing around intrinsic raster
+dimensions. HTML bounded size attributes supply hints before author cascade; CSS auto and
+global keywords override them. Percent widths use containing content width; font-relative
+units use computed font size. Definite heights and min/max ratio constraints are supported.
+Both-auto compatible bounds preserve ratio; conflicts and two explicit dimensions may
+stretch. Percentage heights await containing-height propagation. The existing viewport/
+draw-height fitting policy still applies after CSS sizes and may reduce minimum sizes.
+Reference: [CSS replaced size constraints](https://www.w3.org/TR/CSS2/visudet.html#min-max-widths).
+
 Generated `::before`/`::after` with `display:block` uses this same geometry path, including
 empty-string decorated blocks. Definite heights set the box/flow height while content may
 overflow; background/border geometry does not grow merely to contain that overflowing text.

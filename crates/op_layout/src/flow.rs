@@ -519,27 +519,49 @@ impl<'a> Context<'a, '_> {
         available_width: i32,
         items: &mut Vec<Item<'a>>,
     ) {
-        let width = dimension(element, "width");
-        let height = dimension(element, "height");
-        if width == Some(0) || height == Some(0) {
-            return;
-        }
         if let Some(image) = self.images.get(&id) {
             let mut image_style = style.inline;
             image_style.box_style = resolve_inline_box_style(id, None, style, available_width);
-            let extras = image_style.box_style.map_or(0, |box_style| {
+            let horizontal_extras = image_style.box_style.map_or(0, |box_style| {
                 box_style
                     .left_extra()
                     .saturating_add(box_style.right_extra())
             });
-            let mut width = width.unwrap_or_else(|| {
-                height.map_or(image.width(), |h| {
-                    (h * image.width() / image.height()).max(1)
-                })
+            let vertical_extras = image_style.box_style.map_or(0, |box_style| {
+                box_style
+                    .top_extra()
+                    .saturating_add(box_style.bottom_extra())
             });
-            let mut height =
-                height.unwrap_or_else(|| (width * image.height() / image.width()).max(1));
-            let available_width = available_width.saturating_sub(extras).max(1) as u32;
+            let width_value = |value| {
+                size_to_content_width(value, style.box_sizing, available_width, horizontal_extras)
+            };
+            let height_value = |value| match value {
+                LengthPercentage::Px(_) => Some(size_to_content_width(
+                    value,
+                    style.box_sizing,
+                    0,
+                    vertical_extras,
+                )),
+                LengthPercentage::Percent(_) => None,
+            };
+            let (width, height) = super::replaced::dimensions(
+                (image.width(), image.height()),
+                style.width.map(width_value),
+                style.height.and_then(height_value),
+                (
+                    width_value(style.min_width),
+                    style.max_width.map(width_value),
+                ),
+                (
+                    height_value(style.min_height).unwrap_or(0),
+                    style.max_height.and_then(height_value),
+                ),
+            );
+            if width == 0 || height == 0 {
+                return;
+            }
+            let (mut width, mut height) = (width as u32, height as u32);
+            let available_width = available_width.saturating_sub(horizontal_extras).max(1) as u32;
             if width > available_width {
                 height = (u64::from(height) * u64::from(available_width) / u64::from(width)).max(1)
                     as u32;
@@ -562,6 +584,13 @@ impl<'a> Context<'a, '_> {
                 image_style,
             ));
         } else {
+            if style
+                .width
+                .is_some_and(|value| resolve_length(value, available_width) == 0)
+                || matches!(style.height, Some(LengthPercentage::Px(0.0)))
+            {
+                return;
+            }
             items.extend(
                 attribute(element, "alt")
                     .unwrap_or("[image]")
@@ -976,14 +1005,6 @@ fn attribute<'a>(element: &'a op_dom::ElementData, name: &str) -> Option<&'a str
         .iter()
         .find(|a| a.name == name)
         .map(|a| a.value.as_str())
-}
-
-fn dimension(element: &op_dom::ElementData, name: &str) -> Option<u32> {
-    attribute(element, name)?
-        .trim()
-        .parse::<u32>()
-        .ok()
-        .filter(|n| *n <= op_image::MAX_DIMENSION)
 }
 
 fn hidden_tag(tag: &str) -> bool {

@@ -1,5 +1,11 @@
 # Inline Layout
 
+DOM image content sizes come from computed CSS width/height/min/max/box-sizing around the
+intrinsic raster ratio. HTML size attributes are hints before author cascade; CSS auto resets
+them. Percent widths/font-relative units and definite heights are supported. Percentage
+height propagation and generated replaced-image sizing remain later work. Existing viewport
+fitting still runs after CSS constraints and can shrink below minima.
+
 DOM img elements now carry their own padding/background/solid-border box. The outer width
 participates in atomic wrapping/alignment; raster fitting reserves horizontal edge space.
 The border-box bottom aligns to the text baseline and vertical edges expand safe line ascent.

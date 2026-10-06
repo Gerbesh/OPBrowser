@@ -952,3 +952,21 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 212 workspace tests,
   startup smoke, decorated/generated image smoke (25 commands), native image-link navigation
   and optimized workspace release build.
+
+## 2026-10-06 - Computed CSS DOM image sizing
+
+- Moved bounded HTML image width/height attributes into computed pre-author hints. Author
+  CSS, auto/global keywords and invalid computed var() winners override/reset those hints.
+- DOM image content dimensions now resolve CSS percentage widths, font-relative lengths,
+  definite heights and content-vs-border-box sizes before decorated inline placement.
+- Added op_layout::replaced intrinsic/explicit/auto ratio sizing and min/max constraints.
+  Compatible both-auto limits preserve ratio; conflicts/explicit sides can stretch. Minimum
+  constraints win over smaller maxima. The existing viewport/4096-height fitting policy
+  runs afterward and can shrink below CSS minima; percentage heights remain auto-like.
+- Added source-cascade regressions, a 12-case actual-layout size table and pure geometry
+  regressions for intrinsic/explicit/zero sizes and every min/max ratio conflict direction.
+- Updated the Engine paint/link/reflow test to prove CSS border-box sizes override HTML hints.
+  Updated the CSS image fixture, README, plan, module graph, slices and box/image/inline wiki.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 217 workspace tests,
+  startup smoke, generated/decorated image smoke (25 commands), ordinary mixed-image smoke
+  (19 commands), native generated image-link navigation and optimized workspace release build.
