@@ -1,27 +1,52 @@
-use op_dom::{Attribute as DomAttribute, Document, DocumentTypeData, NodeId, NodeKind};
+use op_dom::{
+    Attribute as DomAttribute, Document, DocumentMode, DocumentTypeData, NodeId, NodeKind,
+};
 
-use crate::{Token, Tokenizer};
+use crate::{Token, Tokenizer, document_mode};
 
 pub fn parse_document(input: &str) -> Document {
     let mut document = Document::new();
     let mut open_elements: Vec<NodeId> = Vec::new();
     let mut text_buffer = String::new();
+    let mut initial_mode = true;
 
     for token in Tokenizer::new(input).tokenize() {
+        let token = if initial_mode {
+            match token {
+                Token::Character(character) if is_ascii_whitespace(character) => continue,
+                Token::Comment(data) => {
+                    let root = document.root();
+                    append_comment(&mut document, root, data);
+                    continue;
+                }
+                Token::Doctype(doctype) => {
+                    document.set_mode(document_mode::classify(&doctype));
+                    append_doctype_if_allowed(&mut document, &open_elements, doctype);
+                    initial_mode = false;
+                    continue;
+                }
+                Token::Eof => {
+                    document.set_mode(DocumentMode::Quirks);
+                    break;
+                }
+                token => {
+                    document.set_mode(DocumentMode::Quirks);
+                    initial_mode = false;
+                    token
+                }
+            }
+        } else {
+            token
+        };
+
         match token {
             Token::Character(character) => text_buffer.push(character),
             Token::Comment(data) => {
                 flush_text(&mut document, &open_elements, &mut text_buffer);
-                let node = document.create_comment(data);
                 let parent = current_parent(&document, &open_elements);
-                document
-                    .append_child(parent, node)
-                    .expect("tree builder created an invalid comment parent");
+                append_comment(&mut document, parent, data);
             }
-            Token::Doctype(doctype) => {
-                flush_text(&mut document, &open_elements, &mut text_buffer);
-                append_doctype_if_allowed(&mut document, &open_elements, doctype);
-            }
+            Token::Doctype(_) => {}
             Token::StartTag {
                 name,
                 attributes,
@@ -59,6 +84,17 @@ pub fn parse_document(input: &str) -> Document {
     }
 
     document
+}
+
+fn is_ascii_whitespace(character: char) -> bool {
+    matches!(character, '\t' | '\n' | '\x0c' | '\r' | ' ')
+}
+
+fn append_comment(document: &mut Document, parent: NodeId, data: String) {
+    let node = document.create_comment(data);
+    document
+        .append_child(parent, node)
+        .expect("tree builder created an invalid comment parent");
 }
 
 fn append_doctype_if_allowed(

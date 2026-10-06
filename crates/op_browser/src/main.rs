@@ -4,6 +4,7 @@ use op_engine::{Engine, RenderedPage};
 use op_platform_win::{NativeBrowserWindow, NavigationEvent};
 
 const START_PAGE: &str = r#"
+<!doctype html>
 <html><head><title>OPBrowser</title><style>
 body { --op-accent:#b42318; --op-surface:#eef2ff; --op-edge:#4338ca; --op-gap:4px 8px; color: #20232a; font-size: 18px; }
 h1 { color: #6d28d9; font-size: 42px; }

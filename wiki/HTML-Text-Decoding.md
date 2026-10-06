@@ -113,9 +113,14 @@ Doctype declarations are separate tokens preserving lowercase names, PUBLIC and 
 identifiers (including empty versus missing) and the force-quirks flag. Their owned state
 machine handles malformed quotes, missing identifiers, bogus trailing data and EOF using
 the [WHATWG doctype states](https://html.spec.whatwg.org/multipage/parsing.html#doctype-state).
-The first doctype before the document element becomes a DOM DocumentType node; later or
-in-element doctypes are ignored by the current tree builder. Unknown <! declarations and
-CDATA-like declarations in the current HTML-only context become Comment nodes and remain
-non-rendering. Raw-text/RCDATA and attributes still keep declaration markers literal.
-Document-mode selection, processing instructions and foreign-content/CDATA support remain
-later work; the stored force-quirks flag does not yet switch CSS/layout behavior.
+The first doctype in the initial insertion phase becomes a DOM DocumentType node; later
+or in-element doctypes are ignored. The parser now stores DocumentMode as no-quirks,
+limited-quirks or quirks using the WHATWG legacy public/system identifier matrix with
+ASCII case-insensitive matching. Missing doctypes, force-quirks tokens, wrong names and
+legacy quirks identifiers select quirks; XHTML 1.0 transitional/frameset and HTML 4.01
+transitional/frameset with a non-empty system identifier select limited-quirks. Leading
+ASCII whitespace in the initial insertion phase is ignored while comments remain DOM
+nodes. Unknown <! declarations and CDATA-like declarations in the current HTML-only
+context become Comment nodes and remain non-rendering. Raw-text/RCDATA and attributes
+still keep declaration markers literal. Processing instructions, foreign-content/CDATA
+and the CSS/layout behavior differences between document modes remain later work.

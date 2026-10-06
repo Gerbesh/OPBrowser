@@ -1166,3 +1166,23 @@ This file is append-only project history.
   suite, native startup smoke and optimized workspace release build. One pre-existing
   loopback generated-image test transiently hit WSAEWOULDBLOCK on the first full run, then
   passed standalone and again in the complete suite.
+
+## 2026-10-06 - WHATWG document mode selection
+
+- Added op_dom::DocumentMode with NoQuirks, LimitedQuirks and Quirks state stored directly
+  on each parsed Document. Manually constructed documents retain a no-quirks default while
+  HTML parsing explicitly selects the mode during its initial insertion phase.
+- Added an owned doctype classifier covering the full WHATWG legacy compatibility matrix:
+  exact public/system identifiers, all 55 quirks public prefixes, HTML 4.01 system-ID
+  distinctions and XHTML 1.0 limited-quirks prefixes, all with ASCII-insensitive matching.
+- The initial tree-building phase now ignores leading ASCII whitespace, preserves comments,
+  accepts one correctly placed doctype, selects quirks when the doctype is missing/malformed
+  or appears too late, and ignores subsequent doctypes. The internal start page now carries
+  <!doctype html> so it remains explicitly in no-quirks mode.
+- Added exhaustive classifier tests plus parser-level coverage for no-quirks, limited-quirks,
+  missing/late doctypes, malformed declarations, case-insensitive legacy identifiers and
+  initial whitespace/comment ordering. Updated plan, graph/slices and HTML wiki.
+- Document mode is parser/DOM state in this iteration; mode-specific legacy CSS/layout
+  behavior remains explicit future work rather than silently changing rendering now.
+- Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace
+  test suite, native startup smoke and optimized workspace release build.

@@ -45,10 +45,13 @@ against comment-free source before/after reflow. Raw-text/RCDATA comment markers
 literal text. Doctype declarations follow Tokenizer::consume_doctype -> Token::Doctype ->
 the first pre-element DOM DocumentType node; later/in-element doctypes are ignored.
 Typed nodes retain lowercase names, missing/empty PUBLIC/SYSTEM identifiers and
-force-quirks recovery for future document modes. Unknown <! declarations and HTML
-CDATA-like declarations become Comment nodes; token/tree tests verify recovery and Engine
-tests compare exact rendering/reflow against declaration-free source. Document modes,
-processing instructions and foreign-content context remain later.
+force-quirks recovery. The initial insertion phase now classifies the document as
+NoQuirks, LimitedQuirks or Quirks using the full WHATWG legacy doctype matrix; missing,
+malformed or late doctypes select Quirks, and leading initial ASCII whitespace is ignored.
+Unknown <! declarations and HTML CDATA-like declarations become Comment nodes; token/tree
+tests verify recovery and Engine tests compare exact rendering/reflow against
+declaration-free source. Mode-specific layout quirks, processing instructions and
+foreign-content context remain later.
 
 ## S2 - Navigation to static page
 

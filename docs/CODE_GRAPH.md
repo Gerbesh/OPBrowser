@@ -535,8 +535,10 @@ classDiagram
   The private declarations module emits Token::Doctype(Doctype), preserving missing/empty
   name/public/system identifiers and force_quirks with iterative recovery. Unknown <!...
   declarations use bogus comment tokens. The tree builder maps the first pre-element
-  doctype to a DOM DocumentType node and ignores later/in-element doctypes; document modes
-  and foreign-content/CDATA context remain later work.
+  doctype to a DOM DocumentType node and ignores later/in-element doctypes. Its private
+  document_mode module applies the WHATWG compatibility matrix and stores NoQuirks,
+  LimitedQuirks or Quirks on op_dom::Document; missing/late doctypes select Quirks.
+  Foreign-content/CDATA context remains later work.
   Its private
   references module consumes the full named-reference table and numeric references
   before text/attribute tokens enter the DOM. Characters carries one or two Unicode
@@ -548,7 +550,8 @@ classDiagram
   Initial raw-text/RCDATA context keeps
   references and markup from being incorrectly parsed inside script/style/title.
 - op_dom owns document/node storage, element attributes, Comment nodes,
-  DocumentTypeData (name/public/system/force-quirks), and DOM parent/child invariants.
+  DocumentTypeData (name/public/system/force-quirks), DocumentMode
+  (NoQuirks/LimitedQuirks/Quirks), and DOM parent/child invariants.
 - op_layout owns text-flow and block-box used-value geometry, structural-container traversal
   and UTF-8 LinkSpan ranges preserved across whitespace normalization and line wrapping.
   It resolves percent/auto/min/max/content-vs-border-box widths, independent border sides,

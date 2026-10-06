@@ -1,5 +1,6 @@
 mod comments;
 mod declarations;
+mod document_mode;
 mod references;
 mod tree_builder;
 pub use tree_builder::parse_document;

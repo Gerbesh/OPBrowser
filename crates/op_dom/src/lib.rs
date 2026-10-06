@@ -27,6 +27,14 @@ pub struct DocumentTypeData {
     pub force_quirks: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DocumentMode {
+    #[default]
+    NoQuirks,
+    LimitedQuirks,
+    Quirks,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
     Document,
@@ -54,6 +62,7 @@ pub enum DocumentError {
 pub struct Document {
     nodes: Vec<Node>,
     root: NodeId,
+    mode: DocumentMode,
 }
 
 impl Document {
@@ -65,11 +74,20 @@ impl Document {
                 children: Vec::new(),
             }],
             root: NodeId(0),
+            mode: DocumentMode::NoQuirks,
         }
     }
 
     pub fn root(&self) -> NodeId {
         self.root
+    }
+
+    pub fn mode(&self) -> DocumentMode {
+        self.mode
+    }
+
+    pub fn set_mode(&mut self, mode: DocumentMode) {
+        self.mode = mode;
     }
 
     pub fn create_element(&mut self, tag_name: impl Into<String>) -> NodeId {
