@@ -160,8 +160,23 @@ participate in selector matching with their initial specificity rules. Terminal
 before children and `::after` after completed child counter work. The initial `var()` slice deliberately
 reuses OPBrowser's current invalid-value filtering, so a declaration whose substitution fails
 can expose a lower valid candidate instead of full CSS invalid-at-computed-value-time behavior;
-full dependency-graph cycle semantics are also later. Generated `url()` images, quote keywords,
+full dependency-graph cycle semantics are also later. Generated `url()` images, language-aware automatic quotes,
 custom counter styles and complete counter scoping remain later. Next S3 work moves into generated
 replaced content and fuller pseudo block-box geometry, then forgiving selector-list
 recovery, nth-child `of`, advanced color spaces, at-rules, media queries and full CSS
 conformance remain later.
+
+### Quotation marks
+
+`quotes` inherits and accepts `auto`, `none` or one or more opening/closing string pairs,
+plus initial/inherit/unset and `var()` substitution. Pseudos can override their host pairs.
+The content keywords open-quote/close-quote emit the appropriate pair and change nesting;
+no-open-quote/no-close-quote change nesting without glyphs. `quotes:none` suppresses glyphs
+while preserving those nesting effects. Depth is shared in emitted document order, the last
+pair repeats at deeper levels and closing at depth zero does nothing. Losing/invalid content
+candidates, display:none subtrees/pseudos and content:none/normal never change that state.
+The same hidden/absent-box exclusion applies to counter mutations. `<q>` gets default
+open/close pseudos, overridable by author content. `auto` currently chooses deterministic
+English Unicode pairs; language-specific selection remains future work.
+
+Behavior reference: [CSS quotation marks](https://www.w3.org/TR/CSS2/generate.html#quotes).

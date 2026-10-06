@@ -25,6 +25,8 @@ h1 { color: #6d28d9; font-size: 42px; }
 .counter-demo p { counter-increment:step; margin:4px 0; }
 .counter-demo p::before { content:attr(data-label) " " counter(step, decimal-leading-zero) ": "; color:#0f766e; font-weight:bold; }
 .counter-demo::after { content:"Generated total: " counter(step); color:#087a35; font-weight:bold; }
+.quote-demo { quotes:"«" "»" "‹" "›"; }
+.quote-demo q::before, .quote-demo q::after { color:#7c3aed; }
 .hidden-proof { display: none; }
 a { font-weight: bold; }
 </style></head><body>
@@ -45,6 +47,7 @@ white-space:pre-wrap preserves this newline and  double spaces.</div>
 <p class="generated-demo">Real DOM text between generated pseudo-elements.</p>
 <div class="var-demo">Custom properties feed color, background, padding, border and generated content; missing values can use var() fallbacks.</div>
 <div class="counter-demo"><p data-label="Stage">Generated attr() + counter() content</p><p data-label="Stage">The counter increments in document order</p></div>
+<p class="quote-demo"><q>Inherited CSS quotes with <q>a nested quotation</q> now reach native paint.</q></p>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>

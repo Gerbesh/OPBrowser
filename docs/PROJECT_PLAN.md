@@ -157,7 +157,11 @@ Status: IN PROGRESS.
 - DONE generated `content` functions for `attr(name)`, `counter()` and `counters()` plus
   initial `counter-reset`/`counter-set`/`counter-increment`, nested counter scopes and decimal,
   decimal-leading-zero, alpha/latin and roman formatting.
-- NEXT generated `url()`/quote content and fuller pseudo block-box/replaced-content geometry.
+- DONE inherited `quotes` auto/none/string pairs, generated open/close/no-open/no-close quote
+  commands and UA `<q>` pseudos; nesting follows emitted document-order content, repeats the
+  deepest pair and ignores hidden/absent pseudos and subtrees for quote/counter mutation.
+- NEXT generated `url()` content and fuller pseudo block-box/replaced-content geometry.
+- LATER language-aware `quotes:auto` (currently deterministic English Unicode pairs).
 - LATER complete invalid-at-computed-value-time `var()` semantics/custom-property cycle graph,
   forgiving functional-selector recovery, `:nth-child(... of ...)`, nested decorated-inline
   stacks/replaced inline decorations and fuller

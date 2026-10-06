@@ -98,6 +98,8 @@ recursive `var()` substitution resolves references/fallbacks; the computed map r
 custom maps plus generated pseudo styles alongside host styles. During the same parent-first
 walk, `counter-reset`/`counter-set`/`counter-increment` maintain scoped value stacks; `attr()`
 reads the originating DOM element and `counter()`/`counters()` materialize final pseudo text.
+Inherited `quotes` pairs also materialize quote commands here, using one document-order depth.
+Hidden subtrees and absent/hidden pseudos do not mutate generated state; `<q>` has UA defaults.
 Inheritance produces per-node styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 

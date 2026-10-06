@@ -38,3 +38,5 @@ h1 { color: #6d28d9; font-size: 42px; }
 .counter-nested p { counter-increment:chapter; margin:3px 0; }
 .counter-nested p::before { content:"Nested " counters(chapter, ".") ": "; color:#115e59; font-weight:bold; }
 .counter-outline::after { content:"Outer total: " counter(chapter); color:#087a35; font-weight:bold; }
+.quote-demo { quotes:"«" "»" "‹" "›"; }
+.quote-demo q::before, .quote-demo q::after { color:#7c3aed; font-weight:bold; }

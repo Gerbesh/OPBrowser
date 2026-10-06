@@ -245,6 +245,15 @@ classDiagram
     class ComputedPseudoStyle {
         style
         content
+        quotes
+    }
+    class ComputedQuotes {
+        Auto / None / Pairs(open,close)
+    }
+    class GeneratedContext {
+        counters
+        quote_depth
+        suppressed
     }
     class CounterContext {
         counter_name -> value_stack
@@ -369,6 +378,11 @@ classDiagram
     CounterOperation --> CounterContext : document-order scoped counter mutation
     Document --> CounterContext : sibling-aware nested scope traversal
     CounterContext --> ComputedPseudoStyle : counter()/counters() generated text
+    GeneratedContext --> CounterContext : document-order counter ownership
+    GeneratedContext --> ComputedPseudoStyle : emitted quote depth / hidden subtree exclusion
+    StyleMap --> ComputedQuotes : inherited quotes winner / var substitution
+    ComputedStyleMap --> ComputedQuotes : per-host retained pairs / quotes_for
+    ComputedPseudoStyle --> ComputedQuotes : inherited host or pseudo-local pairs
     Document --> ComputedPseudoStyle : attr() reads originating element attributes
     ComputedStyleMap --> ComputedStyle
     ComputedStyleMap --> ComputedPseudoStyle

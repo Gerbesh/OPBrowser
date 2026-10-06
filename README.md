@@ -98,14 +98,16 @@ CSS custom properties (`--name`) now participate in the author cascade and `var(
 substitution before supported value parsing, including generated `content`. `::before`/`::after`
 content can concatenate quoted strings, `attr(name)`, `counter(name[, style])` and
 `counters(name, separator[, style])`; initial `counter-reset`, `counter-set` and
-`counter-increment` feed those values. Generated content keeps inherited text styling and its own inline
+`counter-increment` feed those values. Inherited `quotes` pairs and the four quote keywords
+track document-order nesting; `<q>` receives default before/after quotation marks.
+Generated content keeps inherited text styling and its own inline
 background/padding/solid-border fragments. The block box model includes margin/padding shorthands and side longhands,
 auto/negative/percentage margins, background color, independent solid/none border sides,
 width/height with min/max, `box-sizing`, percentages, em/rem and CSS absolute length units.
 Adjacent sibling vertical margins collapse. External CSS is merged with embedded rules in
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
 percentage-height propagation, full invalid-at-computed-value-time `var()` semantics and
-complete custom-property dependency-cycle behavior, generated `url()`/quotes and full
+complete custom-property dependency-cycle behavior, language-aware automatic quotes, generated `url()` and full
 pseudo block-box/replaced-content geometry, forgiving-selector-list recovery/full `:nth-child(... of ...)`, nested decorated
 inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources

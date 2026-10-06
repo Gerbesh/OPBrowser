@@ -741,3 +741,23 @@ This file is append-only project history.
   release attempt was blocked only by a running `target/release/op_browser.exe`; that workspace
   process was stopped and the rebuild then passed.
 - Rebuilt `target/release/op_browser.exe`; this build is 676,864 bytes.
+
+## 2026-10-06 - CSS quotation marks and generated-state visibility
+
+- Added retained ComputedQuotes host/pseudo values with inherited auto/none/string-pair
+  cascade and var() substitution. Auto currently uses deterministic English Unicode pairs;
+  language-specific selection is deferred.
+- Added generated open-quote/close-quote/no-open-quote/no-close-quote commands, shared
+  document-order nesting, deepest-pair repetition and safe unmatched closing behavior.
+- Added UA before/after content for HTML q elements, overridable by author content/style.
+- Content candidate validation is separate from quote emission, so losing or invalid
+  declarations cannot change nesting. Pseudo counter operations now require emitted content.
+- Hidden subtrees, hidden/absent pseudos and unsupported img/br pseudos no longer mutate
+  generated quote/counter state that can affect later visible content.
+- Added four CSS regressions for inheritance/overrides, var(), cascade, nesting, none,
+  silent commands, underflow and hidden-state exclusion, plus an Engine regression proving
+  exact Unicode order, generated link spans/colors and stable retained resize reflow.
+- Added visible nested quotation examples to the startup page and external CSS demo;
+  updated README, plan, code graph/slices and CSS/inline/rendering wiki pages.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 163 workspace tests,
+  normal startup smoke, the 175-command CSS demo smoke and optimized workspace release build.

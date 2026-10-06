@@ -247,6 +247,41 @@ pub struct ComputedStyle {
 pub struct ComputedPseudoStyle {
     pub style: ComputedStyle,
     pub content: String,
+    pub quotes: ComputedQuotes,
+}
+
+/// Inherited quotation pairs. `Auto` currently uses deterministic English pairs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ComputedQuotes {
+    #[default]
+    Auto,
+    None,
+    Pairs(Vec<(String, String)>),
+}
+
+impl ComputedQuotes {
+    fn mark(&self, depth: usize, opening: bool) -> &str {
+        let pair = match self {
+            Self::Auto => {
+                return match (depth == 0, opening) {
+                    (true, true) => "“",
+                    (true, false) => "”",
+                    (false, true) => "‘",
+                    (false, false) => "’",
+                };
+            }
+            Self::None => return "",
+            Self::Pairs(pairs) => pairs.get(depth).or_else(|| pairs.last()),
+        };
+        pair.map(|(open, close)| {
+            if opening {
+                open.as_str()
+            } else {
+                close.as_str()
+            }
+        })
+        .unwrap_or_default()
+    }
 }
 
 impl ComputedStyle {
@@ -285,9 +320,14 @@ pub struct ComputedStyleMap {
     pseudo_entries: HashMap<(NodeId, PseudoElement), ComputedPseudoStyle>,
     custom_properties: HashMap<NodeId, CustomPropertyMap>,
     pseudo_custom_properties: HashMap<(NodeId, PseudoElement), CustomPropertyMap>,
+    quotes: HashMap<NodeId, ComputedQuotes>,
 }
 
 impl ComputedStyleMap {
+    pub fn quotes_for(&self, node: NodeId) -> Option<&ComputedQuotes> {
+        self.quotes.get(&node)
+    }
+
     pub fn style_for(&self, node: NodeId) -> Option<&ComputedStyle> {
         self.entries.get(&node)
     }
@@ -386,9 +426,16 @@ struct CounterOperation {
     value: i32,
 }
 
+#[derive(Debug, Default)]
+struct GeneratedContext {
+    counters: CounterContext,
+    quote_depth: usize,
+    suppressed: bool,
+}
+
 pub fn compute_styles(document: &Document, author_styles: &StyleMap) -> ComputedStyleMap {
     let mut computed = ComputedStyleMap::default();
-    let mut counters = CounterContext::default();
+    let mut generated = GeneratedContext::default();
     for child in document.children(document.root()) {
         compute_subtree(
             document,
@@ -396,7 +443,7 @@ pub fn compute_styles(document: &Document, author_styles: &StyleMap) -> Computed
             None,
             None,
             author_styles,
-            &mut counters,
+            &mut generated,
             &mut computed,
         );
     }
@@ -409,9 +456,10 @@ fn compute_subtree(
     parent_style: Option<ComputedStyle>,
     parent_custom: Option<CustomPropertyMap>,
     author_styles: &StyleMap,
-    counters: &mut CounterContext,
+    generated: &mut GeneratedContext,
     computed: &mut ComputedStyleMap,
 ) {
+    let was_suppressed = generated.suppressed;
     let current = document.element(node).map(|element| {
         let declarations = author_styles.declarations_for(node);
         let custom = compute_custom_properties(parent_custom.as_ref(), declarations);
@@ -419,9 +467,18 @@ fn compute_subtree(
         let mut style = inherited_base(parent_style);
         apply_ua_defaults(&mut style, element.tag_name.as_str());
         apply_author_declarations(&mut style, parent_style, &resolved);
-        apply_counter_declarations(counters, &resolved);
+        generated.suppressed |= style.display == Display::None;
+        if !generated.suppressed {
+            apply_counter_declarations(&mut generated.counters, &resolved);
+        }
+        let parent_quotes = document
+            .node(node)
+            .and_then(|node| node.parent)
+            .and_then(|parent| computed.quotes_for(parent));
+        let quotes = compute_quotes(parent_quotes, &resolved);
         computed.entries.insert(node, style);
         computed.custom_properties.insert(node, custom.clone());
+        computed.quotes.insert(node, quotes.clone());
         compute_pseudo_style(
             node,
             PseudoElement::Before,
@@ -429,9 +486,10 @@ fn compute_subtree(
                 element,
                 style,
                 custom: &custom,
+                quotes: &quotes,
             },
             author_styles,
-            counters,
+            generated,
             computed,
         );
         (style, custom)
@@ -443,7 +501,7 @@ fn compute_subtree(
         .map(|(_, custom)| custom.clone())
         .or(parent_custom);
 
-    let child_scope = counters.snapshot_lengths();
+    let child_scope = generated.counters.snapshot_lengths();
     for child in document.children(node) {
         compute_subtree(
             document,
@@ -451,11 +509,11 @@ fn compute_subtree(
             inherited_style,
             inherited_custom.clone(),
             author_styles,
-            counters,
+            generated,
             computed,
         );
     }
-    counters.restore_lengths(&child_scope);
+    generated.counters.restore_lengths(&child_scope);
 
     if let Some((style, custom)) = current.as_ref()
         && let Some(element) = document.element(node)
@@ -467,18 +525,21 @@ fn compute_subtree(
                 element,
                 style: *style,
                 custom,
+                quotes: computed.quotes_for(node).cloned().as_ref().unwrap(),
             },
             author_styles,
-            counters,
+            generated,
             computed,
         );
     }
+    generated.suppressed = was_suppressed;
 }
 
 struct PseudoHost<'a> {
     element: &'a ElementData,
     style: ComputedStyle,
     custom: &'a CustomPropertyMap,
+    quotes: &'a ComputedQuotes,
 }
 
 fn compute_pseudo_style(
@@ -486,33 +547,104 @@ fn compute_pseudo_style(
     pseudo: PseudoElement,
     host: PseudoHost<'_>,
     author_styles: &StyleMap,
-    counters: &mut CounterContext,
+    generated: &mut GeneratedContext,
     computed: &mut ComputedStyleMap,
 ) {
+    if generated.suppressed || matches!(host.element.tag_name.as_str(), "img" | "br") {
+        return;
+    }
     let declarations = author_styles.declarations_for_pseudo(node, pseudo);
     let custom = compute_custom_properties(Some(host.custom), declarations);
     let resolved = substitute_declarations(declarations, &custom);
 
-    let pseudo_scope = counters.snapshot_lengths();
-    apply_counter_declarations(counters, &resolved);
-    let content = winning_generated_content(&resolved, host.element, counters);
-    counters.restore_lengths(&pseudo_scope);
-
-    let Some(content) = content else {
-        return;
-    };
-    let Some(content) = content else {
-        return;
-    };
-
     let mut style = inherited_base(Some(host.style));
     apply_author_declarations(&mut style, Some(host.style), &resolved);
-    computed
-        .pseudo_entries
-        .insert((node, pseudo), ComputedPseudoStyle { style, content });
+    if style.display == Display::None {
+        return;
+    }
+    let quotes = compute_quotes(Some(host.quotes), &resolved);
+    // Validate candidates without mutating document-order quote or counter state.
+    let tokens = winning_generated_content(&resolved, host.element, &generated.counters);
+    let ua_content = [TokenKind::Ident(
+        match pseudo {
+            PseudoElement::Before => "open-quote",
+            PseudoElement::After => "close-quote",
+        }
+        .to_owned(),
+    )];
+    let tokens = match tokens {
+        Some(tokens) => tokens,
+        None if host.element.tag_name == "q" => &ua_content,
+        None => return,
+    };
+    if !matches!(
+        parse_generated_content(tokens, host.element, &generated.counters),
+        Some(Some(_))
+    ) {
+        return;
+    }
+    let pseudo_scope = generated.counters.snapshot_lengths();
+    apply_counter_declarations(&mut generated.counters, &resolved);
+    let pieces = parse_generated_content(tokens, host.element, &generated.counters)
+        .flatten()
+        .expect("validated generated content");
+    generated.counters.restore_lengths(&pseudo_scope);
+    let content = render_generated_content(pieces, &quotes, &mut generated.quote_depth);
+    computed.pseudo_entries.insert(
+        (node, pseudo),
+        ComputedPseudoStyle {
+            style,
+            content,
+            quotes,
+        },
+    );
     computed
         .pseudo_custom_properties
         .insert((node, pseudo), custom);
+}
+
+fn compute_quotes(
+    parent: Option<&ComputedQuotes>,
+    declarations: &[MatchedDeclaration],
+) -> ComputedQuotes {
+    let inherited = parent.cloned().unwrap_or_default();
+    declarations
+        .iter()
+        .filter(|matched| matched.declaration.name == "quotes")
+        .filter_map(|matched| {
+            parse_quotes(&matched.declaration.value, &inherited).map(|value| (matched, value))
+        })
+        .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
+        .map(|(_, value)| value)
+        .unwrap_or(inherited)
+}
+
+fn parse_quotes(tokens: &[TokenKind], inherited: &ComputedQuotes) -> Option<ComputedQuotes> {
+    if let Some(keyword) = single_ident(tokens) {
+        return match keyword.to_ascii_lowercase().as_str() {
+            "auto" | "initial" => Some(ComputedQuotes::Auto),
+            "none" => Some(ComputedQuotes::None),
+            "inherit" | "unset" => Some(inherited.clone()),
+            _ => None,
+        };
+    }
+    let strings = significant_tokens(tokens)
+        .map(|token| match token {
+            TokenKind::String(value) => Some(value.clone()),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if strings.is_empty() || strings.len() % 2 != 0 {
+        return None;
+    }
+    Some(ComputedQuotes::Pairs(
+        strings
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| (pair[0].clone(), pair[1].clone()))
+            .collect(),
+    ))
 }
 
 fn apply_counter_declarations(counters: &mut CounterContext, declarations: &[MatchedDeclaration]) {
@@ -796,11 +928,11 @@ fn trim_token_whitespace(mut tokens: &[TokenKind]) -> &[TokenKind] {
     tokens
 }
 
-fn winning_generated_content(
-    declarations: &[MatchedDeclaration],
+fn winning_generated_content<'a>(
+    declarations: &'a [MatchedDeclaration],
     element: &ElementData,
     counters: &CounterContext,
-) -> Option<Option<String>> {
+) -> Option<&'a [TokenKind]> {
     declarations
         .iter()
         .filter(|matched| matched.declaration.name == "content")
@@ -809,14 +941,53 @@ fn winning_generated_content(
                 .map(|value| (matched, value))
         })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
-        .map(|(_, value)| value)
+        .map(|(matched, _)| matched.declaration.value.as_slice())
+}
+
+#[derive(Debug)]
+enum ContentPiece {
+    Text(String),
+    Quote(QuoteAction),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum QuoteAction {
+    Open,
+    Close,
+    NoOpen,
+    NoClose,
+}
+
+fn render_generated_content(
+    pieces: Vec<ContentPiece>,
+    quotes: &ComputedQuotes,
+    depth: &mut usize,
+) -> String {
+    let mut text = String::new();
+    for piece in pieces {
+        match piece {
+            ContentPiece::Text(value) => text.push_str(&value),
+            ContentPiece::Quote(QuoteAction::Open) => {
+                text.push_str(quotes.mark(*depth, true));
+                *depth = depth.saturating_add(1);
+            }
+            ContentPiece::Quote(QuoteAction::NoOpen) => *depth = depth.saturating_add(1),
+            ContentPiece::Quote(QuoteAction::Close) if *depth > 0 => {
+                *depth -= 1;
+                text.push_str(quotes.mark(*depth, false));
+            }
+            ContentPiece::Quote(QuoteAction::NoClose) => *depth = depth.saturating_sub(1),
+            ContentPiece::Quote(QuoteAction::Close) => {}
+        }
+    }
+    text
 }
 
 fn parse_generated_content(
     tokens: &[TokenKind],
     element: &ElementData,
     counters: &CounterContext,
-) -> Option<Option<String>> {
+) -> Option<Option<Vec<ContentPiece>>> {
     if let Some(ident) = single_ident(tokens)
         && matches!(
             ident.to_ascii_lowercase().as_str(),
@@ -826,7 +997,7 @@ fn parse_generated_content(
         return Some(None);
     }
 
-    let mut content = String::new();
+    let mut content = Vec::new();
     let mut saw_piece = false;
     let mut index = 0;
     while index < tokens.len() {
@@ -837,7 +1008,7 @@ fn parse_generated_content(
 
         match &tokens[index] {
             TokenKind::String(value) => {
-                content.push_str(value);
+                content.push(ContentPiece::Text(value.clone()));
                 saw_piece = true;
                 index += 1;
             }
@@ -850,9 +1021,21 @@ fn parse_generated_content(
                     "counters" => generated_counters(arguments, counters)?,
                     _ => return None,
                 };
-                content.push_str(&piece);
+                content.push(ContentPiece::Text(piece));
                 saw_piece = true;
                 index = end + 1;
+            }
+            TokenKind::Ident(name) => {
+                let action = match name.to_ascii_lowercase().as_str() {
+                    "open-quote" => QuoteAction::Open,
+                    "close-quote" => QuoteAction::Close,
+                    "no-open-quote" => QuoteAction::NoOpen,
+                    "no-close-quote" => QuoteAction::NoClose,
+                    _ => return None,
+                };
+                content.push(ContentPiece::Quote(action));
+                saw_piece = true;
+                index += 1;
             }
             _ => return None,
         }
@@ -3326,6 +3509,120 @@ mod tests {
             .expect("attr() content should generate before text");
 
         assert_eq!(before.content, "[ready] Launch ");
+    }
+
+    #[test]
+    fn quotes_inherit_and_nested_q_uses_last_pair_at_deeper_levels() {
+        let document = parse_document(
+            "<style>div { --marks:'«' '»' '‹' '›'; quotes:var(--marks) }
+             #inner::before { quotes:'(' ')' '[' ']'; color:red }
+             </style><div><q id='outer'>A<q id='inner'>B<q id='deep'>C</q></q></q>
+             <q id='next'>D</q></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let content = |id, pseudo| {
+            computed
+                .pseudo_style_for(find_by_id(&document, id), pseudo)
+                .unwrap()
+                .content
+                .as_str()
+        };
+        assert_eq!(content("outer", PseudoElement::Before), "«");
+        assert_eq!(content("inner", PseudoElement::Before), "[");
+        assert_eq!(content("deep", PseudoElement::Before), "‹");
+        assert_eq!(content("deep", PseudoElement::After), "›");
+        assert_eq!(content("inner", PseudoElement::After), "›");
+        assert_eq!(content("outer", PseudoElement::After), "»");
+        assert_eq!(content("next", PseudoElement::Before), "«");
+        assert_eq!(
+            computed.quotes_for(find_by_id(&document, "inner")),
+            computed.quotes_for(find_by_id(&document, "outer"))
+        );
+    }
+
+    #[test]
+    fn quote_commands_follow_document_order_with_none_and_underflow() {
+        let document = parse_document(
+            "<style>
+             div { quotes:'A' 'Z' 'B' 'Y' }
+             #underflow::before { content:close-quote no-close-quote open-quote }
+             #silent::before { quotes:none; content:open-quote }
+             #controls::before { content:no-open-quote close-quote no-close-quote }
+             #end::before { content:close-quote close-quote open-quote close-quote }
+             </style><div><span id='underflow'></span><span id='silent'></span>
+             <span id='controls'></span><span id='end'></span></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let before = |id| {
+            computed
+                .pseudo_style_for(find_by_id(&document, id), PseudoElement::Before)
+                .unwrap()
+                .content
+                .as_str()
+        };
+        assert_eq!(before("underflow"), "A");
+        assert_eq!(before("silent"), "");
+        assert_eq!(before("controls"), "Y");
+        assert_eq!(before("end"), "ZAZ");
+    }
+
+    #[test]
+    fn hidden_and_absent_pseudos_do_not_mutate_quotes_or_counters() {
+        let document = parse_document(
+            "<style>
+             div { quotes:'A' 'Z' 'B' 'Y'; counter-reset:n }
+             .hidden { display:none; counter-increment:n 10 }
+             .hidden span { display:block; counter-increment:n 10 }
+             .hidden span::before { content:open-quote; counter-increment:n 10 }
+             #disabled::before { display:none; content:open-quote; counter-increment:n 10 }
+             #absent::before { content:none; counter-increment:n 10 }
+             img::before, br::before { content:open-quote; counter-increment:n 10 }
+             #visible::before { content:open-quote ' ' counter(n) }
+             </style><div><span class='hidden'><span id='hidden'>x</span></span>
+             <span id='disabled'></span><span id='absent'></span><img><br><span id='visible'>x</span></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        for id in ["hidden", "disabled", "absent"] {
+            assert!(
+                computed
+                    .pseudo_style_for(find_by_id(&document, id), PseudoElement::Before)
+                    .is_none()
+            );
+        }
+        assert_eq!(
+            computed
+                .pseudo_style_for(find_by_id(&document, "visible"), PseudoElement::Before)
+                .unwrap()
+                .content,
+            "A 0"
+        );
+    }
+
+    #[test]
+    fn quote_cascade_ignores_invalid_values_and_losing_content_has_no_effect() {
+        let document = parse_document(
+            "<style>
+             div { quotes:'A' 'Z' 'B' 'Y' !important; quotes:'bad'; }
+             #one::before { content:open-quote; content:'winner' !important; content:open-quote bad; }
+             #two::before { content:open-quote; quotes:unset }
+             #two::after { content:close-quote; quotes:initial }
+             #auto::before { content:open-quote; quotes:auto }
+             #auto::after { content:close-quote }
+             </style><div><span id='one'></span><span id='two'></span></div><q id='auto'></q>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let content = |id, pseudo| {
+            computed
+                .pseudo_style_for(find_by_id(&document, id), pseudo)
+                .unwrap()
+                .content
+                .as_str()
+        };
+        assert_eq!(content("one", PseudoElement::Before), "winner");
+        assert_eq!(content("two", PseudoElement::Before), "A");
+        assert_eq!(content("two", PseudoElement::After), "”");
+        assert_eq!(content("auto", PseudoElement::Before), "“");
+        assert_eq!(content("auto", PseudoElement::After), "”");
     }
 
     #[test]

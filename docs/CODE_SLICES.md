@@ -326,7 +326,7 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> generated url()/quotes + fuller pseudo block/replaced-content geometry
+  -> generated url() + fuller pseudo block/replaced-content geometry
   -> full invalid-at-computed-value-time var() / custom-property cycle semantics
   -> nested/replaced inline decoration stacks
   -> additional computed properties
@@ -335,7 +335,12 @@ Rendering/property expansion
 Generated content accepts mixed quoted strings, `attr(name)`, `counter()` and `counters()`;
 `none`/`normal` suppress the pseudo box. Counter state comes from initial
 `counter-reset`/`counter-set`/`counter-increment` parsing with sibling-aware nested scopes and
-basic decimal/alpha/roman formatting. Generated `url()` images and quote keywords remain later.
+basic decimal/alpha/roman formatting. Inherited `quotes` auto/none/string pairs feed open/close
+and no-open/no-close commands with document-order depth; `<q>` gets UA before/after defaults.
+Only the winning emitted content changes depth. Hidden subtrees/absent pseudos do not change
+quotes or counters. Pairs repeat at deeper nesting; unmatched closing commands have no effect.
+Computed pairs and materialized text survive retained reflow. Generated `url()` images and
+language-aware automatic quote selection remain later (`auto` currently uses English pairs).
 `display:block` generated content is an initial line-boundary approximation rather than a full virtual block box, empty-string pseudo
 boxes do not yet materialize decoration without glyph items, and replaced elements do not yet
 receive generated pseudos. Broader property/value coverage, `@import`, media queries and CSS

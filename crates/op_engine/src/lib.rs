@@ -969,6 +969,31 @@ mod tests {
     }
 
     #[test]
+    fn nested_quotes_reach_paint_links_and_retained_reflow() {
+        let mut engine = Engine::new();
+        let html = "<style>p { quotes:'«' '»' '‹' '›' }
+            q::before { color:red } q::after { color:green }
+            </style><p><a href='next.html'><q>outer <q>inner</q> tail</q></a></p>";
+        let original = engine.set_html_page(html, 800, 600);
+        let text = original
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(text, "«outer ‹inner› tail»");
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::Text { text, links, color, .. }
+            if text == "«" && links.iter().any(|link| link.href == "next.html")
+                && *color == op_paint::Color { r:255, g:0, b:0 }
+        )));
+        engine.reflow(180, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn custom_properties_and_var_reach_native_display_list() {
         let display_list = Engine::new().render_html(
             "<style>
