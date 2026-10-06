@@ -30,6 +30,7 @@ and preserves  double   spaces while still wrapping long content when needed.</d
 <div class="spacing-demo">straße test becomes uppercase and gets visible letter + word spacing.</div>
 <div class="capitalize-demo">capitalize transforms the first character of each whitespace-separated word while negative letter spacing tightens the run.</div>
 <p>Inline box fragments now work inside normal text: <span class="inline-chip">this padded violet span contains <b>nested bold text</b> and is deliberately long enough to wrap into multiple decorated line fragments</span> then normal flow continues. <span class="inline-chip-alt">A second adjacent-style chip stays its own box.</span></p>
+<p><span style="padding:3px 6px;border:2px solid #b42318;background:#fff4e5">Outer red frame stays around <span style="padding:3px 5px;border:2px solid #4338ca;background:#eef2ff"><b>this nested violet frame, including wrapped text and its own padding</b></span> and the tail.</span></p>
 <p class="functional-pseudos"><span class="hot">first matches :is + :not + :nth-child(odd)</span> <span class="hot skip">second is excluded by :not</span> <span id="functional-third" class="warm">third matches and :where adds zero-specificity bold</span> <span class="cold">fourth misses :is</span></p>
 <p class="generated-demo">This sentence is real DOM text; both labels around it come from CSS generated content.</p>
 <div class="custom-props">Inherited custom properties and var() now drive this color, padding, background, border and generated prefix; font-weight uses a fallback.</div>

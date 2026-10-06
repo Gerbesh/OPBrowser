@@ -308,8 +308,8 @@ collapse. Parent/child and empty-block margin collapsing are deliberately not im
 in this slice. Author box geometry applies to ordinary non-replaced block boxes and to initial non-replaced
 inline fragments. Inline fragments clone their left/right edge treatment on each wrapped line
 in this initial implementation, and vertical padding/borders expand safe line geometry to
-avoid paint overlap. Replaced-element inline decorations and simultaneous nested decorated
-inline stacks remain later work.
+avoid paint overlap. Nested decorated stacks and replaced image own boxes now share this
+formatter; sliced edge treatment and complete CSS inline vertical positioning remain later.
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
@@ -340,9 +340,8 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> nested-inline stacks/unavailable replaced-image boxes
+  -> unavailable replaced-image boxes / sliced inline decoration edges
   -> broader custom-property grammar/registration/animation-taint semantics
-  -> nested/generated replaced inline decoration stacks
   -> additional computed properties
 ```
 
@@ -386,13 +385,13 @@ Hidden subtrees/pseudos do not request resources. Ordinary and generated URLs sh
 box geometry, gradients/image modifiers and alternative-text syntax remain future work.
 The native generated image/link fixture is examples/css/generated-images.html.
 
-DOM img items carry InlineStyle with their own InlineBoxStyle. Padding/solid borders reserve
+DOM img items carry InlineStyle ancestor indices and a separate own InlineBoxStyle. Padding/solid borders reserve
 horizontal edges before atomic line fitting; width shrinking leaves room for those edges.
 The border-box bottom aligns to the text baseline and full image/vertical edges expand line
 ascent. Background/borders use precise image-box BoxDecoration geometry before raster paint.
 Text alignment includes the outer width; nowrap suppresses soft image wrapping. Generated
-anonymous image items retain intrinsic geometry; generated replaced decoration/sizing and
-nested ancestor box stacks remain later. Native click regions still cover painted image pixels.
+anonymous image items retain intrinsic geometry; sole-URL pseudos share replaced sizing and
+own decoration. Native click regions still cover painted image pixels.
 
 DOM image size slice:
 
@@ -416,13 +415,30 @@ materialization. Sole-URL inline pseudos use the DOM image resolve_image_size pa
 dimensions, box-sizing, ratio constraints and fitting; their own pseudo InlineBoxStyle adds
 padding/background/borders and atomic baseline/wrapping geometry. Mixed content images remain
 anonymous intrinsic items, even when adjacent text happens to resolve empty. Unavailable
-replaced image boxes and nested decorated stacks remain later work.
+replaced image boxes remain later work.
 
 Block DOM/sole-URL images use Context::block_image: intrinsic/CSS dimensions and exact
 border-box bounds, auto horizontal margins and adjacent vertical-margin collapse. Percentage
 widths use containing width while viewport fitting reserves specified horizontal margins.
 The raster starts after padding/border, box height advances following flow directly without
 anonymous text-line leading, and anchor href/order/Arc pixels survive paint and reflow.
+
+Nested inline decoration slice:
+
+```text
+computed own inline/pseudo boxes -> Flow InlineBoxes arena (parent indices)
+  -> one stack index per character/image/empty item; own image box stays separate
+  -> cached ancestor edges + iterative common-ancestor width transitions
+  -> wrapping / nowrap / alignment with all fragment edges reserved
+  -> per-line outer-to-inner decoration placeholders, completed on fragment close
+  -> BoxDecoration background/borders before text/raster paint and retained reflow
+```
+
+Outer fragments continue around nested boxes and images rather than disappearing for inner
+runs. Image fitting reserves ancestor edges without changing CSS percentage bases. Empty and
+mixed generated content share the same path; no repeated inherited box or fake glyph is added.
+Deterministic coverage checks exact nested text/image/pseudo/empty geometry, wrap boundaries,
+percentage fitting, 128 decorated levels, native display-list paint order and stable reflow.
 
 ## S4 - Scripted page
 

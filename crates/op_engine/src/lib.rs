@@ -1283,6 +1283,43 @@ mod tests {
     }
 
     #[test]
+    fn nested_inline_backgrounds_paint_outer_first_and_survive_reflow() {
+        let html = "<p><a href=next style='padding:2px 3px;background:red'>A<span style='padding:4px 5px;background:blue'><b>nested label wraps across lines</b></span>Z</a></p>";
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(html, 800, 600);
+        for width in [180, 800] {
+            let page = engine.reflow(width, 600).unwrap();
+            let mut outer = None;
+            for command in &page.display_list.commands {
+                if let PaintCommand::FillRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                } = command
+                {
+                    if *color == (op_paint::Color { r: 255, g: 0, b: 0 }) {
+                        outer = Some((*x, *y, *width, *height));
+                    } else if *color == (op_paint::Color { r: 0, g: 0, b: 255 }) {
+                        let (left, top, outer_width, outer_height) =
+                            outer.expect("outer background paints before inner");
+                        assert!(*x >= left && *y >= top);
+                        assert!(*x + *width <= left + outer_width);
+                        assert!(*y + *height <= top + outer_height);
+                    }
+                }
+            }
+            assert!(outer.is_some());
+            assert!(page.display_list.commands.iter().any(|command| matches!(command,
+                PaintCommand::Text { text, links, bold: true, .. }
+                    if text.contains("nested") && links.iter().any(|link| link.href == "next")
+            )));
+        }
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn legacy_document_text_and_entity_decoded_links_reach_paint() {
         let mut engine = Engine::new();
         let page = engine.navigate("data:text/html;charset=windows-1251,%3Ch1%3E%CF%F0%E8%E2%E5%F2%3C%2Fh1%3E%3Cp%3E%26copy%3B%3C%2Fp%3E%3Cp%3E%3Ca%20href%3D%27https%3A%2F%2Fexample.com%2F%3Fa%3D1%26amp%3Bb%3D2%27%3EGo%3C%2Fa%3E%3C%2Fp%3E", 800, 600).unwrap();

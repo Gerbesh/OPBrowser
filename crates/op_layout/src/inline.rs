@@ -37,6 +37,90 @@ impl InlineBoxStyle {
     }
 }
 
+#[derive(Default)]
+pub(super) struct InlineBoxes {
+    nodes: Vec<InlineBoxNode>,
+}
+
+struct InlineBoxNode {
+    style: InlineBoxStyle,
+    parent: Option<usize>,
+    depth: usize,
+    left: i32,
+    right: i32,
+    top: i32,
+    bottom: i32,
+}
+
+impl InlineBoxes {
+    pub(super) fn push(&mut self, style: InlineBoxStyle, parent: Option<usize>) -> usize {
+        let id = self.nodes.len();
+        self.nodes.push(InlineBoxNode {
+            style,
+            parent,
+            depth: parent.map_or(1, |id| self.nodes[id].depth + 1),
+            left: self.left(parent).saturating_add(style.left_extra()),
+            right: self.right(parent).saturating_add(style.right_extra()),
+            top: self.top(parent).saturating_add(style.top_extra()),
+            bottom: self.bottom(parent).saturating_add(style.bottom_extra()),
+        });
+        id
+    }
+
+    pub(super) fn style(&self, id: usize) -> InlineBoxStyle {
+        self.nodes[id].style
+    }
+    pub(super) fn parent(&self, id: usize) -> Option<usize> {
+        self.nodes[id].parent
+    }
+    pub(super) fn horizontal(&self, id: Option<usize>) -> i32 {
+        self.left(id).saturating_add(self.right(id))
+    }
+    fn left(&self, id: Option<usize>) -> i32 {
+        id.map_or(0, |id| self.nodes[id].left)
+    }
+    fn right(&self, id: Option<usize>) -> i32 {
+        id.map_or(0, |id| self.nodes[id].right)
+    }
+    fn top(&self, id: Option<usize>) -> i32 {
+        id.map_or(0, |id| self.nodes[id].top)
+    }
+    fn bottom(&self, id: Option<usize>) -> i32 {
+        id.map_or(0, |id| self.nodes[id].bottom)
+    }
+    fn path(&self, mut id: Option<usize>) -> Vec<usize> {
+        let mut path = Vec::new();
+        while let Some(current) = id {
+            path.push(current);
+            id = self.parent(current);
+        }
+        path.reverse();
+        path
+    }
+    fn transition(&self, mut from: Option<usize>, mut to: Option<usize>) -> i32 {
+        let mut width: i32 = 0;
+        let depth = |id: Option<usize>| id.map_or(0, |id| self.nodes[id].depth);
+        while from != to {
+            if depth(from) >= depth(to) {
+                let id = from.expect("unequal stack has a source node");
+                width = width.saturating_add(self.style(id).right_extra());
+                from = self.parent(id);
+            } else {
+                let id = to.expect("unequal stack has a target node");
+                width = width.saturating_add(self.style(id).left_extra());
+                to = self.parent(id);
+            }
+        }
+        width
+    }
+    fn contribution(&self, from: Option<usize>, to: Option<usize>, content: i32) -> i32 {
+        content
+            .saturating_add(self.transition(from, to))
+            .saturating_add(self.right(to))
+            .saturating_sub(self.right(from))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct InlineStyle {
     pub font_size: i32,
@@ -49,7 +133,7 @@ pub(super) struct InlineStyle {
     pub word_spacing: i32,
     pub text_transform: TextTransform,
     pub color: TextColor,
-    pub box_style: Option<InlineBoxStyle>,
+    pub boxes: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -62,7 +146,7 @@ pub(super) struct InlineChar<'a> {
 pub(super) enum Item<'a> {
     Char(InlineChar<'a>),
     EmptyInline(InlineStyle),
-    Image(ImageBox, InlineStyle),
+    Image(ImageBox, InlineStyle, Option<InlineBoxStyle>),
     Break,
 }
 
@@ -71,7 +155,7 @@ enum BoxItem<'a> {
         chars: Vec<InlineChar<'a>>,
         width: i32,
     },
-    Image(ImageBox, InlineStyle),
+    Image(ImageBox, InlineStyle, Option<InlineBoxStyle>),
     EmptyInline(InlineStyle),
 }
 
@@ -87,11 +171,12 @@ struct PreparedText {
 
 enum PreparedBox {
     Text(PreparedText),
-    Image(ImageBox, InlineStyle),
+    Image(ImageBox, InlineStyle, Option<InlineBoxStyle>),
 }
 
 pub(super) struct Lines<'a, 'm> {
     measurer: &'m mut dyn TextMeasurer,
+    inline_boxes: &'m InlineBoxes,
     default_style: InlineStyle,
     text_align: TextAlign,
     x: i32,
@@ -109,6 +194,7 @@ pub(super) struct Lines<'a, 'm> {
 impl<'a, 'm> Lines<'a, 'm> {
     pub fn new(
         measurer: &'m mut dyn TextMeasurer,
+        inline_boxes: &'m InlineBoxes,
         default_style: InlineStyle,
         text_align: TextAlign,
         x: i32,
@@ -117,6 +203,7 @@ impl<'a, 'm> Lines<'a, 'm> {
     ) -> Self {
         Self {
             measurer,
+            inline_boxes,
             default_style,
             text_align,
             x,
@@ -169,10 +256,10 @@ impl<'a, 'm> Lines<'a, 'm> {
                         word.push(ch);
                     }
                 }
-                Item::Image(image, style) => {
+                Item::Image(image, style, own_box) => {
                     preserved_cr = false;
                     self.word(std::mem::take(&mut word));
-                    self.image(image, style);
+                    self.image(image, style, own_box);
                 }
                 Item::EmptyInline(style) => {
                     preserved_cr = false;
@@ -220,27 +307,31 @@ impl<'a, 'm> Lines<'a, 'm> {
         width
     }
 
-    fn text_width(&mut self, chars: &[InlineChar<'a>]) -> i32 {
+    fn tail(&self) -> Option<usize> {
+        self.box_tail(self.boxes.last())
+    }
+
+    fn box_tail(&self, item: Option<&BoxItem<'a>>) -> Option<usize> {
+        match item {
+            Some(BoxItem::Text { chars, .. }) => chars.last().and_then(|ch| ch.style.boxes),
+            Some(BoxItem::Image(_, style, _) | BoxItem::EmptyInline(style)) => style.boxes,
+            None => None,
+        }
+    }
+
+    fn text_width(&mut self, chars: &[InlineChar<'a>], prefix: Option<usize>) -> i32 {
         if chars.is_empty() {
             return 0;
         }
         let mut width = self.content_width(chars);
-        let mut active: Option<InlineBoxStyle> = None;
+        let mut active = prefix;
         for ch in chars {
-            if ch.style.box_style != active {
-                if let Some(previous) = active {
-                    width = width.saturating_add(previous.right_extra());
-                }
-                if let Some(next) = ch.style.box_style {
-                    width = width.saturating_add(next.left_extra());
-                }
-                active = ch.style.box_style;
-            }
-        }
-        if let Some(active) = active {
-            width = width.saturating_add(active.right_extra());
+            width = width.saturating_add(self.inline_boxes.transition(active, ch.style.boxes));
+            active = ch.style.boxes;
         }
         width
+            .saturating_add(self.inline_boxes.right(active))
+            .saturating_sub(self.inline_boxes.right(prefix))
     }
 
     fn appended_width(&mut self, chars: &[InlineChar<'a>], space: Option<InlineChar<'a>>) -> i32 {
@@ -254,9 +345,19 @@ impl<'a, 'm> Lines<'a, 'm> {
             Some(BoxItem::Text { width, .. }) => *width,
             _ => 0,
         };
+        let prefix = if matches!(self.boxes.last(), Some(BoxItem::Text { .. })) {
+            self.box_tail(
+                self.boxes
+                    .len()
+                    .checked_sub(2)
+                    .and_then(|index| self.boxes.get(index)),
+            )
+        } else {
+            self.tail()
+        };
         self.line_width
             .saturating_sub(old)
-            .saturating_add(self.text_width(&combined))
+            .saturating_add(self.text_width(&combined, prefix))
     }
 
     // Exponential probing avoids repeatedly measuring giant remaining suffixes
@@ -295,7 +396,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         };
         combined.extend(space);
         combined.extend_from_slice(chars);
-        let width = self.text_width(&combined);
+        let width = self.text_width(&combined, self.tail());
         self.line_width = self.line_width.saturating_add(width);
         self.boxes.push(BoxItem::Text {
             chars: combined,
@@ -357,20 +458,26 @@ impl<'a, 'm> Lines<'a, 'm> {
         }
     }
 
-    fn image(&mut self, image: ImageBox, style: InlineStyle) {
+    fn image(&mut self, image: ImageBox, style: InlineStyle, own_box: Option<InlineBoxStyle>) {
         let space = if self.boxes.is_empty() {
             None
         } else {
             self.pending_space.take()
         };
         self.pending_space = None;
-        let extras = style.box_style.map_or(0, |box_style| {
+        let extras = own_box.map_or(0, |box_style| {
             box_style
                 .left_extra()
                 .saturating_add(box_style.right_extra())
         });
         let width = image.width.saturating_add(extras);
-        let occupied = self.appended_width(&[], space).saturating_add(width);
+        let occupied =
+            self.appended_width(&[], space)
+                .saturating_add(self.inline_boxes.contribution(
+                    space.map_or(self.tail(), |value| value.style.boxes),
+                    style.boxes,
+                    width,
+                ));
         let allows_wrap = matches!(
             style.white_space,
             WhiteSpace::Normal | WhiteSpace::PreWrap | WhiteSpace::PreLine
@@ -383,24 +490,32 @@ impl<'a, 'm> Lines<'a, 'm> {
         {
             self.append(&[], Some(space));
         }
-        self.line_width = self.line_width.saturating_add(width);
-        self.boxes.push(BoxItem::Image(image, style));
+        self.line_width = self
+            .line_width
+            .saturating_add(
+                self.inline_boxes
+                    .contribution(self.tail(), style.boxes, width),
+            );
+        self.boxes.push(BoxItem::Image(image, style, own_box));
     }
 
     fn empty_inline(&mut self, style: InlineStyle) {
-        let Some(box_style) = style.box_style else {
+        let Some(_) = style.boxes else {
             return;
         };
-        let width = box_style
-            .left_extra()
-            .saturating_add(box_style.right_extra());
         let space = if self.boxes.is_empty() {
             None
         } else {
             self.pending_space.take()
         };
         self.pending_space = None;
-        let occupied = self.appended_width(&[], space).saturating_add(width);
+        let occupied =
+            self.appended_width(&[], space)
+                .saturating_add(self.inline_boxes.contribution(
+                    space.map_or(self.tail(), |value| value.style.boxes),
+                    style.boxes,
+                    0,
+                ));
         let allows_wrap = matches!(
             style.white_space,
             WhiteSpace::Normal | WhiteSpace::PreWrap | WhiteSpace::PreLine
@@ -413,7 +528,9 @@ impl<'a, 'm> Lines<'a, 'm> {
         {
             self.append(&[], Some(space));
         }
-        self.line_width = self.line_width.saturating_add(width);
+        self.line_width = self
+            .line_width
+            .saturating_add(self.inline_boxes.contribution(self.tail(), style.boxes, 0));
         self.boxes.push(BoxItem::EmptyInline(style));
     }
 
@@ -452,10 +569,8 @@ impl<'a, 'm> Lines<'a, 'm> {
             }
         }
         let (metrics, mut ascent, mut descent) = self.metrics_for(style);
-        if let Some(box_style) = style.box_style {
-            ascent = ascent.saturating_add(box_style.top_extra());
-            descent = descent.saturating_add(box_style.bottom_extra());
-        }
+        ascent = ascent.saturating_add(self.inline_boxes.top(style.boxes));
+        descent = descent.saturating_add(self.inline_boxes.bottom(style.boxes));
         PreparedText {
             text,
             links,
@@ -477,7 +592,9 @@ impl<'a, 'm> Lines<'a, 'm> {
         let mut prepared = Vec::new();
         for item in boxes {
             match item {
-                BoxItem::Image(image, style) => prepared.push(PreparedBox::Image(image, style)),
+                BoxItem::Image(image, style, own_box) => {
+                    prepared.push(PreparedBox::Image(image, style, own_box))
+                }
                 BoxItem::EmptyInline(style) => {
                     prepared.push(PreparedBox::Text(self.prepare_text(&[], style)))
                 }
@@ -502,15 +619,14 @@ impl<'a, 'm> Lines<'a, 'm> {
         let ascent = prepared
             .iter()
             .map(|item| match item {
-                PreparedBox::Image(image, style) => {
-                    image
-                        .height
-                        .saturating_add(style.box_style.map_or(0, |box_style| {
-                            box_style
-                                .top_extra()
-                                .saturating_add(box_style.bottom_extra())
-                        }))
-                }
+                PreparedBox::Image(image, style, own_box) => image
+                    .height
+                    .saturating_add(own_box.map_or(0, |box_style| {
+                        box_style
+                            .top_extra()
+                            .saturating_add(box_style.bottom_extra())
+                    }))
+                    .saturating_add(self.inline_boxes.top(style.boxes)),
                 PreparedBox::Text(text) => text.ascent,
             })
             .max()
@@ -518,9 +634,9 @@ impl<'a, 'm> Lines<'a, 'm> {
             .max(default_ascent);
         let descent = prepared
             .iter()
-            .filter_map(|item| match item {
-                PreparedBox::Text(text) => Some(text.descent),
-                PreparedBox::Image(_, _) => None,
+            .map(|item| match item {
+                PreparedBox::Text(text) => text.descent,
+                PreparedBox::Image(_, style, _) => self.inline_boxes.bottom(style.boxes),
             })
             .max()
             .unwrap_or(default_descent)
@@ -534,37 +650,52 @@ impl<'a, 'm> Lines<'a, 'm> {
             TextAlign::Center => remaining / 2,
         };
         let mut x = self.x.saturating_add(offset);
-        let mut active_fragment: Option<(InlineBoxStyle, i32)> = None;
+        let mut active_fragments: Vec<(usize, i32, usize)> = Vec::new();
         for item in prepared {
             let next_box = match &item {
-                PreparedBox::Text(text) => text.style.box_style,
-                PreparedBox::Image(_, _) => None,
+                PreparedBox::Text(text) => text.style.boxes,
+                PreparedBox::Image(_, style, _) => style.boxes,
             };
-            if active_fragment.map(|(style, _)| style) != next_box {
-                if let Some((style, start_x)) = active_fragment.take() {
-                    x = x.saturating_add(style.right_extra());
-                    self.decorations.push(BoxDecoration {
-                        x: start_x,
-                        y: self.y,
-                        width: x.saturating_sub(start_x).max(0),
-                        height: ascent.saturating_add(descent),
-                        background: style.background,
-                        border_top: style.border_top,
-                        border_right: style.border_right,
-                        border_bottom: style.border_bottom,
-                        border_left: style.border_left,
-                    });
-                }
-                if let Some(style) = next_box {
-                    let start_x = x;
-                    x = x.saturating_add(style.left_extra());
-                    active_fragment = Some((style, start_x));
-                }
+            let path = self.inline_boxes.path(next_box);
+            let common = active_fragments
+                .iter()
+                .zip(&path)
+                .take_while(|((id, _, _), next)| id == *next)
+                .count();
+            while active_fragments.len() > common {
+                let (id, start_x, decoration) =
+                    active_fragments.pop().expect("active inline fragment");
+                x = x.saturating_add(self.inline_boxes.style(id).right_extra());
+                self.decorations[decoration].width = x.saturating_sub(start_x).max(0);
+            }
+            for id in path.into_iter().skip(common) {
+                let style = self.inline_boxes.style(id);
+                let parent = self.inline_boxes.parent(id);
+                let top = self.inline_boxes.top(parent);
+                let bottom = self.inline_boxes.bottom(parent);
+                let decoration = self.decorations.len();
+                self.decorations.push(BoxDecoration {
+                    x,
+                    y: self.y.saturating_add(top),
+                    width: 0,
+                    height: ascent
+                        .saturating_add(descent)
+                        .saturating_sub(top)
+                        .saturating_sub(bottom)
+                        .max(0),
+                    background: style.background,
+                    border_top: style.border_top,
+                    border_right: style.border_right,
+                    border_bottom: style.border_bottom,
+                    border_left: style.border_left,
+                });
+                active_fragments.push((id, x, decoration));
+                x = x.saturating_add(style.left_extra());
             }
 
             match item {
-                PreparedBox::Image(mut image, style) => {
-                    if let Some(box_style) = style.box_style {
+                PreparedBox::Image(mut image, _, own_box) => {
+                    if let Some(box_style) = own_box {
                         let left = box_style.left_extra();
                         let right = box_style.right_extra();
                         let top = box_style.top_extra();
@@ -583,11 +714,10 @@ impl<'a, 'm> Lines<'a, 'm> {
                         x = x.saturating_add(left);
                     }
                     image.x = x;
-                    image.y = baseline
-                        - image.height
-                        - style.box_style.map_or(0, InlineBoxStyle::bottom_extra);
+                    image.y =
+                        baseline - image.height - own_box.map_or(0, InlineBoxStyle::bottom_extra);
                     x += image.width;
-                    x = x.saturating_add(style.box_style.map_or(0, InlineBoxStyle::right_extra));
+                    x = x.saturating_add(own_box.map_or(0, InlineBoxStyle::right_extra));
                     self.order.push(LayoutItem::Image(self.image_boxes.len()));
                     self.image_boxes.push(image);
                 }
@@ -615,19 +745,9 @@ impl<'a, 'm> Lines<'a, 'm> {
                 }
             }
         }
-        if let Some((style, start_x)) = active_fragment.take() {
-            x = x.saturating_add(style.right_extra());
-            self.decorations.push(BoxDecoration {
-                x: start_x,
-                y: self.y,
-                width: x.saturating_sub(start_x).max(0),
-                height: ascent.saturating_add(descent),
-                background: style.background,
-                border_top: style.border_top,
-                border_right: style.border_right,
-                border_bottom: style.border_bottom,
-                border_left: style.border_left,
-            });
+        while let Some((id, start_x, decoration)) = active_fragments.pop() {
+            x = x.saturating_add(self.inline_boxes.style(id).right_extra());
+            self.decorations[decoration].width = x.saturating_sub(start_x).max(0);
         }
 
         self.y += ascent + descent;

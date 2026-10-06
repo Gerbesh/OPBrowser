@@ -184,7 +184,9 @@ Status: IN PROGRESS.
   own padding/background/borders, intrinsic ratio constraints and retained image link identity.
 - DONE shared block DOM/sole-URL replaced-image geometry with intrinsic/CSS width, auto
   margins, padding/borders, precise box height and adjacent vertical margin collapsing.
-- NEXT nested-inline stacks and unavailable replaced-image box geometry.
+- DONE nested decorated-inline stacks with parent-linked arena indices, cumulative edge
+  geometry, shared text/image/empty/pseudo fragments and outer-before-inner background paint.
+- NEXT unavailable replaced-image box geometry.
 - DONE DOM image padding/background/solid borders as atomic inline boxes, edge-aware
   width fitting, border-box baseline extents, text alignment and nowrap behavior.
 - DONE declaration source-node provenance and retained effective external stylesheet
@@ -195,8 +197,7 @@ Status: IN PROGRESS.
   including nested/generated text and retained reflow with unchanged link hit identity.
 - LATER language-aware `quotes:auto` (currently deterministic English Unicode pairs).
 - LATER broader custom-property grammar/registration/animation-taint behavior,
-  relational selectors, nested decorated-inline
-  stacks/generated replaced inline decorations and fuller
+  relational selectors, sliced inline decoration edges and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.
 - LATER normal flow block layout.

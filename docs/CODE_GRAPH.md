@@ -320,13 +320,23 @@ classDiagram
         background
         border_edges
     }
+    class InlineBoxes {
+        parent-linked arena nodes
+        cached cumulative edges and depth
+        iterative stack transitions
+    }
+    class InlineStyle {
+        typography
+        optional box stack index
+    }
     class EmptyInline {
         InlineStyle
         no glyph payload
     }
     class InlineImage {
         ImageBox
-        InlineStyle own box edges
+        InlineStyle ancestor stack index
+        optional own InlineBoxStyle
         atomic wrapping / nowrap
     }
     class BlockContent {
@@ -443,7 +453,9 @@ classDiagram
     Document --> BlockContent : ordinary element child traversal
     BlockContent --> BoxDecoration : shared normal-flow block geometry / empty boxes
     ComputedPseudoStyle --> InlineBoxStyle : pseudo decoration identity + box style
-    InlineBoxStyle --> BoxDecoration : per-line inline fragments
+    InlineBoxes --> InlineBoxStyle : one style per owned node / parent index
+    InlineStyle --> InlineBoxes : one stack index per character or image
+    InlineBoxes --> BoxDecoration : per-line nested fragments / outer-before-inner allocation
     ComputedPseudoStyle --> EmptyInline : decorated empty generated strings
     Document --> EmptyInline : childless inline with its own box decoration
     EmptyInline --> BoxDecoration : edge width / line metrics / alignment without TextBox
@@ -607,4 +619,11 @@ Reflow reuses author candidates and computed values without refetching/reparsing
 The block-box path includes used width/min/max/auto-margin geometry, per-side borders and
 adjacent sibling margin collapse before BoxDecoration/background-border FillRects. Selector
 matching now adds attributes, +/~ and initial structural pseudos before the same cascade.
-Next: richer color/value functions and inline box fragments/decorations.
+Nested inline text/image/empty/pseudo items now retain parent-linked decoration stacks.
+Flow owns the InlineBoxes arena; each character stores one optional index, without copying
+ancestors per character. Cached cumulative edges and iterative common-ancestor transitions
+participate in width fitting, wrap and alignment. Lines allocates outer decorations when
+opening fragments, then fills bounds when closing, so nested opaque backgrounds paint in
+containment order. Image own boxes remain atomic inside ancestor fragments; fitting reserves
+ancestor edges while percentage dimensions retain the containing block width as their basis.
+Next: unavailable replaced-image boxes and sliced inline decoration edges.

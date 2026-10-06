@@ -66,7 +66,12 @@ emits this sequence instead of painting all text before all images.
 - Non-replaced inline elements now produce real background/padding/solid-border fragments.
   Their horizontal extras participate in fitting and alignment; vertical extras enlarge the
   safe line box, and wrapped fragments become independent BoxDecoration records. An ordinary
-  nested `<b>/<em>/<a>` without its own box continues the outer decorated fragment.
+  nested `<b>/<em>/<a>` without its own box continues the outer decorated fragment. Decorated
+  descendants add their own frames inside the existing ancestor frames. A parent-linked arena
+  stores each box once; characters carry one index, independent of decorated nesting depth.
+  Text, images, empty boxes and generated pseudos share iterative ancestor transitions.
+  All ancestor edges affect wrap/alignment and vertical extents. Outer decorations are
+  allocated before inner decorations so an opaque outer background cannot cover inner paint.
 - Generated `::before`/`::after` text from strings, `attr()`, CSS counters and quote commands is converted
   to ordinary InlineChar items at the host's child boundaries. Counter state is resolved before
   layout, so the formatter only sees final generated Unicode text. Pseudos inherit host typography,
@@ -102,8 +107,8 @@ grapheme-aware/full Unicode line breaking remain future work. `text-transform: c
 currently uses whitespace word starts rather than full locale/context-sensitive CSS rules;
 word-spacing targets processed ASCII spaces, and spaced native painting advances per Unicode
 scalar while layout width stays anchored to whole-run GDI measurement plus CSS spacing.
-Inline replaced elements do not yet fully honor nowrap semantics or receive these box
-fragments/generated pseudos. Generated `display:block` uses the ordinary block box model with
+Inline replaced image boxes honor nowrap and keep their own padding/borders inside ancestor
+fragments; generated pseudos on DOM replaced elements remain unsupported. Generated `display:block` uses the ordinary block box model with
 dimensions/min/max, margins, padding, borders and background. Empty generated block strings
 still materialize decorations. Empty generated strings and ordinary childless inline elements
 with their own box carry EmptyInline items: edge width affects wrapping/nowrap/alignment and
@@ -112,9 +117,7 @@ Generated `url()` images share ordered inline text/image lists, baselines, atomi
 intrinsic sizes and anchor click identity. Missing generated resources add no inline image;
 surrounding text remains. Unavailable replacement box geometry,
 language-aware automatic quote selection, custom counter styles and fully spec-complete counter
-scope edge cases are not implemented. Only one decorated inline
-ancestor is represented at a time; a nested inline with
-its own box replaces the outer decoration for that nested run. Fragment edges currently clone
+scope edge cases are not implemented. Fragment edges currently clone
 on each wrapped line rather than implementing `box-decoration-break: slice`. Floats/tables/
 flex/grid also remain future work. Hyperlinks use computed text color/decoration, with UA
 blue/underline defaults overridden by author CSS. Their byte spans and measured native hit

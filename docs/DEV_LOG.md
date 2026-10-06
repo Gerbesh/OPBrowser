@@ -1002,3 +1002,22 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 222 workspace tests,
   startup smoke, centered/decorated generated image smoke (30 commands), native image-only
   link navigation and optimized workspace release build.
+
+## 2026-10-06 - Nested inline decoration stacks
+
+- Replaced the single copied inline box style with Context-owned InlineBoxes parent-linked
+  arena nodes. Characters carry one optional stack index; cumulative edges/depth are cached
+  per owned box, avoiding copies of all ancestors per character.
+- Text, images, empty DOM/pseudo boxes and generated text/image lists share iterative
+  common-ancestor transitions. All ancestor edges contribute to wrapping, alignment and
+  safe vertical extents; image own boxes remain atomic within continuous ancestor fragments.
+- Image fitting reserves ancestor edges while CSS percentage sizes retain containing width
+  as their basis. Outer fragment decorations are allocated before descendants and completed
+  on close, preserving nested opaque background/border paint order.
+- Added exact nested text/image/empty/pseudo geometry, repeated wrapped edges, percentage
+  fitting, 128 decorated levels, Engine paint-order/link/reflow regressions and native demos.
+- Updated README, plan, graph, slices and inline/box/image wiki. Fragment edges still clone;
+  full CSS vertical positioning and sliced decoration behavior remain later work.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 229 workspace tests,
+  startup smoke, nested/generated image smoke (56 commands), native image-only link navigation
+  and optimized workspace release build.

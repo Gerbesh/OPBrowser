@@ -110,6 +110,11 @@ action remains an anonymous image in a content list. Unavailable
 replaced-image box behavior remain later work; missing generated resources currently omit the
 image. Native hit regions continue to cover raster content pixels.
 
+Inline DOM/sole-URL images retain decorated ancestor stacks and a separate atomic own box.
+Anonymous images in mixed pseudo lists remain inside the pseudo/host fragments. Available
+width fitting reserves all ancestor edges; CSS percentage widths still use the containing
+block width. Outer backgrounds paint before inner image decorations and shared raster pixels.
+
 Block DOM and sole-URL images share intrinsic/CSS sizing, auto horizontal margins and adjacent
 vertical margin collapse. Exact padding/border box height advances block flow without extra
 text-line leading; percent widths retain containing width as their basis while fitting leaves

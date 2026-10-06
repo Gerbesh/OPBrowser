@@ -1,4 +1,4 @@
-use super::inline::{InlineBoxStyle, InlineChar, InlineStyle, Item, Lines};
+use super::inline::{InlineBoxStyle, InlineBoxes, InlineChar, InlineStyle, Item, Lines};
 use super::*;
 use op_css::{
     BorderEdges, BorderStyle, BoxSizing, ComputedFontWeight, ComputedLineHeight, ComputedStyle,
@@ -31,6 +31,7 @@ pub(super) fn layout(
         generated_images,
         computed_styles,
         measurer,
+        inline_boxes: InlineBoxes::default(),
         width: (viewport_width - 64).max(160),
         y: 28,
         pending_margin: None,
@@ -74,6 +75,7 @@ struct Context<'a, 'm> {
     generated_images: &'a GeneratedImageResources,
     computed_styles: &'a ComputedStyleMap,
     measurer: &'m mut dyn TextMeasurer,
+    inline_boxes: InlineBoxes,
     width: i32,
     y: i32,
     pending_margin: Option<i32>,
@@ -153,6 +155,7 @@ impl<'a> Context<'a, '_> {
         self.flush_pending_margin();
         let lines = Lines::new(
             self.measurer,
+            &self.inline_boxes,
             style.inline,
             style.text_align,
             x,
@@ -329,9 +332,15 @@ impl<'a> Context<'a, '_> {
                 }
                 let mut current = self.element_style(id, tag, inherited);
                 if display == Display::Inline {
-                    current.inline.box_style =
+                    current.inline.boxes = if tag == "img" {
+                        inherited.inline.boxes
+                    } else {
                         resolve_inline_box_style(id, None, current, containing_width)
-                            .or(inherited.inline.box_style);
+                            .map(|box_style| {
+                                self.inline_boxes.push(box_style, inherited.inline.boxes)
+                            })
+                            .or(inherited.inline.boxes)
+                    };
                 }
                 let href = if tag == "a" {
                     attribute(element, "href")
@@ -400,7 +409,8 @@ impl<'a> Context<'a, '_> {
                             .computed_styles
                             .pseudo_style_for(id, PseudoElement::After)
                             .is_none()
-                        && current.inline.box_style.is_some_and(|box_style| {
+                        && current.inline.boxes.is_some_and(|box_id| {
+                            let box_style = self.inline_boxes.style(box_id);
                             box_style.node == id && box_style.pseudo.is_none()
                         })
                     {
@@ -471,11 +481,11 @@ impl<'a> Context<'a, '_> {
             );
             return;
         }
-        style.inline.box_style =
-            resolve_inline_box_style(id, Some(pseudo), style, containing_width)
-                .or(host_style.inline.box_style);
+        style.inline.boxes = resolve_inline_box_style(id, Some(pseudo), style, containing_width)
+            .map(|box_style| self.inline_boxes.push(box_style, host_style.inline.boxes))
+            .or(host_style.inline.boxes);
         if generated.items.is_empty() {
-            if style.inline.box_style.is_some() {
+            if style.inline.boxes.is_some() {
                 items.push(Item::EmptyInline(style.inline));
             }
             return;
@@ -506,16 +516,21 @@ impl<'a> Context<'a, '_> {
                 op_css::GeneratedContentItem::Image { .. } => {
                     if let Some(image) = self.generated_images.get(&(target.0, target.1, index)) {
                         let mut image_style = style.inline;
-                        image_style.box_style = None;
+                        let mut own_box = None;
                         let sizing = if generated.replaced_image
                             && generated.style.display == Display::Inline
                         {
-                            image_style.box_style = resolve_inline_box_style(
+                            own_box = resolve_inline_box_style(
                                 target.0,
                                 Some(target.1),
                                 style,
                                 containing_width,
                             );
+                            if own_box.is_some()
+                                && let Some(box_id) = image_style.boxes
+                            {
+                                image_style.boxes = self.inline_boxes.parent(box_id);
+                            }
                             style
                         } else {
                             default_style()
@@ -523,9 +538,10 @@ impl<'a> Context<'a, '_> {
                         let Some((width, height)) = resolve_image_size(
                             sizing,
                             image,
-                            image_style.box_style,
+                            own_box,
                             containing_width,
-                            containing_width,
+                            containing_width
+                                .saturating_sub(self.inline_boxes.horizontal(image_style.boxes)),
                         ) else {
                             continue;
                         };
@@ -539,6 +555,7 @@ impl<'a> Context<'a, '_> {
                                 href: href.map(str::to_owned),
                             },
                             image_style,
+                            own_box,
                         ));
                     }
                 }
@@ -556,14 +573,14 @@ impl<'a> Context<'a, '_> {
         items: &mut Vec<Item<'a>>,
     ) {
         if let Some(image) = self.images.get(&id) {
-            let mut image_style = style.inline;
-            image_style.box_style = resolve_inline_box_style(id, None, style, available_width);
+            let image_style = style.inline;
+            let own_box = resolve_inline_box_style(id, None, style, available_width);
             let Some((width, height)) = resolve_image_size(
                 style,
                 image,
-                image_style.box_style,
+                own_box,
                 available_width,
-                available_width,
+                available_width.saturating_sub(self.inline_boxes.horizontal(image_style.boxes)),
             ) else {
                 return;
             };
@@ -577,6 +594,7 @@ impl<'a> Context<'a, '_> {
                     href: href.map(str::to_owned),
                 },
                 image_style,
+                own_box,
             ));
         } else {
             if style
@@ -978,7 +996,7 @@ fn computed_style(style: ComputedStyle) -> Style {
             word_spacing: style.word_spacing_px.round().clamp(-4096.0, 4096.0) as i32,
             text_transform: style.text_transform,
             color: style.color.into(),
-            box_style: None,
+            boxes: None,
         },
         text_align: style.text_align,
         margin: style.margin,
@@ -1058,7 +1076,7 @@ fn default_style() -> Style {
                 blue: 0,
                 alpha: 255,
             },
-            box_style: None,
+            boxes: None,
         },
         text_align: TextAlign::Start,
         margin: MarginEdges::ZERO,

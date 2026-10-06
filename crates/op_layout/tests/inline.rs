@@ -1,8 +1,9 @@
 use op_html::parse_document;
 use op_image::RasterImage;
 use op_layout::{
-    FontStyle, FontWeight, ImageResources, LayoutTree, TextMeasurer, TextMetrics,
-    layout_document_with_metrics,
+    FontStyle, FontWeight, GeneratedImageResources, ImageResources, LayoutTree, TextMeasurer,
+    TextMetrics, layout_document_with_computed_styles_and_metrics,
+    layout_document_with_resources_and_metrics,
 };
 use std::sync::Arc;
 
@@ -33,7 +34,186 @@ fn layout(html: &str, width: i32, measurer: &mut dyn TextMeasurer) -> LayoutTree
         }
         stack.extend(document.children(id));
     }
-    layout_document_with_metrics(&document, width, &images, measurer)
+    let computed =
+        op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+    layout_document_with_computed_styles_and_metrics(&document, width, &images, &computed, measurer)
+}
+
+#[test]
+fn nested_decorations_keep_outer_geometry_and_paint_order_across_text_styles() {
+    let page = layout(
+        "<p style='line-height:18px'><span style='padding:2px 3px;border:1px solid red;background:red'>A<span style='padding:4px 5px;border:2px solid blue;background:blue'><b>B</b></span>C</span>Z</p>",
+        300,
+        &mut Fixed,
+    );
+    assert_eq!(page.box_decorations.len(), 2);
+    let (outer, inner) = (&page.box_decorations[0], &page.box_decorations[1]);
+    assert_eq!((outer.x, outer.width, outer.height), (32, 52, 36));
+    assert_eq!(
+        (inner.x, inner.y, inner.width, inner.height),
+        (46, outer.y + 3, 24, 30)
+    );
+    assert_eq!(
+        page.text_boxes
+            .iter()
+            .map(|text| (text.text.as_str(), text.x))
+            .collect::<Vec<_>>(),
+        [("A", 36), ("B", 53), ("C", 70), ("Z", 84)]
+    );
+    assert!(
+        page.text_boxes
+            .iter()
+            .all(|text| text.y == page.text_boxes[0].y)
+    );
+    assert_eq!(page.text_boxes[1].weight, FontWeight::Bold);
+}
+
+#[test]
+fn nested_fragments_reserve_all_edges_on_each_wrapped_line() {
+    let page = layout(
+        "<p style='line-height:18px;width:80px'><span style='padding:2px 3px;border:1px solid red'><span style='padding:4px 5px;border:2px solid blue'>aa aa aa</span></span></p>",
+        144,
+        &mut Fixed,
+    );
+    assert_eq!(page.box_decorations.len(), 4);
+    assert_eq!(
+        page.text_boxes
+            .iter()
+            .map(|text| text.text.as_str())
+            .collect::<Vec<_>>(),
+        ["aa aa", "aa"]
+    );
+    for (index, text) in page.text_boxes.iter().enumerate() {
+        let outer = &page.box_decorations[index * 2];
+        let inner = &page.box_decorations[index * 2 + 1];
+        assert_eq!(
+            (outer.x, outer.width, outer.height),
+            (32, text.width + 22, 36)
+        );
+        assert_eq!(
+            (inner.x, inner.width, inner.height),
+            (36, text.width + 14, 30)
+        );
+        assert_eq!(text.x, 43);
+        assert_eq!(inner.y, outer.y + 3);
+        assert!(outer.x + outer.width <= 112);
+    }
+    assert_eq!(page.box_decorations[2].y, page.box_decorations[0].y + 36);
+}
+
+#[test]
+fn nested_image_and_empty_boxes_share_continuous_ancestor_fragments() {
+    let page = layout(
+        "<p style='line-height:18px'><a href=next style='padding:2px 3px;border:1px solid red'>A<span style='padding:4px 5px;border:2px solid blue'><img src=ok style='width:20px;height:12px;padding:1px;border:1px solid green'>B<span style='padding:2px;border:1px solid black'></span>C</span>D</a>Z</p>",
+        300,
+        &mut Fixed,
+    );
+    assert_eq!(page.box_decorations.len(), 4);
+    let (outer, inner, own_image, empty) = (
+        &page.box_decorations[0],
+        &page.box_decorations[1],
+        &page.box_decorations[2],
+        &page.box_decorations[3],
+    );
+    assert_eq!((outer.x, outer.width), (32, 92));
+    assert_eq!((inner.x, inner.width), (46, 64));
+    assert_eq!(
+        (own_image.x, own_image.width, own_image.height),
+        (53, 24, 16)
+    );
+    assert_eq!((empty.x, empty.width), (87, 6));
+    let image = &page.image_boxes[0];
+    assert_eq!((image.x, image.width, image.height), (55, 20, 12));
+    assert_eq!(image.href.as_deref(), Some("next"));
+    assert!(own_image.y >= inner.y && own_image.y + own_image.height <= inner.y + inner.height);
+    assert_eq!(page.text_boxes.last().unwrap().x, 124);
+}
+
+#[test]
+fn nested_image_fitting_reserves_ancestors_without_changing_percentage_basis() {
+    for (css_width, expected_width) in [("50%", 50), ("100%", 74)] {
+        let html = format!(
+            "<p style='width:100px'><span style='padding:2px 3px;border:1px solid red'><span style='padding:4px 5px;border:2px solid blue'><img src=ok style='width:{css_width};padding:1px;border:1px solid green'></span></span></p>"
+        );
+        let page = layout(&html, 300, &mut Fixed);
+        assert_eq!(page.image_boxes[0].width, expected_width);
+        assert_eq!(page.box_decorations[0].width, expected_width + 26);
+        assert!(page.box_decorations[0].width <= 100);
+    }
+}
+
+#[test]
+fn deep_inline_box_stacks_accumulate_geometry_without_recursive_fragment_closing() {
+    let mut html = "<p>".to_owned();
+    for _ in 0..128 {
+        html.push_str("<span style='padding:1px'>");
+    }
+    html.push('X');
+    for _ in 0..128 {
+        html.push_str("</span>");
+    }
+    html.push_str("</p>");
+    let page = layout(&html, 500, &mut Fixed);
+    assert_eq!(page.box_decorations.len(), 128);
+    assert_eq!(page.text_boxes[0].x, 32 + 128);
+    assert_eq!(page.box_decorations[0].width, 266);
+    for pair in page.box_decorations.windows(2) {
+        assert_eq!(pair[1].x, pair[0].x + 1);
+        assert_eq!(pair[1].y, pair[0].y + 1);
+        assert_eq!(pair[1].width, pair[0].width - 2);
+        assert_eq!(pair[1].height, pair[0].height - 2);
+    }
+}
+
+#[test]
+fn generated_replacements_and_mixed_lists_keep_host_and_pseudo_box_stacks() {
+    let document = parse_document(
+        "<style>a { padding:2px;border:1px solid red } a::before { content:url(ok);width:20px;height:12px;padding:1px;border:1px solid green } a::after { content:'' url(ok) 'T';padding:3px;border:1px solid blue }</style><p><a href=next>B</a>Z</p>",
+    );
+    let computed =
+        op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+    let mut generated = GeneratedImageResources::new();
+    let image = Arc::new(RasterImage::from_premultiplied_bgra(2, 2, vec![255; 16]).unwrap());
+    let mut nodes = vec![document.root()];
+    while let Some(node) = nodes.pop() {
+        for pseudo in [op_css::PseudoElement::Before, op_css::PseudoElement::After] {
+            if computed.pseudo_style_for(node, pseudo).is_some() {
+                generated.insert((node, pseudo, 0), image.clone());
+            }
+        }
+        nodes.extend(document.children(node));
+    }
+    let page = layout_document_with_resources_and_metrics(
+        &document,
+        300,
+        &ImageResources::new(),
+        &generated,
+        &computed,
+        &mut Fixed,
+    );
+    assert_eq!(page.box_decorations.len(), 3);
+    let (host, before, after) = (
+        &page.box_decorations[0],
+        &page.box_decorations[1],
+        &page.box_decorations[2],
+    );
+    assert_eq!((host.x, host.width), (32, 60));
+    assert_eq!((before.x, before.width), (35, 24));
+    assert_eq!((after.x, after.width), (69, 20));
+    assert_eq!((page.image_boxes[0].x, page.image_boxes[0].width), (37, 20));
+    assert_eq!((page.image_boxes[1].x, page.image_boxes[1].width), (73, 2));
+    assert_eq!(
+        page.text_boxes
+            .iter()
+            .map(|text| (text.text.as_str(), text.x))
+            .collect::<Vec<_>>(),
+        [("B", 59), ("T", 75), ("Z", 92)]
+    );
+    assert!(
+        page.image_boxes
+            .iter()
+            .all(|image| image.href.as_deref() == Some("next"))
+    );
 }
 
 #[test]

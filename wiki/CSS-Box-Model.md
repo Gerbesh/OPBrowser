@@ -84,8 +84,9 @@ background propagation and general alpha composition remain later rendering work
 
 ## Deliberate current limits
 
-- block geometry/decorations apply to ordinary non-replaced block boxes, not inline fragments;
-- replaced/block images do not yet receive CSS box decorations;
+- inline fragments clone edges on each wrapped line; sliced edge behavior remains later;
+- nested text/image/empty/pseudo boxes reserve all ancestor edges and paint outer frames first;
+- unavailable replaced-image boxes still use the documented fallback/omission behavior;
 - no parent/child or empty-block margin collapse;
 - no `border-radius`, outlines, shadows, background images or multiple backgrounds;
 - percentage height needs a definite-height containing-block propagation pass;

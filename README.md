@@ -94,6 +94,8 @@ real line-height geometry, italic/oblique font style, underline/line-through dec
 white-space normal/nowrap/pre/pre-wrap/pre-line, letter/word spacing and text-transform
 none/uppercase/lowercase/capitalize. Inline non-replaced elements also form real
 background/padding/solid-border fragments that participate in wrapping and alignment.
+Nested decorated inline ancestors remain visible around text, images, empty boxes and pseudos;
+each wrapped line reserves all ancestor edges and paints outer backgrounds before inner ones.
 CSS URL tokens preserve unquoted paths/data URLs and escaped characters; quoted url()
 stays a function/string sequence. Generated content can mix text and URL images; the navigation
 worker uses stylesheet-relative bases, shared image budgets/cache and retained resize resources.
@@ -124,8 +126,8 @@ Adjacent sibling vertical margins collapse. External CSS is merged with embedded
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
 percentage-height propagation, broader custom-property grammar/registration and
 language-aware automatic quotes, full
-unavailable replacement box geometry, relational selectors, nested decorated
-inline box stacks/generated replaced inline decorations, advanced Color 4 spaces/functions,
+unavailable replacement box geometry, relational selectors, sliced inline decoration edges,
+advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources
 and JavaScript
 are not implemented yet. Links receive a blue/underlined computed UA default; author CSS
