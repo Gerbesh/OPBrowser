@@ -130,6 +130,7 @@ fn token_bytes(token: &TokenKind) -> usize {
         TokenKind::Ident(value)
         | TokenKind::AtKeyword(value)
         | TokenKind::String(value)
+        | TokenKind::Url(value)
         | TokenKind::Number(value)
         | TokenKind::Percentage(value)
         | TokenKind::Function(value)
@@ -353,6 +354,8 @@ mod tests {
         );
         let huge = vec![TokenKind::String("x".repeat(MAX_VALUE_BYTES))];
         assert!(substitute_vars(&huge, |_| None).is_none());
+        let huge_url = vec![TokenKind::Url("x".repeat(MAX_VALUE_BYTES))];
+        assert!(substitute_vars(&huge_url, |_| None).is_none());
         let mut fallback = "green".to_owned();
         for _ in 0..MAX_FALLBACK_DEPTH + 2 {
             fallback = format!("var(--missing,{fallback})");

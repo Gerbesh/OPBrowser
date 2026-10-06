@@ -94,6 +94,8 @@ real line-height geometry, italic/oblique font style, underline/line-through dec
 white-space normal/nowrap/pre/pre-wrap/pre-line, letter/word spacing and text-transform
 none/uppercase/lowercase/capitalize. Inline non-replaced elements also form real
 background/padding/solid-border fragments that participate in wrapping and alignment.
+CSS URL tokens preserve unquoted paths/data URLs and escaped characters; quoted url()
+stays a function/string sequence. Generated image loading remains the next feature.
 `background` also supports the initial color-only shorthand subset. Inherited, case-sensitive
 CSS custom properties (`--name`) now participate in the author cascade and `var(--name, fallback)`
 substitution before supported value parsing, including generated `content`. `::before`/`::after`

@@ -176,6 +176,15 @@ fn parse_declaration(tokens: &[Token]) -> Result<Declaration, CssError> {
         .iter()
         .map(|token| token.kind.clone())
         .collect();
+    if value
+        .iter()
+        .any(|token| matches!(token, TokenKind::BadUrl | TokenKind::BadString))
+    {
+        return Err(CssError {
+            offset: tokens[colon].end,
+            message: format!("property {name} contains an invalid URL or string token"),
+        });
+    }
     if !crate::custom::valid_var_syntax(&value) {
         return Err(CssError {
             offset: tokens[colon].end,
@@ -1096,6 +1105,33 @@ mod tests {
             selector.compounds[1].simple.last(),
             Some(SimpleSelector::PseudoClass(PseudoClass::Link))
         ));
+    }
+
+    #[test]
+    fn url_values_are_atomic_and_bad_tokens_invalidate_declarations() {
+        let parsed = parse_declaration_list(
+            "--icon:url(data:image/png;base64,a+b/c==); --bad:url(a b); color:var(--known, url(a b)); content:var(--icon); color:green",
+        );
+        assert_eq!(parsed.value.len(), 3);
+        assert_eq!(
+            parsed.value[0].value,
+            [TokenKind::Url("data:image/png;base64,a+b/c==".into())]
+        );
+        assert_eq!(parsed.value[1].name, "content");
+        assert_eq!(parsed.value[2].value, [TokenKind::Ident("green".into())]);
+        assert!(
+            parsed
+                .errors
+                .iter()
+                .any(|error| error.message.contains("invalid URL"))
+        );
+        let parsed = parse_declaration_list("--bad:'oops\n'; color:green");
+        assert!(
+            parsed
+                .value
+                .iter()
+                .all(|declaration| declaration.name != "--bad")
+        );
     }
 
     #[test]

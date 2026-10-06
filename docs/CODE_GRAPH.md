@@ -170,6 +170,7 @@ classDiagram
     }
     class CssToken {
         kind
+        Url(value) / BadUrl
         start
         end
     }

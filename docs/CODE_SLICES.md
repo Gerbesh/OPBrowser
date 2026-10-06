@@ -207,6 +207,8 @@ HTML
        -> loaded CSS attached to each <link rel=stylesheet> NodeId
   -> collect linked + <style> rules in DOM order + style="" declarations
   -> op_css tokenizer/parser
+       unquoted Url tokens + quoted url()/String components
+       BadUrl/BadString reject whole declarations, including custom/fallback values
   -> Selector AST + Specificity
        type/universal/class/ID + attribute operators
        descendant/child/adjacent/general-sibling combinators

@@ -108,7 +108,29 @@ impl<'a> Tokenizer<'a> {
                     let name = self.consume_name();
                     if self.peek_char() == Some('(') {
                         self.advance_char();
-                        self.push(TokenKind::Function(name), start);
+                        if name.eq_ignore_ascii_case("url") {
+                            while self.peek_char().is_some_and(is_css_whitespace)
+                                && self
+                                    .char_at(self.next_offset(self.pos))
+                                    .is_some_and(is_css_whitespace)
+                            {
+                                self.advance_char();
+                            }
+                            let quoted = matches!(self.peek_char(), Some('\'' | '"'))
+                                || self.peek_char().is_some_and(is_css_whitespace)
+                                    && matches!(
+                                        self.char_at(self.next_offset(self.pos)),
+                                        Some('\'' | '"')
+                                    );
+                            if quoted {
+                                self.push(TokenKind::Function(name), start);
+                            } else {
+                                let kind = self.consume_url(start);
+                                self.push(kind, start);
+                            }
+                        } else {
+                            self.push(TokenKind::Function(name), start);
+                        }
                     } else {
                         self.push(TokenKind::Ident(name), start);
                     }
@@ -189,6 +211,76 @@ impl<'a> Tokenizer<'a> {
             message: "unterminated CSS string".into(),
         });
         TokenKind::BadString
+    }
+
+    fn consume_url(&mut self, start: usize) -> TokenKind {
+        self.consume_whitespace();
+        let mut value = String::new();
+        loop {
+            match self.peek_char() {
+                Some(')') => {
+                    self.advance_char();
+                    return TokenKind::Url(value);
+                }
+                None => {
+                    self.errors.push(CssError {
+                        offset: start,
+                        message: "unterminated CSS URL".into(),
+                    });
+                    return TokenKind::Url(value);
+                }
+                Some(ch) if is_css_whitespace(ch) => {
+                    self.consume_whitespace();
+                    if matches!(self.peek_char(), Some(')') | None) {
+                        continue;
+                    }
+                    return self.bad_url(start);
+                }
+                Some(
+                    '\''
+                    | '"'
+                    | '('
+                    | '\u{0001}'..='\u{0008}'
+                    | '\u{000b}'
+                    | '\u{000e}'..='\u{001f}'
+                    | '\u{007f}',
+                ) => return self.bad_url(start),
+                Some('\\') => {
+                    if matches!(
+                        self.char_at(self.next_offset(self.pos)),
+                        Some('\n' | '\r' | '\u{000c}')
+                    ) {
+                        return self.bad_url(start);
+                    }
+                    self.advance_char();
+                    value.push(self.consume_escape());
+                }
+                Some(ch) => {
+                    value.push(if ch == '\0' { '\u{fffd}' } else { ch });
+                    self.advance_char();
+                }
+            }
+        }
+    }
+
+    fn bad_url(&mut self, start: usize) -> TokenKind {
+        self.errors.push(CssError {
+            offset: start,
+            message: "invalid CSS URL".into(),
+        });
+        while let Some(ch) = self.peek_char() {
+            if ch == ')' {
+                self.advance_char();
+                break;
+            }
+            if ch == '\\' && self.valid_escape_at(self.pos) {
+                self.advance_char();
+                self.consume_escape();
+            } else {
+                self.advance_char();
+            }
+        }
+        TokenKind::BadUrl
     }
 
     fn consume_escaped_newline(&mut self) {
@@ -375,6 +467,105 @@ fn is_name_char(ch: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn url_tokens_preserve_addresses_escapes_empty_values_and_spans() {
+        for (input, expected) in [
+            (
+                "url( ../img/a.png?x=1&y=2#icon )",
+                "../img/a.png?x=1&y=2#icon",
+            ),
+            (
+                "URL(data:image/png;base64,a+b/c==)",
+                "data:image/png;base64,a+b/c==",
+            ),
+            (r"u\72l(a\ b\)c\(d.png)", "a b)c(d.png"),
+            (r"url(caf\e9.png)", "café.png"),
+            ("url()", ""),
+            ("url( \t\r\n)", ""),
+            ("url(a/*comment*/b)", "a/*comment*/b"),
+            ("url(a\0b)", "a\u{fffd}b"),
+        ] {
+            let result = tokenize(input);
+            assert!(result.errors.is_empty(), "{input}");
+            assert_eq!(
+                result.tokens,
+                vec![Token {
+                    kind: TokenKind::Url(expected.into()),
+                    start: 0,
+                    end: input.len()
+                }],
+                "{input}"
+            );
+        }
+    }
+
+    #[test]
+    fn quoted_urls_remain_functions_with_string_components() {
+        for input in ["url('a b.png')", "URL( \t\r\n\"a b.png\")"] {
+            let result = tokenize(input);
+            assert!(result.errors.is_empty());
+            assert!(matches!(result.tokens[0].kind, TokenKind::Function(_)));
+            assert!(
+                result
+                    .tokens
+                    .iter()
+                    .any(|token| token.kind == TokenKind::String("a b.png".into()))
+            );
+            assert_eq!(result.tokens.last().unwrap().kind, TokenKind::CloseParen);
+        }
+    }
+
+    #[test]
+    fn bad_urls_recover_after_unescaped_closing_parentheses() {
+        for input in [
+            "url(a b)",
+            "url(a'b)",
+            "url(a\"b)",
+            "url(a(b)",
+            "url(a\u{0007}b)",
+            "url(a\\\nb)",
+            r"url(a b\)ignored)",
+        ] {
+            let css = format!("{input};color:red");
+            let result = tokenize(&css);
+            assert_eq!(result.errors.len(), 1, "{input}");
+            assert_eq!(
+                result.tokens[0],
+                Token {
+                    kind: TokenKind::BadUrl,
+                    start: 0,
+                    end: input.len()
+                },
+                "{input}"
+            );
+            assert_eq!(result.tokens[1].kind, TokenKind::Semicolon);
+            assert!(
+                result
+                    .tokens
+                    .iter()
+                    .any(|token| token.kind == TokenKind::Ident("red".into()))
+            );
+        }
+    }
+
+    #[test]
+    fn unterminated_urls_retain_values_with_diagnostics() {
+        for (input, expected) in [
+            ("url(", ""),
+            ("url(icon.png", "icon.png"),
+            ("url(icon.png \t", "icon.png"),
+            ("url(a\\", "a\u{fffd}"),
+        ] {
+            let result = tokenize(input);
+            assert_eq!(result.errors.len(), 1, "{input}");
+            assert_eq!(
+                result.tokens[0].kind,
+                TokenKind::Url(expected.into()),
+                "{input}"
+            );
+        }
+    }
 
     #[test]
     fn tokenizes_comments_dimensions_percentages_and_functions() {

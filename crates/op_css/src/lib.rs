@@ -202,6 +202,8 @@ pub enum TokenKind {
     Hash { value: String, id: bool },
     String(String),
     BadString,
+    Url(String),
+    BadUrl,
     Number(String),
     Percentage(String),
     Dimension { number: String, unit: String },

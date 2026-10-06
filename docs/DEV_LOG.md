@@ -886,3 +886,17 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 197 workspace tests,
   startup/CSS demo smoke (225 paint commands), native styled-link navigation smoke and the
   optimized workspace release build.
+
+## 2026-10-06 - CSS URL tokenization foundation
+
+- Added owned Url/BadUrl tokens, separating unquoted URL syntax from quoted url()/String
+  functions. URL payloads preserve address/data punctuation and decode CSS escapes.
+- Added bounded recovery through unescaped closing parentheses, rejection of invalid URL
+  characters/whitespace/newline escapes and EOF value retention with byte-offset diagnostics.
+- BadUrl/BadString now invalidate complete declarations, including custom properties and
+  unused var() fallbacks. URL payloads count toward existing custom-value storage limits.
+- Added span/escape/data/empty/quoted/bad/EOF recovery and declaration/custom-budget tests.
+  Updated syntax documentation, key-type graph, feature slice and project plan.
+- Generated URL image loading and stylesheet-relative resource bases remain next steps.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 202 workspace tests,
+  startup/CSS demo smoke (225 paint commands) and optimized workspace release build.

@@ -20,6 +20,14 @@ CSS text
 The tokenizer recognizes whitespace, comments, identifiers, hashes, strings and
 escapes, numbers, percentages, dimensions, functions and CSS structural punctuation.
 Malformed comments and strings produce recoverable CssError values with byte offsets.
+Unquoted `url(...)` is one Url token, preserving punctuation in paths and data URLs and
+decoding escapes. Quoted url() remains a function containing a String token. Internal
+unescaped whitespace, quotes, parentheses, control characters and newline escapes produce
+BadUrl; recovery consumes through an unescaped closing parenthesis. EOF retains the URL
+value with a diagnostic. BadUrl/BadString invalidate whole declarations, including custom
+properties and unused var() fallbacks; URL payloads count toward expansion storage limits.
+This syntax support does not yet load generated images or backgrounds.
+Reference: [CSS URL tokenization](https://www.w3.org/TR/css-syntax-3/#consume-a-url-token).
 
 The stylesheet parser keeps valid rules after malformed declarations or unsupported
 rules where recovery is possible. Declaration parsing preserves custom-property name
