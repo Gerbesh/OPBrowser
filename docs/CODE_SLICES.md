@@ -217,7 +217,7 @@ HTML
   -> StyleMap host buckets + (NodeId, PseudoElement) author buckets
   -> cascade: !important -> inline source -> specificity -> source order
   -> inherited CustomPropertyMap per element/pseudo target
-       case-sensitive --name winners -> recursive var() resolution/fallbacks
+       case-sensitive --name winners -> directed dependency graph/SCC -> bounded var() resolution/fallbacks
   -> substitute var() tokens before supported normal-property value parsing
   -> inheritance + initial/inherit/unset
   -> ComputedStyleMap { display, color, font-size, font-weight/font-style,
@@ -254,7 +254,7 @@ before cascade winner selection so a lower-priority valid declaration may still 
 Custom property names remain case-sensitive and inherit by default. Their selected token values
 are resolved on the element where they are computed, so an inherited `--frozen:var(--accent)`
 does not rebind when a child later overrides `--accent`. `var()` supports nested fallbacks and
-simple dependency-cycle invalidation, and substitution works inside shorthands, functional
+directed dependency-cycle invalidation including unused fallback branches, and substitution works inside shorthands, functional
 colors, dimensions and generated `content`. In this initial slice an unresolved `var()` causes
 that declaration candidate to be discarded before the existing normal-property winner parser,
 so full CSS invalid-at-computed-value-time behavior remains later work.
@@ -328,6 +328,7 @@ Planned next path:
 Rendering/property expansion
   -> generated url() + fuller replaced-content/empty-inline geometry
   -> full invalid-at-computed-value-time var() / custom-property cycle semantics
+     (dependency-cycle graph implemented; normal-property invalidation remains)
   -> nested/replaced inline decoration stacks
   -> additional computed properties
 ```

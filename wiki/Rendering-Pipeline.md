@@ -94,7 +94,7 @@ DOM source order, inline declarations join the author cascade, functional select
 `:is/:where/:not/:nth-child` resolve through the same matcher/specificity path. Terminal
 `::before`/`::after` declarations are collected in separate `(NodeId, PseudoElement)` buckets.
 Before normal value parsing, custom-property winners build inherited per-target token maps and
-recursive `var()` substitution resolves references/fallbacks; the computed map retains those
+bounded `var()` substitution resolves references/fallbacks after dependency analysis; the computed map retains those
 custom maps plus generated pseudo styles alongside host styles. During the same parent-first
 walk, `counter-reset`/`counter-set`/`counter-increment` maintain scoped value stacks; `attr()`
 reads the originating DOM element and `counter()`/`counters()` materialize final pseudo text.
@@ -102,6 +102,8 @@ Inherited `quotes` pairs also materialize quote commands here, using one documen
 Hidden subtrees and absent/hidden pseudos do not mutate generated state; `<q>` has UA defaults.
 Generated block pseudos use the same BlockContent sizing and decoration path as element blocks,
 including empty generated boxes. Definite heights constrain boxes even when text overflows.
+Custom values now resolve via an iterative dependency graph with fallback edges and exact
+cycle components. Token/byte/depth budgets limit expansion and retained custom storage.
 Inheritance produces per-node styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 

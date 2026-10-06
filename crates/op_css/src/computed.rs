@@ -1,6 +1,7 @@
+use crate::custom::{resolve_custom_values, substitute_vars};
 use crate::{MatchedDeclaration, PseudoElement, Specificity, StyleMap, StyleSource, TokenKind};
 use op_dom::{Document, ElementData, NodeId};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub type CustomPropertyMap = HashMap<String, Vec<TokenKind>>;
 
@@ -773,7 +774,7 @@ fn compute_custom_properties(
         }
     }
 
-    CustomResolver::new(&raw).resolve_all()
+    resolve_custom_values(&raw)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -790,52 +791,6 @@ fn custom_property_keyword(tokens: &[TokenKind]) -> Option<CustomPropertyKeyword
     }
 }
 
-struct CustomResolver<'a> {
-    raw: &'a CustomPropertyMap,
-    memo: HashMap<String, Option<Vec<TokenKind>>>,
-    visiting: HashSet<String>,
-}
-
-impl<'a> CustomResolver<'a> {
-    fn new(raw: &'a CustomPropertyMap) -> Self {
-        Self {
-            raw,
-            memo: HashMap::new(),
-            visiting: HashSet::new(),
-        }
-    }
-
-    fn resolve_all(mut self) -> CustomPropertyMap {
-        let names: Vec<String> = self.raw.keys().cloned().collect();
-        let mut resolved = HashMap::new();
-        for name in names {
-            if let Some(value) = self.resolve(&name) {
-                resolved.insert(name, value);
-            }
-        }
-        resolved
-    }
-
-    fn resolve(&mut self, name: &str) -> Option<Vec<TokenKind>> {
-        if let Some(value) = self.memo.get(name) {
-            return value.clone();
-        }
-        let raw = self.raw.get(name)?.clone();
-        if !self.visiting.insert(name.to_owned()) {
-            self.memo.insert(name.to_owned(), None);
-            return None;
-        }
-        let value = self.substitute(&raw);
-        self.visiting.remove(name);
-        self.memo.insert(name.to_owned(), value.clone());
-        value
-    }
-
-    fn substitute(&mut self, tokens: &[TokenKind]) -> Option<Vec<TokenKind>> {
-        substitute_vars(tokens, |name| self.resolve(name))
-    }
-}
-
 fn substitute_declarations(
     declarations: &[MatchedDeclaration],
     custom: &CustomPropertyMap,
@@ -844,78 +799,14 @@ fn substitute_declarations(
         .iter()
         .filter(|matched| !matched.declaration.name.starts_with("--"))
         .filter_map(|matched| {
-            let value =
-                substitute_vars(&matched.declaration.value, |name| custom.get(name).cloned())?;
+            let value = substitute_vars(&matched.declaration.value, |name| {
+                custom.get(name).map(Vec::as_slice)
+            })?;
             let mut resolved = matched.clone();
             resolved.declaration.value = value;
             Some(resolved)
         })
         .collect()
-}
-
-fn substitute_vars<F>(tokens: &[TokenKind], mut lookup: F) -> Option<Vec<TokenKind>>
-where
-    F: FnMut(&str) -> Option<Vec<TokenKind>>,
-{
-    substitute_vars_inner(tokens, &mut lookup)
-}
-
-fn substitute_vars_inner<F>(tokens: &[TokenKind], lookup: &mut F) -> Option<Vec<TokenKind>>
-where
-    F: FnMut(&str) -> Option<Vec<TokenKind>>,
-{
-    let mut output = Vec::new();
-    let mut index = 0;
-    while index < tokens.len() {
-        if matches!(&tokens[index], TokenKind::Function(name) if name.eq_ignore_ascii_case("var")) {
-            let (end, name, fallback) = parse_var_function(tokens, index)?;
-            if let Some(value) = lookup(name) {
-                output.extend(value);
-            } else {
-                let fallback = fallback?;
-                output.extend(substitute_vars_inner(fallback, lookup)?);
-            }
-            index = end + 1;
-        } else {
-            output.push(tokens[index].clone());
-            index += 1;
-        }
-    }
-    Some(output)
-}
-
-fn parse_var_function(
-    tokens: &[TokenKind],
-    start: usize,
-) -> Option<(usize, &str, Option<&[TokenKind]>)> {
-    let mut depth = 1_u32;
-    let mut comma = None;
-    let mut end = None;
-    for (index, token) in tokens.iter().enumerate().skip(start + 1) {
-        match token {
-            TokenKind::Function(_) | TokenKind::OpenParen => depth += 1,
-            TokenKind::CloseParen => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    end = Some(index);
-                    break;
-                }
-            }
-            TokenKind::Comma if depth == 1 && comma.is_none() => comma = Some(index),
-            _ => {}
-        }
-    }
-    let end = end?;
-    let name_end = comma.unwrap_or(end);
-    let name_tokens = trim_token_whitespace(&tokens[start + 1..name_end]);
-    let [TokenKind::Ident(name)] = name_tokens else {
-        return None;
-    };
-    if !name.starts_with("--") {
-        return None;
-    }
-    let fallback = comma.map(|comma| &tokens[comma + 1..end]);
-    Some((end, name.as_str(), fallback))
 }
 
 fn trim_token_whitespace(mut tokens: &[TokenKind]) -> &[TokenKind] {
@@ -3096,6 +2987,39 @@ mod tests {
         assert!(custom.contains_key("--label"));
         assert!(custom.contains_key("--tone"));
         assert!(custom.contains_key("--pad"));
+    }
+
+    #[test]
+    fn cyclic_overrides_are_invalid_while_inherited_values_stay_frozen_and_empty_is_valid() {
+        let document = parse_document(
+            "<style>
+             #parent { --a:red; --b:var(--a); --empty:; --priority: !important; }
+             #child { --a:var(--b); color:var(--a); --self:var(--self,blue);
+                 background:var(--self,green); --bad:initial; }
+             #child::before { --self:var(--self, 'BAD'); content:var(--self,'GOOD') var(--empty,'BAD'); }
+             </style><div id='parent'><span id='child'>x</span></div>",
+        );
+        let collected = collect_author_styles(&document);
+        assert!(collected.errors.is_empty());
+        let computed = compute_styles(&document, &collected.styles);
+        let child = find_by_id(&document, "child");
+        let custom = computed.custom_properties_for(child).unwrap();
+        assert!(!custom.contains_key("--self"));
+        assert!(!custom.contains_key("--bad"));
+        assert_eq!(custom["--empty"], Vec::<TokenKind>::new());
+        assert_eq!(custom["--priority"], Vec::<TokenKind>::new());
+        assert_eq!(computed.style_for(child).unwrap().color, CssColor::RED);
+        assert_eq!(
+            computed.style_for(child).unwrap().background_color,
+            CssColor::GREEN
+        );
+        assert_eq!(
+            computed
+                .pseudo_style_for(child, PseudoElement::Before)
+                .unwrap()
+                .content,
+            "GOOD"
+        );
     }
 
     #[test]

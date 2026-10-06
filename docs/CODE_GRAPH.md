@@ -242,6 +242,17 @@ classDiagram
     class CustomPropertyMap {
         case_sensitive_name -> resolved TokenKind[]
     }
+    class CustomDependencyGraph {
+        sorted names
+        directed edges including fallback references
+        iterative finish order / reverse SCC traversal
+        cyclic node mask
+    }
+    class ValueBudget {
+        token count
+        token storage bytes
+        fallback depth
+    }
     class ComputedPseudoStyle {
         style
         content
@@ -375,7 +386,9 @@ classDiagram
     MatchedDeclaration --> Specificity
     StyleCollection --> StyleMap
     StyleMap --> CustomPropertyMap : custom-property cascade / inheritance
-    CustomPropertyMap --> CustomPropertyMap : recursive var() substitution / fallback resolution
+    CustomPropertyMap --> CustomDependencyGraph : op_css::custom dependency discovery
+    CustomDependencyGraph --> CustomPropertyMap : exact cycle invalidation / dependency-order resolution
+    ValueBudget --> CustomPropertyMap : bounded expansion and per-target retained storage
     CustomPropertyMap --> ComputedStyleMap : retained host + pseudo snapshots
     StyleMap --> ComputedStyleMap : host + pseudo cascade / substituted value parsing
     StyleMap --> CounterOperation : counter-reset/set/increment winner parsing

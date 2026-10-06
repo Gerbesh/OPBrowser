@@ -779,3 +779,26 @@ This file is append-only project history.
 - Updated built-in start page, external CSS demo, README, plan, graph/slices and relevant wiki.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 167 workspace tests,
   startup/CSS demo native paint smokes and optimized workspace release build.
+
+## 2026-10-06 - Custom-property dependency cycles and expansion budgets
+
+- Added op_css::custom as the owned dependency/substitution module. A directed graph includes
+  all var() references, including unused fallback branches; iterative Kosaraju SCC traversal
+  invalidates exactly cyclic components before dependency-order value resolution.
+- Self-referencing variables cannot rescue themselves using a fallback. Noncyclic consumers
+  can still recover from an invalid dependency with their own fallback. Resolved inherited
+  token streams remain frozen and do not create false descendant cycles.
+- Removed recursive dependency resolution, allowing 10,001-variable chains without native
+  stack growth. Fallback nesting remains separately bounded at 64 levels.
+- Added pre-clone expansion limits: 16,384 tokens and 256 KiB token storage per value, with
+  2 MiB retained resolved custom-value storage per element/pseudo. Over-budget values become
+  invalid and consumer fallbacks remain usable. No infrastructure dependency was added.
+- Accepted valid empty custom values (including important empty values), retained empty-token
+  substitution semantics, and rejected reserved bare -- names / empty normal declarations.
+- Added graph/cycle/inheritance/empty-value regressions, long-chain/exponential/payload/total
+  storage/fallback-depth tests and an Engine paint/reflow regression for recovered values.
+- Updated README, project plan, graph/slices and CSS/rendering wiki documentation.
+- Normal-property invalid-at-computed-value-time winner behavior remains the next separate
+  cascade correction; this update does not claim complete custom-property conformance.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 175 workspace tests,
+  startup/CSS demo native paint smokes and optimized workspace release build.

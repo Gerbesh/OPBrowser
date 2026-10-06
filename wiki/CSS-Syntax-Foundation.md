@@ -100,7 +100,8 @@ declarations use the same author importance/specificity/source-order cascade, in
 default, and resolve nested `var(--name, fallback)` references on the element where the custom
 property is computed. The resolved map is then used to substitute `var()` into ordinary
 property declarations before the existing value parsers run. Missing/cyclic references can use
-nested fallbacks; simple cycles without a usable fallback become unavailable. `initial` removes
+nested fallbacks; all directed cycle participants become unavailable, including cycles in
+unused fallback branches. Noncyclic consumers can still recover with fallback. `initial` removes
 a custom property while `inherit`/`unset` reuse the parent's computed value.
 
 Pseudo buckets cascade independently from their host. A generated pseudo starts from the
@@ -160,7 +161,7 @@ participate in selector matching with their initial specificity rules. Terminal
 before children and `::after` after completed child counter work. The initial `var()` slice deliberately
 reuses OPBrowser's current invalid-value filtering, so a declaration whose substitution fails
 can expose a lower valid candidate instead of full CSS invalid-at-computed-value-time behavior;
-full dependency-graph cycle semantics are also later. Generated `url()` images, language-aware automatic quotes,
+normal-property invalidation remains later. Generated `url()` images, language-aware automatic quotes,
 custom counter styles and complete counter scoping remain later. Next S3 work moves into generated
 replaced content and empty-inline geometry, then forgiving selector-list
 recovery, nth-child `of`, advanced color spaces, at-rules, media queries and full CSS
@@ -187,3 +188,20 @@ percentages, box-sizing, auto/negative margins, padding, solid borders and backg
 An empty string still creates the block box, allowing CSS-only rules and bars without glyphs.
 Definite heights control normal flow and border/background extents even when text overflows.
 Parent/child and empty-block margin collapse and full replaced/empty-inline geometry remain later.
+
+### Custom-property dependency and resource limits
+
+`op_css::custom` constructs a directed dependency graph per element/pseudo, including every
+var() reference in fallback branches even if that fallback would not be selected. Iterative
+Kosaraju SCC traversal invalidates exactly cycle participants; dependent values can recover
+using their own fallback. Computed inherited values contain no var() references, preserving
+their original meaning when descendants override other names. Valid empty custom values
+substitute an empty token stream instead of selecting a fallback; bare `--` names are rejected.
+
+Substitution permits at most 16,384 tokens and 256 KiB token storage (enum payload plus string
+bytes) per value, 2 MiB retained resolved values per element/pseudo and 64 nested fallback
+levels. Expansion checks happen before cloning tokens. Oversized values become invalid and
+ordinary consumers can select fallback values. Graph traversal and dependency resolution
+do not recurse on the native stack; tests exercise a 10,001-variable chain and exponential
+expansion. Normal-property invalid-at-computed-value-time cascade behavior is still deferred.
+Reference: [CSS variable cycles and length limits](https://www.w3.org/TR/css-variables-1/#cycles).

@@ -140,6 +140,12 @@ fn parse_declaration(tokens: &[Token]) -> Result<Declaration, CssError> {
             message: "declaration must start with a property name".into(),
         });
     };
+    if name == "--" {
+        return Err(CssError {
+            offset: first.start,
+            message: "bare '--' is not a custom property name".into(),
+        });
+    }
 
     let mut colon = 1;
     while colon < tokens.len() && matches!(tokens[colon].kind, TokenKind::Whitespace) {
@@ -153,15 +159,8 @@ fn parse_declaration(tokens: &[Token]) -> Result<Declaration, CssError> {
     }
 
     let value_tokens = trim_whitespace(&tokens[colon + 1..]);
-    if value_tokens.is_empty() {
-        return Err(CssError {
-            offset: tokens[colon].end,
-            message: format!("property {name} has an empty value"),
-        });
-    }
-
     let (value_tokens, important) = strip_important(value_tokens);
-    if value_tokens.is_empty() {
+    if value_tokens.is_empty() && !name.starts_with("--") {
         return Err(CssError {
             offset: tokens[colon].end,
             message: format!("property {name} has an empty value"),
@@ -1062,6 +1061,19 @@ mod tests {
         assert_eq!(parsed.value[2].name, "color");
         assert_eq!(parsed.errors.len(), 1);
         assert!(parsed.errors[0].message.contains("missing ':'"));
+    }
+
+    #[test]
+    fn accepts_empty_custom_properties_and_rejects_bare_name_and_empty_normal_values() {
+        let parsed = parse_declaration_list(
+            "--empty:; --priority: !important; --:red; color:; padding: !important; --valid:blue",
+        );
+        assert_eq!(parsed.value.len(), 3);
+        assert_eq!(parsed.errors.len(), 3);
+        assert!(parsed.value[0].value.is_empty());
+        assert!(parsed.value[1].value.is_empty());
+        assert!(parsed.value[1].important);
+        assert_eq!(parsed.value[2].name, "--valid");
     }
 
     #[test]

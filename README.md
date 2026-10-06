@@ -108,7 +108,7 @@ width/height with min/max, `box-sizing`, percentages, em/rem and CSS absolute le
 Adjacent sibling vertical margins collapse. External CSS is merged with embedded rules in
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
 percentage-height propagation, full invalid-at-computed-value-time `var()` semantics and
-complete custom-property dependency-cycle behavior, language-aware automatic quotes, generated `url()` and full
+language-aware automatic quotes, generated `url()` and full
 generated replaced-content/empty-inline geometry, forgiving-selector-list recovery/full `:nth-child(... of ...)`, nested decorated
 inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources
@@ -117,6 +117,11 @@ are not implemented yet;
 link glyphs still use the native default blue. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),
 [CSS box model](wiki/CSS-Box-Model.md), [stylesheet loading](wiki/Stylesheet-Loading.md),
 [inline layout](wiki/Inline-Layout.md) and [image loading](wiki/Image-Loading.md).
+
+Custom-property cycles include self-references and references in unused fallbacks. An
+iterative dependency graph resolves long chains; empty values remain valid. Substitution
+is bounded to 16,384 tokens/256 KiB per value, 2 MiB retained custom values per element/pseudo
+and 64 nested fallback levels. Over-budget values become invalid and permit consumer fallbacks.
 
 See:
 

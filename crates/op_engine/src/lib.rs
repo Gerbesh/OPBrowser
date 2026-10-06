@@ -1040,6 +1040,26 @@ mod tests {
     }
 
     #[test]
+    fn cyclic_custom_properties_use_consumer_fallbacks_in_paint_and_reflow() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(
+            "<style>#item { --self:var(--self,red); --good:green;
+                --a:var(--good,var(--b)); --b:var(--a); color:var(--self,blue);
+                background:var(--a,#eef2ff); --empty:; }
+             #item::before { --label:var(--label,'BAD'); content:var(--label,'GOOD') var(--empty,'BAD'); }
+             </style><p id='item'>Body</p>", 800, 600);
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::Text { text, color, .. } if text.contains("GOOD")
+                && *color == op_paint::Color { r:0, g:0, b:255 }
+        )));
+        assert!(!original.commands.iter().any(|command| matches!(command,
+            PaintCommand::Text { text, .. } if text.contains("BAD")
+        )));
+        engine.reflow(300, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn custom_properties_and_var_reach_native_display_list() {
         let display_list = Engine::new().render_html(
             "<style>

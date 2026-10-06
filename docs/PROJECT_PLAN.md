@@ -152,7 +152,7 @@ Status: IN PROGRESS.
   cascade buckets and computed pseudo styles; quoted-string `content` enters the normal inline
   formatter with inherited typography plus its own color/background/padding/solid borders.
 - DONE inherited case-sensitive CSS custom properties with author cascade/`!important`,
-  computed per-element token values, recursive `var(--name, fallback)` substitution, simple cycle
+  computed per-element token values, bounded `var(--name, fallback)` substitution, directed cycle
   invalidation and pseudo-element inheritance/overrides before normal property value parsing.
 - DONE generated `content` functions for `attr(name)`, `counter()` and `counters()` plus
   initial `counter-reset`/`counter-set`/`counter-increment`, nested counter scopes and decimal,
@@ -163,9 +163,11 @@ Status: IN PROGRESS.
 - DONE generated `display:block` shares ordinary block sizing/margins/padding/borders,
   including percentage/min/max sizes, auto margins, wrapping and empty decorated block boxes.
 - DONE definite block height controls flow/decorations even when text overflows.
+- DONE iterative custom-property dependency graph/SCC resolution including unused fallback
+  edges and self-cycles, valid empty custom values and bounded expansion/storage/depth.
 - NEXT generated `url()` content and fuller replaced-content/empty-inline geometry.
 - LATER language-aware `quotes:auto` (currently deterministic English Unicode pairs).
-- LATER complete invalid-at-computed-value-time `var()` semantics/custom-property cycle graph,
+- LATER complete invalid-at-computed-value-time `var()` semantics,
   forgiving functional-selector recovery, `:nth-child(... of ...)`, nested decorated-inline
   stacks/replaced inline decorations and fuller
   parent/child margin collapsing / definite percentage-height propagation.

@@ -4,6 +4,7 @@
 //! Layout integration and broader CSS coverage remain separate milestones.
 
 mod computed;
+mod custom;
 mod parser;
 mod style;
 mod tokenizer;
