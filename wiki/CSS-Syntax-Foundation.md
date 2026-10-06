@@ -135,16 +135,18 @@ Resize reflow therefore does not reparse, rematch or recascade CSS.
 
 ComputedStyleMap is now consumed by op_layout. display:none removes the subtree from
 layout, display:block creates a flow boundary, display:inline stays in the current inline
-flow, and table/table-caption/table-column-group/table-column/table-header-group/
-table-row-group/table-footer-group/table-row/table-cell feed the initial table formatting
-context. border-spacing accepts one/two nonnegative lengths and inherits; border-collapse
-accepts separate/collapse and inherits. vertical-align currently recognizes the table-relevant
-baseline/top/middle/bottom keywords as a non-inherited property. Table UA style starts separate
-at 2px/2px. These table properties reach the grid formatter, including zero spacing, shared-cell
-border resolution and post-row vertical content placement. The formatter performs anonymous
-row/cell child fixup inside display:table and normal-flow collection groups consecutive orphan
-table-internal siblings under one anonymous block table, so CSS-generated table structures can
-recover missing wrappers without altering the DOM. font-size, font-weight/style, line-height,
+flow, and inline-table/table/table-caption/table-column-group/table-column/table-header-group/
+table-row-group/table-footer-group/table-row/table-cell feed the table formatting machinery.
+display:inline-table is parsed separately from display:table and enters inline flow as one atomic
+object rather than forcing a block break. border-spacing accepts one/two nonnegative lengths and
+inherits; border-collapse accepts separate/collapse and inherits. vertical-align currently
+recognizes the table-relevant baseline/top/middle/bottom keywords as a non-inherited property.
+Table UA style starts separate at 2px/2px. These table properties reach the grid formatter,
+including zero spacing, shared-cell border resolution and post-row vertical content placement.
+The formatter performs anonymous row/cell child fixup inside display:table and normal-flow
+collection groups consecutive orphan table-internal siblings under one anonymous block table,
+including initial caption and column-hint repair, so CSS-generated table structures can recover
+missing wrappers without altering the DOM. font-size, font-weight/style, line-height,
 decoration, spacing, transform and
 color are carried on inline character runs. text-align offsets completed lines, while
 white-space controls collapse/newline preservation/soft wrapping. text-transform is applied

@@ -1434,3 +1434,36 @@ This file is append-only project history.
   collector; its containing geometry was folded into one pair and verification was rerun.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 323 workspace tests,
   native startup smoke and optimized release build. The release executable is 869,888 bytes.
+
+## 2026-10-06 - Atomic inline-table formatting
+
+- Added display:inline-table to computed CSS display parsing as a distinct inline table role rather
+  than aliasing it to block display:table.
+- Added inline::InlineAtomic, a reusable atomic inline formatting payload carrying width, height,
+  baseline, nested decorations, text boxes, image boxes and retained paint order.
+- Extended Lines so atomic objects participate in whitespace handling and wrapping as one unit,
+  contribute ascent/descent through an explicit baseline, and translate/remap their nested output
+  into the final parent line without flattening it into fake text or raster placeholders.
+- Added flow::inline_table_atomic. It reuses the normal table_box/grid formatter in a local Context,
+  preserving the existing captions, rows, cells, colspan/rowspan, intrinsic tracks, spacing,
+  collapsed borders and cell vertical alignment inside the atomic object.
+- Auto-width inline tables now use an initial shrink-to-fit calculation from table min/max intrinsic
+  tracks instead of expanding to the full containing block. Authored padding, borders, box-sizing
+  and margins contribute to the final atomic dimensions.
+- table_box now reports its border-box size and first-row baseline. Inline tables use that first row
+  baseline against surrounding text, falling back to the table bottom when no row baseline exists.
+- Nested text/images and retained LayoutItem order survive the local table context. An outer anchor
+  around an inline-table is propagated to nested text/images that do not already carry link identity.
+- Extended anonymous table coverage beyond row/cell repair: orphan table-caption participates in the
+  same repaired wrapper and orphan table-column width hints still influence repaired tracks.
+- Added four inline-table layout regressions for inline placement/baseline, atomic wrapping/linkage,
+  nested image transfer and shrink-to-fit auto width; added box-model/margin coverage, two orphan
+  caption/column repair regressions, and one Engine display-list regression.
+- Updated project plan, code graph/slices and CSS/rendering/box-model wiki documentation. Remaining
+  work explicitly includes full CSS Tables percentage/fixed algorithms, non-cell collapsed-border
+  precedence, deeper colgroup/caption-side repair and non-baseline atomic vertical-align behavior.
+- The first full workspace run hit the known Windows loopback WSAEWOULDBLOCK (10035) transient in
+  redirected_css_images_share_cache_and_skip_hidden_blocked_and_failed_sources. The exact test then
+  passed alone and the full workspace suite passed on retry.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 331 workspace tests,
+  native startup smoke and optimized release build. The release executable is 880,128 bytes.

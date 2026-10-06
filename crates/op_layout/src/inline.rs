@@ -150,10 +150,21 @@ pub(super) struct InlineImage {
     pub href: Option<String>,
 }
 
+pub(super) struct InlineAtomic {
+    pub width: i32,
+    pub height: i32,
+    pub baseline: i32,
+    pub decorations: Vec<BoxDecoration>,
+    pub text_boxes: Vec<TextBox>,
+    pub image_boxes: Vec<ImageBox>,
+    pub order: Vec<LayoutItem>,
+}
+
 pub(super) enum Item<'a> {
     Char(InlineChar<'a>),
     EmptyInline(InlineStyle),
     Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
+    Atomic(InlineAtomic, InlineStyle),
     Break,
 }
 
@@ -163,6 +174,7 @@ enum BoxItem<'a> {
         width: i32,
     },
     Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
+    Atomic(InlineAtomic, InlineStyle),
     EmptyInline(InlineStyle),
 }
 
@@ -179,6 +191,7 @@ struct PreparedText {
 enum PreparedBox {
     Text(PreparedText),
     Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
+    Atomic(InlineAtomic, InlineStyle),
 }
 
 pub(super) struct Lines<'a, 'm> {
@@ -268,6 +281,11 @@ impl<'a, 'm> Lines<'a, 'm> {
                     self.word(std::mem::take(&mut word));
                     self.image(image, style, own_box);
                 }
+                Item::Atomic(atomic, style) => {
+                    preserved_cr = false;
+                    self.word(std::mem::take(&mut word));
+                    self.atomic(atomic, style);
+                }
                 Item::EmptyInline(style) => {
                     preserved_cr = false;
                     self.word(std::mem::take(&mut word));
@@ -321,7 +339,11 @@ impl<'a, 'm> Lines<'a, 'm> {
     fn box_tail(&self, item: Option<&BoxItem<'a>>) -> Option<usize> {
         match item {
             Some(BoxItem::Text { chars, .. }) => chars.last().and_then(|ch| ch.style.boxes),
-            Some(BoxItem::Image(_, style, _) | BoxItem::EmptyInline(style)) => style.boxes,
+            Some(
+                BoxItem::Image(_, style, _)
+                | BoxItem::Atomic(_, style)
+                | BoxItem::EmptyInline(style),
+            ) => style.boxes,
             None => None,
         }
     }
@@ -506,6 +528,41 @@ impl<'a, 'm> Lines<'a, 'm> {
         self.boxes.push(BoxItem::Image(image, style, own_box));
     }
 
+    fn atomic(&mut self, atomic: InlineAtomic, style: InlineStyle) {
+        let space = if self.boxes.is_empty() {
+            None
+        } else {
+            self.pending_space.take()
+        };
+        self.pending_space = None;
+        let occupied =
+            self.appended_width(&[], space)
+                .saturating_add(self.inline_boxes.contribution(
+                    space.map_or(self.tail(), |value| value.style.boxes),
+                    style.boxes,
+                    atomic.width,
+                ));
+        let allows_wrap = matches!(
+            style.white_space,
+            WhiteSpace::Normal | WhiteSpace::PreWrap | WhiteSpace::PreLine
+        );
+        if allows_wrap && !self.boxes.is_empty() && occupied > self.width {
+            self.flush(false);
+        }
+        if !self.boxes.is_empty()
+            && let Some(space) = space
+        {
+            self.append(&[], Some(space));
+        }
+        self.line_width = self
+            .line_width
+            .saturating_add(
+                self.inline_boxes
+                    .contribution(self.tail(), style.boxes, atomic.width),
+            );
+        self.boxes.push(BoxItem::Atomic(atomic, style));
+    }
+
     fn empty_inline(&mut self, style: InlineStyle) {
         let Some(_) = style.boxes else {
             return;
@@ -602,6 +659,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                 BoxItem::Image(image, style, own_box) => {
                     prepared.push(PreparedBox::Image(image, style, own_box))
                 }
+                BoxItem::Atomic(atomic, style) => prepared.push(PreparedBox::Atomic(atomic, style)),
                 BoxItem::EmptyInline(style) => {
                     prepared.push(PreparedBox::Text(self.prepare_text(&[], style)))
                 }
@@ -634,6 +692,9 @@ impl<'a, 'm> Lines<'a, 'm> {
                             .saturating_add(box_style.bottom_extra())
                     }))
                     .saturating_add(self.inline_boxes.top(style.boxes)),
+                PreparedBox::Atomic(atomic, style) => atomic
+                    .baseline
+                    .saturating_add(self.inline_boxes.top(style.boxes)),
                 PreparedBox::Text(text) => text.ascent,
             })
             .max()
@@ -644,6 +705,10 @@ impl<'a, 'm> Lines<'a, 'm> {
             .map(|item| match item {
                 PreparedBox::Text(text) => text.descent,
                 PreparedBox::Image(_, style, _) => self.inline_boxes.bottom(style.boxes),
+                PreparedBox::Atomic(atomic, style) => atomic
+                    .height
+                    .saturating_sub(atomic.baseline)
+                    .saturating_add(self.inline_boxes.bottom(style.boxes)),
             })
             .max()
             .unwrap_or(default_descent)
@@ -661,7 +726,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         for item in prepared {
             let next_box = match &item {
                 PreparedBox::Text(text) => text.style.boxes,
-                PreparedBox::Image(_, style, _) => style.boxes,
+                PreparedBox::Image(_, style, _) | PreparedBox::Atomic(_, style) => style.boxes,
             };
             let path = self.inline_boxes.path(next_box);
             let common = active_fragments
@@ -735,6 +800,34 @@ impl<'a, 'm> Lines<'a, 'm> {
                     }
                     x += image.width;
                     x = x.saturating_add(own_box.map_or(0, InlineBoxStyle::right_extra));
+                }
+                PreparedBox::Atomic(mut atomic, _) => {
+                    let top = baseline.saturating_sub(atomic.baseline);
+                    let text_base = self.text_boxes.len();
+                    let image_base = self.image_boxes.len();
+
+                    for decoration in &mut atomic.decorations {
+                        decoration.x = decoration.x.saturating_add(x);
+                        decoration.y = decoration.y.saturating_add(top);
+                    }
+                    for text in &mut atomic.text_boxes {
+                        text.x = text.x.saturating_add(x);
+                        text.y = text.y.saturating_add(top);
+                    }
+                    for image in &mut atomic.image_boxes {
+                        image.x = image.x.saturating_add(x);
+                        image.y = image.y.saturating_add(top);
+                    }
+
+                    self.decorations.extend(atomic.decorations);
+                    self.text_boxes.extend(atomic.text_boxes);
+                    self.image_boxes.extend(atomic.image_boxes);
+                    self.order
+                        .extend(atomic.order.into_iter().map(|item| match item {
+                            LayoutItem::Text(index) => LayoutItem::Text(text_base + index),
+                            LayoutItem::Image(index) => LayoutItem::Image(image_base + index),
+                        }));
+                    x = x.saturating_add(atomic.width);
                 }
                 PreparedBox::Text(text) => {
                     if text.text.is_empty() {

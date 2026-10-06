@@ -861,6 +861,60 @@ mod tests {
     }
 
     #[test]
+    fn inline_table_reaches_paint_as_an_atomic_inline_context() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               #host { width:420px; font-size:16px; line-height:20px }
+               #it { display:inline-table; width:100px; border-spacing:0; background:#ff0000 }
+               .row { display:table-row }
+               .cell { display:table-cell; padding:0 }
+             </style>
+             <div id='host'>before <span id='it'><span class='row'><span class='cell'>A</span><span class='cell'>B</span></span></span> after</div>",
+            800,
+            600,
+        );
+
+        let text_position = |needle: &str| {
+            display_list
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::Text { text, x, y, .. } if text.contains(needle) => {
+                        Some((*x, *y))
+                    }
+                    _ => None,
+                })
+                .expect("inline-table text must reach paint")
+        };
+        let before = text_position("before");
+        let a = text_position("A");
+        let after = text_position("after");
+        let table = display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::FillRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                } if *color == op_paint::Color { r: 255, g: 0, b: 0 } => {
+                    Some((*x, *y, *width, *height))
+                }
+                _ => None,
+            })
+            .expect("inline-table background must reach paint");
+
+        assert_eq!(before.1, a.1);
+        assert_eq!(before.1, after.1);
+        assert!(table.0 >= before.0);
+        assert!(after.0 >= table.0 + table.2);
+        assert!(table.2 >= 100);
+        assert!(table.3 > 0);
+    }
+
+    #[test]
     fn orphan_table_cells_are_grouped_before_paint() {
         let display_list = Engine::new().render_html(
             "<style>

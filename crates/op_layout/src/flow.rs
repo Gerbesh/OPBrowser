@@ -1,5 +1,5 @@
 use super::inline::{
-    InlineBoxStyle, InlineBoxes, InlineChar, InlineImage, InlineStyle, Item, Lines,
+    InlineAtomic, InlineBoxStyle, InlineBoxes, InlineChar, InlineImage, InlineStyle, Item, Lines,
 };
 use super::*;
 use op_css::{
@@ -176,6 +176,13 @@ struct TableGrid {
     row_count: usize,
     cells: Vec<TableCellPlacement>,
     columns: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TableBoxMetrics {
+    width: i32,
+    height: i32,
+    baseline: i32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -457,6 +464,115 @@ impl<'a> Context<'a, '_> {
         self.table_box(&children, id, style, containing_x, containing_width);
     }
 
+    fn inline_table_atomic(
+        &mut self,
+        id: NodeId,
+        mut style: Style,
+        containing_width: i32,
+    ) -> InlineAtomic {
+        let children = self.document.children(id).to_vec();
+        let margin_left = resolve_margin(style.margin.left, containing_width).unwrap_or(0);
+        let margin_right = resolve_margin(style.margin.right, containing_width).unwrap_or(0);
+        let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
+        let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
+        let available = containing_width
+            .saturating_sub(margin_left)
+            .saturating_sub(margin_right)
+            .max(1);
+
+        if style.width.is_none() {
+            let grid = self.build_table_grid(&children, id);
+            if grid.columns > 0 {
+                let (horizontal_spacing, _) = used_table_spacing(style);
+                let intrinsic = self.table_intrinsic_columns(
+                    &children,
+                    &grid,
+                    style,
+                    available,
+                    horizontal_spacing,
+                );
+                let spacing =
+                    horizontal_spacing.saturating_mul(intrinsic.len().saturating_add(1) as i32);
+                let preferred_min = intrinsic
+                    .iter()
+                    .map(|column| column.min.max(1))
+                    .fold(spacing, i32::saturating_add);
+                let preferred = intrinsic
+                    .iter()
+                    .map(|column| column.max.max(column.min).max(1))
+                    .fold(spacing, i32::saturating_add);
+                let extras = table_horizontal_extras(style, available);
+                let available_content = available.saturating_sub(extras).max(1);
+                let content_width = preferred_min.max(available_content.min(preferred));
+                let specified = match style.box_sizing {
+                    BoxSizing::ContentBox => content_width,
+                    BoxSizing::BorderBox => content_width.saturating_add(extras),
+                };
+                style.width = Some(LengthPercentage::Px(specified.max(1) as f32));
+            }
+        }
+
+        style.margin = MarginEdges {
+            top: MarginValue::ZERO,
+            right: MarginValue::ZERO,
+            bottom: MarginValue::ZERO,
+            left: MarginValue::ZERO,
+        };
+
+        let document = self.document;
+        let images = self.images;
+        let generated_images = self.generated_images;
+        let computed_styles = self.computed_styles;
+        let mut local = Context {
+            document,
+            images,
+            generated_images,
+            computed_styles,
+            measurer: &mut *self.measurer,
+            inline_boxes: InlineBoxes::default(),
+            width: available,
+            y: 0,
+            pending_margin: None,
+            block_epoch: 0,
+            decorations: Vec::new(),
+            text: Vec::new(),
+            images_out: Vec::new(),
+            order: Vec::new(),
+        };
+        let metrics = local.table_box(&children, id, style, 0, available);
+
+        for decoration in &mut local.decorations {
+            decoration.x = decoration.x.saturating_add(margin_left);
+            decoration.y = decoration.y.saturating_add(margin_top);
+        }
+        for text in &mut local.text {
+            text.x = text.x.saturating_add(margin_left);
+            text.y = text.y.saturating_add(margin_top);
+        }
+        for image in &mut local.images_out {
+            image.x = image.x.saturating_add(margin_left);
+            image.y = image.y.saturating_add(margin_top);
+        }
+
+        InlineAtomic {
+            width: margin_left
+                .saturating_add(metrics.width)
+                .saturating_add(margin_right)
+                .max(1),
+            height: margin_top
+                .saturating_add(metrics.height)
+                .saturating_add(margin_bottom)
+                .max(0),
+            baseline: margin_top
+                .saturating_add(metrics.baseline)
+                .clamp(0, margin_top.saturating_add(metrics.height).max(0)),
+            decorations: local.decorations,
+            text_boxes: local.text,
+            image_boxes: local.images_out,
+            order: local.order,
+        }
+    }
+
     fn anonymous_table(
         &mut self,
         children: &[NodeId],
@@ -482,7 +598,7 @@ impl<'a> Context<'a, '_> {
         style: Style,
         containing_x: i32,
         containing_width: i32,
-    ) {
+    ) -> TableBoxMetrics {
         self.block_epoch = self.block_epoch.saturating_add(1);
         let used = resolve_block_horizontal(style, containing_width);
         let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
@@ -553,6 +669,7 @@ impl<'a> Context<'a, '_> {
         }
 
         let grid = self.build_table_grid(children, inherited_from);
+        let mut first_row_baseline = None;
         if grid.row_count > 0 && grid.columns > 0 {
             let (horizontal_spacing, vertical_spacing) = used_table_spacing(style);
             let intrinsic = self.table_intrinsic_columns(
@@ -573,6 +690,7 @@ impl<'a> Context<'a, '_> {
             let mut row_top = self.y.saturating_add(vertical_spacing);
 
             for (row, row_height) in row_heights.iter_mut().enumerate() {
+                let current_row_top = row_top;
                 let row_cells_start = cell_layouts.len();
                 for placement in grid.cells.iter().filter(|cell| cell.row == row) {
                     let slot_width = table_cell_slot_width(
@@ -615,6 +733,13 @@ impl<'a> Context<'a, '_> {
                     row_baselines[row] = Some(baseline);
                 }
                 *row_height = (*row_height).max(1);
+                if row == 0 {
+                    first_row_baseline = row_baselines[row].map(|baseline| {
+                        current_row_top
+                            .saturating_sub(border_y)
+                            .saturating_add(baseline)
+                    });
+                }
                 row_top = row_top
                     .saturating_add(*row_height)
                     .saturating_add(vertical_spacing);
@@ -661,10 +786,16 @@ impl<'a> Context<'a, '_> {
             .saturating_add(used.padding.bottom)
             .saturating_add(used.border.bottom.width);
 
+        let height = self.y.saturating_sub(border_y).max(0);
         if let Some(index) = table_decoration {
-            self.decorations[index].height = self.y.saturating_sub(border_y).max(0);
+            self.decorations[index].height = height;
         }
         self.pending_margin = Some(margin_bottom);
+        TableBoxMetrics {
+            width: used.border_width,
+            height,
+            baseline: first_row_baseline.unwrap_or(height),
+        }
     }
 
     fn build_table_grid(&self, children: &[NodeId], inherited_from: NodeId) -> TableGrid {
@@ -1617,7 +1748,14 @@ impl<'a> Context<'a, '_> {
                     href
                 };
 
-                if display == Display::Table {
+                if display == Display::InlineTable {
+                    current.inline.boxes = inherited.inline.boxes;
+                    let mut atomic = self.inline_table_atomic(id, current, containing_width);
+                    if let Some(href) = href {
+                        inherit_atomic_href(&mut atomic, href);
+                    }
+                    items.push(Item::Atomic(atomic, current.inline));
+                } else if display == Display::Table {
                     self.emit(items, inherited, containing_x, containing_width);
                     self.table(id, current, containing_x, containing_width);
                 } else if tag == "img" {
@@ -2215,6 +2353,32 @@ fn measure_intrinsic_text_run(
     base.saturating_add(style.letter_spacing.saturating_mul(gaps))
         .saturating_add(style.word_spacing.saturating_mul(spaces))
         .max(0)
+}
+
+fn inherit_atomic_href(atomic: &mut InlineAtomic, href: &str) {
+    for text in &mut atomic.text_boxes {
+        if text.links.is_empty() && !text.text.is_empty() {
+            text.links.push(LinkSpan {
+                start: 0,
+                end: text.text.len(),
+                href: href.to_owned(),
+            });
+        }
+    }
+    for image in &mut atomic.image_boxes {
+        if image.href.is_none() {
+            image.href = Some(href.to_owned());
+        }
+    }
+}
+
+fn table_horizontal_extras(style: Style, basis: i32) -> i32 {
+    let border = resolve_border_edges(style.border);
+    resolve_length(style.padding.left, basis)
+        .max(0)
+        .saturating_add(resolve_length(style.padding.right, basis).max(0))
+        .saturating_add(border.left.width)
+        .saturating_add(border.right.width)
 }
 
 fn used_table_spacing(style: Style) -> (i32, i32) {

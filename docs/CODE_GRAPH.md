@@ -595,9 +595,17 @@ classDiagram
   properties; no synthetic DOM nodes are created. Normal flow also groups consecutive orphan
   table-internal siblings, ignoring only repair-transparent whitespace/comments/display:none
   separators between them, and sends that run through an anonymous block table using the exact
-  same table_box/grid path as a real display:table. Caption flow, real cell backgrounds/borders/
-  padding and span geometry reach ordinary BoxDecoration/text/image output. Whitespace-only text
-  between block siblings is suppressed before it can create anonymous line geometry.
+  same table_box/grid path as a real display:table. Captions participate in that repaired wrapper
+  and orphan table-column boxes still feed declared-column width hints.
+  display:inline-table uses flow::inline_table_atomic: it computes an initial shrink-to-fit width,
+  runs the same table_box in a local layout Context, then packages its nested decorations/text/
+  images/order into inline::InlineAtomic. Lines treats that object as one wrapping unit, aligns its
+  first-row baseline with surrounding text, offsets its retained nested output into the final line
+  and remaps LayoutItem indices without flattening the table into fake text or pixels. Outer anchor
+  identity is inherited by nested text/images when they do not already carry a link.
+  Caption flow, real cell backgrounds/borders/padding and span geometry reach ordinary
+  BoxDecoration/text/image output. Whitespace-only text between block siblings is suppressed before
+  it can create anonymous line geometry.
   op_layout::replaced resolves raster intrinsic/explicit/auto sizes and min/max ratio conflicts.
   flow converts CSS percentage-width/font-relative/content-vs-border-box sizes and applies
   the existing available-width/4096-height fitting policy after CSS used sizes.

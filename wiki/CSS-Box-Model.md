@@ -93,9 +93,11 @@ background propagation and general alpha composition remain later rendering work
 - table layout is implemented as a dedicated initial formatter with intrinsic content tracks,
   colspan/rowspan, border-spacing, cell-edge collapse and table-cell baseline/top/middle/bottom
   alignment; core anonymous-table fixup handles both missing child row/cell wrappers and orphan
-  table-internal sibling runs in normal flow without mutating the DOM. Full CSS Tables percentage
-  algorithms, non-cell collapsed-border precedence, remaining column/caption fixup edge cases and
-  inline-table remain later;
+  table-internal sibling runs in normal flow without mutating the DOM, including initial orphan
+  caption and column-hint behavior. display:inline-table is an atomic inline formatting context
+  using the same table formatter, with shrink-to-fit auto width, first-row baseline, margins,
+  padding and borders. Full CSS Tables percentage algorithms, non-cell collapsed-border precedence,
+  deeper colgroup/caption-side fixup and non-baseline atomic vertical alignment remain later;
 - no floats, positioning, flexbox or CSS Grid yet;
 - no complete stacking-context/background-propagation model.
 

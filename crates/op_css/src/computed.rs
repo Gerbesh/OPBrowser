@@ -9,6 +9,7 @@ pub type CustomPropertyMap = HashMap<String, Vec<TokenKind>>;
 pub enum Display {
     Inline,
     Block,
+    InlineTable,
     Table,
     TableCaption,
     TableColumnGroup,
@@ -1681,6 +1682,7 @@ fn parse_display(tokens: &[TokenKind]) -> Option<Specified<Display>> {
     match single_ident(tokens)?.to_ascii_lowercase().as_str() {
         "inline" => Some(Specified::Value(Display::Inline)),
         "block" => Some(Specified::Value(Display::Block)),
+        "inline-table" => Some(Specified::Value(Display::InlineTable)),
         "table" => Some(Specified::Value(Display::Table)),
         "table-caption" => Some(Specified::Value(Display::TableCaption)),
         "table-column-group" => Some(Specified::Value(Display::TableColumnGroup)),
@@ -4767,7 +4769,7 @@ mod tests {
     #[test]
     fn table_ua_defaults_and_display_keywords_use_table_roles() {
         let document = parse_document(
-            "<style>#custom { display:table-row }</style>
+            "<style>#custom { display:table-row } #inline-table { display:inline-table }</style>
              <table id='table'>
                <caption id='caption'>Cap</caption>
                <colgroup id='colgroup'><col id='col'></colgroup>
@@ -4775,7 +4777,7 @@ mod tests {
                <tbody id='tbody'><tr id='row'><td id='td'>D</td></tr></tbody>
                <tfoot id='tfoot'><tr><td>F</td></tr></tfoot>
              </table>
-             <div id='custom'>x</div>",
+             <div id='custom'>x</div><div id='inline-table'>i</div>",
         );
         let author = collect_author_styles(&document);
         let computed = compute_styles(&document, &author.styles);
@@ -4793,6 +4795,7 @@ mod tests {
             ("th", Display::TableCell),
             ("td", Display::TableCell),
             ("custom", Display::TableRow),
+            ("inline-table", Display::InlineTable),
         ];
         for (id, expected) in cases {
             assert_eq!(

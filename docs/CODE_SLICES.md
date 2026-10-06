@@ -86,11 +86,15 @@ row/span heights are resolved, text, images and nested decorations move together
 border box stays fixed; baseline cells align their first line across the row. CSS table fixup now
 covers both directions for the core row/cell structure: missing children inside table roots/row
 groups become layout-only rows/cells, while consecutive orphan table-internal siblings in normal
-flow are grouped under one anonymous block table and then use the same grid formatter. Inherited
-text style survives these layout-only wrappers. Mode-specific layout quirks, processing
+flow are grouped under one anonymous block table and then use the same grid formatter. Orphan
+captions remain in that wrapper and orphan columns still contribute width hints. Inherited text
+style survives these layout-only wrappers. display:inline-table now creates a real atomic inline
+formatting object: auto width shrink-fits against intrinsic tracks, first-row baseline aligns with
+surrounding text, authored margins/padding/borders survive, and nested text/images/order/link
+identity are moved into final line output as a unit. Mode-specific layout quirks, processing
 instructions, template/frameset modes, foreign-content context, full CSS Tables intrinsic/
-percentage rules, non-cell collapsed border precedence, remaining anonymous column/caption edge
-cases and inline-table remain later.
+percentage rules, non-cell collapsed border precedence, deeper colgroup/caption-side fixup and
+non-baseline inline vertical-align remain later.
 
 ## S2 - Navigation to static page
 

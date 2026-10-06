@@ -1895,6 +1895,375 @@ mod tests {
     }
 
     #[test]
+    fn orphan_caption_and_cells_share_one_anonymous_table_wrapper() {
+        let document = op_html::parse_document(
+            "<style>
+               #host { width:360px }
+               #caption { display:table-caption; background:#ff0000; margin:0 }
+               .cell { display:table-cell; padding:0 }
+               #a { background:#0000ff }
+               #b { background:#00ff00 }
+             </style>
+             <div id='host'>
+               <div id='caption'>Caption</div>
+               <div id='a' class='cell'>A</div>
+               <div id='b' class='cell'>B</div>
+             </div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let caption = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let a = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+        let b = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+
+        assert!(caption.y < a.y);
+        assert_eq!(a.y, b.y);
+        assert_eq!(b.x, a.x + a.width);
+    }
+
+    #[test]
+    fn orphan_columns_feed_width_hints_into_the_repaired_anonymous_table() {
+        let document = op_html::parse_document(
+            "<style>
+               #host { width:420px }
+               #col { display:table-column; width:240px }
+               .cell { display:table-cell; padding:0 }
+               #a { background:#ff0000 }
+               #b { background:#0000ff }
+             </style>
+             <div id='host'>
+               <div id='col'></div>
+               <div id='a' class='cell'>A</div>
+               <div id='b' class='cell'>B</div>
+             </div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let a = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let b = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+
+        assert!(a.width >= 240);
+        assert!(a.width > b.width);
+        assert_eq!(b.x, a.x + a.width);
+    }
+
+    #[test]
+    fn inline_table_box_model_and_margins_contribute_to_atomic_width() {
+        let document = op_html::parse_document(
+            "<style>
+               #host { width:420px; font-size:16px; line-height:20px }
+               #it {
+                 display:inline-table; width:100px; box-sizing:content-box;
+                 padding:4px 10px; border:2px solid #ff0000;
+                 margin:3px 7px 5px 6px; border-spacing:0; background:#0000ff
+               }
+               .cell { display:table-cell; padding:0 }
+             </style>
+             <div id='host'>left <span id='it'><span class='cell'>A</span></span> right</div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let table = layout
+            .box_decorations
+            .iter()
+            .find(|decoration| {
+                decoration.background
+                    == TextColor {
+                        red: 0,
+                        green: 0,
+                        blue: 255,
+                        alpha: 255,
+                    }
+                    && decoration.border_left.width == 2
+            })
+            .unwrap();
+        let right = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("right"))
+            .unwrap();
+
+        assert_eq!(table.width, 124);
+        assert!(table.height > 8);
+        assert!(right.x >= table.x + table.width + 7);
+    }
+
+    #[test]
+    fn inline_table_is_atomic_and_stays_between_surrounding_text() {
+        let document = op_html::parse_document(
+            "<style>
+               #host { width:420px; font-size:16px; line-height:20px }
+               #it { display:inline-table; width:100px; border-spacing:0; background:#ff0000 }
+               .row { display:table-row }
+               .cell { display:table-cell; padding:0 }
+             </style>
+             <div id='host'>before <span id='it'><span class='row'><span class='cell'>A</span><span class='cell'>B</span></span></span> after</div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let before = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("before"))
+            .unwrap();
+        let a = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "A")
+            .unwrap();
+        let after = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("after"))
+            .unwrap();
+        let table = layout
+            .box_decorations
+            .iter()
+            .find(|decoration| {
+                decoration.background
+                    == TextColor {
+                        red: 255,
+                        green: 0,
+                        blue: 0,
+                        alpha: 255,
+                    }
+            })
+            .unwrap();
+
+        assert_eq!(before.y, a.y);
+        assert_eq!(before.y, after.y);
+        assert!(table.x >= before.x + before.width);
+        assert!(after.x >= table.x + table.width);
+        assert!(table.width >= 100);
+    }
+
+    #[test]
+    fn inline_table_wraps_as_one_atomic_unit_and_keeps_anchor_linkage() {
+        let document = op_html::parse_document(
+            "<style>
+               #host { width:120px; font-size:16px; line-height:20px }
+               #it { display:inline-table; width:80px; border-spacing:0; background:#00ff00 }
+               .cell { display:table-cell; padding:0 }
+             </style>
+             <div id='host'>abcdefgh <a href='next.html'><span id='it'><span class='cell'>cell</span></span></a> tail</div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let prefix = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("abcdefgh"))
+            .unwrap();
+        let cell = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "cell")
+            .unwrap();
+        let table = layout
+            .box_decorations
+            .iter()
+            .find(|decoration| {
+                decoration.background
+                    == TextColor {
+                        red: 0,
+                        green: 255,
+                        blue: 0,
+                        alpha: 255,
+                    }
+            })
+            .unwrap();
+
+        assert!(cell.y > prefix.y);
+        assert!(table.y > prefix.y);
+        assert_eq!(cell.links.len(), 1);
+        assert_eq!(cell.links[0].href, "next.html");
+        assert_eq!(cell.links[0].start, 0);
+        assert_eq!(cell.links[0].end, cell.text.len());
+    }
+
+    #[test]
+    fn inline_table_transfers_nested_images_and_outer_anchor_to_final_layout() {
+        let document = op_html::parse_document(
+            "<style>
+               #host { width:300px }
+               #it { display:inline-table; width:90px; border-spacing:0; background:#ffff00 }
+               .cell { display:table-cell; padding:0 }
+               img { width:20px; height:10px }
+             </style>
+             <div id='host'>x <a href='next.html'><span id='it'><span class='cell'><img id='pic'></span></span></a> y</div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let image =
+            Arc::new(RasterImage::from_premultiplied_bgra(20, 10, vec![255; 20 * 10 * 4]).unwrap());
+        let mut images = ImageResources::new();
+        let mut nodes = vec![document.root()];
+        while let Some(node) = nodes.pop() {
+            if document.element(node).is_some_and(|element| {
+                element
+                    .attributes
+                    .iter()
+                    .any(|attr| attr.name == "id" && attr.value == "pic")
+            }) {
+                images.insert(node, image.clone());
+            }
+            nodes.extend(document.children(node));
+        }
+
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &images,
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let table = layout
+            .box_decorations
+            .iter()
+            .find(|decoration| {
+                decoration.background
+                    == TextColor {
+                        red: 255,
+                        green: 255,
+                        blue: 0,
+                        alpha: 255,
+                    }
+            })
+            .unwrap();
+        assert_eq!(layout.image_boxes.len(), 1);
+        let image = &layout.image_boxes[0];
+        assert_eq!(image.href.as_deref(), Some("next.html"));
+        assert!(image.x >= table.x);
+        assert!(image.x + image.width <= table.x + table.width);
+        assert!(image.y >= table.y);
+        assert!(image.y + image.height <= table.y + table.height);
+    }
+
+    #[test]
+    fn inline_table_auto_width_shrinks_to_content_instead_of_filling_the_line() {
+        let document = op_html::parse_document(
+            "<style>
+               #host { width:500px; font-size:16px; line-height:20px }
+               #it { display:inline-table; border-spacing:0; background:#0000ff }
+               .cell { display:table-cell; padding:0 }
+             </style>
+             <div id='host'>left <span id='it'><span class='cell'>tiny</span></span> right</div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let left = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("left"))
+            .unwrap();
+        let right = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("right"))
+            .unwrap();
+        let table = layout
+            .box_decorations
+            .iter()
+            .find(|decoration| {
+                decoration.background
+                    == TextColor {
+                        red: 0,
+                        green: 0,
+                        blue: 255,
+                        alpha: 255,
+                    }
+            })
+            .unwrap();
+
+        assert_eq!(left.y, right.y);
+        assert!(
+            table.width < 200,
+            "auto inline-table should shrink: {table:?}"
+        );
+        assert!(right.x >= table.x + table.width);
+    }
+
+    #[test]
     fn table_border_spacing_controls_real_horizontal_and_vertical_gaps() {
         let document = op_html::parse_document(
             "<style>
