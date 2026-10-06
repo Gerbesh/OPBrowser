@@ -197,7 +197,12 @@ classDiagram
     }
     class FunctionalSelector {
         is / where / not -> Selector[]
-        nth-child -> NthExpression(a,b)
+        nth-child / nth-last-child -> NthSelector
+    }
+    class NthSelector {
+        expression(a,b)
+        of Selector[]
+        from_end
     }
     class PseudoElement {
         Before
@@ -380,6 +385,8 @@ classDiagram
     StyleRule --> Declaration
     Selector --> Specificity
     Selector --> FunctionalSelector : recursive functional pseudo arguments
+    FunctionalSelector --> NthSelector : filtered sibling order / maximum filter specificity
+    NthSelector --> Selector : strict of filters using ordinary complex selector matcher
     Selector --> PseudoElement : terminal generated target
     Document --> StyleMap : DOM-order linked/embedded collection / selector matching
     StyleMap --> MatchedDeclaration

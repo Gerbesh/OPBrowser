@@ -107,6 +107,13 @@ pub struct NthExpression {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NthSelector {
+    pub expression: NthExpression,
+    pub of: Vec<Selector>,
+    pub from_end: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimpleSelector {
     Type(String),
     Universal,
@@ -117,7 +124,7 @@ pub enum SimpleSelector {
     Is(Vec<Selector>),
     Where(Vec<Selector>),
     Not(Vec<Selector>),
-    NthChild(NthExpression),
+    NthChild(NthSelector),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,9 +148,18 @@ impl Specificity {
             SimpleSelector::Id(_) => self.ids = self.ids.saturating_add(1),
             SimpleSelector::Class(_)
             | SimpleSelector::Attribute(_)
-            | SimpleSelector::PseudoClass(_)
-            | SimpleSelector::NthChild(_) => {
+            | SimpleSelector::PseudoClass(_) => {
                 self.classes = self.classes.saturating_add(1);
+            }
+            SimpleSelector::NthChild(nth) => {
+                self.classes = self.classes.saturating_add(1);
+                self.add_specificity(
+                    nth.of
+                        .iter()
+                        .map(|selector| selector.specificity)
+                        .max()
+                        .unwrap_or_default(),
+                );
             }
             SimpleSelector::Is(selectors) | SimpleSelector::Not(selectors) => {
                 self.add_specificity(

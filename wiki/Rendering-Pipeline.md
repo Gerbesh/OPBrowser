@@ -91,7 +91,9 @@ The [CSS foundation](CSS-Syntax-Foundation.md) now participates in page preparat
 After HTML parsing, [stylesheet loading](Stylesheet-Loading.md) fetches eligible external
 CSS on the navigation worker. Loaded link CSS and embedded style rules are collected in
 DOM source order, inline declarations join the author cascade, functional selectors
-`:is/:where/:not/:nth-child` resolve through the same matcher/specificity path. Terminal
+`:is/:where/:not/:nth-child/:nth-last-child` resolve through the same matcher/specificity path.
+Forgiving is/where recovery keeps valid branches; strict nth of-filters index matching siblings
+in either direction and contribute maximum-filter specificity. Terminal
 `::before`/`::after` declarations are collected in separate `(NodeId, PseudoElement)` buckets.
 Before normal value parsing, custom-property winners build inherited per-target token maps and
 bounded `var()` substitution resolves references/fallbacks after dependency analysis; the computed map retains those

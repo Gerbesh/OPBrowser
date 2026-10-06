@@ -1,5 +1,5 @@
 use crate::{
-    AttributeMatcher, AttributeSelector, Combinator, CssError, Declaration, NthExpression,
+    AttributeMatcher, AttributeSelector, Combinator, CssError, Declaration, NthSelector,
     PseudoClass, PseudoElement, Selector, SimpleSelector, Specificity, StyleRule,
     parse_declaration_list, parse_stylesheet,
 };
@@ -329,7 +329,7 @@ fn compound_matches(document: &Document, node: NodeId, compound: &crate::Compoun
         SimpleSelector::Not(selectors) => selectors
             .iter()
             .all(|selector| !selector_matches(document, node, selector)),
-        SimpleSelector::NthChild(expression) => nth_child_matches(document, node, *expression),
+        SimpleSelector::NthChild(nth) => nth_child_matches(document, node, nth),
     })
 }
 
@@ -414,16 +414,30 @@ fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) 
     }
 }
 
-fn nth_child_matches(document: &Document, node: NodeId, expression: NthExpression) -> bool {
+fn nth_child_matches(document: &Document, node: NodeId, nth: &NthSelector) -> bool {
     let Some(siblings) = element_siblings(document, node) else {
         return false;
     };
+    let siblings: Vec<_> = siblings
+        .into_iter()
+        .filter(|candidate| {
+            nth.of.is_empty()
+                || nth
+                    .of
+                    .iter()
+                    .any(|selector| selector_matches(document, *candidate, selector))
+        })
+        .collect();
     let Some(position) = siblings.iter().position(|candidate| *candidate == node) else {
         return false;
     };
-    let index = position as i64 + 1;
-    let a = i64::from(expression.a);
-    let b = i64::from(expression.b);
+    let index = if nth.from_end {
+        siblings.len() - position
+    } else {
+        position + 1
+    } as i64;
+    let a = i64::from(nth.expression.a);
+    let b = i64::from(nth.expression.b);
     if a == 0 {
         return index == b;
     }

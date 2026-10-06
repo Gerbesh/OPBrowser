@@ -211,7 +211,7 @@ HTML
        type/universal/class/ID + attribute operators
        descendant/child/adjacent/general-sibling combinators
        root/child/empty/link pseudo-classes
-       is/where/not selector-list functions + nth-child(An+B)
+       forgiving is/where + strict not + filtered nth-child/nth-last-child(An+B of S)
        terminal ::before / ::after pseudo-element targets
   -> right-to-left selector matching against op_dom
   -> StyleMap host buckets + (NodeId, PseudoElement) author buckets
@@ -309,13 +309,17 @@ inline stacks remain later work.
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus
-`:is()`/`:where()`/`:not()` nested selector lists and `:nth-child(An+B)`. `:is()`/`:not()` use
-the maximum argument specificity, `:where()` contributes zero, and `:nth-child()` contributes
-one class-level component. Terminal `::before`/`::after` add one type-level specificity
+`:is()`/`:where()`/`:not()` nested selector lists and filtered `:nth-child()`/`:nth-last-child()`.
+`:is()`/`:not()` use the maximum valid argument specificity, `:where()` contributes zero,
+and nth selectors add one class-level component plus the maximum `of` filter specificity.
+Filters count matching element siblings once, with optional reverse indexing. An+B uses
+token-aware signed/unsigned integer and n-dimension grammar instead of whitespace concatenation.
+Terminal `::before`/`::after` add one type-level specificity
 component and are collected into independent pseudo buckets. Pseudo-elements inside
-`:is()`/`:where()`/`:not()` are explicitly rejected in this initial strict subset. Functional
-selector arguments are currently parsed strictly rather than with forgiving-list recovery;
-`:nth-child(... of selector)` remains later.
+`:is()`/`:where()` are discarded as invalid argument branches. These two functions forgive
+unsupported/malformed branches, including empty/all-invalid lists that match nothing.
+`:not()` and nth `of` lists reject invalid branches/pseudo-elements. Ordinary top-level
+selector lists remain strict; nested functional selectors are bounded to 64 levels.
 
 Functional colors feed the same computed CssColor path for text, backgrounds, border-color
 longhands/lists and border shorthands. A color-only `background` shorthand (including `none`,

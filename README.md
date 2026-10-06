@@ -86,7 +86,8 @@ baseline alignment, wrapping, `<br>` and HTML whitespace. Initial CSS supports e
 `<style>`, `style=""`, and bounded `<link rel="stylesheet">` from local/file/data/HTTP(S),
 type/class/ID/universal selectors, attribute selectors, descendant/child/adjacent/general
 sibling combinators, :root/:first-child/:last-child/:only-child/:empty/:link plus
-`:is()`/`:where()`/`:not()`/`:nth-child()` and terminal `::before`/`::after`, cascade/inheritance,
+`:is()`/`:where()`/`:not()`/`:nth-child()`/`:nth-last-child()` (including `of` filters)
+and terminal `::before`/`::after`, cascade/inheritance,
 `display` inline/block/none, #hex/basic named colors, legacy/modern rgb()/rgba()/hsl()/hsla(),
 relative/absolute font-size lengths, numeric/normal/bold font weight, inherited text-align,
 real line-height geometry, italic/oblique font style, underline/line-through decoration,
@@ -109,7 +110,7 @@ Adjacent sibling vertical margins collapse. External CSS is merged with embedded
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
 percentage-height propagation, broader custom-property grammar/registration and
 language-aware automatic quotes, generated `url()` and full
-generated replaced-content/empty-inline geometry, forgiving-selector-list recovery/full `:nth-child(... of ...)`, nested decorated
+generated replaced-content/empty-inline geometry, typed structural/relational selectors, nested decorated
 inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources
 and JavaScript
@@ -124,6 +125,10 @@ is bounded to 16,384 tokens/256 KiB per value, 2 MiB retained custom values per 
 and 64 nested fallback levels. Over-budget values become invalid and permit consumer fallbacks.
 Invalid computed var() winners keep their cascade priority and become unset for supported
 properties; they cannot reveal older declarations. Malformed var() syntax is rejected earlier.
+`:is()`/`:where()` discard invalid argument branches and keep supported selectors;
+`:not()` and nth `of` lists remain strict. Nth filters count matching element siblings
+once in either direction and add the maximum filter specificity. An+B parsing preserves
+token sign/whitespace rules; functional selector nesting is limited to 64 levels.
 
 See:
 

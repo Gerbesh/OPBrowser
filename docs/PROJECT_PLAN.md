@@ -168,10 +168,13 @@ Status: IN PROGRESS.
 - DONE invalid-at-computed-value-time var() winners resolve to unset for supported properties,
   including shorthand components/pseudo content/quotes/counters; malformed var() is rejected
   before cascade. Literal invalid values remain parse-time exclusions.
+- DONE forgiving is()/where() selector-list recovery, strict not()/of lists, filtered
+  nth-child/nth-last-child with maximum-filter specificity and token-aware An+B grammar;
+  functional selector nesting is bounded to 64 levels.
 - NEXT generated `url()` content and fuller replaced-content/empty-inline geometry.
 - LATER language-aware `quotes:auto` (currently deterministic English Unicode pairs).
 - LATER broader custom-property grammar/registration/animation-taint behavior,
-  forgiving functional-selector recovery, `:nth-child(... of ...)`, nested decorated-inline
+  typed structural pseudo-classes/relational selectors, nested decorated-inline
   stacks/replaced inline decorations and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.

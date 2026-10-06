@@ -41,8 +41,8 @@ The current selector AST/matcher supports:
 
 Matching runs right-to-left. Sibling combinators operate on element siblings and therefore
 ignore intervening text nodes, matching CSS tree semantics. `:empty` still treats any text,
-including whitespace text, as content. Functional pseudo-classes, pseudo-elements, namespace
-selectors and at-rules remain explicit unsupported syntax rather than silently succeeding.
+including whitespace text, as content. The functional/pseudo-element expansion is described
+below; namespace selectors and at-rules remain explicit unsupported syntax.
 
 ## Author style collection and matching
 
@@ -50,7 +50,8 @@ The engine now collects CSS from embedded style elements and from style attribut
 The supported selectors are matched right-to-left against op_dom. Each matching element
 gets StyleMap candidates rather than a prematurely resolved winner. Functional
 `:is()`/`:where()`/`:not()` recursively reuse the same Selector matcher, while
-`:nth-child(An+B)` indexes element siblings only. Terminal `::before`/`::after` are represented
+`:nth-child()`/`:nth-last-child()` index element siblings matching optional `of` filters.
+Terminal `::before`/`::after` are represented
 as a selector target rather than fake DOM nodes and contribute type-level specificity.
 
 ```text
@@ -161,8 +162,8 @@ participate in selector matching with their initial specificity rules. Terminal
 before children and `::after` after completed child counter work. Computed var() failures retain
 their cascade priority and become unset for supported properties. Generated `url()` images, language-aware automatic quotes,
 custom counter styles and complete counter scoping remain later. Next S3 work moves into generated
-replaced content and empty-inline geometry, then forgiving selector-list
-recovery, nth-child `of`, advanced color spaces, at-rules, media queries and full CSS
+replaced content and empty-inline geometry, then typed structural/relational selectors,
+advanced color spaces, at-rules, media queries and full CSS
 conformance remain later.
 
 ### Quotation marks
@@ -213,3 +214,19 @@ and invalid counter operations reset to their initial empty list. var() syntax i
 before cascade, including references inside unused fallback branches. A table-driven regression
 compares missing/wrong-type/empty var() results with explicit unset across all 52 supported
 ordinary style property names; Engine tests verify inherited/initial paint and retained reflow.
+
+### Forgiving selectors and filtered sibling indexing
+
+`:is()`/`:where()` discard invalid/unsupported/pseudo-element branches individually. Empty
+or all-invalid argument lists are valid and match nothing; discarded branches contribute no
+specificity. `:not()`, nth `of` filters and ordinary top-level lists remain strict. Nested
+functional selectors are bounded to 64 levels before recursive parsing/matching.
+
+`:nth-child(An+B of selector-list)` and `:nth-last-child(...)` filter inclusive element
+siblings using the ordinary complex-selector matcher, count each element once even if several
+branches match, and index from the front/back. Their specificity adds one pseudo-class plus
+the maximum filter specificity, independent of the matching branch. An+B parsing uses integer,
+n-dimension and n-ident token grammar, preserving sign/whitespace rules rather than joining
+arbitrary tokens. Coefficients are bounded to i32 and arithmetic uses i64.
+Reference: [Selectors 4](https://www.w3.org/TR/selectors-4/#the-nth-child-pseudo) and
+[CSS An+B syntax](https://www.w3.org/TR/css-syntax-3/#anb-microsyntax).

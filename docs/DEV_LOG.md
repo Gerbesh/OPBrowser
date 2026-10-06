@@ -822,3 +822,21 @@ This file is append-only project history.
   remain outside this milestone; no complete CSS conformance claim is made.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 181 workspace tests,
   startup/CSS demo native paint smokes and optimized workspace release build.
+
+## 2026-10-06 - Forgiving selector lists and filtered nth sibling indexing
+
+- Added NthSelector expression/of/from_end AST data and nth-last-child support. Optional strict
+  of selector lists use the existing complex-selector matcher to filter inclusive element
+  siblings before indexing, counting union matches only once and ignoring text nodes.
+- Nth specificity adds one pseudo-class and the maximum filter argument specificity,
+  independent of which branch matches. Negative/zero coefficients and reverse indexing work.
+- Added forgiving is/where branch recovery, including unsupported/malformed/pseudo-element
+  branches and empty/all-invalid lists that match nothing. Not/of/top-level lists stay strict.
+- Replaced An+B whitespace concatenation with token-aware integer/n-ident/n-dimension grammar;
+  malformed signs, separated coefficients, decimals, exponent forms and overflow are rejected.
+- Bounded selector function nesting at 64 levels before recursive parsing/matching.
+- Added parser, specificity, strict/forgiving recovery, An+B boundary and computed matching
+  regressions plus Engine generated-text/native-paint/retained-reflow verification.
+- Added a visible external CSS demo and updated README, plan, graph/slices and CSS/rendering wiki.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 186 workspace tests,
+  startup smoke, the 195-command CSS demo smoke and optimized workspace release build.

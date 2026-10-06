@@ -1,7 +1,7 @@
 use crate::{
     AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, CssError, Declaration,
-    NthExpression, ParseResult, PseudoClass, PseudoElement, Selector, SimpleSelector, Specificity,
-    StyleRule, Stylesheet, Token, TokenKind, tokenize,
+    NthExpression, NthSelector, ParseResult, PseudoClass, PseudoElement, Selector, SimpleSelector,
+    Specificity, StyleRule, Stylesheet, Token, TokenKind, tokenize,
 };
 
 pub fn parse_stylesheet(input: &str) -> ParseResult<Stylesheet> {
@@ -218,6 +218,10 @@ fn strip_important(tokens: &[Token]) -> (&[Token], bool) {
 }
 
 fn parse_selector_list(tokens: &[Token]) -> Result<Vec<Selector>, CssError> {
+    parse_selector_list_mode(tokens, false)
+}
+
+fn parse_selector_list_mode(tokens: &[Token], forgiving: bool) -> Result<Vec<Selector>, CssError> {
     if tokens.is_empty() {
         return Ok(Vec::new());
     }
@@ -232,6 +236,13 @@ fn parse_selector_list(tokens: &[Token]) -> Result<Vec<Selector>, CssError> {
             match tokens[index].kind {
                 TokenKind::Function(_) | TokenKind::OpenParen => {
                     parens += 1;
+                    if parens > 64 {
+                        return Err(selector_error(
+                            tokens,
+                            index,
+                            "selector function nesting exceeds 64 levels",
+                        ));
+                    }
                     false
                 }
                 TokenKind::CloseParen => {
@@ -253,6 +264,10 @@ fn parse_selector_list(tokens: &[Token]) -> Result<Vec<Selector>, CssError> {
         if at_separator {
             let group = trim_whitespace(&tokens[start..index]);
             if group.is_empty() {
+                if forgiving {
+                    start = index + 1;
+                    continue;
+                }
                 let offset = tokens
                     .get(index)
                     .or_else(|| tokens.last())
@@ -262,7 +277,14 @@ fn parse_selector_list(tokens: &[Token]) -> Result<Vec<Selector>, CssError> {
                     message: "empty selector in selector list".into(),
                 });
             }
-            selectors.push(parse_selector(group)?);
+            match parse_selector(group) {
+                Ok(selector) if !forgiving || selector.pseudo_element.is_none() => {
+                    selectors.push(selector)
+                }
+                Ok(_) => {}
+                Err(_) if forgiving => {}
+                Err(error) => return Err(error),
+            }
             start = index + 1;
         }
     }
@@ -667,7 +689,7 @@ fn parse_functional_pseudo(
         ));
     };
     let arguments = trim_whitespace(&tokens[function_index + 1..close]);
-    if arguments.is_empty() {
+    if arguments.is_empty() && !matches!(name.to_ascii_lowercase().as_str(), "is" | "where") {
         return Err(CssError {
             offset: tokens[function_index].start,
             message: format!("functional pseudo-class :{name}() requires an argument"),
@@ -678,21 +700,23 @@ fn parse_functional_pseudo(
         "is" => SimpleSelector::Is(parse_function_selector_list(
             arguments,
             tokens[function_index].start,
+            true,
         )?),
         "where" => SimpleSelector::Where(parse_function_selector_list(
             arguments,
             tokens[function_index].start,
+            true,
         )?),
         "not" => SimpleSelector::Not(parse_function_selector_list(
             arguments,
             tokens[function_index].start,
+            false,
         )?),
-        "nth-child" => {
-            SimpleSelector::NthChild(parse_nth_expression(arguments).ok_or_else(|| CssError {
-                offset: tokens[function_index].start,
-                message: "invalid :nth-child() expression".into(),
-            })?)
-        }
+        "nth-child" | "nth-last-child" => SimpleSelector::NthChild(parse_nth_selector(
+            arguments,
+            name.eq_ignore_ascii_case("nth-last-child"),
+            tokens[function_index].start,
+        )?),
         _ => {
             return Err(CssError {
                 offset: tokens[function_index].start,
@@ -706,8 +730,9 @@ fn parse_functional_pseudo(
 fn parse_function_selector_list(
     tokens: &[Token],
     offset: usize,
+    forgiving: bool,
 ) -> Result<Vec<Selector>, CssError> {
-    let selectors = parse_selector_list(tokens)?;
+    let selectors = parse_selector_list_mode(tokens, forgiving)?;
     if selectors
         .iter()
         .any(|selector| selector.pseudo_element.is_some())
@@ -719,6 +744,52 @@ fn parse_function_selector_list(
         });
     }
     Ok(selectors)
+}
+
+fn parse_nth_selector(
+    tokens: &[Token],
+    from_end: bool,
+    offset: usize,
+) -> Result<NthSelector, CssError> {
+    let of_index = tokens.iter().position(|token| {
+        matches!(&token.kind,
+        TokenKind::Ident(name) if name.eq_ignore_ascii_case("of"))
+    });
+    let expression_tokens = of_index.map_or(tokens, |index| trim_whitespace(&tokens[..index]));
+    let expression = parse_nth_expression(expression_tokens).ok_or_else(|| CssError {
+        offset,
+        message: "invalid nth-child/nth-last-child expression".into(),
+    })?;
+    let of = if let Some(index) = of_index {
+        if index == 0
+            || !matches!(tokens[index - 1].kind, TokenKind::Whitespace)
+            || !matches!(
+                tokens.get(index + 1).map(|token| &token.kind),
+                Some(TokenKind::Whitespace)
+            )
+        {
+            return Err(CssError {
+                offset,
+                message: "nth selector requires whitespace around 'of'".into(),
+            });
+        }
+        let selectors =
+            parse_function_selector_list(trim_whitespace(&tokens[index + 1..]), offset, false)?;
+        if selectors.is_empty() {
+            return Err(CssError {
+                offset,
+                message: "nth selector 'of' list cannot be empty".into(),
+            });
+        }
+        selectors
+    } else {
+        Vec::new()
+    };
+    Ok(NthSelector {
+        expression,
+        of,
+        from_end,
+    })
 }
 
 fn find_matching_close_paren(tokens: &[Token], function_index: usize) -> Option<usize> {
@@ -739,52 +810,104 @@ fn find_matching_close_paren(tokens: &[Token], function_index: usize) -> Option<
 }
 
 fn parse_nth_expression(tokens: &[Token]) -> Option<NthExpression> {
-    let mut value = String::new();
-    for token in tokens
+    let tokens = trim_whitespace(tokens);
+    let mut parts: Vec<&Token> = tokens
         .iter()
         .filter(|token| !matches!(token.kind, TokenKind::Whitespace))
-    {
-        match &token.kind {
-            TokenKind::Ident(part) | TokenKind::Number(part) => value.push_str(part),
-            TokenKind::Dimension { number, unit } => {
-                value.push_str(number);
-                value.push_str(unit);
+        .collect();
+    if parts.len() == 1 {
+        match &parts[0].kind {
+            TokenKind::Ident(name) if name.eq_ignore_ascii_case("odd") => {
+                return Some(NthExpression { a: 2, b: 1 });
             }
-            TokenKind::Delim('+' | '-') => {
-                if let TokenKind::Delim(ch) = token.kind {
-                    value.push(ch);
-                }
+            TokenKind::Ident(name) if name.eq_ignore_ascii_case("even") => {
+                return Some(NthExpression { a: 2, b: 0 });
+            }
+            TokenKind::Number(number) => {
+                return Some(NthExpression {
+                    a: 0,
+                    b: number.parse().ok()?,
+                });
+            }
+            _ => {}
+        }
+    }
+    if matches!(
+        parts.first().map(|token| &token.kind),
+        Some(TokenKind::Delim('+'))
+    ) {
+        // The optional '+' before an n-ident cannot be separated by whitespace.
+        if !matches!(tokens.get(1).map(|token| &token.kind), Some(TokenKind::Ident(name)) if name.starts_with(['n', 'N']))
+        {
+            return None;
+        }
+        parts.remove(0);
+    }
+    let (a, unit) = match &parts.first()?.kind {
+        TokenKind::Dimension { number, unit } => {
+            (number.parse::<i32>().ok()?, unit.to_ascii_lowercase())
+        }
+        TokenKind::Ident(name) => {
+            let name = name.to_ascii_lowercase();
+            if let Some(unit) = name.strip_prefix('-') {
+                (-1, unit.to_owned())
+            } else {
+                (1, name)
+            }
+        }
+        _ => return None,
+    };
+    let suffix = unit.strip_prefix('n')?;
+    let rest = &parts[1..];
+    let b = if suffix.is_empty() {
+        match rest {
+            [] => 0,
+            [
+                Token {
+                    kind: TokenKind::Number(number),
+                    ..
+                },
+            ] if number.starts_with(['+', '-']) => number.parse::<i32>().ok()?,
+            [
+                Token {
+                    kind: TokenKind::Delim(sign @ ('+' | '-')),
+                    ..
+                },
+                Token {
+                    kind: TokenKind::Number(number),
+                    ..
+                },
+            ] if !number.starts_with(['+', '-']) => {
+                let value = number.parse::<i64>().ok()?;
+                i32::try_from(if *sign == '-' { -value } else { value }).ok()?
             }
             _ => return None,
         }
-    }
-    let value = value.to_ascii_lowercase();
-    match value.as_str() {
-        "odd" => return Some(NthExpression { a: 2, b: 1 }),
-        "even" => return Some(NthExpression { a: 2, b: 0 }),
-        _ => {}
-    }
-    if let Some(n) = value.find('n') {
-        if value[n + 1..].contains('n') {
+    } else if suffix == "-" {
+        let [
+            Token {
+                kind: TokenKind::Number(number),
+                ..
+            },
+        ] = rest
+        else {
+            return None;
+        };
+        if number.starts_with(['+', '-']) {
             return None;
         }
-        let a = match &value[..n] {
-            "" | "+" => 1,
-            "-" => -1,
-            value => value.parse::<i32>().ok()?,
-        };
-        let b = if value[n + 1..].is_empty() {
-            0
-        } else {
-            value[n + 1..].parse::<i32>().ok()?
-        };
-        Some(NthExpression { a, b })
+        i32::try_from(-number.parse::<i64>().ok()?).ok()?
     } else {
-        Some(NthExpression {
-            a: 0,
-            b: value.parse::<i32>().ok()?,
-        })
-    }
+        let digits = suffix.strip_prefix('-')?;
+        if !rest.is_empty()
+            || digits.is_empty()
+            || !digits.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return None;
+        }
+        i32::try_from(-digits.parse::<i64>().ok()?).ok()?
+    };
+    Some(NthExpression { a, b })
 }
 
 fn skip_selector_whitespace(tokens: &[Token], index: &mut usize) {
@@ -991,7 +1114,11 @@ mod tests {
         ));
         assert_eq!(
             selector.compounds[1].simple[3],
-            SimpleSelector::NthChild(NthExpression { a: 2, b: 1 })
+            SimpleSelector::NthChild(NthSelector {
+                expression: NthExpression { a: 2, b: 1 },
+                of: Vec::new(),
+                from_end: false
+            })
         );
     }
 
@@ -1025,9 +1152,157 @@ mod tests {
         assert!(invalid.errors[0].message.contains("terminate"));
 
         let nested = parse_stylesheet("div:is(::before,.note) { color:red }");
-        assert!(nested.value.rules.is_empty());
-        assert_eq!(nested.errors.len(), 1);
-        assert!(nested.errors[0].message.contains("inside functional"));
+        assert_eq!(nested.value.rules.len(), 1);
+        assert!(nested.errors.is_empty());
+        assert!(
+            matches!(&nested.value.rules[0].selectors[0].compounds[0].simple[1],
+            SimpleSelector::Is(selectors) if selectors.len() == 1)
+        );
+        let strict = parse_stylesheet("div:not(::before,.note) { color:red }");
+        assert!(strict.value.rules.is_empty());
+        assert_eq!(strict.errors.len(), 1);
+    }
+
+    #[test]
+    fn forgiving_is_where_discard_invalid_branches_and_keep_valid_specificity() {
+        let parsed = parse_stylesheet(
+            "div:is(:unsupported, [bad=], ::before, .valid, #hero, ) { color:red }
+             div:where(:unsupported, #hero) { color:blue }
+             :is(:unsupported), :where(), :is() { color:green }",
+        );
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        assert_eq!(parsed.value.rules.len(), 3);
+        let selector = &parsed.value.rules[0].selectors[0];
+        assert_eq!(
+            selector.specificity,
+            Specificity {
+                ids: 1,
+                classes: 0,
+                types: 1
+            }
+        );
+        assert!(
+            matches!(&selector.compounds[0].simple[1], SimpleSelector::Is(selectors) if selectors.len() == 2)
+        );
+        assert_eq!(
+            parsed.value.rules[1].selectors[0].specificity,
+            Specificity {
+                ids: 0,
+                classes: 0,
+                types: 1
+            }
+        );
+        for selector in &parsed.value.rules[2].selectors {
+            assert_eq!(selector.specificity, Specificity::default());
+        }
+        let strict = parse_stylesheet(
+            ".valid,:unsupported { color:red } div:not(.valid,:unsupported) { color:red }",
+        );
+        assert_eq!(strict.errors.len(), 2);
+        assert!(strict.value.rules.is_empty());
+    }
+
+    #[test]
+    fn filtered_nth_lists_are_strict_and_add_max_argument_specificity() {
+        let parsed = parse_stylesheet(
+            "span:nth-child(2n+1 of .pick, #hero), :nth-last-child(-n+2 of div > .pick) { color:red }",
+        );
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let selectors = &parsed.value.rules[0].selectors;
+        assert_eq!(
+            selectors[0].specificity,
+            Specificity {
+                ids: 1,
+                classes: 1,
+                types: 1
+            }
+        );
+        assert_eq!(
+            selectors[1].specificity,
+            Specificity {
+                ids: 0,
+                classes: 2,
+                types: 1
+            }
+        );
+        assert!(
+            matches!(&selectors[1].compounds[0].simple[0], SimpleSelector::NthChild(nth)
+            if nth.from_end && nth.expression == NthExpression { a:-1, b:2 } && nth.of.len() == 1)
+        );
+        for selector in [
+            ":nth-child(1 of)",
+            ":nth-child(1 of )",
+            ":nth-child(1 of .pick,:unsupported)",
+            ":nth-child(1 of ::before)",
+            ":nth-last-child()",
+        ] {
+            let invalid = parse_stylesheet(&format!("{selector} {{ color:red }}"));
+            assert!(invalid.value.rules.is_empty(), "{selector}");
+            assert_eq!(invalid.errors.len(), 1, "{selector}");
+        }
+        let nested = format!(
+            "{}span{} {{ color:red }}",
+            ":is(".repeat(65),
+            ")".repeat(65)
+        );
+        let over_budget = parse_stylesheet(&nested);
+        assert!(over_budget.value.rules.is_empty());
+        assert!(over_budget.errors[0].message.contains("64"));
+    }
+
+    #[test]
+    fn anb_token_grammar_preserves_sign_and_whitespace_constraints() {
+        for (source, a, b) in [
+            ("odd", 2, 1),
+            ("EVEN", 2, 0),
+            ("+5", 0, 5),
+            ("-3", 0, -3),
+            ("2n + 1", 2, 1),
+            ("2n-1", 2, -1),
+            ("2n- 1", 2, -1),
+            ("n", 1, 0),
+            ("+n", 1, 0),
+            ("-n + 3", -1, 3),
+            ("+n-2", 1, -2),
+            ("-n- 2", -1, -2),
+            ("n +1", 1, 1),
+            ("n - 1", 1, -1),
+            ("0n+5", 0, 5),
+            ("n-2147483648", 1, i32::MIN),
+        ] {
+            assert_eq!(
+                parse_nth_expression(&tokenize(source).tokens),
+                Some(NthExpression { a, b }),
+                "{source}"
+            );
+        }
+        for source in [
+            "",
+            "1 2",
+            "2 n",
+            "+ n",
+            "n 2",
+            "n + -1",
+            "n+-1",
+            "n- +1",
+            "n- -1",
+            "1.0n",
+            "1e2n",
+            "n + 1.0",
+            "n2",
+            "--n",
+            "+-n",
+            "n-2147483649",
+            "2147483648n",
+            "+ 1",
+            "odd even",
+        ] {
+            assert_eq!(
+                parse_nth_expression(&tokenize(source).tokens),
+                None,
+                "{source}"
+            );
+        }
     }
 
     #[test]

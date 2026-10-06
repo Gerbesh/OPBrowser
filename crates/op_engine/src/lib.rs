@@ -1083,6 +1083,30 @@ mod tests {
     }
 
     #[test]
+    fn filtered_nth_and_forgiving_selectors_reach_generated_paint_and_reflow() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(
+            "<style>:nth-child(2 of .pick)::before { content:'SECOND '; color:red }
+             :nth-last-child(1 of .pick)::after { content:' LAST'; color:blue }
+             :is(:unsupported, .pick) { font-style:italic }
+             </style><div><span class='pick'>One</span><em>Skip</em>
+             <span class='pick'>Two</span><span class='pick'>Three</span></div>",
+            800,
+            600,
+        );
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::Text { text, color, italic:true, .. } if text.contains("SECOND")
+                && *color == op_paint::Color { r:255, g:0, b:0 }
+        )));
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::Text { text, color, .. } if text.contains("LAST")
+                && *color == op_paint::Color { r:0, g:0, b:255 }
+        )));
+        engine.reflow(300, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn custom_properties_and_var_reach_native_display_list() {
         let display_list = Engine::new().render_html(
             "<style>

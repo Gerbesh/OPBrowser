@@ -3203,6 +3203,40 @@ mod tests {
     }
 
     #[test]
+    fn filtered_nth_matching_counts_union_siblings_in_both_directions() {
+        let document = parse_document(
+            "<style>
+             #two { color:red }
+             :nth-child(2 of #unmatched, .pick, .pick) { color:blue }
+             :nth-child(-n+2 of #scope > .pick) { padding-left:7px }
+             :nth-last-child(1 of .pick) { font-weight:bold }
+             :nth-last-child(2) { background:green }
+             :is(:unsupported, .pick) { font-style:italic }
+             :where() { color:red }
+             </style><div id='scope'><span id='one' class='pick'>A</span>text
+             <em id='skip'>S</em><span id='two' class='pick'>B</span>
+             <span id='three' class='pick'>C</span><span id='four'>D</span></div>",
+        );
+        let collection = collect_author_styles(&document);
+        assert!(collection.errors.is_empty());
+        let computed = compute_styles(&document, &collection.styles);
+        let style = |id| computed.style_for(find_by_id(&document, id)).unwrap();
+        assert_eq!(
+            style("two").color,
+            CssColor::BLUE,
+            "maximum filter specificity applies even if that branch did not match"
+        );
+        assert_eq!(style("one").padding.left, LengthPercentage::Px(7.0));
+        assert_eq!(style("two").padding.left, LengthPercentage::Px(7.0));
+        assert_eq!(style("three").padding.left, LengthPercentage::ZERO);
+        assert_eq!(style("three").font_weight, ComputedFontWeight::Bold);
+        assert_eq!(style("three").background_color, CssColor::GREEN);
+        assert_eq!(style("one").font_style, FontStyle::Italic);
+        assert_eq!(style("four").font_style, FontStyle::Normal);
+        assert_eq!(style("four").color, CssColor::BLACK);
+    }
+
+    #[test]
     fn valid_var_fallbacks_and_literal_invalid_values_keep_their_distinct_cascade_rules() {
         let document = parse_document(
             "<style>#one { --empty:; color:red; color:invalid; padding:5px; padding:var(--missing,2px 4px) }
