@@ -1,6 +1,6 @@
 use crate::{
     AttributeMatcher, AttributeSelector, Combinator, CssError, Declaration, NthSelector,
-    PseudoClass, PseudoElement, Selector, SimpleSelector, Specificity, StyleRule,
+    PseudoClass, PseudoElement, RelativeSelector, Selector, SimpleSelector, Specificity, StyleRule,
     parse_declaration_list, parse_stylesheet,
 };
 use op_dom::{Document, NodeId, NodeKind};
@@ -337,8 +337,92 @@ fn compound_matches(document: &Document, node: NodeId, compound: &crate::Compoun
         SimpleSelector::Not(selectors) => selectors
             .iter()
             .all(|selector| !selector_matches(document, node, selector)),
+        SimpleSelector::Has(selectors) => selectors
+            .iter()
+            .any(|relative| relative_selector_matches(document, node, relative)),
         SimpleSelector::NthChild(nth) => nth_child_matches(document, node, nth),
     })
+}
+
+fn relative_selector_matches(
+    document: &Document,
+    anchor: NodeId,
+    relative: &RelativeSelector,
+) -> bool {
+    let selector = &relative.selector;
+    let Some(first) = selector.compounds.first() else {
+        return false;
+    };
+
+    let mut current = related_elements(document, anchor, relative.leading_combinator)
+        .into_iter()
+        .filter(|candidate| compound_matches(document, *candidate, first))
+        .collect::<Vec<_>>();
+
+    for (index, combinator) in selector.combinators.iter().copied().enumerate() {
+        if current.is_empty() {
+            return false;
+        }
+        let next_compound = &selector.compounds[index + 1];
+        let mut next = Vec::new();
+        for source in current {
+            for candidate in related_elements(document, source, combinator) {
+                if compound_matches(document, candidate, next_compound)
+                    && !next.contains(&candidate)
+                {
+                    next.push(candidate);
+                }
+            }
+        }
+        current = next;
+    }
+
+    !current.is_empty()
+}
+
+fn related_elements(document: &Document, node: NodeId, combinator: Combinator) -> Vec<NodeId> {
+    match combinator {
+        Combinator::Child => document
+            .children(node)
+            .iter()
+            .copied()
+            .filter(|candidate| document.element(*candidate).is_some())
+            .collect(),
+        Combinator::Descendant => {
+            let mut result = Vec::new();
+            let mut stack = document.children(node).to_vec();
+            while let Some(candidate) = stack.pop() {
+                if document.element(candidate).is_some() {
+                    result.push(candidate);
+                }
+                stack.extend(document.children(candidate).iter().copied());
+            }
+            result
+        }
+        Combinator::AdjacentSibling => next_element_sibling(document, node).into_iter().collect(),
+        Combinator::GeneralSibling => following_element_siblings(document, node),
+    }
+}
+
+fn next_element_sibling(document: &Document, node: NodeId) -> Option<NodeId> {
+    following_element_siblings(document, node)
+        .into_iter()
+        .next()
+}
+
+fn following_element_siblings(document: &Document, node: NodeId) -> Vec<NodeId> {
+    let Some(parent) = document.node(node).and_then(|current| current.parent) else {
+        return Vec::new();
+    };
+    let siblings = document.children(parent);
+    let Some(index) = siblings.iter().position(|candidate| *candidate == node) else {
+        return Vec::new();
+    };
+    siblings[index + 1..]
+        .iter()
+        .copied()
+        .filter(|candidate| document.element(*candidate).is_some())
+        .collect()
 }
 
 fn attribute_matches(element: &op_dom::ElementData, selector: &AttributeSelector) -> bool {
@@ -836,6 +920,31 @@ mod tests {
         assert!(matches(two, "li:nth-child(2)"));
         assert!(matches(four, "li:nth-child(-n+4)"));
         assert!(!matches(four, "li:nth-child(2n+1)"));
+    }
+
+    #[test]
+    fn matches_has_from_anchor_across_descendants_children_and_following_siblings() {
+        let document = parse_document(
+            "<main id='anchor'><section><span class='deep'></span></section><b class='direct'></b></main>
+             <aside id='adjacent' class='next'><em class='inside'></em></aside>
+             <div id='later' class='later'></div>",
+        );
+        let anchor = element_by_id(&document, "anchor");
+        let adjacent = element_by_id(&document, "adjacent");
+        let matches = |node, source: &str| {
+            let parsed = parse_stylesheet(&format!("{source} {{ color:red }}"));
+            assert!(parsed.errors.is_empty(), "{source}: {:?}", parsed.errors);
+            selector_matches(&document, node, &parsed.value.rules[0].selectors[0])
+        };
+
+        assert!(matches(anchor, "main:has(.deep)"));
+        assert!(matches(anchor, "main:has(> .direct)"));
+        assert!(matches(anchor, "main:has(+ aside.next)"));
+        assert!(matches(anchor, "main:has(~ .later)"));
+        assert!(matches(anchor, "main:has(+ aside .inside)"));
+        assert!(matches(anchor, "main:not(:has(.missing))"));
+        assert!(!matches(anchor, "main:has(> .deep)"));
+        assert!(!matches(adjacent, "aside:has(.deep)"));
     }
 
     #[test]

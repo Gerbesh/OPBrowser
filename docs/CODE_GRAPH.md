@@ -775,9 +775,15 @@ adjacent sibling margin collapse before BoxDecoration/background-border FillRect
 uses the existing child/generated-content collection path without creating a principal box; flex,
 table-internal and SVG-specific contents behavior remains separate work. Selector matching now adds
 attributes, +/~ and structural pseudos before the same cascade, including filtered nth selectors
-whose `of` list may begin immediately after the `of` token.
-Nested inline text/image/empty/pseudo items now retain parent-linked decoration stacks.
-Flow owns the InlineBoxes arena; each character stores one optional index, without copying
+whose `of` list may begin immediately after the `of` token. `:has()` parses a strict relative-selector
+list and matches forward from its anchor through descendant/child/following-sibling relations while
+reusing compound matching and normal specificity. Empty-namespace `[|attr]` uses the same HTML
+attribute matcher without accepting whitespace between `|` and the name.
+Nested inline text/image/empty/pseudo items now retain parent-linked decoration stacks. Empty
+inline elements/pseudos create an `EmptyInline` item only when padding or borders reserve actual
+fragment geometry; a background alone on zero content no longer fabricates line height or splits
+collapsible whitespace. Flow owns the InlineBoxes arena; each character stores one optional index,
+without copying
 ancestors per character. Cached cumulative edges and iterative common-ancestor transitions
 participate in width fitting, wrap and alignment. Lines allocates outer decorations when
 opening fragments, then fills bounds when closing, so nested opaque backgrounds paint in

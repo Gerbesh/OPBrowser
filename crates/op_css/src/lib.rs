@@ -126,6 +126,12 @@ pub struct NthSelector {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelativeSelector {
+    pub leading_combinator: Combinator,
+    pub selector: Selector,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimpleSelector {
     Type(String),
     Universal,
@@ -138,6 +144,7 @@ pub enum SimpleSelector {
     Is(Vec<Selector>),
     Where(Vec<Selector>),
     Not(Vec<Selector>),
+    Has(Vec<RelativeSelector>),
     NthChild(NthSelector),
 }
 
@@ -182,6 +189,15 @@ impl Specificity {
                     selectors
                         .iter()
                         .map(|selector| selector.specificity)
+                        .max()
+                        .unwrap_or_default(),
+                );
+            }
+            SimpleSelector::Has(selectors) => {
+                self.add_specificity(
+                    selectors
+                        .iter()
+                        .map(|relative| relative.selector.specificity)
                         .max()
                         .unwrap_or_default(),
                 );

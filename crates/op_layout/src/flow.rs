@@ -1998,7 +1998,9 @@ impl<'a> Context<'a, '_> {
                     if self.block_epoch == initial_epoch
                         && current.inline.boxes.is_some_and(|box_id| {
                             let box_style = self.inline_boxes.style(box_id);
-                            box_style.node == id && box_style.pseudo.is_none()
+                            box_style.node == id
+                                && box_style.pseudo.is_none()
+                                && box_style.reserves_empty_fragment()
                         })
                         && items.get(initial_len..).is_some_and(|collected| {
                             collected.iter().all(|item| matches!(item,
@@ -2061,18 +2063,20 @@ impl<'a> Context<'a, '_> {
             );
             return;
         }
-        style.inline.boxes = resolve_inline_box_style(id, Some(pseudo), style, containing_width)
+        let own_box = resolve_inline_box_style(id, Some(pseudo), style, containing_width);
+        let reserves_empty_fragment = own_box.is_some_and(InlineBoxStyle::reserves_empty_fragment);
+        style.inline.boxes = own_box
             .map(|box_style| self.inline_boxes.push(box_style, host_style.inline.boxes))
             .or(host_style.inline.boxes);
         if generated.items.is_empty() {
-            if style.inline.boxes.is_some() {
+            if reserves_empty_fragment {
                 items.push(Item::EmptyInline(style.inline));
             }
             return;
         }
         let initial_len = items.len();
         self.collect_generated_items((id, pseudo), href, style, containing_width, items);
-        if items.len() == initial_len && style.inline.boxes.is_some() {
+        if items.len() == initial_len && reserves_empty_fragment {
             items.push(Item::EmptyInline(style.inline));
         }
     }

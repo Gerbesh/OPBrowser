@@ -35,6 +35,17 @@ impl InlineBoxStyle {
     pub(super) fn bottom_extra(self) -> i32 {
         self.padding_bottom.saturating_add(self.border_bottom.width)
     }
+
+    pub(super) fn reserves_empty_fragment(self) -> bool {
+        self.padding_top > 0
+            || self.padding_right > 0
+            || self.padding_bottom > 0
+            || self.padding_left > 0
+            || self.border_top.width > 0
+            || self.border_right.width > 0
+            || self.border_bottom.width > 0
+            || self.border_left.width > 0
+    }
 }
 
 #[derive(Default)]

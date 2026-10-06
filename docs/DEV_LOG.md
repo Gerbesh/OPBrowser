@@ -1666,3 +1666,27 @@ This file is append-only project history.
   suite, Win32 startup smoke, optimized release build, `git diff --check` and the repeated external
   compatibility run. Test262 Parser v1 remained 364/1983 (18.36%).
 
+## 2026-10-07 - Relational selectors and zero-geometry inline WPT pass
+
+- Added Selectors 4 `:has()` parsing and matching with implicit descendant plus explicit child,
+  adjacent-sibling and general-sibling relative selectors. Matching starts at the anchor and walks
+  forward through the requested relations instead of reusing the ordinary right-to-left entry point.
+- `:has()` specificity uses the most specific relative selector. Nested `:has()` and pseudo-elements
+  inside it are rejected; regression tests cover descendant/child/sibling chains and `:not(:has())`.
+- Added the empty-namespace attribute form `[|attr]` while preserving the syntax rule that whitespace
+  is not allowed between the namespace separator and attribute name.
+- Diagnosed the remaining filtered-nth WPT failures past computed style: selectors and cascade were
+  already correct, but background-only empty inline elements were creating fake 24px lines and
+  interrupting whitespace collapse. Empty inline DOM/pseudo fragments now require padding or border
+  geometry before emitting `EmptyInline`; background-only zero-content boxes remain zero-area.
+- The pinned `:has()` slice passes 7/7, the three selector diagnostic reftests pass 3/3, and the
+  unchanged WPT Static v1 manifest improved from 172/200 (86.00%) to 179/200 (89.50%) with zero
+  render/infrastructure errors.
+- Final local verification passed rustfmt, warning-free workspace Clippy, the complete workspace
+  suite after one transient Windows `WSAEWOULDBLOCK` in an existing local-socket fixture passed both
+  focused retry and full rerun, Win32 startup smoke, optimized release build, `git diff --check` and
+  repeated external compatibility. Test262 Parser v1 remained 364/1983 (18.36%).
+- The current local release binary was rebuilt at `target/release/op_browser.exe`; no OPBrowser
+  shortcuts were found in Desktop, Start Menu or pinned taskbar locations, so there is no separate
+  installed copy to synchronize.
+

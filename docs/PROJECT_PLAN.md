@@ -278,7 +278,10 @@ Status: IN PROGRESS.
 - DONE deferred computed color expressions preserve `currentColor` dependencies across inheritance; initial `color-mix()` (`srgb`/`lch`) and relative `from currentColor` forms now reach used sRGB colors.
 - DONE basic `display: contents` suppresses the principal box while preserving generated/child content, and `nth-child(... of ...)` accepts selector lists immediately after the required whitespace-before-`of` separator.
 - DONE third metric-driven pass raised the unchanged WPT Static v1 manifest from 151/200 (75.50%) to 172/200 (86.00%).
-- NEXT continue from the remaining WPT Static v1 failure families; flex/BFC/table/SVG display contexts, first-line/first-letter, `:has()`, ICC/tagged images, gamut mapping and fuller relative-color/interpolation semantics are now the larger queues.
+- DONE Selectors 4 `:has()` with descendant/child/adjacent/general-sibling relative selectors, maximum-argument specificity and nested/pseudo-element rejection; empty-namespace attribute selectors now preserve CSS whitespace rules.
+- DONE background-only empty inline boxes with no padding/border keep zero geometry and no longer create fake lines or interrupt collapsible whitespace.
+- DONE fourth metric-driven pass raised the unchanged WPT Static v1 manifest from 172/200 (86.00%) to 179/200 (89.50%).
+- NEXT continue from the remaining WPT Static v1 failure families; flex/BFC/table/SVG display contexts, first-line/first-letter, ICC/tagged images, gamut mapping, form-control display semantics and fuller relative-color/interpolation semantics are now the larger queues.
 
 ## M3 - Original JavaScript engine
 

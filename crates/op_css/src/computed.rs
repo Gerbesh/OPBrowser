@@ -4337,6 +4337,39 @@ mod tests {
     }
 
     #[test]
+    fn filtered_nth_type_lists_and_specificity_match_custom_elements() {
+        let document = parse_document(
+            "<style>
+             :nth-child(odd of webkit, fast) { background-color:lime }
+             foo:nth-last-child(n), bar:nth-last-child(n), target:nth-last-child(n) {
+                 background-color:red; color:red
+             }
+             :nth-last-child(3n of foo, bar, target) {
+                 background-color:green; color:blue
+             }
+             foo.target, bar.target, target.target { color:white }
+             * { background-color:white; color:black }
+             </style>
+             <div id=first><webkit id=w1></webkit><p></p><fast id=f1>x</fast><webkit id=w2>Green</webkit><webkit id=w3>White</webkit></div>
+             <div id=second><foo id=foo1>x</foo><padding></padding><bar id=bar1>x</bar>
+             <more-padding></more-padding><target id=target class=target>Target</target>
+             <more-padding></more-padding><foo id=foo2>x</foo><padding></padding><bar id=bar2>x</bar></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let style = |id| computed.style_for(find_by_id(&document, id)).unwrap();
+
+        assert_eq!(style("w1").background_color, named_color("lime").unwrap());
+        assert_eq!(style("w2").background_color, named_color("lime").unwrap());
+        assert_eq!(style("w3").background_color, CssColor::WHITE);
+        assert_eq!(style("foo1").background_color, CssColor::RED);
+        assert_eq!(style("bar1").background_color, CssColor::RED);
+        assert_eq!(style("target").background_color, CssColor::GREEN);
+        assert_eq!(style("target").color, CssColor::WHITE);
+        assert_eq!(style("foo2").background_color, CssColor::RED);
+        assert_eq!(style("bar2").background_color, CssColor::RED);
+    }
+
+    #[test]
     fn typed_structural_matching_ignores_other_element_types_and_text() {
         let document = parse_document(
             "<style>span:first-of-type { color:red } span:last-of-type { background:blue }

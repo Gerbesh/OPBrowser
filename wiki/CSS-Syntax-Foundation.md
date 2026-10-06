@@ -258,8 +258,11 @@ ordinary style property names; Engine tests verify inherited/initial paint and r
 
 `:is()`/`:where()` discard invalid/unsupported/pseudo-element branches individually. Empty
 or all-invalid argument lists are valid and match nothing; discarded branches contribute no
-specificity. `:not()`, nth `of` filters and ordinary top-level lists remain strict. Nested
-functional selectors are bounded to 64 levels before recursive parsing/matching.
+specificity. `:not()`, nth `of` filters and ordinary top-level lists remain strict. `:has()` now
+accepts strict relative selectors beginning with an implicit descendant relation or explicit
+`>`/`+`/`~`, walks forward from the anchor, and uses the maximum argument specificity. Nested
+`:has()` and pseudo-elements inside `:has()` are rejected. Nested functional selectors are bounded
+to 64 levels before recursive parsing/matching.
 
 `:nth-child(An+B of selector-list)` and `:nth-last-child(...)` filter inclusive element
 siblings using the ordinary complex-selector matcher, count each element once even if several
@@ -268,12 +271,15 @@ the maximum filter specificity, independent of the matching branch. An+B parsing
 n-dimension and n-ident token grammar, preserving sign/whitespace rules rather than joining
 arbitrary tokens. Coefficients are bounded to i32 and arithmetic uses i64.
 Reference: [Selectors 4](https://www.w3.org/TR/selectors-4/#the-nth-child-pseudo) and
-[CSS An+B syntax](https://www.w3.org/TR/css-syntax-3/#anb-microsyntax).
+[CSS An+B syntax](https://www.w3.org/TR/css-syntax-3/#anb-microsyntax). Empty-namespace attribute
+syntax `[|name]` is accepted for ordinary HTML attributes while whitespace between `|` and the name
+remains invalid.
 
-Empty generated inline strings and empty DOM inline elements with their own padding/border/
-background now produce real decoration geometry through an EmptyInline formatter item.
-They reserve horizontal edges, participate in wrapping/nowrap/alignment and expand safe line
-extents using font/vertical-edge metrics, while emitting no fabricated text or link spans.
+Empty generated inline strings and empty DOM inline elements with padding or borders produce real
+decoration geometry through an EmptyInline formatter item. They reserve horizontal edges,
+participate in wrapping/nowrap/alignment and expand safe line extents using font/vertical-edge
+metrics while emitting no fabricated text or link spans. A background by itself on zero content
+has zero fragment geometry and therefore neither creates a line nor interrupts collapsible spaces.
 
 Typed first/last/only-of-type pseudo-classes filter inclusive element siblings by the
 candidate's HTML tag name. nth-of-type/nth-last-of-type reuse the same token-aware An+B

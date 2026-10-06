@@ -1,7 +1,7 @@
 use crate::{
     AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, CssError, Declaration,
-    NthExpression, NthSelector, ParseResult, PseudoClass, PseudoElement, Selector, SimpleSelector,
-    Specificity, StyleRule, Stylesheet, Token, TokenKind, tokenize,
+    NthExpression, NthSelector, ParseResult, PseudoClass, PseudoElement, RelativeSelector,
+    Selector, SimpleSelector, Specificity, StyleRule, Stylesheet, Token, TokenKind, tokenize,
 };
 
 pub fn parse_stylesheet(input: &str) -> ParseResult<Stylesheet> {
@@ -570,13 +570,30 @@ fn parse_attribute_selector(
 ) -> Result<(SimpleSelector, usize), CssError> {
     let mut index = start + 1;
     skip_selector_whitespace(tokens, &mut index);
-    let Some(name_token) = tokens.get(index) else {
+    let Some(mut name_token) = tokens.get(index) else {
         return Err(selector_error(
             tokens,
             start,
             "unterminated attribute selector",
         ));
     };
+    if matches!(name_token.kind, TokenKind::Delim('|')) {
+        let Some(next) = tokens.get(index + 1) else {
+            return Err(selector_error(
+                tokens,
+                start,
+                "empty-namespace attribute selector requires an attribute name",
+            ));
+        };
+        if !matches!(next.kind, TokenKind::Ident(_)) {
+            return Err(CssError {
+                offset: next.start,
+                message: "whitespace is not allowed between '|' and an attribute name".into(),
+            });
+        }
+        index += 1;
+        name_token = next;
+    }
     let TokenKind::Ident(name) = &name_token.kind else {
         return Err(CssError {
             offset: name_token.start,
@@ -797,6 +814,10 @@ fn parse_functional_pseudo(
             tokens[function_index].start,
             false,
         )?),
+        "has" => SimpleSelector::Has(parse_relative_selector_list(
+            arguments,
+            tokens[function_index].start,
+        )?),
         "lang" => SimpleSelector::Lang(parse_lang_ranges(arguments, tokens[function_index].start)?),
         "dir" => SimpleSelector::Dir(parse_dir_value(arguments, tokens[function_index].start)?),
         "nth-child" | "nth-last-child" => SimpleSelector::NthChild(parse_nth_selector(
@@ -872,6 +893,103 @@ fn parse_dir_value(tokens: &[Token], offset: usize) -> Result<String, CssError> 
         });
     };
     Ok(value.clone())
+}
+
+fn parse_relative_selector_list(
+    tokens: &[Token],
+    offset: usize,
+) -> Result<Vec<RelativeSelector>, CssError> {
+    let mut selectors = Vec::new();
+    let mut start = 0usize;
+    let mut parens = 0u32;
+    let mut squares = 0u32;
+
+    for index in 0..=tokens.len() {
+        let at_separator = if index == tokens.len() {
+            true
+        } else {
+            match tokens[index].kind {
+                TokenKind::Function(_) | TokenKind::OpenParen => {
+                    parens += 1;
+                    false
+                }
+                TokenKind::CloseParen => {
+                    parens = parens.saturating_sub(1);
+                    false
+                }
+                TokenKind::OpenSquare => {
+                    squares += 1;
+                    false
+                }
+                TokenKind::CloseSquare => {
+                    squares = squares.saturating_sub(1);
+                    false
+                }
+                TokenKind::Comma if parens == 0 && squares == 0 => true,
+                _ => false,
+            }
+        };
+        if !at_separator {
+            continue;
+        }
+
+        let group = trim_whitespace(&tokens[start..index]);
+        if group.is_empty() {
+            return Err(CssError {
+                offset,
+                message: ":has() relative selector list cannot contain an empty selector".into(),
+            });
+        }
+
+        let (leading_combinator, selector_start) = match group.first().map(|token| &token.kind) {
+            Some(TokenKind::Delim('>')) => (Combinator::Child, 1),
+            Some(TokenKind::Delim('+')) => (Combinator::AdjacentSibling, 1),
+            Some(TokenKind::Delim('~')) => (Combinator::GeneralSibling, 1),
+            _ => (Combinator::Descendant, 0),
+        };
+        let selector_tokens = trim_whitespace(&group[selector_start..]);
+        if selector_tokens.is_empty() {
+            return Err(CssError {
+                offset,
+                message: ":has() relative selector is missing a selector after its combinator"
+                    .into(),
+            });
+        }
+
+        let selector = parse_selector(selector_tokens)?;
+        if selector.pseudo_element.is_some() {
+            return Err(CssError {
+                offset,
+                message: "pseudo-elements are not allowed inside :has()".into(),
+            });
+        }
+        if selector_contains_has(&selector) {
+            return Err(CssError {
+                offset,
+                message: ":has() cannot be nested inside :has()".into(),
+            });
+        }
+        selectors.push(RelativeSelector {
+            leading_combinator,
+            selector,
+        });
+        start = index + 1;
+    }
+
+    Ok(selectors)
+}
+
+fn selector_contains_has(selector: &Selector) -> bool {
+    selector.compounds.iter().any(|compound| {
+        compound.simple.iter().any(|simple| match simple {
+            SimpleSelector::Has(_) => true,
+            SimpleSelector::Is(selectors)
+            | SimpleSelector::Where(selectors)
+            | SimpleSelector::Not(selectors) => selectors.iter().any(selector_contains_has),
+            SimpleSelector::NthChild(nth) => nth.of.iter().any(selector_contains_has),
+            _ => false,
+        })
+    })
 }
 
 fn parse_function_selector_list(
@@ -1290,6 +1408,53 @@ mod tests {
                 same_type: false
             })
         );
+    }
+
+    #[test]
+    fn parses_has_relative_selectors_and_rejects_nested_or_pseudo_elements() {
+        let parsed = parse_stylesheet(
+            "article:has(.descendant, > .child, + aside.notice, ~ #later) { color:red }",
+        );
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let selector = &parsed.value.rules[0].selectors[0];
+        assert_eq!(
+            selector.specificity,
+            Specificity {
+                ids: 1,
+                classes: 0,
+                types: 1,
+            }
+        );
+        let Some(SimpleSelector::Has(relatives)) = selector.compounds[0].simple.last() else {
+            panic!("expected :has()");
+        };
+        assert_eq!(relatives.len(), 4);
+        assert_eq!(relatives[0].leading_combinator, Combinator::Descendant);
+        assert_eq!(relatives[1].leading_combinator, Combinator::Child);
+        assert_eq!(relatives[2].leading_combinator, Combinator::AdjacentSibling);
+        assert_eq!(relatives[3].leading_combinator, Combinator::GeneralSibling);
+
+        for invalid in [
+            "div:has(span:has(em))",
+            "div:has(::before)",
+            "div:has(> )",
+            "div:has(.ok,)",
+        ] {
+            let parsed = parse_stylesheet(&format!("{invalid} {{ color:red }}"));
+            assert!(parsed.value.rules.is_empty(), "{invalid}");
+            assert_eq!(parsed.errors.len(), 1, "{invalid}");
+        }
+    }
+
+    #[test]
+    fn empty_namespace_attribute_syntax_preserves_whitespace_rules() {
+        let valid = parse_stylesheet("[ |data-test] { color:green }");
+        assert!(valid.errors.is_empty(), "{:?}", valid.errors);
+        assert_eq!(valid.value.rules.len(), 1);
+
+        let invalid = parse_stylesheet("[ | data-test] { color:red }");
+        assert!(invalid.value.rules.is_empty());
+        assert_eq!(invalid.errors.len(), 1);
     }
 
     #[test]

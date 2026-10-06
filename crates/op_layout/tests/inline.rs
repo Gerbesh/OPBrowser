@@ -354,6 +354,68 @@ fn unavailable_inline_replacements_wrap_atomically_and_obey_nowrap() {
 }
 
 #[test]
+fn background_only_empty_inlines_have_zero_geometry_and_do_not_split_spaces() {
+    let page = layout(
+        "<p>A <span style='background:red'></span> B</p><p><span style='background:blue'></span>Tail</p>",
+        300,
+        &mut Fixed,
+    );
+    assert!(page.box_decorations.is_empty());
+    assert_eq!(
+        page.text_boxes
+            .iter()
+            .map(|text| text.text.as_str())
+            .collect::<String>(),
+        "A BTail"
+    );
+
+    let reference = layout("<p>A B</p><p>Tail</p>", 300, &mut Fixed);
+    assert_eq!(page.text_boxes.len(), reference.text_boxes.len());
+    for (actual, expected) in page.text_boxes.iter().zip(&reference.text_boxes) {
+        assert_eq!(
+            (
+                actual.x,
+                actual.y,
+                actual.width,
+                actual.height,
+                actual.text.as_str()
+            ),
+            (
+                expected.x,
+                expected.y,
+                expected.width,
+                expected.height,
+                expected.text.as_str()
+            )
+        );
+    }
+}
+
+#[test]
+fn background_only_empty_generated_inline_has_zero_geometry() {
+    let page = layout(
+        "<style>#host::before { content:''; background:red }</style><p id=host>Body</p>",
+        300,
+        &mut Fixed,
+    );
+    let reference = layout("<p>Body</p>", 300, &mut Fixed);
+    assert!(page.box_decorations.is_empty());
+    assert_eq!(page.text_boxes.len(), reference.text_boxes.len());
+    assert_eq!(
+        (
+            page.text_boxes[0].x,
+            page.text_boxes[0].y,
+            page.text_boxes[0].text.as_str()
+        ),
+        (
+            reference.text_boxes[0].x,
+            reference.text_boxes[0].y,
+            reference.text_boxes[0].text.as_str()
+        )
+    );
+}
+
+#[test]
 fn visually_empty_inline_descendants_keep_own_frames_without_fake_text() {
     for descendants in [
         "<em style='display:none'>hidden</em>",
