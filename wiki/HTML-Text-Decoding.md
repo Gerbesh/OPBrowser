@@ -120,7 +120,18 @@ ASCII case-insensitive matching. Missing doctypes, force-quirks tokens, wrong na
 legacy quirks identifiers select quirks; XHTML 1.0 transitional/frameset and HTML 4.01
 transitional/frameset with a non-empty system identifier select limited-quirks. Leading
 ASCII whitespace in the initial insertion phase is ignored while comments remain DOM
-nodes. Unknown <! declarations and CDATA-like declarations in the current HTML-only
-context become Comment nodes and remain non-rendering. Raw-text/RCDATA and attributes
-still keep declaration markers literal. Processing instructions, foreign-content/CDATA
-and the CSS/layout behavior differences between document modes remain later work.
+nodes.
+
+Tree construction now uses explicit initial, before-html, before-head, in-head, after-head,
+text and in-body insertion modes. Missing html/head/body elements are synthesized in their
+standard locations; comments are inserted according to the active mode; title/style/script/
+noframes content uses a dedicated text mode and returns to its previous insertion mode;
+permitted metadata tokens encountered after head are inserted back under the stored head
+element. Repeated html/body start tags merge only previously missing attributes, and the
+self-closing slash is ignored for ordinary non-void HTML elements rather than incorrectly
+closing them. Remaining table/template/frameset/after-body modes are still future work.
+
+Unknown <! declarations and CDATA-like declarations in the current HTML-only context become
+Comment nodes and remain non-rendering. Raw-text/RCDATA and attributes still keep declaration
+markers literal. Processing instructions, foreign-content/CDATA and the CSS/layout behavior
+differences between document modes remain later work.

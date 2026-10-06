@@ -156,6 +156,13 @@ impl Document {
         }
     }
 
+    pub fn element_mut(&mut self, id: NodeId) -> Option<&mut ElementData> {
+        match &mut self.nodes.get_mut(id.index())?.kind {
+            NodeKind::Element(element) => Some(element),
+            _ => None,
+        }
+    }
+
     pub fn document_type(&self, id: NodeId) -> Option<&DocumentTypeData> {
         match &self.node(id)?.kind {
             NodeKind::DocumentType(data) => Some(data),

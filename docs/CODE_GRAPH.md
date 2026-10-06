@@ -538,7 +538,11 @@ classDiagram
   doctype to a DOM DocumentType node and ignores later/in-element doctypes. Its private
   document_mode module applies the WHATWG compatibility matrix and stores NoQuirks,
   LimitedQuirks or Quirks on op_dom::Document; missing/late doctypes select Quirks.
-  Foreign-content/CDATA context remains later work.
+  TreeBuilder now owns initial, before-html, before-head, in-head, after-head, text and
+  in-body insertion modes, automatically creates missing html/head/body elements, routes
+  metadata/text-only head tokens back to the head pointer, merges duplicate html/body
+  attributes and ignores the self-closing flag for ordinary non-void HTML elements.
+  Foreign-content/CDATA and the remaining insertion modes remain later work.
   Its private
   references module consumes the full named-reference table and numeric references
   before text/attribute tokens enter the DOM. Characters carries one or two Unicode
@@ -549,9 +553,9 @@ classDiagram
   WHATWG data/entities.tsv; no new crate or runtime/build dependency is involved.
   Initial raw-text/RCDATA context keeps
   references and markup from being incorrectly parsed inside script/style/title.
-- op_dom owns document/node storage, element attributes, Comment nodes,
-  DocumentTypeData (name/public/system/force-quirks), DocumentMode
-  (NoQuirks/LimitedQuirks/Quirks), and DOM parent/child invariants.
+- op_dom owns document/node storage, mutable element attributes used by tree-construction
+  merge rules, Comment nodes, DocumentTypeData (name/public/system/force-quirks),
+  DocumentMode (NoQuirks/LimitedQuirks/Quirks), and DOM parent/child invariants.
 - op_layout owns text-flow and block-box used-value geometry, structural-container traversal
   and UTF-8 LinkSpan ranges preserved across whitespace normalization and line wrapping.
   It resolves percent/auto/min/max/content-vs-border-box widths, independent border sides,

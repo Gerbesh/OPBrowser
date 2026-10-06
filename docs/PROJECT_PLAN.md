@@ -53,8 +53,11 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
   text at their real position while CSS/layout keep them non-rendering and :empty-neutral.
 - DONE WHATWG doctype-driven DocumentMode selection for no-quirks, limited-quirks and
   quirks, including the complete legacy public/system identifier compatibility matrix.
+- DONE first real tree-construction insertion-mode slice: initial/before-html/before-head/
+  in-head/after-head/text/in-body, implicit html/head/body creation, head-token routing,
+  duplicate html/body attribute merging and HTML non-void self-closing recovery.
 - LATER mode-specific legacy CSS/layout quirks, processing instructions, foreign
-  content/CDATA and complete HTML insertion modes/script-data escape states.
+  content/CDATA, remaining insertion modes and complete script-data escape states.
 - DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
 - DONE initial HTML tree builder from tokenizer output into op_dom::Document.
 - DONE initial document-to-layout pipeline with basic text flow and wrapping.

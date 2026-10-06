@@ -1186,3 +1186,23 @@ This file is append-only project history.
   behavior remains explicit future work rather than silently changing rendering now.
 - Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace
   test suite, native startup smoke and optimized workspace release build.
+
+## 2026-10-06 - HTML structural insertion modes
+
+- Replaced the previous generic tree-builder pass with explicit Initial, BeforeHtml,
+  BeforeHead, InHead, AfterHead, Text and InBody modes, following the first structural
+  portion of WHATWG tree construction instead of treating HTML like permissive XML.
+- Missing html/head/body elements are now synthesized and explicit elements retain their
+  attributes. Duplicate html/body start tags merge only attributes not already present,
+  using a new mutable element accessor in op_dom.
+- Head processing now keeps base/link/meta and raw/RCDATA title/style/script/noframes
+  content in the head, including permitted head-only tokens encountered after </head>.
+  The dedicated Text mode fixes non-whitespace raw text previously escaping into body.
+- Ordinary non-void HTML elements no longer close just because their start tag carries a
+  self-closing slash; void elements still remain non-pushing.
+- Updated tree-builder tests for the normalized html/head/body structure and added coverage
+  for omitted structural tags, insertion-mode comment placement, misplaced head metadata,
+  duplicate attribute merging and non-void self-closing recovery.
+- The remaining table/template/frameset/after-body insertion modes, active formatting
+  elements/adoption agency, foster parenting, foreign content and script escape states
+  remain explicit follow-up work.
