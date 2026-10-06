@@ -340,7 +340,7 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> block replaced-image geometry/nested-inline stacks
+  -> nested-inline stacks/unavailable replaced-image boxes
   -> broader custom-property grammar/registration/animation-taint semantics
   -> nested/generated replaced inline decoration stacks
   -> additional computed properties
@@ -382,8 +382,8 @@ content strings / URL tokens / quoted url() / var() / quotes / counters
 
 Invalid/unavailable generated URLs add no inline image while surrounding text remains.
 Hidden subtrees/pseudos do not request resources. Ordinary and generated URLs share the
-32-candidate, 8-request, 8 MiB encoded and 32 MiB decoded budgets/cache. Block replaced
-geometry, gradients/image modifiers and alternative-text syntax remain future work.
+32-candidate, 8-request, 8 MiB encoded and 32 MiB decoded budgets/cache. Unavailable replacement
+box geometry, gradients/image modifiers and alternative-text syntax remain future work.
 The native generated image/link fixture is examples/css/generated-images.html.
 
 DOM img items carry InlineStyle with their own InlineBoxStyle. Padding/solid borders reserve
@@ -415,8 +415,14 @@ ComputedPseudoStyle.replaced_image records exactly one parsed URL before empty t
 materialization. Sole-URL inline pseudos use the DOM image resolve_image_size path for CSS
 dimensions, box-sizing, ratio constraints and fitting; their own pseudo InlineBoxStyle adds
 padding/background/borders and atomic baseline/wrapping geometry. Mixed content images remain
-anonymous intrinsic items, even when adjacent text happens to resolve empty. Block replaced
-geometry, unavailable replaced image boxes and nested decorated stacks remain later work.
+anonymous intrinsic items, even when adjacent text happens to resolve empty. Unavailable
+replaced image boxes and nested decorated stacks remain later work.
+
+Block DOM/sole-URL images use Context::block_image: intrinsic/CSS dimensions and exact
+border-box bounds, auto horizontal margins and adjacent vertical-margin collapse. Percentage
+widths use containing width while viewport fitting reserves specified horizontal margins.
+The raster starts after padding/border, box height advances following flow directly without
+anonymous text-line leading, and anchor href/order/Arc pixels survive paint and reflow.
 
 ## S4 - Scripted page
 

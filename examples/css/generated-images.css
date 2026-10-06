@@ -2,5 +2,5 @@ body { color:#123456; }
 .decorated-image { width:68px; height:48px; box-sizing:border-box; padding:4px 8px; background:#fef3c7; border:2px solid #b45309; }
 .image-link::before { content:url(../images/colors.png); width:40px; height:32px; padding:4px; background:#eef2ff; border:2px solid #4338ca; }
 .mixed-images::before { --icon:url(../images/colors.png); content:"[before " var(--icon) " after] "; color:#087a35; }
-.block-image::after { content:url("../images/colors.png"); display:block; margin:8px 0; padding:6px; background:#eef2ff; border:1px solid #4338ca; }
+.block-image::after { content:url("../images/colors.png"); display:block; width:80px; height:40px; margin:8px auto; padding:6px; background:#eef2ff; border:1px solid #4338ca; }
 .failed-image::before { content:"[kept " url(missing.png) " text] "; color:#b42318; }

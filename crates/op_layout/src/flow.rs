@@ -342,6 +342,16 @@ impl<'a> Context<'a, '_> {
                 if tag == "img" {
                     if display == Display::Block {
                         self.emit(items, inherited, containing_x, containing_width);
+                        if let Some(image) = self.images.get(&id).cloned() {
+                            self.block_image(
+                                (id, None),
+                                href,
+                                current,
+                                &image,
+                                (containing_x, containing_width),
+                            );
+                            return;
+                        }
                         let mut image_items = Vec::new();
                         self.collect_image(
                             id,
@@ -442,6 +452,14 @@ impl<'a> Context<'a, '_> {
         }
 
         let mut style = computed_style(generated.style);
+        if generated.replaced_image
+            && generated.style.display == Display::Block
+            && let Some(image) = self.generated_images.get(&(id, pseudo, 0)).cloned()
+        {
+            self.emit(items, host_style, containing_x, containing_width);
+            self.block_image((id, Some(pseudo)), href, style, &image, containing);
+            return;
+        }
         if generated.style.display == Display::Block {
             self.emit(items, host_style, containing_x, containing_width);
             self.block(
@@ -507,6 +525,7 @@ impl<'a> Context<'a, '_> {
                             image,
                             image_style.box_style,
                             containing_width,
+                            containing_width,
                         ) else {
                             continue;
                         };
@@ -539,9 +558,13 @@ impl<'a> Context<'a, '_> {
         if let Some(image) = self.images.get(&id) {
             let mut image_style = style.inline;
             image_style.box_style = resolve_inline_box_style(id, None, style, available_width);
-            let Some((width, height)) =
-                resolve_image_size(style, image, image_style.box_style, available_width)
-            else {
+            let Some((width, height)) = resolve_image_size(
+                style,
+                image,
+                image_style.box_style,
+                available_width,
+                available_width,
+            ) else {
                 return;
             };
             items.push(Item::Image(
@@ -578,6 +601,69 @@ impl<'a> Context<'a, '_> {
         }
     }
 
+    fn block_image(
+        &mut self,
+        target: (NodeId, Option<PseudoElement>),
+        href: Option<&str>,
+        style: Style,
+        image: &Arc<RasterImage>,
+        containing: (i32, i32),
+    ) {
+        let (containing_x, containing_width) = containing;
+        let box_style = resolve_inline_box_style(target.0, target.1, style, containing_width);
+        let left = box_style.map_or(0, InlineBoxStyle::left_extra);
+        let right = box_style.map_or(0, InlineBoxStyle::right_extra);
+        let top = box_style.map_or(0, InlineBoxStyle::top_extra);
+        let bottom = box_style.map_or(0, InlineBoxStyle::bottom_extra);
+        let margin_left = resolve_margin(style.margin.left, containing_width);
+        let margin_right = resolve_margin(style.margin.right, containing_width);
+        let fit_width = containing_width
+            .saturating_sub(margin_left.unwrap_or(0))
+            .saturating_sub(margin_right.unwrap_or(0));
+        let Some((width, height)) =
+            resolve_image_size(style, image, box_style, containing_width, fit_width)
+        else {
+            return;
+        };
+        let outer_width = width.saturating_add(left).saturating_add(right);
+        let outer_height = height.saturating_add(top).saturating_add(bottom);
+        let remaining = containing_width.saturating_sub(outer_width);
+        let used_left = match (margin_left, margin_right) {
+            (None, None) => remaining.max(0) / 2,
+            (None, Some(right)) => remaining.saturating_sub(right).max(0),
+            (Some(left), _) => left,
+        };
+        self.apply_collapsed_margin(resolve_vertical_margin(style.margin.top, containing_width));
+        let x = containing_x.saturating_add(used_left);
+        if let Some(box_style) = box_style {
+            self.decorations.push(BoxDecoration {
+                x,
+                y: self.y,
+                width: outer_width,
+                height: outer_height,
+                background: box_style.background,
+                border_top: box_style.border_top,
+                border_right: box_style.border_right,
+                border_bottom: box_style.border_bottom,
+                border_left: box_style.border_left,
+            });
+        }
+        self.order.push(LayoutItem::Image(self.images_out.len()));
+        self.images_out.push(ImageBox {
+            x: x.saturating_add(left),
+            y: self.y.saturating_add(top),
+            width,
+            height,
+            image: image.clone(),
+            href: href.map(str::to_owned),
+        });
+        self.y = self.y.saturating_add(outer_height);
+        self.pending_margin = Some(resolve_vertical_margin(
+            style.margin.bottom,
+            containing_width,
+        ));
+    }
+
     fn element_display(&self, id: NodeId, tag: &str) -> Display {
         self.computed_styles
             .style_for(id)
@@ -598,6 +684,7 @@ fn resolve_image_size(
     image: &RasterImage,
     box_style: Option<InlineBoxStyle>,
     available_width: i32,
+    fit_width: i32,
 ) -> Option<(i32, i32)> {
     let horizontal_extras = box_style.map_or(0, |value| {
         value.left_extra().saturating_add(value.right_extra())
@@ -633,7 +720,7 @@ fn resolve_image_size(
         return None;
     }
     let (mut width, mut height) = (width as u32, height as u32);
-    let available_width = available_width.saturating_sub(horizontal_extras).max(1) as u32;
+    let available_width = fit_width.saturating_sub(horizontal_extras).max(1) as u32;
     if width > available_width {
         height = (u64::from(height) * u64::from(available_width) / u64::from(width)).max(1) as u32;
         width = available_width;

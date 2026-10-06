@@ -986,3 +986,19 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 220 workspace tests,
   startup smoke, CSS-sized generated image smoke (30 commands), native image-only link
   navigation and optimized workspace release build.
+
+## 2026-10-06 - Shared replaced block image geometry
+
+- Added Context::block_image for DOM img and sole-URL generated block replacements.
+  Auto width follows intrinsic raster size; CSS dimensions/min/max/box-sizing share sizing.
+- Horizontal auto margins position the exact image border box. Percentage widths retain
+  containing width as their basis while available-width fitting reserves specified margins.
+- Padding/borders/background use exact block bounds; following flow advances by border-box
+  height without anonymous text-line leading. Adjacent vertical margins use existing collapse.
+- Added exact intrinsic/percentage/border-box/auto-margin/baseline-free block coordinates and
+  generated block/link tests. Updated Engine paint/reflow coverage and the centered CSS fixture.
+- Updated README, plan, graph/slices and image/inline wiki. Missing DOM block images retain
+  alt-line fallback; unavailable replacement boxes and nested decorated stacks remain later.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 222 workspace tests,
+  startup smoke, centered/decorated generated image smoke (30 commands), native image-only
+  link navigation and optimized workspace release build.

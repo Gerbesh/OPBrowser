@@ -30,6 +30,16 @@ fn sole_generated_image_css_geometry_reaches_paint_and_native_link_identity() {
     assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::Image { width:40, height:32, href:Some(href), .. } if href == "../navigation/destination.html")));
     assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { width:52, height:44, color, .. } if *color == op_paint::Color { r:238, g:242, b:255 })));
     engine.reflow(240, 600).unwrap();
+    assert!(original.commands.iter().any(|command| matches!(
+        command,
+        PaintCommand::Image {
+            width: 80,
+            height: 40,
+            href: None,
+            ..
+        }
+    )));
+    assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { width:94, height:54, color, .. } if *color == op_paint::Color { r:238, g:242, b:255 })));
     assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
 }
 

@@ -525,6 +525,9 @@ classDiagram
   flow::resolve_image_size shares this path between DOM img and sole-URL inline pseudos;
   mixed generated lists retain anonymous intrinsic image items. Pseudo image box identity
   preserves host/pseudo separation and does not duplicate inherited decorated ancestors.
+  Context::block_image shares DOM/sole-URL block used sizes, separate percentage basis/fit
+  width, auto margins, exact decoration bounds and collapsed vertical-margin flow without
+  introducing anonymous text-line leading around a replaced block.
 - op_paint owns platform-neutral paint commands/display lists, CSS color conversion and
   BoxDecoration -> FillRect expansion for backgrounds/four border sides. Computed UA link
   color/underline defaults and author overrides use ordinary text commands; LinkSpan carries

@@ -234,6 +234,102 @@ mod tests {
     use super::*;
 
     #[test]
+    fn block_dom_images_use_intrinsic_width_auto_margins_and_collapsed_vertical_margins() {
+        let document = op_html::parse_document(
+            "<style>p { width:200px } img { display:block; padding:4px; border:2px solid red; background:blue } #first { margin:0 auto 20px } #second { width:50%; height:40px; box-sizing:border-box; margin:12px 10px 5px auto }</style><p><a href=next.html><img id=first></a><img id=second>Tail</p>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let image = Arc::new(
+            RasterImage::from_premultiplied_bgra(100, 50, vec![255; 100 * 50 * 4]).unwrap(),
+        );
+        let mut images = ImageResources::new();
+        let mut nodes = vec![document.root()];
+        while let Some(node) = nodes.pop() {
+            if document
+                .element(node)
+                .is_some_and(|element| element.tag_name == "img")
+            {
+                images.insert(node, image.clone());
+            }
+            nodes.extend(document.children(node));
+        }
+        let page = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &images,
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        assert_eq!(page.image_boxes.len(), 2);
+        let boxes = page
+            .box_decorations
+            .iter()
+            .filter(|decoration| decoration.border_left.width == 2)
+            .collect::<Vec<_>>();
+        assert_eq!((boxes[0].width, boxes[0].height), (112, 62));
+        assert_eq!((boxes[0].x, boxes[0].y), (76, 28));
+        assert_eq!((page.image_boxes[0].x, page.image_boxes[0].y), (82, 34));
+        assert_eq!(page.image_boxes[0].href.as_deref(), Some("next.html"));
+        assert_eq!((boxes[1].width, boxes[1].height), (100, 40));
+        assert_eq!(boxes[1].x, 122);
+        assert_eq!(boxes[1].y, boxes[0].y + boxes[0].height + 20);
+        assert_eq!(
+            (page.image_boxes[1].width, page.image_boxes[1].height),
+            (88, 28)
+        );
+        assert!(page.text_boxes[0].y >= boxes[1].y + boxes[1].height + 5);
+    }
+
+    #[test]
+    fn generated_block_image_replacements_share_size_margin_and_decoration_geometry() {
+        let document = op_html::parse_document(
+            "<style>p { width:200px } a::before { display:block; content:url(icon.png); width:100px; height:40px; box-sizing:border-box; padding:4px; border:2px solid red; background:blue; margin:8px auto 12px }</style><p><a href=next.html>Body</a></p>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let image = Arc::new(
+            RasterImage::from_premultiplied_bgra(100, 50, vec![255; 100 * 50 * 4]).unwrap(),
+        );
+        let mut generated = GeneratedImageResources::new();
+        let mut nodes = vec![document.root()];
+        while let Some(node) = nodes.pop() {
+            if computed
+                .pseudo_style_for(node, op_css::PseudoElement::Before)
+                .is_some()
+            {
+                generated.insert((node, op_css::PseudoElement::Before, 0), image.clone());
+            }
+            nodes.extend(document.children(node));
+        }
+        let page = layout_document_with_resources_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &generated,
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let image = &page.image_boxes[0];
+        assert_eq!((image.width, image.height), (88, 28));
+        let decoration = page
+            .box_decorations
+            .iter()
+            .find(|decoration| decoration.border_left.width == 2)
+            .unwrap();
+        assert_eq!(
+            (
+                decoration.x,
+                decoration.y,
+                decoration.width,
+                decoration.height
+            ),
+            (82, 36, 100, 40)
+        );
+        assert_eq!((image.x, image.y), (88, 42));
+        assert_eq!(image.href.as_deref(), Some("next.html"));
+        assert!(page.text_boxes[0].y >= 88);
+    }
+
+    #[test]
     fn sole_inline_generated_images_use_css_sizes_and_own_decorated_boxes() {
         let document = op_html::parse_document(
             "<style>a::before { content:url(icon.png); width:64px; height:44px; box-sizing:border-box; padding:4px; border:2px solid red; background:blue } a::after { content:'' url(icon.png); width:200px; height:100px }</style><p><a href=next.html>Body</a></p>",

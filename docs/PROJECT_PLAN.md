@@ -182,7 +182,9 @@ Status: IN PROGRESS.
   width resolution, HTML size hints before author cascade and intrinsic ratio constraints.
 - DONE sole-URL inline generated image replacement with CSS width/height/min/max/box-sizing,
   own padding/background/borders, intrinsic ratio constraints and retained image link identity.
-- NEXT block replaced-image geometry and nested-inline stacks.
+- DONE shared block DOM/sole-URL replaced-image geometry with intrinsic/CSS width, auto
+  margins, padding/borders, precise box height and adjacent vertical margin collapsing.
+- NEXT nested-inline stacks and unavailable replaced-image box geometry.
 - DONE DOM image padding/background/solid borders as atomic inline boxes, edge-aware
   width fitting, border-box baseline extents, text alignment and nowrap behavior.
 - DONE declaration source-node provenance and retained effective external stylesheet
