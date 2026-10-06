@@ -19,6 +19,31 @@ fn rasters(commands: &[PaintCommand]) -> Vec<&Arc<RasterImage>> {
 }
 
 #[test]
+fn decorated_dom_image_boxes_reach_paint_links_and_retained_reflow() {
+    let src = format!(
+        "data:image/png,{}",
+        percent(include_bytes!("../../../examples/images/colors.png"))
+    );
+    let html = format!(
+        "<style>img {{ padding:4px; border:2px solid red; background:green }}</style><p><a href='next.html'><img src='{src}' width=30 height=20></a>Tail</p>"
+    );
+    let mut engine = Engine::new();
+    let original = engine
+        .navigate(
+            &format!("data:text/html,{}", percent(html.as_bytes())),
+            800,
+            600,
+        )
+        .unwrap()
+        .display_list;
+    assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::Image { width:30, height:20, href:Some(href), .. } if href == "next.html")));
+    assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { width:42, height:32, color, .. } if *color == op_paint::Color { r:0, g:128, b:0 })));
+    assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { width:42, height:2, color, .. } if *color == op_paint::Color { r:255, g:0, b:0 })));
+    engine.reflow(240, 600).unwrap();
+    assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+}
+
+#[test]
 fn generated_urls_use_consumer_stylesheet_bases_and_retained_shared_pixels() {
     struct Fixture(std::path::PathBuf);
     impl Drop for Fixture {

@@ -491,14 +491,19 @@ impl<'a> Context<'a, '_> {
                         let height = (i64::from(image.height()) * i64::from(width)
                             / i64::from(image.width()))
                         .max(1) as i32;
-                        items.push(Item::Image(ImageBox {
-                            x: 0,
-                            y: 0,
-                            width,
-                            height,
-                            image: image.clone(),
-                            href: href.map(str::to_owned),
-                        }));
+                        let mut image_style = style.inline;
+                        image_style.box_style = None;
+                        items.push(Item::Image(
+                            ImageBox {
+                                x: 0,
+                                y: 0,
+                                width,
+                                height,
+                                image: image.clone(),
+                                href: href.map(str::to_owned),
+                            },
+                            image_style,
+                        ));
                     }
                 }
             }
@@ -520,6 +525,13 @@ impl<'a> Context<'a, '_> {
             return;
         }
         if let Some(image) = self.images.get(&id) {
+            let mut image_style = style.inline;
+            image_style.box_style = resolve_inline_box_style(id, None, style, available_width);
+            let extras = image_style.box_style.map_or(0, |box_style| {
+                box_style
+                    .left_extra()
+                    .saturating_add(box_style.right_extra())
+            });
             let mut width = width.unwrap_or_else(|| {
                 height.map_or(image.width(), |h| {
                     (h * image.width() / image.height()).max(1)
@@ -527,7 +539,7 @@ impl<'a> Context<'a, '_> {
             });
             let mut height =
                 height.unwrap_or_else(|| (width * image.height() / image.width()).max(1));
-            let available_width = available_width.max(1) as u32;
+            let available_width = available_width.saturating_sub(extras).max(1) as u32;
             if width > available_width {
                 height = (u64::from(height) * u64::from(available_width) / u64::from(width)).max(1)
                     as u32;
@@ -538,14 +550,17 @@ impl<'a> Context<'a, '_> {
                     .max(1) as u32;
                 height = op_image::MAX_DIMENSION;
             }
-            items.push(Item::Image(ImageBox {
-                x: 0,
-                y: 0,
-                width: width as i32,
-                height: height as i32,
-                image: image.clone(),
-                href: href.map(str::to_owned),
-            }));
+            items.push(Item::Image(
+                ImageBox {
+                    x: 0,
+                    y: 0,
+                    width: width as i32,
+                    height: height as i32,
+                    image: image.clone(),
+                    href: href.map(str::to_owned),
+                },
+                image_style,
+            ));
         } else {
             items.extend(
                 attribute(element, "alt")

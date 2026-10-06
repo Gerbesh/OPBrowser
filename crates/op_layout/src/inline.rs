@@ -20,19 +20,19 @@ pub(super) struct InlineBoxStyle {
 }
 
 impl InlineBoxStyle {
-    fn left_extra(self) -> i32 {
+    pub(super) fn left_extra(self) -> i32 {
         self.border_left.width.saturating_add(self.padding_left)
     }
 
-    fn right_extra(self) -> i32 {
+    pub(super) fn right_extra(self) -> i32 {
         self.padding_right.saturating_add(self.border_right.width)
     }
 
-    fn top_extra(self) -> i32 {
+    pub(super) fn top_extra(self) -> i32 {
         self.border_top.width.saturating_add(self.padding_top)
     }
 
-    fn bottom_extra(self) -> i32 {
+    pub(super) fn bottom_extra(self) -> i32 {
         self.padding_bottom.saturating_add(self.border_bottom.width)
     }
 }
@@ -62,7 +62,7 @@ pub(super) struct InlineChar<'a> {
 pub(super) enum Item<'a> {
     Char(InlineChar<'a>),
     EmptyInline(InlineStyle),
-    Image(ImageBox),
+    Image(ImageBox, InlineStyle),
     Break,
 }
 
@@ -71,7 +71,7 @@ enum BoxItem<'a> {
         chars: Vec<InlineChar<'a>>,
         width: i32,
     },
-    Image(ImageBox),
+    Image(ImageBox, InlineStyle),
     EmptyInline(InlineStyle),
 }
 
@@ -87,7 +87,7 @@ struct PreparedText {
 
 enum PreparedBox {
     Text(PreparedText),
-    Image(ImageBox),
+    Image(ImageBox, InlineStyle),
 }
 
 pub(super) struct Lines<'a, 'm> {
@@ -169,10 +169,10 @@ impl<'a, 'm> Lines<'a, 'm> {
                         word.push(ch);
                     }
                 }
-                Item::Image(image) => {
+                Item::Image(image, style) => {
                     preserved_cr = false;
                     self.word(std::mem::take(&mut word));
-                    self.image(image);
+                    self.image(image, style);
                 }
                 Item::EmptyInline(style) => {
                     preserved_cr = false;
@@ -357,15 +357,25 @@ impl<'a, 'm> Lines<'a, 'm> {
         }
     }
 
-    fn image(&mut self, image: ImageBox) {
+    fn image(&mut self, image: ImageBox, style: InlineStyle) {
         let space = if self.boxes.is_empty() {
             None
         } else {
             self.pending_space.take()
         };
         self.pending_space = None;
-        let occupied = self.appended_width(&[], space).saturating_add(image.width);
-        if !self.boxes.is_empty() && occupied > self.width {
+        let extras = style.box_style.map_or(0, |box_style| {
+            box_style
+                .left_extra()
+                .saturating_add(box_style.right_extra())
+        });
+        let width = image.width.saturating_add(extras);
+        let occupied = self.appended_width(&[], space).saturating_add(width);
+        let allows_wrap = matches!(
+            style.white_space,
+            WhiteSpace::Normal | WhiteSpace::PreWrap | WhiteSpace::PreLine
+        );
+        if allows_wrap && !self.boxes.is_empty() && occupied > self.width {
             self.flush(false);
         }
         if !self.boxes.is_empty()
@@ -373,8 +383,8 @@ impl<'a, 'm> Lines<'a, 'm> {
         {
             self.append(&[], Some(space));
         }
-        self.line_width = self.line_width.saturating_add(image.width);
-        self.boxes.push(BoxItem::Image(image));
+        self.line_width = self.line_width.saturating_add(width);
+        self.boxes.push(BoxItem::Image(image, style));
     }
 
     fn empty_inline(&mut self, style: InlineStyle) {
@@ -467,7 +477,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         let mut prepared = Vec::new();
         for item in boxes {
             match item {
-                BoxItem::Image(image) => prepared.push(PreparedBox::Image(image)),
+                BoxItem::Image(image, style) => prepared.push(PreparedBox::Image(image, style)),
                 BoxItem::EmptyInline(style) => {
                     prepared.push(PreparedBox::Text(self.prepare_text(&[], style)))
                 }
@@ -492,7 +502,15 @@ impl<'a, 'm> Lines<'a, 'm> {
         let ascent = prepared
             .iter()
             .map(|item| match item {
-                PreparedBox::Image(image) => image.height,
+                PreparedBox::Image(image, style) => {
+                    image
+                        .height
+                        .saturating_add(style.box_style.map_or(0, |box_style| {
+                            box_style
+                                .top_extra()
+                                .saturating_add(box_style.bottom_extra())
+                        }))
+                }
                 PreparedBox::Text(text) => text.ascent,
             })
             .max()
@@ -502,7 +520,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             .iter()
             .filter_map(|item| match item {
                 PreparedBox::Text(text) => Some(text.descent),
-                PreparedBox::Image(_) => None,
+                PreparedBox::Image(_, _) => None,
             })
             .max()
             .unwrap_or(default_descent)
@@ -520,7 +538,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         for item in prepared {
             let next_box = match &item {
                 PreparedBox::Text(text) => text.style.box_style,
-                PreparedBox::Image(_) => None,
+                PreparedBox::Image(_, _) => None,
             };
             if active_fragment.map(|(style, _)| style) != next_box {
                 if let Some((style, start_x)) = active_fragment.take() {
@@ -545,10 +563,31 @@ impl<'a, 'm> Lines<'a, 'm> {
             }
 
             match item {
-                PreparedBox::Image(mut image) => {
+                PreparedBox::Image(mut image, style) => {
+                    if let Some(box_style) = style.box_style {
+                        let left = box_style.left_extra();
+                        let right = box_style.right_extra();
+                        let top = box_style.top_extra();
+                        let bottom = box_style.bottom_extra();
+                        self.decorations.push(BoxDecoration {
+                            x,
+                            y: baseline - bottom - image.height - top,
+                            width: image.width.saturating_add(left).saturating_add(right),
+                            height: image.height.saturating_add(top).saturating_add(bottom),
+                            background: box_style.background,
+                            border_top: box_style.border_top,
+                            border_right: box_style.border_right,
+                            border_bottom: box_style.border_bottom,
+                            border_left: box_style.border_left,
+                        });
+                        x = x.saturating_add(left);
+                    }
                     image.x = x;
-                    image.y = baseline - image.height;
+                    image.y = baseline
+                        - image.height
+                        - style.box_style.map_or(0, InlineBoxStyle::bottom_extra);
                     x += image.width;
+                    x = x.saturating_add(style.box_style.map_or(0, InlineBoxStyle::right_extra));
                     self.order.push(LayoutItem::Image(self.image_boxes.len()));
                     self.image_boxes.push(image);
                 }

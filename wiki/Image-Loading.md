@@ -61,6 +61,9 @@ are used unless supported integer width/height attributes override them. One
 dimension preserves aspect ratio; two dimensions may stretch. Oversized attribute
 values above 4096 are ignored; zero dimensions suppress drawing/fallback. Boxes
 shrink proportionally to fit content width and cap displayed height at 4096.
+DOM img padding/background/solid borders form atomic inline boxes around those content
+dimensions. Width fitting reserves edge space, the border-box bottom aligns to baseline,
+and nowrap keeps image boxes on the current line. Image hit regions cover the raster content.
 Surrounding text retains order; unavailable/blocked/over-budget images use `alt`
 (or `[image]` when alt is absent). An explicitly empty alt remains empty.
 An image failure does not fail document navigation or roll back history.

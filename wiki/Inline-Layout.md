@@ -1,5 +1,12 @@
 # Inline Layout
 
+DOM img elements now carry their own padding/background/solid-border box. The outer width
+participates in atomic wrapping/alignment; raster fitting reserves horizontal edge space.
+The border-box bottom aligns to the text baseline and vertical edges expand safe line ascent.
+Decorations use exact image bounds. nowrap suppresses soft wrapping of image items. Nested
+ancestor box stacks and generated replaced image decoration remain later work; native image
+click regions still cover the painted raster rectangle.
+
 The initial M1 layout places text and raster images on the same measured lines.
 It remains an original OPBrowser algorithm; Windows GDI supplies font metrics only.
 

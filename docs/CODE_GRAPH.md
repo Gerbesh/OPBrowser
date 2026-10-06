@@ -323,6 +323,11 @@ classDiagram
         InlineStyle
         no glyph payload
     }
+    class InlineImage {
+        ImageBox
+        InlineStyle own box edges
+        atomic wrapping / nowrap
+    }
     class BlockContent {
         Element(NodeId)
         Generated(NodeId,PseudoElement)

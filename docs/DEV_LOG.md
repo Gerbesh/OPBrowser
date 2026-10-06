@@ -936,3 +936,19 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 209 workspace tests,
   startup/CSS smoke (225 commands), generated-image smoke (20 commands), native generated
   image-only link navigation and optimized workspace release build.
+
+## 2026-10-06 - Decorated DOM image inline boxes
+
+- Image formatter items retain InlineStyle and their own DOM image InlineBoxStyle.
+  Padding/solid border edges participate in atomic wrapping, text alignment and width fitting.
+- Image border-box bottoms align to the text baseline; vertical edges expand safe line ascent.
+  Precise background/border BoxDecorations paint before the raster with matching offsets.
+- Image items now honor nowrap/pre soft-wrap suppression instead of always wrapping.
+  Generated anonymous images retain intrinsic geometry without duplicating pseudo/ancestor boxes.
+- Added exact edge/baseline/order/wrap/nowrap/fit regressions and an Engine paint/link/reflow
+  test. Added a decorated image to the CSS fixture and updated plan, graph/slices, README/wiki.
+- Native image click regions still cover raster pixels; generated replaced sizing/decorations,
+  nested ancestor box stacks and CSS image dimensions remain next steps.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 212 workspace tests,
+  startup smoke, decorated/generated image smoke (25 commands), native image-link navigation
+  and optimized workspace release build.

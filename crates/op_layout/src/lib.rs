@@ -233,6 +233,109 @@ mod tests {
     use super::*;
 
     #[test]
+    fn image_padding_borders_and_background_form_atomic_inline_boxes() {
+        let document = op_html::parse_document(
+            "<style>p { width:176px } img { padding:3px 5px; border:2px solid red; background:blue }</style><p>X<a href='next.html'><img width=100 height=50></a><img width=100 height=50>Y</p>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let mut images = ImageResources::new();
+        let image = Arc::new(RasterImage::from_premultiplied_bgra(2, 2, vec![255; 16]).unwrap());
+        let mut nodes = vec![document.root()];
+        while let Some(node) = nodes.pop() {
+            if document
+                .element(node)
+                .is_some_and(|element| element.tag_name == "img")
+            {
+                images.insert(node, image.clone());
+            }
+            nodes.extend(document.children(node));
+        }
+        let page = layout_document_with_computed_styles_and_metrics(
+            &document,
+            240,
+            &images,
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        assert_eq!(page.image_boxes.len(), 2);
+        let boxes = page
+            .box_decorations
+            .iter()
+            .filter(|decoration| decoration.border_left.width == 2)
+            .collect::<Vec<_>>();
+        assert_eq!(boxes.len(), 2);
+        for (image, decoration) in page.image_boxes.iter().zip(&boxes) {
+            assert_eq!((image.width, image.height), (100, 50));
+            assert_eq!((decoration.width, decoration.height), (114, 60));
+            assert_eq!((image.x, image.y), (decoration.x + 7, decoration.y + 5));
+            assert_eq!(decoration.background, CssColor::BLUE.into());
+            assert_eq!(decoration.border_top.color, CssColor::RED.into());
+        }
+        assert_eq!(page.image_boxes[0].href.as_deref(), Some("next.html"));
+        assert!(boxes[1].y >= boxes[0].y + boxes[0].height);
+        let before = page
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "X")
+            .unwrap();
+        assert_eq!(boxes[0].x, before.x + before.width);
+        let after = page
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "Y")
+            .unwrap();
+        assert_eq!(after.x, boxes[1].x + boxes[1].width);
+    }
+
+    #[test]
+    fn decorated_images_fit_content_width_and_respect_nowrap() {
+        for nowrap in [false, true] {
+            let document = op_html::parse_document(&format!(
+                "<style>p {{ width:176px; white-space:{} }} img {{ padding:4px; border:2px solid red }}</style><p><img width=500 height=250><img width=100 height=50></p>",
+                if nowrap { "nowrap" } else { "normal" }
+            ));
+            let computed =
+                compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+            let mut images = ImageResources::new();
+            let image =
+                Arc::new(RasterImage::from_premultiplied_bgra(2, 2, vec![255; 16]).unwrap());
+            let mut nodes = vec![document.root()];
+            while let Some(node) = nodes.pop() {
+                if document
+                    .element(node)
+                    .is_some_and(|element| element.tag_name == "img")
+                {
+                    images.insert(node, image.clone());
+                }
+                nodes.extend(document.children(node));
+            }
+            let page = layout_document_with_computed_styles_and_metrics(
+                &document,
+                240,
+                &images,
+                &computed,
+                &mut ApproximateTextMeasurer,
+            );
+            assert_eq!(
+                (page.image_boxes[0].width, page.image_boxes[0].height),
+                (164, 82)
+            );
+            let boxes = page
+                .box_decorations
+                .iter()
+                .filter(|decoration| decoration.border_left.width == 2)
+                .collect::<Vec<_>>();
+            assert_eq!(boxes[0].width, 176);
+            if nowrap {
+                assert_eq!(boxes[0].y + boxes[0].height, boxes[1].y + boxes[1].height);
+                assert_eq!(boxes[1].x, boxes[0].x + boxes[0].width);
+            } else {
+                assert!(boxes[1].y >= boxes[0].y + boxes[0].height);
+            }
+        }
+    }
+
+    #[test]
     fn generated_images_share_inline_baselines_order_wrapping_and_block_flow() {
         let document = op_html::parse_document(
             "<style>a::before { content:'Before' url(icon.png) 'After' } p::after { content:url(icon.png); display:block; margin-top:8px }</style><p><a href='next.html'>Body</a></p><p>Tail</p>",

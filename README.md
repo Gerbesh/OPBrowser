@@ -97,6 +97,8 @@ background/padding/solid-border fragments that participate in wrapping and align
 CSS URL tokens preserve unquoted paths/data URLs and escaped characters; quoted url()
 stays a function/string sequence. Generated content can mix text and URL images; the navigation
 worker uses stylesheet-relative bases, shared image budgets/cache and retained resize resources.
+DOM img padding/background/solid borders form atomic decorated boxes with edge-aware
+line fitting and baseline geometry; nowrap suppresses soft image wrapping.
 Author declarations retain their style/link/inline source node; the engine retains effective
 external stylesheet addresses after redirects, preparing correct CSS resource bases.
 `background` also supports the initial color-only shorthand subset. Inherited, case-sensitive
@@ -116,7 +118,7 @@ DOM source order and retained across resize reflow. Parent/child margin collapse
 percentage-height propagation, broader custom-property grammar/registration and
 language-aware automatic quotes, full
 generated replaced-content geometry/CSS image sizing, relational selectors, nested decorated
-inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions,
+inline box stacks/generated replaced inline decorations, advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources
 and JavaScript
 are not implemented yet. Links receive a blue/underlined computed UA default; author CSS

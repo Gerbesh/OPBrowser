@@ -342,7 +342,7 @@ Planned next path:
 Rendering/property expansion
   -> fuller replaced-content/CSS image sizing/nested-inline geometry
   -> broader custom-property grammar/registration/animation-taint semantics
-  -> nested/replaced inline decoration stacks
+  -> nested/generated replaced inline decoration stacks
   -> additional computed properties
 ```
 
@@ -385,6 +385,14 @@ Hidden subtrees/pseudos do not request resources. Ordinary and generated URLs sh
 32-candidate, 8-request, 8 MiB encoded and 32 MiB decoded budgets/cache. Sole-image CSS
 replaced sizing, gradients/image modifiers and alternative-text syntax remain future work.
 The native generated image/link fixture is examples/css/generated-images.html.
+
+DOM img items carry InlineStyle with their own InlineBoxStyle. Padding/solid borders reserve
+horizontal edges before atomic line fitting; width shrinking leaves room for those edges.
+The border-box bottom aligns to the text baseline and full image/vertical edges expand line
+ascent. Background/borders use precise image-box BoxDecoration geometry before raster paint.
+Text alignment includes the outer width; nowrap suppresses soft image wrapping. Generated
+anonymous image items retain intrinsic geometry; generated replaced decoration/sizing and
+nested ancestor box stacks remain later. Native click regions still cover painted image pixels.
 
 ## S4 - Scripted page
 

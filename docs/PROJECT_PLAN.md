@@ -179,6 +179,8 @@ Status: IN PROGRESS.
   bases including redirects/var() consumers, shared DOM/generated resource budgets/cache,
   intrinsic inline/block image flow, generated image links and retained reflow.
 - NEXT fuller replaced-content/CSS image sizing and nested-inline geometry.
+- DONE DOM image padding/background/solid borders as atomic inline boxes, edge-aware
+  width fitting, border-box baseline extents, text alignment and nowrap behavior.
 - DONE declaration source-node provenance and retained effective external stylesheet
   addresses across redirects, duplicate link reuse and resize reflow.
 - DONE CSS Url/BadUrl tokenization with escapes, punctuation-preserving addresses/data URLs,
@@ -188,7 +190,7 @@ Status: IN PROGRESS.
 - LATER language-aware `quotes:auto` (currently deterministic English Unicode pairs).
 - LATER broader custom-property grammar/registration/animation-taint behavior,
   relational selectors, nested decorated-inline
-  stacks/replaced inline decorations and fuller
+  stacks/generated replaced inline decorations and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.
 - LATER normal flow block layout.
