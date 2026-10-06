@@ -30,7 +30,8 @@ initialization. Only owned pixels cross the worker/UI channel.
 
 ## Bounds and lifecycle
 
-- At most 32 visible-subtree img nodes receive resource processing per page.
+- At most 32 visible DOM/generated image candidates receive resource processing per page,
+  sharing one budget. Computed display:none subtrees and suppressed pseudos are skipped.
 - At most eight distinct resolved sources are attempted, including failed loads.
 - Each encoded image is limited to 4 MiB; the page accepts at most 8 MiB of
   successfully returned encoded resources. Partial failed responses are bounded by
@@ -72,6 +73,28 @@ testing and clear when the display list is replaced.
 
 Full CSS replaced-element layout, progressive loading, animation, srcset/picture,
 CSS image sizing, SVG/WebP/AVIF, EXIF orientation and color management remain future work.
+
+## CSS generated image content
+
+Before/after content accepts quoted/unquoted `url()` mixed with strings, attr/counter values
+and quotes. ComputedPseudoStyle.items retains text/image order and the consuming style_node.
+External URLs resolve relative to the effective stylesheet address after redirects; embedded
+and inline source bases use the document. Custom URLs stay unresolved until consumed by a
+normal content declaration, so var() uses the consuming stylesheet's base.
+References: [generated image values](https://www.w3.org/TR/css-content-3/#content-image),
+[relative URLs in custom properties](https://www.w3.org/TR/css-variables-1/#defining-variables).
+
+PageImages retains generated Arc resources by (host NodeId, pseudo, item index) beside DOM
+images. Both share the cache and all bounds above; failed URLs remain cached. Generated
+images use intrinsic sizes, shrink to available content width, share normal text baselines,
+wrap atomically and can enter generated block flow. They inherit anchor href for native clicks.
+Unavailable generated images add no inline image or alt label. Their surrounding content
+still renders. Sole-image CSS replaced sizing, image modifiers/gradients and alternative-text
+content syntax remain future work. In-memory render_html/set_html_page still perform no
+subresource loading; use source navigation for images.
+
+    cargo run -p op_browser -- --image-smoke-test examples/css/generated-images.html
+    cargo run -p op_browser -- --link-smoke-test examples/css/generated-images.html
 
 ## Verification
 

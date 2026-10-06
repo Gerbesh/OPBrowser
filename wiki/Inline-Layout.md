@@ -91,7 +91,10 @@ dimensions/min/max, margins, padding, borders and background. Empty generated bl
 still materialize decorations. Empty generated strings and ordinary childless inline elements
 with their own box carry EmptyInline items: edge width affects wrapping/nowrap/alignment and
 font/vertical-edge metrics affect line geometry. They emit BoxDecoration without TextBox glyphs.
-Generated `url()` images, language-aware automatic quote selection, custom counter styles and fully spec-complete counter
+Generated `url()` images share ordered inline text/image lists, baselines, atomic wrapping,
+intrinsic sizes and anchor click identity. Missing generated resources add no inline image;
+surrounding text remains. CSS image sizing/full replaced geometry,
+language-aware automatic quote selection, custom counter styles and fully spec-complete counter
 scope edge cases are not implemented. Only one decorated inline
 ancestor is represented at a time; a nested inline with
 its own box replaces the outer decoration for that nested run. Fragment edges currently clone

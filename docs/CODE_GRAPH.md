@@ -89,6 +89,8 @@ classDiagram
         mime_type
         document
         images
+        PageImages elements / generated
+        stylesheet_addresses
         +render(width, height)
     }
 
@@ -266,6 +268,7 @@ classDiagram
     class ComputedPseudoStyle {
         style
         content
+        items Text / Image(url,style_node)
         quotes
     }
     class ComputedQuotes {
@@ -322,7 +325,7 @@ classDiagram
     }
     class BlockContent {
         Element(NodeId)
-        Generated(retained_text)
+        Generated(NodeId,PseudoElement)
     }
     class BoxDecoration {
         bounds
@@ -541,9 +544,11 @@ classDiagram
 - op_net::stylesheets resolves and loads bounded local/file/data/HTTP(S) CSS, blocks
   network-to-file access and HTTPS-to-HTTP downgrade, validates HTTP CSS MIME, and decodes
   BOM/transport-charset/@charset/UTF-8 before handing source text to op_css.
-- op_engine::images walks visible DOM img nodes, resolves against the effective
-  loaded address, serializes loads/decode on the worker and owns page budgets/cache.
-  Image failure does not fail document history. Arc pixels are reused across nodes.
+- op_engine::images walks computed-visible DOM and before/after content in document order.
+  PageImages stores elements by NodeId and generated resources by (NodeId,pseudo,item index).
+  URL sources use effective document or consuming stylesheet bases, including redirected CSS.
+  Both share one worker loader/cache and candidate/request/encoded/pixel/time budgets.
+  Image failure does not fail document history. Arc pixels are reused across both maps/reflow.
 - op_net::images loads bounded binary HTTP/file/data image bytes; HTTP shares the
   WinHTTP transport, with image-specific Accept/byte/time limits. Source policy
   rejects network-page file access and HTTPS-to-HTTP image downgrades.

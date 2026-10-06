@@ -95,7 +95,8 @@ white-space normal/nowrap/pre/pre-wrap/pre-line, letter/word spacing and text-tr
 none/uppercase/lowercase/capitalize. Inline non-replaced elements also form real
 background/padding/solid-border fragments that participate in wrapping and alignment.
 CSS URL tokens preserve unquoted paths/data URLs and escaped characters; quoted url()
-stays a function/string sequence. Generated image loading remains the next feature.
+stays a function/string sequence. Generated content can mix text and URL images; the navigation
+worker uses stylesheet-relative bases, shared image budgets/cache and retained resize resources.
 Author declarations retain their style/link/inline source node; the engine retains effective
 external stylesheet addresses after redirects, preparing correct CSS resource bases.
 `background` also supports the initial color-only shorthand subset. Inherited, case-sensitive
@@ -113,8 +114,8 @@ width/height with min/max, `box-sizing`, percentages, em/rem and CSS absolute le
 Adjacent sibling vertical margins collapse. External CSS is merged with embedded rules in
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
 percentage-height propagation, broader custom-property grammar/registration and
-language-aware automatic quotes, generated `url()` and full
-generated replaced-content geometry, relational selectors, nested decorated
+language-aware automatic quotes, full
+generated replaced-content geometry/CSS image sizing, relational selectors, nested decorated
 inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources
 and JavaScript

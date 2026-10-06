@@ -340,7 +340,7 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> generated url() + fuller replaced-content/nested-inline geometry
+  -> fuller replaced-content/CSS image sizing/nested-inline geometry
   -> broader custom-property grammar/registration/animation-taint semantics
   -> nested/replaced inline decoration stacks
   -> additional computed properties
@@ -353,8 +353,8 @@ basic decimal/alpha/roman formatting. Inherited `quotes` auto/none/string pairs 
 and no-open/no-close commands with document-order depth; `<q>` gets UA before/after defaults.
 Only the winning emitted content changes depth. Hidden subtrees/absent pseudos do not change
 quotes or counters. Pairs repeat at deeper nesting; unmatched closing commands have no effect.
-Computed pairs and materialized text survive retained reflow. Generated `url()` images and
-language-aware automatic quote selection remain later (`auto` currently uses English pairs).
+Computed pairs and materialized text/image lists survive retained reflow.
+Language-aware automatic quote selection remains later (`auto` currently uses English pairs).
 `display:block` generated content shares ordinary BlockContent geometry: width/height/min/max,
 box-sizing, percentage sizing, auto/negative margins, padding, borders, backgrounds and sibling
 margin collapse. Empty generated block strings still materialize sized/decorated boxes without
@@ -365,7 +365,26 @@ and vertical-edge extents contribute to the line, decorations paint without emit
 or TextBox/LinkSpan commands. Empty descendants without their own box do not duplicate an
 inherited decoration. Replaced elements do not yet
 receive generated pseudos. Broader property/value coverage, `@import`, media queries and CSS
-`url(...)` resources remain later work.
+background `url(...)` resources remain later work.
+
+Generated image slice:
+
+```text
+content strings / URL tokens / quoted url() / var() / quotes / counters
+  -> ComputedPseudoStyle.items: ordered Text / Image(url, style_node)
+  -> effective document or consuming stylesheet base (including CSS redirects)
+  -> shared DOM/generated worker loader: source policy / cache / budgets / WIC decode
+  -> PageImages.generated[(host NodeId,pseudo,item index)] -> Arc RasterImage
+  -> intrinsic inline image baseline / atomic wrapping or generated block content
+  -> ImageBox + href -> Image paint -> GDI AlphaBlend / measured image hit region
+  -> retained Arc resources reused by reflow without requests or decoding
+```
+
+Invalid/unavailable generated URLs add no inline image while surrounding text remains.
+Hidden subtrees/pseudos do not request resources. Ordinary and generated URLs share the
+32-candidate, 8-request, 8 MiB encoded and 32 MiB decoded budgets/cache. Sole-image CSS
+replaced sizing, gradients/image modifiers and alternative-text syntax remain future work.
+The native generated image/link fixture is examples/css/generated-images.html.
 
 ## S4 - Scripted page
 

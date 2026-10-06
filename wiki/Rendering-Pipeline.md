@@ -129,6 +129,13 @@ commands before text/images; Win32 remains only the native drawing backend.
 
 ## Paint smoke verification
 
+CSS-generated URLs follow ComputedPseudoStyle ordered Text/Image items into the shared
+image resource loader. Effective stylesheet bases and consuming declaration provenance
+resolve URLs; PageImages stores generated host/pseudo/item-index Arc pixels beside DOM images.
+They enter inline baseline/wrapping or block content, then the same ImageBox/paint/GDI path,
+including inherited anchor href and retained reflow. Generated images that fail load add no
+inline image; surrounding generated text still paints.
+
 NativeBrowserWindow::create calls UpdateWindow after ShowWindow. The WM_PAINT handler
 sets an atomic painted-once flag. The --smoke-test mode fails if that flag is not set.
 The --image-smoke-test mode additionally requires a successful raster draw after

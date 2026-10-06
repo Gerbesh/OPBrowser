@@ -253,8 +253,16 @@ pub struct ComputedStyle {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputedPseudoStyle {
     pub style: ComputedStyle,
+    /// Concatenated textual content for inspection; layout consumes ordered items.
     pub content: String,
+    pub items: Vec<GeneratedContentItem>,
     pub quotes: ComputedQuotes,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GeneratedContentItem {
+    Text(String),
+    Image { url: String, style_node: NodeId },
 }
 
 /// Inherited quotation pairs. `Auto` currently uses deterministic English pairs.
@@ -571,7 +579,7 @@ fn compute_pseudo_style(
     }
     let quotes = compute_quotes(Some(host.quotes), &resolved);
     // Validate candidates without mutating document-order quote or counter state.
-    let tokens = winning_generated_content(&resolved, host.element, &generated.counters);
+    let winner = winning_generated_content(&resolved, host.element, &generated.counters);
     let ua_content = [TokenKind::Ident(
         match pseudo {
             PseudoElement::Before => "open-quote",
@@ -579,8 +587,8 @@ fn compute_pseudo_style(
         }
         .to_owned(),
     )];
-    let tokens = match tokens {
-        Some(tokens) => tokens,
+    let tokens = match winner {
+        Some(matched) => matched.declaration.value.as_slice(),
         None if host.element.tag_name == "q" => &ua_content,
         None => return,
     };
@@ -596,12 +604,18 @@ fn compute_pseudo_style(
         .flatten()
         .expect("validated generated content");
     generated.counters.restore_lengths(&pseudo_scope);
-    let content = render_generated_content(pieces, &quotes, &mut generated.quote_depth);
+    let (content, items) = render_generated_content(
+        pieces,
+        &quotes,
+        &mut generated.quote_depth,
+        winner.map_or(node, |matched| matched.style_node),
+    );
     computed.pseudo_entries.insert(
         (node, pseudo),
         ComputedPseudoStyle {
             style,
             content,
+            items,
             quotes,
         },
     );
@@ -839,7 +853,7 @@ fn winning_generated_content<'a>(
     declarations: &'a [MatchedDeclaration],
     element: &ElementData,
     counters: &CounterContext,
-) -> Option<&'a [TokenKind]> {
+) -> Option<&'a MatchedDeclaration> {
     declarations
         .iter()
         .filter(|matched| matched.declaration.name == "content")
@@ -849,12 +863,13 @@ fn winning_generated_content<'a>(
                 .map(|value| (matched, value))
         })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
-        .map(|(matched, _)| matched.declaration.value.as_slice())
+        .map(|(matched, _)| matched)
 }
 
 #[derive(Debug)]
 enum ContentPiece {
     Text(String),
+    Image(String),
     Quote(QuoteAction),
 }
 
@@ -870,25 +885,39 @@ fn render_generated_content(
     pieces: Vec<ContentPiece>,
     quotes: &ComputedQuotes,
     depth: &mut usize,
-) -> String {
+    style_node: NodeId,
+) -> (String, Vec<GeneratedContentItem>) {
     let mut text = String::new();
+    let mut pending = String::new();
+    let mut items = Vec::new();
     for piece in pieces {
         match piece {
-            ContentPiece::Text(value) => text.push_str(&value),
+            ContentPiece::Text(value) => pending.push_str(&value),
+            ContentPiece::Image(url) => {
+                if !pending.is_empty() {
+                    text.push_str(&pending);
+                    items.push(GeneratedContentItem::Text(std::mem::take(&mut pending)));
+                }
+                items.push(GeneratedContentItem::Image { url, style_node });
+            }
             ContentPiece::Quote(QuoteAction::Open) => {
-                text.push_str(quotes.mark(*depth, true));
+                pending.push_str(quotes.mark(*depth, true));
                 *depth = depth.saturating_add(1);
             }
             ContentPiece::Quote(QuoteAction::NoOpen) => *depth = depth.saturating_add(1),
             ContentPiece::Quote(QuoteAction::Close) if *depth > 0 => {
                 *depth -= 1;
-                text.push_str(quotes.mark(*depth, false));
+                pending.push_str(quotes.mark(*depth, false));
             }
             ContentPiece::Quote(QuoteAction::NoClose) => *depth = depth.saturating_sub(1),
             ContentPiece::Quote(QuoteAction::Close) => {}
         }
     }
-    text
+    if !pending.is_empty() {
+        text.push_str(&pending);
+        items.push(GeneratedContentItem::Text(pending));
+    }
+    (text, items)
 }
 
 fn parse_generated_content(
@@ -915,6 +944,11 @@ fn parse_generated_content(
         }
 
         match &tokens[index] {
+            TokenKind::Url(value) => {
+                content.push(ContentPiece::Image(value.clone()));
+                saw_piece = true;
+                index += 1;
+            }
             TokenKind::String(value) => {
                 content.push(ContentPiece::Text(value.clone()));
                 saw_piece = true;
@@ -924,12 +958,18 @@ fn parse_generated_content(
                 let end = find_function_end(tokens, index)?;
                 let arguments = &tokens[index + 1..end];
                 let piece = match name.to_ascii_lowercase().as_str() {
-                    "attr" => generated_attr(arguments, element)?,
-                    "counter" => generated_counter(arguments, counters)?,
-                    "counters" => generated_counters(arguments, counters)?,
+                    "url" => {
+                        let [TokenKind::String(value)] = trim_token_whitespace(arguments) else {
+                            return None;
+                        };
+                        ContentPiece::Image(value.clone())
+                    }
+                    "attr" => ContentPiece::Text(generated_attr(arguments, element)?),
+                    "counter" => ContentPiece::Text(generated_counter(arguments, counters)?),
+                    "counters" => ContentPiece::Text(generated_counters(arguments, counters)?),
                     _ => return None,
                 };
-                content.push(ContentPiece::Text(piece));
+                content.push(piece);
                 saw_piece = true;
                 index = end + 1;
             }
@@ -2861,6 +2901,48 @@ mod tests {
         }
 
         find(document, document.root(), id).expect("expected id")
+    }
+
+    #[test]
+    fn generated_url_items_preserve_text_order_quotes_and_consumer_provenance() {
+        let document = parse_document(
+            "<style id='vars'>p { --icon:url(icon.png) }</style><style id='consumer'>p::before { content:open-quote 'A' var(--icon) 'B' url('other.png') close-quote; quotes:'[' ']' }</style><p id='host'>Body</p>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let before = computed
+            .pseudo_style_for(find_by_id(&document, "host"), PseudoElement::Before)
+            .unwrap();
+        let source = find_by_id(&document, "consumer");
+        assert_eq!(before.content, "[AB]");
+        assert_eq!(
+            before.items,
+            [
+                GeneratedContentItem::Text("[A".into()),
+                GeneratedContentItem::Image {
+                    url: "icon.png".into(),
+                    style_node: source
+                },
+                GeneratedContentItem::Text("B".into()),
+                GeneratedContentItem::Image {
+                    url: "other.png".into(),
+                    style_node: source
+                },
+                GeneratedContentItem::Text("]".into()),
+            ]
+        );
+        for invalid in ["url('a' 'b')", "url('a', 'b')", "url('a' unknown)"] {
+            let document = parse_document(&format!(
+                "<style>p::before {{ content:'fallback'; content:{invalid} }}</style><p id='host'>Body</p>"
+            ));
+            let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+            assert_eq!(
+                computed
+                    .pseudo_style_for(find_by_id(&document, "host"), PseudoElement::Before)
+                    .unwrap()
+                    .content,
+                "fallback"
+            );
+        }
     }
 
     #[test]

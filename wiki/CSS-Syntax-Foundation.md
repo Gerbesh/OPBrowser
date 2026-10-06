@@ -26,7 +26,8 @@ unescaped whitespace, quotes, parentheses, control characters and newline escape
 BadUrl; recovery consumes through an unescaped closing parenthesis. EOF retains the URL
 value with a diagnostic. BadUrl/BadString invalidate whole declarations, including custom
 properties and unused var() fallbacks; URL payloads count toward expansion storage limits.
-This syntax support does not yet load generated images or backgrounds.
+Generated before/after content now loads URL images through the bounded image worker;
+CSS background images remain outside the supported subset.
 Reference: [CSS URL tokenization](https://www.w3.org/TR/css-syntax-3/#consume-a-url-token).
 
 The stylesheet parser keeps valid rules after malformed declarations or unsupported
@@ -169,7 +170,7 @@ participate in selector matching with their initial specificity rules. Terminal
 `::before`/`::after`, generated strings/`attr()`/counters, inherited custom properties and
 `var()` fallbacks now reach native layout/paint too. Counter traversal computes `::before`
 before children and `::after` after completed child counter work. Computed var() failures retain
-their cascade priority and become unset for supported properties. Generated `url()` images, language-aware automatic quotes,
+their cascade priority and become unset for supported properties. Language-aware automatic quotes,
 custom counter styles and complete counter scoping remain later. Next S3 work moves into generated
 replaced content and nested-inline geometry, then relational selectors,
 advanced color spaces, at-rules, media queries and full CSS

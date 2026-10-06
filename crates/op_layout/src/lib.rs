@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub type ImageResources = HashMap<NodeId, Arc<RasterImage>>;
+pub type GeneratedImageResources =
+    HashMap<(NodeId, op_css::PseudoElement, usize), Arc<RasterImage>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageBox {
@@ -160,7 +162,32 @@ pub fn layout_document_with_computed_styles_and_metrics(
     computed_styles: &ComputedStyleMap,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
-    flow::layout(document, viewport_width, images, computed_styles, measurer)
+    layout_document_with_resources_and_metrics(
+        document,
+        viewport_width,
+        images,
+        &GeneratedImageResources::new(),
+        computed_styles,
+        measurer,
+    )
+}
+
+pub fn layout_document_with_resources_and_metrics(
+    document: &Document,
+    viewport_width: i32,
+    images: &ImageResources,
+    generated_images: &GeneratedImageResources,
+    computed_styles: &ComputedStyleMap,
+    measurer: &mut dyn TextMeasurer,
+) -> LayoutTree {
+    flow::layout(
+        document,
+        viewport_width,
+        images,
+        generated_images,
+        computed_styles,
+        measurer,
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -204,6 +231,79 @@ mod inline;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_images_share_inline_baselines_order_wrapping_and_block_flow() {
+        let document = op_html::parse_document(
+            "<style>a::before { content:'Before' url(icon.png) 'After' } p::after { content:url(icon.png); display:block; margin-top:8px }</style><p><a href='next.html'>Body</a></p><p>Tail</p>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let mut generated = GeneratedImageResources::new();
+        let mut nodes = vec![document.root()];
+        let image =
+            Arc::new(RasterImage::from_premultiplied_bgra(80, 32, vec![255; 80 * 32 * 4]).unwrap());
+        while let Some(node) = nodes.pop() {
+            for pseudo in [op_css::PseudoElement::Before, op_css::PseudoElement::After] {
+                if let Some(style) = computed.pseudo_style_for(node, pseudo) {
+                    for (index, item) in style.items.iter().enumerate() {
+                        if matches!(item, op_css::GeneratedContentItem::Image { .. }) {
+                            generated.insert((node, pseudo, index), image.clone());
+                        }
+                    }
+                }
+            }
+            nodes.extend(document.children(node));
+        }
+        let page = layout_document_with_resources_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &generated,
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        assert_eq!(page.image_boxes.len(), 3);
+        let before = page
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("Before"))
+            .unwrap();
+        let after = page
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("After"))
+            .unwrap();
+        let inline_image = &page.image_boxes[0];
+        assert_eq!(inline_image.href.as_deref(), Some("next.html"));
+        assert_eq!(inline_image.x, before.x + before.width);
+        assert_eq!(after.x, inline_image.x + inline_image.width);
+        assert_eq!(
+            inline_image.y + inline_image.height,
+            before.y + before.font_size * 4 / 5
+        );
+        assert!(page.image_boxes[1].y > inline_image.y);
+        let tail = page
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "Tail")
+            .unwrap();
+        assert!(tail.y >= page.image_boxes[1].y + page.image_boxes[1].height);
+        let narrow = layout_document_with_resources_and_metrics(
+            &document,
+            240,
+            &ImageResources::new(),
+            &generated,
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        assert!(narrow.content_height > page.content_height);
+        assert!(
+            narrow
+                .image_boxes
+                .iter()
+                .all(|image| image.x + image.width <= 208)
+        );
+    }
 
     #[test]
     fn sizes_image_boxes_preserves_text_order_and_uses_alt_for_failure() {

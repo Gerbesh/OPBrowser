@@ -914,3 +914,25 @@ This file is append-only project history.
 - Updated README, project plan, graph/slices and stylesheet/reflow wiki.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 204 workspace tests,
   startup/CSS demo smoke (225 paint commands) and optimized workspace release build.
+
+## 2026-10-06 - Generated CSS URL image content
+
+- Added ordered GeneratedContentItem Text/Image(url,style_node) lists beside pseudo textual
+  inspection values. Quoted/unquoted URLs mix with strings, quotes, attrs and counters;
+  invalid quoted URL grammar is excluded from cascade candidates.
+- PageImages keeps DOM resources by NodeId and generated resources by host/pseudo/item index.
+  One worker loader shares source policy, successful/failed cache and all candidate/request/
+  encoded/pixel/time bounds. Computed display:none subtrees/pseudos do not load resources.
+- CSS image bases use the consuming declaration's effective stylesheet address after
+  redirects; embedded/inline sources use the document. var() URLs resolve at consumption.
+- Generated images use intrinsic baseline/atomic wrapping/width fitting and block content,
+  inherit anchor href for native clicks and preserve Arc pixels across reflow. Missing
+  resources add no inline image while surrounding content remains.
+- Added parser/computed ordering/provenance, layout geometry and source integration tests
+  covering redirected CSS, local consumer bases, mixed DOM/generated cache/budgets, hidden/
+  blocked/failed URLs, native image links and reflow after deleting source files.
+- Added an original local CSS image fixture and updated plan, graph/slices, README and wiki.
+  Full replaced sizing/CSS image sizing, gradients/modifiers and content alt syntax remain later.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 209 workspace tests,
+  startup/CSS smoke (225 commands), generated-image smoke (20 commands), native generated
+  image-only link navigation and optimized workspace release build.

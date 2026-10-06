@@ -1,0 +1,5 @@
+body { color:#123456; }
+.image-link::before { content:url(../images/colors.png); }
+.mixed-images::before { --icon:url(../images/colors.png); content:"[before " var(--icon) " after] "; color:#087a35; }
+.block-image::after { content:url("../images/colors.png"); display:block; margin:8px 0; padding:6px; background:#eef2ff; border:1px solid #4338ca; }
+.failed-image::before { content:"[kept " url(missing.png) " text] "; color:#b42318; }

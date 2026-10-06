@@ -10,6 +10,7 @@ pub(super) fn layout(
     document: &Document,
     viewport_width: i32,
     images: &ImageResources,
+    generated_images: &GeneratedImageResources,
     computed_styles: &ComputedStyleMap,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
@@ -27,6 +28,7 @@ pub(super) fn layout(
     let mut context = Context {
         document,
         images,
+        generated_images,
         computed_styles,
         measurer,
         width: (viewport_width - 64).max(160),
@@ -69,6 +71,7 @@ pub(super) fn layout(
 struct Context<'a, 'm> {
     document: &'a Document,
     images: &'a ImageResources,
+    generated_images: &'a GeneratedImageResources,
     computed_styles: &'a ComputedStyleMap,
     measurer: &'m mut dyn TextMeasurer,
     width: i32,
@@ -81,9 +84,9 @@ struct Context<'a, 'm> {
 }
 
 /// Generated blocks share ordinary block sizing without adding synthetic DOM nodes.
-enum BlockContent<'a> {
+enum BlockContent {
     Element(NodeId),
-    Generated(&'a str),
+    Generated(NodeId, PseudoElement),
 }
 
 #[derive(Clone, Copy)]
@@ -170,7 +173,7 @@ impl<'a> Context<'a, '_> {
 
     fn block(
         &mut self,
-        content: BlockContent<'a>,
+        content: BlockContent,
         href: Option<&'a str>,
         style: Style,
         containing_x: i32,
@@ -253,13 +256,9 @@ impl<'a> Context<'a, '_> {
                     &mut items,
                 );
             }
-            BlockContent::Generated(text) => items.extend(text.chars().map(|ch| {
-                Item::Char(InlineChar {
-                    ch,
-                    href,
-                    style: style.inline,
-                })
-            })),
+            BlockContent::Generated(id, pseudo) => {
+                self.collect_generated_items((id, pseudo), href, style, content_width, &mut items)
+            }
         }
         self.emit(&mut items, style, content_x, content_width);
         // Parent/child margin collapse is intentionally deferred; consume the final
@@ -446,7 +445,7 @@ impl<'a> Context<'a, '_> {
         if generated.style.display == Display::Block {
             self.emit(items, host_style, containing_x, containing_width);
             self.block(
-                BlockContent::Generated(&generated.content),
+                BlockContent::Generated(id, pseudo),
                 href,
                 style,
                 containing_x,
@@ -457,27 +456,53 @@ impl<'a> Context<'a, '_> {
         style.inline.box_style =
             resolve_inline_box_style(id, Some(pseudo), style, containing_width)
                 .or(host_style.inline.box_style);
-        if generated.content.is_empty() {
+        if generated.items.is_empty() {
             if style.inline.box_style.is_some() {
                 items.push(Item::EmptyInline(style.inline));
             }
             return;
         }
-        let generated_items = || {
-            generated
-                .content
-                .chars()
-                .map(|ch| {
+        self.collect_generated_items((id, pseudo), href, style, containing_width, items);
+    }
+
+    fn collect_generated_items(
+        &self,
+        target: (NodeId, PseudoElement),
+        href: Option<&'a str>,
+        style: Style,
+        containing_width: i32,
+        items: &mut Vec<Item<'a>>,
+    ) {
+        let Some(generated) = self.computed_styles.pseudo_style_for(target.0, target.1) else {
+            return;
+        };
+        for (index, item) in generated.items.iter().enumerate() {
+            match item {
+                op_css::GeneratedContentItem::Text(text) => items.extend(text.chars().map(|ch| {
                     Item::Char(InlineChar {
                         ch,
                         href,
                         style: style.inline,
                     })
-                })
-                .collect::<Vec<_>>()
-        };
-
-        items.extend(generated_items());
+                })),
+                op_css::GeneratedContentItem::Image { .. } => {
+                    if let Some(image) = self.generated_images.get(&(target.0, target.1, index)) {
+                        let width = (image.width() as i32).min(containing_width.max(1));
+                        let height = (i64::from(image.height()) * i64::from(width)
+                            / i64::from(image.width()))
+                        .max(1) as i32;
+                        items.push(Item::Image(ImageBox {
+                            x: 0,
+                            y: 0,
+                            width,
+                            height,
+                            image: image.clone(),
+                            href: href.map(str::to_owned),
+                        }));
+                    }
+                }
+            }
+        }
     }
 
     fn collect_image(

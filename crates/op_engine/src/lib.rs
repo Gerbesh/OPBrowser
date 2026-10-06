@@ -3,7 +3,10 @@ use op_css::{
     collect_author_styles_with_linked, compute_styles,
 };
 use op_html::parse_document;
-use op_layout::{ImageResources, layout_document_with_computed_styles_and_metrics};
+use op_layout::{
+    ImageResources, layout_document_with_computed_styles_and_metrics,
+    layout_document_with_resources_and_metrics,
+};
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link};
 use op_paint::{DisplayList, build_display_list};
 mod images;
@@ -96,7 +99,7 @@ struct PreparedDocument {
     address: String,
     mime_type: String,
     document: op_dom::Document,
-    images: ImageResources,
+    images: images::PageImages,
     style_collection: StyleCollection,
     computed_styles: ComputedStyleMap,
     stylesheet_addresses: std::collections::HashMap<op_dom::NodeId, String>,
@@ -104,10 +107,11 @@ struct PreparedDocument {
 
 impl PreparedDocument {
     fn render(&self, width: i32, height: i32) -> RenderedPage {
-        let layout = layout_document_with_computed_styles_and_metrics(
+        let layout = layout_document_with_resources_and_metrics(
             &self.document,
             width,
-            &self.images,
+            &self.images.elements,
+            &self.images.generated,
             &self.computed_styles,
             &mut text::Measurer::new(),
         );
@@ -211,7 +215,7 @@ impl Engine {
             address: String::new(),
             mime_type: "text/html".into(),
             document,
-            images: ImageResources::new(),
+            images: images::PageImages::default(),
             style_collection,
             computed_styles,
             stylesheet_addresses: std::collections::HashMap::new(),
@@ -317,7 +321,13 @@ impl Engine {
         let style_collection =
             collect_author_styles_with_linked(&document, &linked_stylesheets.texts);
         let computed_styles = compute_styles(&document, &style_collection.styles);
-        let images = images::load(&self.network, &document, &loaded.address);
+        let images = images::load(
+            &self.network,
+            &document,
+            &loaded.address,
+            &computed_styles,
+            &linked_stylesheets.addresses,
+        );
         Ok(PreparedDocument {
             address: loaded.address,
             mime_type: loaded.mime_type,

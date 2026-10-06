@@ -15,6 +15,8 @@ continues to return a page without retaining it; set_html_page initializes the
 startup snapshot with an empty history.
 PreparedDocument also retains effective external stylesheet addresses by source NodeId;
 author declaration provenance survives matching and computed substitution.
+Generated before/after image Arc resources are retained by host/pseudo/content-item index;
+ordinary and generated uses of the same URL keep shared pixels after source files disappear.
 
 Loaded HTML bytes/text are dropped after parsing. DOM strings/node storage remain
 alive for the current page and add memory beyond the display list. Shared decoded

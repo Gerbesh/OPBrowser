@@ -175,7 +175,10 @@ Status: IN PROGRESS.
   without fabricated text commands; nowrap and line extents use the existing formatter.
 - DONE first/last/only-of-type and nth-of-type/nth-last-of-type share sibling indexing with
   same-tag filtering, token-aware An+B grammar and normal pseudo-class specificity.
-- NEXT generated `url()` content and fuller replaced-content/nested-inline geometry.
+- DONE generated `url()` images in ordered before/after text/image lists, stylesheet-relative
+  bases including redirects/var() consumers, shared DOM/generated resource budgets/cache,
+  intrinsic inline/block image flow, generated image links and retained reflow.
+- NEXT fuller replaced-content/CSS image sizing and nested-inline geometry.
 - DONE declaration source-node provenance and retained effective external stylesheet
   addresses across redirects, duplicate link reuse and resize reflow.
 - DONE CSS Url/BadUrl tokenization with escapes, punctuation-preserving addresses/data URLs,
