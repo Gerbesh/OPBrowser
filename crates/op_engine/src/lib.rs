@@ -1133,6 +1133,34 @@ mod tests {
     }
 
     #[test]
+    fn typed_structural_selectors_reach_pseudo_text_colors_and_retained_reflow() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(
+            "<style>span:first-of-type::before { content:'FIRST '; color:red }
+             span:last-of-type::after { content:' LAST'; color:blue }
+             span:nth-of-type(2):nth-last-of-type(2) { color:green; font-weight:bold }
+             </style><p><em>Lead</em><span>One</span><b>Skip</b><span>Two</span>
+             <span>Three</span><em>Tail</em></p>",
+            800,
+            600,
+        );
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::Text { text, color, .. } if text.contains("FIRST")
+                && *color == op_paint::Color { r:255, g:0, b:0 }
+        )));
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::Text { text, color, .. } if text.contains("LAST")
+                && *color == op_paint::Color { r:0, g:0, b:255 }
+        )));
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::Text { text, color, bold:true, .. } if text.contains("Two")
+                && *color == op_paint::Color { r:0, g:128, b:0 }
+        )));
+        engine.reflow(300, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn custom_properties_and_var_reach_native_display_list() {
         let display_list = Engine::new().render_html(
             "<style>

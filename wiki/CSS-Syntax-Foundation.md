@@ -162,7 +162,7 @@ participate in selector matching with their initial specificity rules. Terminal
 before children and `::after` after completed child counter work. Computed var() failures retain
 their cascade priority and become unset for supported properties. Generated `url()` images, language-aware automatic quotes,
 custom counter styles and complete counter scoping remain later. Next S3 work moves into generated
-replaced content and nested-inline geometry, then typed structural/relational selectors,
+replaced content and nested-inline geometry, then relational selectors,
 advanced color spaces, at-rules, media queries and full CSS
 conformance remain later.
 
@@ -235,3 +235,10 @@ Empty generated inline strings and empty DOM inline elements with their own padd
 background now produce real decoration geometry through an EmptyInline formatter item.
 They reserve horizontal edges, participate in wrapping/nowrap/alignment and expand safe line
 extents using font/vertical-edge metrics, while emitting no fabricated text or link spans.
+
+Typed first/last/only-of-type pseudo-classes filter inclusive element siblings by the
+candidate's HTML tag name. nth-of-type/nth-last-of-type reuse the same token-aware An+B
+parser and indexing arithmetic, with same_type metadata instead of an authored of-list.
+Other element types and text do not affect positions. All five contribute one class-level
+specificity component; typed nth functions do not accept `of` arguments. Namespace-aware
+typed selector behavior remains outside the current HTML-only selector subset.

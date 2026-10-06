@@ -657,6 +657,9 @@ fn parse_pseudo_class(tokens: &[Token], start: usize) -> Result<(SimpleSelector,
                 "first-child" => PseudoClass::FirstChild,
                 "last-child" => PseudoClass::LastChild,
                 "only-child" => PseudoClass::OnlyChild,
+                "first-of-type" => PseudoClass::FirstOfType,
+                "last-of-type" => PseudoClass::LastOfType,
+                "only-of-type" => PseudoClass::OnlyOfType,
                 "empty" => PseudoClass::Empty,
                 "link" => PseudoClass::Link,
                 _ => {
@@ -717,6 +720,15 @@ fn parse_functional_pseudo(
             name.eq_ignore_ascii_case("nth-last-child"),
             tokens[function_index].start,
         )?),
+        "nth-of-type" | "nth-last-of-type" => SimpleSelector::NthChild(NthSelector {
+            expression: parse_nth_expression(arguments).ok_or_else(|| CssError {
+                offset: tokens[function_index].start,
+                message: "invalid nth-of-type/nth-last-of-type expression".into(),
+            })?,
+            of: Vec::new(),
+            from_end: name.eq_ignore_ascii_case("nth-last-of-type"),
+            same_type: true,
+        }),
         _ => {
             return Err(CssError {
                 offset: tokens[function_index].start,
@@ -789,6 +801,7 @@ fn parse_nth_selector(
         expression,
         of,
         from_end,
+        same_type: false,
     })
 }
 
@@ -1117,7 +1130,8 @@ mod tests {
             SimpleSelector::NthChild(NthSelector {
                 expression: NthExpression { a: 2, b: 1 },
                 of: Vec::new(),
-                from_end: false
+                from_end: false,
+                same_type: false
             })
         );
     }
@@ -1302,6 +1316,48 @@ mod tests {
                 None,
                 "{source}"
             );
+        }
+    }
+
+    #[test]
+    fn typed_structural_pseudos_share_nth_grammar_without_filter_specificity() {
+        let parsed = parse_stylesheet(
+            "span:first-of-type:last-of-type:only-of-type, span:nth-of-type(2n+1), span:nth-last-of-type(-n+2) { color:red }",
+        );
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let selectors = &parsed.value.rules[0].selectors;
+        assert_eq!(
+            selectors[0].specificity,
+            Specificity {
+                ids: 0,
+                classes: 3,
+                types: 1
+            }
+        );
+        assert_eq!(
+            selectors[1].specificity,
+            Specificity {
+                ids: 0,
+                classes: 1,
+                types: 1
+            }
+        );
+        assert!(
+            matches!(&selectors[1].compounds[0].simple[1], SimpleSelector::NthChild(nth)
+            if nth.same_type && !nth.from_end && nth.of.is_empty())
+        );
+        assert!(
+            matches!(&selectors[2].compounds[0].simple[1], SimpleSelector::NthChild(nth)
+            if nth.same_type && nth.from_end)
+        );
+        for invalid in [
+            ":nth-of-type(1 of .pick)",
+            ":nth-last-of-type()",
+            ":nth-of-type(2 n)",
+        ] {
+            let parsed = parse_stylesheet(&format!("{invalid} {{ color:red }}"));
+            assert!(parsed.value.rules.is_empty(), "{invalid}");
+            assert_eq!(parsed.errors.len(), 1);
         }
     }
 

@@ -857,3 +857,17 @@ This file is append-only project history.
 - Added a visible external CSS demo and updated README, plan, graph/slices and relevant wiki.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 191 workspace tests,
   startup smoke, the 213-command CSS demo smoke and optimized workspace release build.
+
+## 2026-10-06 - Typed structural CSS selectors
+
+- Added first-of-type, last-of-type and only-of-type matching over same-tag inclusive element
+  siblings, excluding text and intervening other element types from typed positions.
+- Added nth-of-type/nth-last-of-type through NthSelector same_type metadata, sharing the
+  existing token-aware An+B parser, i64 indexing arithmetic and forward/reverse counting.
+- All five contribute ordinary pseudo-class specificity. Typed nth functions reject of lists;
+  namespace-aware matching remains outside the current HTML-only selector subset.
+- Added parser/specificity/invalid-argument and mixed-sibling computed-style regressions plus
+  Engine tests for pseudo text, color/weight and stable retained resize reflow.
+- Added an external CSS demo and updated README, plan, graph/slices and CSS/rendering wiki.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 194 workspace tests,
+  startup smoke, the 224-command CSS demo smoke and optimized workspace release build.

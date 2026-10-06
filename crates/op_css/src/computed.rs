@@ -3237,6 +3237,31 @@ mod tests {
     }
 
     #[test]
+    fn typed_structural_matching_ignores_other_element_types_and_text() {
+        let document = parse_document(
+            "<style>span:first-of-type { color:red } span:last-of-type { background:blue }
+             span:nth-of-type(2) { color:blue } span:nth-last-of-type(2) { font-weight:bold }
+             em:only-of-type { font-weight:bold } strong:only-of-type { font-style:italic }
+             span:only-of-type { padding:99px }
+             </style><div><em id='em'>E</em><span id='one'>A</span>text
+             <strong id='strong'>S</strong><span id='two'>B</span><span id='three'>C</span><b>Tail</b></div>",
+        );
+        let collection = collect_author_styles(&document);
+        assert!(collection.errors.is_empty());
+        let computed = compute_styles(&document, &collection.styles);
+        let style = |id| computed.style_for(find_by_id(&document, id)).unwrap();
+        assert_eq!(style("one").color, CssColor::RED);
+        assert_eq!(style("two").color, CssColor::BLUE);
+        assert_eq!(style("two").font_weight, ComputedFontWeight::Bold);
+        assert_eq!(style("three").background_color, CssColor::BLUE);
+        assert_eq!(style("em").font_weight, ComputedFontWeight::Bold);
+        assert_eq!(style("strong").font_style, FontStyle::Italic);
+        for id in ["one", "two", "three"] {
+            assert_eq!(style(id).padding, PaddingEdges::ZERO);
+        }
+    }
+
+    #[test]
     fn valid_var_fallbacks_and_literal_invalid_values_keep_their_distinct_cascade_rules() {
         let document = parse_document(
             "<style>#one { --empty:; color:red; color:invalid; padding:5px; padding:var(--missing,2px 4px) }

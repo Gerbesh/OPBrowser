@@ -401,6 +401,17 @@ fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) 
         PseudoClass::OnlyChild => {
             element_siblings(document, node).is_some_and(|siblings| siblings.as_slice() == [node])
         }
+        PseudoClass::FirstOfType => {
+            type_siblings(document, node).and_then(|siblings| siblings.first().copied())
+                == Some(node)
+        }
+        PseudoClass::LastOfType => {
+            type_siblings(document, node).and_then(|siblings| siblings.last().copied())
+                == Some(node)
+        }
+        PseudoClass::OnlyOfType => {
+            type_siblings(document, node).is_some_and(|siblings| siblings.as_slice() == [node])
+        }
         PseudoClass::Empty => document.children(node).iter().all(|child| {
             document.node(*child).is_none_or(|child| match &child.kind {
                 NodeKind::Element(_) => false,
@@ -415,7 +426,11 @@ fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) 
 }
 
 fn nth_child_matches(document: &Document, node: NodeId, nth: &NthSelector) -> bool {
-    let Some(siblings) = element_siblings(document, node) else {
+    let Some(siblings) = (if nth.same_type {
+        type_siblings(document, node)
+    } else {
+        element_siblings(document, node)
+    }) else {
         return false;
     };
     let siblings: Vec<_> = siblings
@@ -459,6 +474,20 @@ fn element_siblings(document: &Document, node: NodeId) -> Option<Vec<NodeId>> {
 
 fn previous_element_sibling(document: &Document, node: NodeId) -> Option<NodeId> {
     preceding_element_siblings(document, node).next()
+}
+
+fn type_siblings(document: &Document, node: NodeId) -> Option<Vec<NodeId>> {
+    let tag = &document.element(node)?.tag_name;
+    Some(
+        element_siblings(document, node)?
+            .into_iter()
+            .filter(|candidate| {
+                document
+                    .element(*candidate)
+                    .is_some_and(|element| element.tag_name.eq_ignore_ascii_case(tag))
+            })
+            .collect(),
+    )
 }
 
 fn preceding_element_siblings(

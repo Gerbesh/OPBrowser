@@ -96,6 +96,9 @@ pub enum PseudoClass {
     FirstChild,
     LastChild,
     OnlyChild,
+    FirstOfType,
+    LastOfType,
+    OnlyOfType,
     Empty,
     Link,
 }
@@ -111,6 +114,7 @@ pub struct NthSelector {
     pub expression: NthExpression,
     pub of: Vec<Selector>,
     pub from_end: bool,
+    pub same_type: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

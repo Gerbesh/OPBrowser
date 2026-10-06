@@ -194,6 +194,7 @@ classDiagram
     }
     class PseudoClass {
         root / first-child / last-child / only-child / empty / link
+        first-of-type / last-of-type / only-of-type
     }
     class FunctionalSelector {
         is / where / not -> Selector[]
@@ -203,6 +204,7 @@ classDiagram
         expression(a,b)
         of Selector[]
         from_end
+        same_type
     }
     class PseudoElement {
         Before
@@ -389,7 +391,7 @@ classDiagram
     StyleRule --> Declaration
     Selector --> Specificity
     Selector --> FunctionalSelector : recursive functional pseudo arguments
-    FunctionalSelector --> NthSelector : filtered sibling order / maximum filter specificity
+    FunctionalSelector --> NthSelector : filtered or same-type sibling order / maximum filter specificity
     NthSelector --> Selector : strict of filters using ordinary complex selector matcher
     Selector --> PseudoElement : terminal generated target
     Document --> StyleMap : DOM-order linked/embedded collection / selector matching

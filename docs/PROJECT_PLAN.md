@@ -173,10 +173,12 @@ Status: IN PROGRESS.
   functional selector nesting is bounded to 64 levels.
 - DONE empty generated/DOM inline decoration boxes reserve edges, wrap/align and paint
   without fabricated text commands; nowrap and line extents use the existing formatter.
+- DONE first/last/only-of-type and nth-of-type/nth-last-of-type share sibling indexing with
+  same-tag filtering, token-aware An+B grammar and normal pseudo-class specificity.
 - NEXT generated `url()` content and fuller replaced-content/nested-inline geometry.
 - LATER language-aware `quotes:auto` (currently deterministic English Unicode pairs).
 - LATER broader custom-property grammar/registration/animation-taint behavior,
-  typed structural pseudo-classes/relational selectors, nested decorated-inline
+  relational selectors, nested decorated-inline
   stacks/replaced inline decorations and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.

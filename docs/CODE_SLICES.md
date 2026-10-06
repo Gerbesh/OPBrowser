@@ -212,6 +212,7 @@ HTML
        descendant/child/adjacent/general-sibling combinators
        root/child/empty/link pseudo-classes
        forgiving is/where + strict not + filtered nth-child/nth-last-child(An+B of S)
+       first/last/only-of-type + nth-of-type/nth-last-of-type(An+B)
        terminal ::before / ::after pseudo-element targets
   -> right-to-left selector matching against op_dom
   -> StyleMap host buckets + (NodeId, PseudoElement) author buckets
@@ -320,6 +321,9 @@ component and are collected into independent pseudo buckets. Pseudo-elements ins
 unsupported/malformed branches, including empty/all-invalid lists that match nothing.
 `:not()` and nth `of` lists reject invalid branches/pseudo-elements. Ordinary top-level
 selector lists remain strict; nested functional selectors are bounded to 64 levels.
+Typed first/last/only-of-type and nth-of-type/nth-last-of-type filter siblings by the
+candidate's HTML tag name and reuse the same indexing/An+B arithmetic. They contribute
+one class-level specificity component and do not accept `of` lists or add filter specificity.
 
 Functional colors feed the same computed CssColor path for text, backgrounds, border-color
 longhands/lists and border shorthands. A color-only `background` shorthand (including `none`,

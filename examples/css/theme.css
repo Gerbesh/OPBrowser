@@ -49,3 +49,6 @@ h1 { color: #6d28d9; font-size: 42px; }
 .filtered-nth-demo > :is(:future-unsupported, .pick) { font-style:italic; }
 .empty-inline-demo::before, .empty-inline-demo::after { content:""; padding:3px 6px; background:#7c3aed; border:1px solid #4c1d95; }
 .empty-inline-dom { padding:3px 7px; background:#ffedd5; border:2px solid #ea580c; }
+.typed-nth-demo > span:first-of-type { color:#b42318; }
+.typed-nth-demo > span:nth-of-type(2):nth-last-of-type(2) { color:#087a35; font-weight:bold; }
+.typed-nth-demo > span:last-of-type { color:#0369a1; }
