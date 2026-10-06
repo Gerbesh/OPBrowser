@@ -37,18 +37,18 @@ filesystem path / file: URL / data:text/html URL
 
 Verified with examples\hello.html and data:text/html startup smoke tests.
 
-HTML comments follow Tokenizer::consume_comment -> Token::Comment -> tree-builder
-discard, so their text/markup cannot enter layout, image loading or painting. Comments
-inside otherwise empty elements preserve CSS :empty and empty inline frames. Normal,
-abrupt and EOF closing recovery has tokenizer coverage; Engine compares exact display
-lists against comment-free source before/after reflow. Raw-text/RCDATA comment markers
-remain literal text. Doctype declarations follow Tokenizer::consume_doctype ->
-Token::Doctype -> tree-builder discard, preventing visible <!doctype html> text.
-Typed tokens retain lowercase names, missing/empty PUBLIC/SYSTEM identifiers and
+HTML comments follow Tokenizer::consume_comment -> Token::Comment -> DOM Comment.
+They keep document order and split adjacent DOM text nodes at the real comment boundary,
+but CSS :empty ignores them and layout emits no inline/block item for them. Normal, abrupt
+and EOF closing recovery has tokenizer coverage; Engine compares exact display lists
+against comment-free source before/after reflow. Raw-text/RCDATA comment markers remain
+literal text. Doctype declarations follow Tokenizer::consume_doctype -> Token::Doctype ->
+the first pre-element DOM DocumentType node; later/in-element doctypes are ignored.
+Typed nodes retain lowercase names, missing/empty PUBLIC/SYSTEM identifiers and
 force-quirks recovery for future document modes. Unknown <! declarations and HTML
-CDATA-like declarations become bogus comments; token tests verify recovery and Engine
-tests compare exact rendering/reflow against declaration-free source. DOM comment/doctype
-storage, document modes, processing instructions and foreign-content context remain later.
+CDATA-like declarations become Comment nodes; token/tree tests verify recovery and Engine
+tests compare exact rendering/reflow against declaration-free source. Document modes,
+processing instructions and foreign-content context remain later.
 
 ## S2 - Navigation to static page
 

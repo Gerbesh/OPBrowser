@@ -19,11 +19,21 @@ pub struct ElementData {
     pub attributes: Vec<Attribute>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DocumentTypeData {
+    pub name: Option<String>,
+    pub public_identifier: Option<String>,
+    pub system_identifier: Option<String>,
+    pub force_quirks: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
     Document,
     Element(ElementData),
     Text(String),
+    Comment(String),
+    DocumentType(DocumentTypeData),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +91,14 @@ impl Document {
         self.push_node(NodeKind::Text(text.into()))
     }
 
+    pub fn create_comment(&mut self, data: impl Into<String>) -> NodeId {
+        self.push_node(NodeKind::Comment(data.into()))
+    }
+
+    pub fn create_document_type(&mut self, data: DocumentTypeData) -> NodeId {
+        self.push_node(NodeKind::DocumentType(data))
+    }
+
     pub fn append_child(&mut self, parent: NodeId, child: NodeId) -> Result<(), DocumentError> {
         if parent.index() >= self.nodes.len() {
             return Err(DocumentError::UnknownParent);
@@ -116,6 +134,13 @@ impl Document {
     pub fn element(&self, id: NodeId) -> Option<&ElementData> {
         match &self.node(id)?.kind {
             NodeKind::Element(element) => Some(element),
+            _ => None,
+        }
+    }
+
+    pub fn document_type(&self, id: NodeId) -> Option<&DocumentTypeData> {
+        match &self.node(id)?.kind {
+            NodeKind::DocumentType(data) => Some(data),
             _ => None,
         }
     }

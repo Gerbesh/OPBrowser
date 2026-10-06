@@ -1148,3 +1148,21 @@ This file is append-only project history.
   retained-reflow comparisons. Updated plan, graph/slices and HTML wiki. Document-mode
   selection, doctype DOM nodes, processing instructions and foreign-content context remain
   later work; token force_quirks does not yet change layout.
+
+## 2026-10-06 - DOM comment and DocumentType nodes
+
+- Extended op_dom with Comment and DocumentType nodes plus DocumentTypeData retaining the
+  tokenizer name, PUBLIC/SYSTEM identifiers and force_quirks value without coupling op_dom
+  back to op_html.
+- The tree builder now stores comments at their actual document position, flushing adjacent
+  text around them without changing the open-element stack. It stores the first doctype
+  before the document element and ignores later/in-element doctypes in this initial phase.
+- CSS :empty and descendant-text extraction explicitly ignore comment/doctype payloads;
+  layout emits no items for either node kind. Existing Engine tests still prove comments,
+  doctypes and bogus declarations produce identical pixels and retained reflow.
+- Added DOM/tree-builder coverage for node data, ordering, text splitting and late-doctype
+  rejection. Updated project plan, code graph/slices and HTML wiki.
+- Verification passed rustfmt, warning-free workspace Clippy, the complete workspace test
+  suite, native startup smoke and optimized workspace release build. One pre-existing
+  loopback generated-image test transiently hit WSAEWOULDBLOCK on the first full run, then
+  passed standalone and again in the complete suite.

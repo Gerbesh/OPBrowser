@@ -2,17 +2,66 @@ use op_dom::NodeKind;
 use op_html::parse_document;
 
 #[test]
-fn comments_do_not_create_text_elements_or_change_open_elements() {
+fn comments_become_dom_nodes_without_becoming_text_or_changing_open_elements() {
     let document = parse_document("<!--before--><p>a<!--</p><img src=x>-->b<!--unfinished");
     let children = document.children(document.root());
-    assert_eq!(children.len(), 1);
-    let paragraph = children[0];
+    assert_eq!(children.len(), 2);
+    assert!(matches!(
+        &document.node(children[0]).unwrap().kind,
+        NodeKind::Comment(data) if data == "before"
+    ));
+    let paragraph = children[1];
     assert_eq!(document.element(paragraph).unwrap().tag_name, "p");
     let children = document.children(paragraph);
-    assert_eq!(children.len(), 1);
+    assert_eq!(children.len(), 4);
     assert!(
-        matches!(&document.node(children[0]).unwrap().kind, NodeKind::Text(text) if text == "ab")
+        matches!(&document.node(children[0]).unwrap().kind, NodeKind::Text(text) if text == "a")
     );
+    assert!(
+        matches!(&document.node(children[1]).unwrap().kind, NodeKind::Comment(data) if data == "</p><img src=x>")
+    );
+    assert!(
+        matches!(&document.node(children[2]).unwrap().kind, NodeKind::Text(text) if text == "b")
+    );
+    assert!(
+        matches!(&document.node(children[3]).unwrap().kind, NodeKind::Comment(data) if data == "unfinished")
+    );
+}
+
+#[test]
+fn keeps_the_initial_doctype_and_ignores_late_doctypes() {
+    let document = parse_document(
+        "<!--before--><!doctype HTML PUBLIC 'pub' 'sys'><html><body>x<!doctype bogus><!--inside--></body></html><!doctype late><!--after-->",
+    );
+    let root = document.root();
+    let children = document.children(root);
+    assert_eq!(children.len(), 4);
+    assert!(matches!(
+        &document.node(children[0]).unwrap().kind,
+        NodeKind::Comment(data) if data == "before"
+    ));
+    let doctype = document.document_type(children[1]).unwrap();
+    assert_eq!(doctype.name.as_deref(), Some("html"));
+    assert_eq!(doctype.public_identifier.as_deref(), Some("pub"));
+    assert_eq!(doctype.system_identifier.as_deref(), Some("sys"));
+    assert!(!doctype.force_quirks);
+
+    let html = children[2];
+    let body = document.children(html)[0];
+    let body_children = document.children(body);
+    assert_eq!(body_children.len(), 2);
+    assert!(matches!(
+        &document.node(body_children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "x"
+    ));
+    assert!(matches!(
+        &document.node(body_children[1]).unwrap().kind,
+        NodeKind::Comment(data) if data == "inside"
+    ));
+    assert!(matches!(
+        &document.node(children[3]).unwrap().kind,
+        NodeKind::Comment(data) if data == "after"
+    ));
 }
 
 #[test]

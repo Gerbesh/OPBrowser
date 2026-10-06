@@ -1,4 +1,4 @@
-use op_dom::{Attribute as DomAttribute, Document, NodeId};
+use op_dom::{Attribute as DomAttribute, Document, DocumentTypeData, NodeId, NodeKind};
 
 use crate::{Token, Tokenizer};
 
@@ -10,10 +10,18 @@ pub fn parse_document(input: &str) -> Document {
     for token in Tokenizer::new(input).tokenize() {
         match token {
             Token::Character(character) => text_buffer.push(character),
-            // Comment nodes are not exposed by the initial DOM arena yet.
-            Token::Comment(_) => {}
-            // Document modes and doctype DOM nodes are a later tree-builder stage.
-            Token::Doctype(_) => {}
+            Token::Comment(data) => {
+                flush_text(&mut document, &open_elements, &mut text_buffer);
+                let node = document.create_comment(data);
+                let parent = current_parent(&document, &open_elements);
+                document
+                    .append_child(parent, node)
+                    .expect("tree builder created an invalid comment parent");
+            }
+            Token::Doctype(doctype) => {
+                flush_text(&mut document, &open_elements, &mut text_buffer);
+                append_doctype_if_allowed(&mut document, &open_elements, doctype);
+            }
             Token::StartTag {
                 name,
                 attributes,
@@ -51,6 +59,36 @@ pub fn parse_document(input: &str) -> Document {
     }
 
     document
+}
+
+fn append_doctype_if_allowed(
+    document: &mut Document,
+    open_elements: &[NodeId],
+    doctype: crate::Doctype,
+) {
+    if !open_elements.is_empty() {
+        return;
+    }
+
+    let root = document.root();
+    let root_already_has_element_or_doctype = document.children(root).iter().any(|child| {
+        document.node(*child).is_some_and(|node| {
+            matches!(node.kind, NodeKind::Element(_) | NodeKind::DocumentType(_))
+        })
+    });
+    if root_already_has_element_or_doctype {
+        return;
+    }
+
+    let node = document.create_document_type(DocumentTypeData {
+        name: doctype.name,
+        public_identifier: doctype.public_identifier,
+        system_identifier: doctype.system_identifier,
+        force_quirks: doctype.force_quirks,
+    });
+    document
+        .append_child(root, node)
+        .expect("tree builder created an invalid doctype parent");
 }
 
 fn current_parent(document: &Document, open_elements: &[NodeId]) -> NodeId {

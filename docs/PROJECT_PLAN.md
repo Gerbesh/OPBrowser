@@ -49,8 +49,10 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
   comment handling through tree construction, CSS :empty and retained painting.
 - DONE typed doctype tokens with name/PUBLIC/SYSTEM/force-quirks recovery and bogus
   HTML declarations as invisible comments, preserving raw-text/RCDATA and reflow.
-- LATER DOM comment/doctype nodes, document modes, processing instructions, foreign
-  content/CDATA and complete HTML insertion modes/script-data escape states.
+- DONE DOM comment and DocumentType nodes with preserved token data; comments split DOM
+  text at their real position while CSS/layout keep them non-rendering and :empty-neutral.
+- LATER document modes, processing instructions, foreign content/CDATA and complete HTML
+  insertion modes/script-data escape states.
 - DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
 - DONE initial HTML tree builder from tokenizer output into op_dom::Document.
 - DONE initial document-to-layout pipeline with basic text flow and wrapping.

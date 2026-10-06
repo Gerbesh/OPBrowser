@@ -529,13 +529,14 @@ classDiagram
   unsupported labels and malformed Unicode remain typed errors.
 - op_html owns HTML tokenization and tree construction rules. Its private
   comments module implements iterative comment start/body/less-than/end states and
-  emits Token::Comment(String). The initial tree builder discards these tokens, leaving
-  text buffering/open elements unchanged; DOM comment nodes and doctype modes remain later.
+  emits Token::Comment(String). The tree builder now creates ordered DOM Comment nodes,
+  flushing adjacent text at comment boundaries without changing the open-element stack.
   Comment detection occurs only in normal tag-open context, preserving raw-text/RCDATA.
   The private declarations module emits Token::Doctype(Doctype), preserving missing/empty
   name/public/system identifiers and force_quirks with iterative recovery. Unknown <!...
-  declarations use bogus comment tokens. Initial tree construction discards doctypes;
-  document modes and foreign-content/CDATA context remain later work.
+  declarations use bogus comment tokens. The tree builder maps the first pre-element
+  doctype to a DOM DocumentType node and ignores later/in-element doctypes; document modes
+  and foreign-content/CDATA context remain later work.
   Its private
   references module consumes the full named-reference table and numeric references
   before text/attribute tokens enter the DOM. Characters carries one or two Unicode
@@ -546,7 +547,8 @@ classDiagram
   WHATWG data/entities.tsv; no new crate or runtime/build dependency is involved.
   Initial raw-text/RCDATA context keeps
   references and markup from being incorrectly parsed inside script/style/title.
-- op_dom owns document/node storage, element attributes, and DOM invariants.
+- op_dom owns document/node storage, element attributes, Comment nodes,
+  DocumentTypeData (name/public/system/force-quirks), and DOM parent/child invariants.
 - op_layout owns text-flow and block-box used-value geometry, structural-container traversal
   and UTF-8 LinkSpan ranges preserved across whitespace normalization and line wrapping.
   It resolves percent/auto/min/max/content-vs-border-box widths, independent border sides,

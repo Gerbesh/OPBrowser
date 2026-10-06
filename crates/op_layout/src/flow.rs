@@ -454,6 +454,7 @@ impl<'a> Context<'a, '_> {
                     );
                 }
             }
+            NodeKind::Comment(_) | NodeKind::DocumentType(_) => {}
         }
     }
 

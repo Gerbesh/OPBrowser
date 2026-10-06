@@ -422,7 +422,7 @@ fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) 
             document.node(*child).is_none_or(|child| match &child.kind {
                 NodeKind::Element(_) => false,
                 NodeKind::Text(text) => text.is_empty(),
-                NodeKind::Document => true,
+                NodeKind::Document | NodeKind::Comment(_) | NodeKind::DocumentType(_) => true,
             })
         }),
         PseudoClass::Link => document.element(node).is_some_and(|element| {
@@ -541,7 +541,10 @@ fn append_descendant_text(document: &Document, node: NodeId, output: &mut String
         if let Some(child_node) = document.node(*child) {
             match &child_node.kind {
                 NodeKind::Text(value) => output.push_str(value),
-                _ => append_descendant_text(document, *child, output),
+                NodeKind::Document | NodeKind::Element(_) => {
+                    append_descendant_text(document, *child, output)
+                }
+                NodeKind::Comment(_) | NodeKind::DocumentType(_) => {}
             }
         }
     }
