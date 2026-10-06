@@ -47,3 +47,5 @@ h1 { color: #6d28d9; font-size: 42px; }
 .filtered-nth-demo > :nth-child(2 of .pick) { color:#b42318; }
 .filtered-nth-demo > :nth-last-child(1 of .pick) { color:#0369a1; font-weight:bold; }
 .filtered-nth-demo > :is(:future-unsupported, .pick) { font-style:italic; }
+.empty-inline-demo::before, .empty-inline-demo::after { content:""; padding:3px 6px; background:#7c3aed; border:1px solid #4c1d95; }
+.empty-inline-dom { padding:3px 7px; background:#ffedd5; border:2px solid #ea580c; }

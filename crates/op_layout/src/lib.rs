@@ -844,6 +844,129 @@ mod tests {
     }
 
     #[test]
+    fn empty_inline_pseudos_reserve_edges_align_and_paint_without_glyphs() {
+        let document = op_html::parse_document(
+            "<style>#host { text-align:center }
+             #host::before { content:''; padding:2px 5px; border:1px solid blue; background:red }
+             #host::after { content:''; padding:3px 7px; border:2px solid red; background:blue }
+             </style><div id='host'>Body</div>",
+        );
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            500,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        assert_eq!(layout.text_boxes.len(), 1);
+        assert_eq!(layout.text_boxes[0].text, "Body");
+        assert_eq!(layout.order, vec![LayoutItem::Text(0)]);
+        assert_eq!(layout.box_decorations.len(), 2);
+        let before = &layout.box_decorations[0];
+        let after = &layout.box_decorations[1];
+        let body = &layout.text_boxes[0];
+        assert_eq!(before.width, 12);
+        assert_eq!(after.width, 18);
+        assert_eq!(before.x + before.width, body.x);
+        assert_eq!(body.x + body.width, after.x);
+        assert_eq!(before.y, after.y);
+        assert_eq!(before.height, 34);
+        let total = before.width + body.width + after.width;
+        assert_eq!(before.x, 32 + (436 - total) / 2);
+    }
+
+    #[test]
+    fn empty_inline_pseudos_wrap_atomically_and_honor_nowrap() {
+        for (white_space, same_line) in [("normal", false), ("nowrap", true)] {
+            let document = op_html::parse_document(&format!(
+                "<style>#host {{ width:80px; white-space:{white_space} }}
+                 #host::before {{ content:''; padding:0 30px; background:red }}
+                 #host::after {{ content:''; padding:0 30px; background:blue }}
+                 </style><div id='host'>A</div>"
+            ));
+            let computed =
+                op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+            let layout = layout_document_with_computed_styles_and_metrics(
+                &document,
+                500,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            );
+            assert_eq!(layout.box_decorations.len(), 2);
+            let before = &layout.box_decorations[0];
+            let after = &layout.box_decorations[1];
+            assert_eq!(before.y == after.y, same_line, "{white_space}");
+            assert_eq!(before.width, 60);
+            assert_eq!(after.width, 60);
+            assert_eq!(layout.text_boxes.len(), 1);
+            assert_eq!(layout.text_boxes[0].text, "A");
+        }
+    }
+
+    #[test]
+    fn standalone_empty_inline_pseudo_creates_only_a_decorated_line() {
+        let document = op_html::parse_document(
+            "<style>#host::before { content:''; padding:3px 5px; border:1px solid blue; background:red }
+             #host::after { content:'' }
+             </style><div id='host'></div>",
+        );
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            500,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        assert!(layout.text_boxes.is_empty());
+        assert!(layout.order.is_empty());
+        assert_eq!(layout.box_decorations.len(), 1);
+        assert_eq!(
+            (
+                layout.box_decorations[0].width,
+                layout.box_decorations[0].height
+            ),
+            (12, 32)
+        );
+    }
+
+    #[test]
+    fn empty_dom_inline_boxes_use_the_same_edges_without_duplicating_inherited_boxes() {
+        let document = op_html::parse_document(
+            "<p>A<span style='padding:2px 5px;border:1px solid blue;background:red'></span>B
+             <span style='padding:2px 5px;border:1px solid blue;background:red'>C<b></b>D</span></p>",
+        );
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            500,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        assert_eq!(layout.box_decorations.len(), 2);
+        assert_eq!(layout.box_decorations[0].width, 12);
+        let a = &layout.text_boxes[0];
+        let b = &layout.text_boxes[1];
+        assert_eq!(b.x - a.x - a.width, 12);
+        let text = layout
+            .text_boxes
+            .iter()
+            .map(|text| text.text.as_str())
+            .collect::<String>();
+        assert_eq!(text, "AB CD");
+        assert_eq!(
+            layout.box_decorations[1].width,
+            12 + layout.text_boxes.last().unwrap().width
+        );
+    }
+
+    #[test]
     fn definite_block_height_keeps_overflow_outside_following_flow_geometry() {
         let document = op_html::parse_document(
             "<style>#small { width:80px; height:5px; border:1px solid red; background:blue }

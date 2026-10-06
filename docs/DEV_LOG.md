@@ -840,3 +840,20 @@ This file is append-only project history.
 - Added a visible external CSS demo and updated README, plan, graph/slices and CSS/rendering wiki.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 186 workspace tests,
   startup smoke, the 195-command CSS demo smoke and optimized workspace release build.
+
+## 2026-10-06 - Empty generated and ordinary inline decorations
+
+- Added EmptyInline items to the original line formatter. Decorated empty pseudo strings and
+  ordinary childless inline elements reserve horizontal padding/border edges, contribute
+  font/vertical-edge line metrics, and emit BoxDecoration without fabricated TextBox glyphs.
+- Empty boxes wrap as indivisible edge payloads, honor nowrap and participate in text-align.
+  Their node/pseudo identities preserve separate before/after decorations.
+- Undecorated empty pseudos do not introduce phantom line items; empty descendants inheriting
+  an ancestor decoration do not duplicate that ancestor's edges. Whitespace-only decorated
+  content and simultaneous nested decoration stacks remain later work.
+- Added four layout regressions for exact edge positioning/alignment/line extents, wrapping/
+  nowrap, standalone decorated lines and ordinary empty spans, plus Engine FillRect/reflow
+  verification that no empty Text paint commands are introduced.
+- Added a visible external CSS demo and updated README, plan, graph/slices and relevant wiki.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 191 workspace tests,
+  startup smoke, the 213-command CSS demo smoke and optimized workspace release build.

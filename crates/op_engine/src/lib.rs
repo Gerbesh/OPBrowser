@@ -1107,6 +1107,32 @@ mod tests {
     }
 
     #[test]
+    fn empty_generated_inline_edges_reach_fill_rects_without_text_commands() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(
+            "<style>#host::before { content:''; padding:2px 5px; border:1px solid blue; background:red }
+             #host::after { content:''; padding:2px 7px; border:1px solid red; background:blue }
+             </style><div id='host'>Body</div>", 800, 600);
+        let text: Vec<_> = original
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::Text { text, x, .. } => Some((text.as_str(), *x)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, vec![("Body", 44)]);
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::FillRect { width:12, color, .. } if *color == op_paint::Color { r:255, g:0, b:0 }
+        )));
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::FillRect { width:16, color, .. } if *color == op_paint::Color { r:0, g:0, b:255 }
+        )));
+        engine.reflow(300, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn custom_properties_and_var_reach_native_display_list() {
         let display_list = Engine::new().render_html(
             "<style>

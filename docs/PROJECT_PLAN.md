@@ -171,7 +171,9 @@ Status: IN PROGRESS.
 - DONE forgiving is()/where() selector-list recovery, strict not()/of lists, filtered
   nth-child/nth-last-child with maximum-filter specificity and token-aware An+B grammar;
   functional selector nesting is bounded to 64 levels.
-- NEXT generated `url()` content and fuller replaced-content/empty-inline geometry.
+- DONE empty generated/DOM inline decoration boxes reserve edges, wrap/align and paint
+  without fabricated text commands; nowrap and line extents use the existing formatter.
+- NEXT generated `url()` content and fuller replaced-content/nested-inline geometry.
 - LATER language-aware `quotes:auto` (currently deterministic English Unicode pairs).
 - LATER broader custom-property grammar/registration/animation-taint behavior,
   typed structural pseudo-classes/relational selectors, nested decorated-inline

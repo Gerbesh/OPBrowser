@@ -109,6 +109,8 @@ cycle components. Token/byte/depth budgets limit expansion and retained custom s
 Computed declarations retain a value_from_var flag: invalid computed winners become unset
 per supported property/component while preserving cascade priority. Malformed var() syntax
 is rejected before author collection; literal invalid values remain parse-time exclusions.
+Empty generated/DOM inline boxes carry edge/font metadata through the line formatter and
+emit BoxDecoration without creating TextBox glyphs or artificial link ranges.
 Inheritance produces per-node styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 

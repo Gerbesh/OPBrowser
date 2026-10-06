@@ -162,7 +162,7 @@ participate in selector matching with their initial specificity rules. Terminal
 before children and `::after` after completed child counter work. Computed var() failures retain
 their cascade priority and become unset for supported properties. Generated `url()` images, language-aware automatic quotes,
 custom counter styles and complete counter scoping remain later. Next S3 work moves into generated
-replaced content and empty-inline geometry, then typed structural/relational selectors,
+replaced content and nested-inline geometry, then typed structural/relational selectors,
 advanced color spaces, at-rules, media queries and full CSS
 conformance remain later.
 
@@ -186,7 +186,7 @@ path instead of approximating a block with line breaks. It honors widths/heights
 percentages, box-sizing, auto/negative margins, padding, solid borders and backgrounds.
 An empty string still creates the block box, allowing CSS-only rules and bars without glyphs.
 Definite heights control normal flow and border/background extents even when text overflows.
-Parent/child and empty-block margin collapse and full replaced/empty-inline geometry remain later.
+Parent/child and empty-block margin collapse and full replaced/nested-inline geometry remain later.
 
 ### Custom-property dependency and resource limits
 
@@ -230,3 +230,8 @@ n-dimension and n-ident token grammar, preserving sign/whitespace rules rather t
 arbitrary tokens. Coefficients are bounded to i32 and arithmetic uses i64.
 Reference: [Selectors 4](https://www.w3.org/TR/selectors-4/#the-nth-child-pseudo) and
 [CSS An+B syntax](https://www.w3.org/TR/css-syntax-3/#anb-microsyntax).
+
+Empty generated inline strings and empty DOM inline elements with their own padding/border/
+background now produce real decoration geometry through an EmptyInline formatter item.
+They reserve horizontal edges, participate in wrapping/nowrap/alignment and expand safe line
+extents using font/vertical-edge metrics, while emitting no fabricated text or link spans.

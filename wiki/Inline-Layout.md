@@ -88,7 +88,9 @@ scalar while layout width stays anchored to whole-run GDI measurement plus CSS s
 Inline replaced elements do not yet fully honor nowrap semantics or receive these box
 fragments/generated pseudos. Generated `display:block` uses the ordinary block box model with
 dimensions/min/max, margins, padding, borders and background. Empty generated block strings
-still materialize decorations; empty generated inline strings do not yet form decorations.
+still materialize decorations. Empty generated strings and ordinary childless inline elements
+with their own box carry EmptyInline items: edge width affects wrapping/nowrap/alignment and
+font/vertical-edge metrics affect line geometry. They emit BoxDecoration without TextBox glyphs.
 Generated `url()` images, language-aware automatic quote selection, custom counter styles and fully spec-complete counter
 scope edge cases are not implemented. Only one decorated inline
 ancestor is represented at a time; a nested inline with

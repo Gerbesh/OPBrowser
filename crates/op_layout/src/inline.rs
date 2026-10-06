@@ -61,6 +61,7 @@ pub(super) struct InlineChar<'a> {
 
 pub(super) enum Item<'a> {
     Char(InlineChar<'a>),
+    EmptyInline(InlineStyle),
     Image(ImageBox),
     Break,
 }
@@ -71,6 +72,7 @@ enum BoxItem<'a> {
         width: i32,
     },
     Image(ImageBox),
+    EmptyInline(InlineStyle),
 }
 
 struct PreparedText {
@@ -171,6 +173,11 @@ impl<'a, 'm> Lines<'a, 'm> {
                     preserved_cr = false;
                     self.word(std::mem::take(&mut word));
                     self.image(image);
+                }
+                Item::EmptyInline(style) => {
+                    preserved_cr = false;
+                    self.word(std::mem::take(&mut word));
+                    self.empty_inline(style);
                 }
                 Item::Break => {
                     preserved_cr = false;
@@ -370,6 +377,36 @@ impl<'a, 'm> Lines<'a, 'm> {
         self.boxes.push(BoxItem::Image(image));
     }
 
+    fn empty_inline(&mut self, style: InlineStyle) {
+        let Some(box_style) = style.box_style else {
+            return;
+        };
+        let width = box_style
+            .left_extra()
+            .saturating_add(box_style.right_extra());
+        let space = if self.boxes.is_empty() {
+            None
+        } else {
+            self.pending_space.take()
+        };
+        self.pending_space = None;
+        let occupied = self.appended_width(&[], space).saturating_add(width);
+        let allows_wrap = matches!(
+            style.white_space,
+            WhiteSpace::Normal | WhiteSpace::PreWrap | WhiteSpace::PreLine
+        );
+        if allows_wrap && !self.boxes.is_empty() && occupied > self.width {
+            self.flush(false);
+        }
+        if !self.boxes.is_empty()
+            && let Some(space) = space
+        {
+            self.append(&[], Some(space));
+        }
+        self.line_width = self.line_width.saturating_add(width);
+        self.boxes.push(BoxItem::EmptyInline(style));
+    }
+
     fn metrics_for(&mut self, style: InlineStyle) -> (TextMetrics, i32, i32) {
         let metrics = self
             .measurer
@@ -431,6 +468,9 @@ impl<'a, 'm> Lines<'a, 'm> {
         for item in boxes {
             match item {
                 BoxItem::Image(image) => prepared.push(PreparedBox::Image(image)),
+                BoxItem::EmptyInline(style) => {
+                    prepared.push(PreparedBox::Text(self.prepare_text(&[], style)))
+                }
                 BoxItem::Text { chars, .. } => {
                     let mut start = 0;
                     while start < chars.len() {
@@ -513,6 +553,9 @@ impl<'a, 'm> Lines<'a, 'm> {
                     self.image_boxes.push(image);
                 }
                 PreparedBox::Text(text) => {
+                    if text.text.is_empty() {
+                        continue;
+                    }
                     self.order.push(LayoutItem::Text(self.text_boxes.len()));
                     self.text_boxes.push(TextBox {
                         x,

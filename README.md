@@ -110,7 +110,7 @@ Adjacent sibling vertical margins collapse. External CSS is merged with embedded
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
 percentage-height propagation, broader custom-property grammar/registration and
 language-aware automatic quotes, generated `url()` and full
-generated replaced-content/empty-inline geometry, typed structural/relational selectors, nested decorated
+generated replaced-content geometry, typed structural/relational selectors, nested decorated
 inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources
 and JavaScript
@@ -129,6 +129,8 @@ properties; they cannot reveal older declarations. Malformed var() syntax is rej
 `:not()` and nth `of` lists remain strict. Nth filters count matching element siblings
 once in either direction and add the maximum filter specificity. An+B parsing preserves
 token sign/whitespace rules; functional selector nesting is limited to 64 levels.
+Empty generated and ordinary inline boxes reserve padding/border edges and paint decorations
+without creating text glyphs; wrapping, nowrap and alignment use the same line formatter.
 
 See:
 

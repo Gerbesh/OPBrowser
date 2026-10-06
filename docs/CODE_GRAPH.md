@@ -312,6 +312,10 @@ classDiagram
         background
         border_edges
     }
+    class EmptyInline {
+        InlineStyle
+        no glyph payload
+    }
     class BlockContent {
         Element(NodeId)
         Generated(retained_text)
@@ -427,6 +431,9 @@ classDiagram
     BlockContent --> BoxDecoration : shared normal-flow block geometry / empty boxes
     ComputedPseudoStyle --> InlineBoxStyle : pseudo decoration identity + box style
     InlineBoxStyle --> BoxDecoration : per-line inline fragments
+    ComputedPseudoStyle --> EmptyInline : decorated empty generated strings
+    Document --> EmptyInline : childless inline with its own box decoration
+    EmptyInline --> BoxDecoration : edge width / line metrics / alignment without TextBox
     LayoutTree --> BoxDecoration : block + inline backgrounds / solid borders
     BoxDecoration --> DisplayList : background + four border FillRects
     LayoutTree --> DisplayList : styled text / image paint commands

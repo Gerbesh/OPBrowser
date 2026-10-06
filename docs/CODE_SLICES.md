@@ -332,7 +332,7 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> generated url() + fuller replaced-content/empty-inline geometry
+  -> generated url() + fuller replaced-content/nested-inline geometry
   -> broader custom-property grammar/registration/animation-taint semantics
   -> nested/replaced inline decoration stacks
   -> additional computed properties
@@ -351,7 +351,11 @@ language-aware automatic quote selection remain later (`auto` currently uses Eng
 box-sizing, percentage sizing, auto/negative margins, padding, borders, backgrounds and sibling
 margin collapse. Empty generated block strings still materialize sized/decorated boxes without
 inventing text or changing the DOM. Fixed block heights bound flow and decoration while text
-may overflow. Empty inline strings still lack decorations, and replaced elements do not yet
+may overflow. Empty generated and childless ordinary inline boxes carry an EmptyInline item
+through the formatter: padding/border width contributes to wrapping/nowrap/alignment, font
+and vertical-edge extents contribute to the line, decorations paint without emitting glyphs
+or TextBox/LinkSpan commands. Empty descendants without their own box do not duplicate an
+inherited decoration. Replaced elements do not yet
 receive generated pseudos. Broader property/value coverage, `@import`, media queries and CSS
 `url(...)` resources remain later work.
 

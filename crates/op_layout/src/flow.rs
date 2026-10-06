@@ -382,6 +382,21 @@ impl<'a> Context<'a, '_> {
                         (containing_x, containing_width),
                         items,
                     );
+                    if node.children.is_empty()
+                        && self
+                            .computed_styles
+                            .pseudo_style_for(id, PseudoElement::Before)
+                            .is_none()
+                        && self
+                            .computed_styles
+                            .pseudo_style_for(id, PseudoElement::After)
+                            .is_none()
+                        && current.inline.box_style.is_some_and(|box_style| {
+                            box_style.node == id && box_style.pseudo.is_none()
+                        })
+                    {
+                        items.push(Item::EmptyInline(current.inline));
+                    }
                     for child in &node.children {
                         self.collect(*child, href, current, containing_x, containing_width, items);
                     }
@@ -442,6 +457,12 @@ impl<'a> Context<'a, '_> {
         style.inline.box_style =
             resolve_inline_box_style(id, Some(pseudo), style, containing_width)
                 .or(host_style.inline.box_style);
+        if generated.content.is_empty() {
+            if style.inline.box_style.is_some() {
+                items.push(Item::EmptyInline(style.inline));
+            }
+            return;
+        }
         let generated_items = || {
             generated
                 .content
