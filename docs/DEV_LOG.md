@@ -1689,4 +1689,8 @@ This file is append-only project history.
 - The current local release binary was rebuilt at `target/release/op_browser.exe`; no OPBrowser
   shortcuts were found in Desktop, Start Menu or pinned taskbar locations, so there is no separate
   installed copy to synchronize.
+- Hosted run #69 reproduced WSAEWOULDBLOCK in a second local HTTP fixture. Three fixtures that used
+  a non-blocking listener but left accepted Windows streams non-blocking now explicitly switch each
+  accepted stream back to blocking mode before applying the finite read timeout, matching the
+  already-stable image/navigation fixture pattern.
 

@@ -236,6 +236,7 @@ fn redirected_css_images_share_cache_and_skip_hidden_blocked_and_failed_sources(
                     Err(error) => panic!("{error}"),
                 }
             };
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(3)))
                 .unwrap();

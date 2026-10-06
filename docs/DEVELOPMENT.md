@@ -63,6 +63,11 @@ Test:
 
     cargo test --workspace
 
+Local HTTP test fixtures may use a non-blocking `TcpListener` so accept loops can enforce a
+deadline. On Windows, every accepted `TcpStream` must immediately call
+`set_nonblocking(false)` before request reads, then set a finite read timeout. Accepted sockets can
+otherwise inherit non-blocking behavior and intermittently fail CI with WSAEWOULDBLOCK.
+
 Build debug browser:
 
     cargo build -p op_browser
