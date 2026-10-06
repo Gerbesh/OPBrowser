@@ -559,44 +559,74 @@ and retained reflow. Full loading-state/quirks-mode HTML fallback rules remain l
 
 ## S4 - Scripted page
 
-Status: PLANNED.
+Status: IN PROGRESS at the standalone language-engine stage; page scripting remains planned.
+
+Current executable slice:
 
 ```text
-<script>
-  -> op_js lexer/parser
-  -> bytecode
-  -> VM
+JavaScript source
+  -> op_js lexer
+  -> AST parser
+  -> bytecode compiler
+  -> stack VM
+  -> primitive completion value / persistent global binding
+```
+
+The implemented subset covers scalar literals, single let/const/var declarations,
+assignment, unary/arithmetic/comparison/equality operators and string concatenation.
+A parse-only Test262 probe measures positive parse acceptance and expected parse failures.
+It deliberately does not claim runtime conformance.
+
+Planned continuation:
+
+```text
+<script> discovery
+  -> op_js runtime / realm + objects/functions/exceptions
   -> Web IDL bindings
-  -> DOM mutation/events
+  -> DOM mutation/events + event loop
   -> style/layout invalidation
   -> repaint
 ```
 
 ## S5 - Managed background tab
 
-Status: PLANNED.
+Status: IN PROGRESS at the browser-core policy stage; native multi-tab UI/process release is not connected yet.
 
 ```text
-browser tab
-  -> lifecycle scoring
-  -> throttle/freeze
-  -> discard snapshot
-  -> process/RAM release
-  -> restore
+op_browser_core::TabManager
+  -> TabId + canonical active tab
+  -> active/background/throttled/frozen/discarded/restoring lifecycle
+  -> protection flags (audio/capture/transfer/unsaved-form/pinned)
+  -> estimated private-byte accounting input
+  -> automatic_discard_candidate()
+  -> retained address + scroll restore state
+  -> activation of discarded tab requests restoring state
 ```
+
+The next product slice connects this model to native tab UI and one renderer process per
+active tab, then uses real process memory/pressure signals to terminate and recreate
+renderers. Current tests cover activation/close invariants, protected tabs, candidate
+selection and restore transitions.
 
 ## S6 - Native content blocking
 
-Status: PLANNED.
+Status: IN PROGRESS with network filtering active on current document/CSS/image paths.
 
 ```text
-resource request
-  -> request classification
-  -> filter engine
-  -> allow/block/redirect decision
-  -> op_net
-  -> page-visible result/statistics
+Engine document / stylesheet / image load
+  -> op_net::NetworkContext
+  -> RequestFilter::check(url, ResourceType, top-level URL)
+      -> Allow -> existing file/data/HTTP(S) loader
+      -> Block -> LoadError::BlockedRequest { url, rule }
+  -> checked/allowed/blocked counters
 ```
+
+The initial rule subset accepts `||host^`, wildcard patterns, `@@` exceptions, document /
+stylesheet / image / script resource options and a per-site allowlist. Stylesheet/image
+block failures remain nonfatal to the document, matching the existing subresource failure
+policy. The current matcher is linear and is not yet suitable for EasyList-scale lists.
+Subscriptions, domain/third-party options, scalable indexing, cosmetic filtering and UI
+statistics/settings remain planned.
 
 ## Rule
 

@@ -1510,3 +1510,51 @@ This file is append-only project history.
   inline vertical-align values sub/super/text-top/text-bottom/length/% remain later work.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 338 workspace tests,
   native startup smoke and optimized release build. The release executable is 891,392 bytes.
+
+
+## 2026-10-06 - JavaScript, request filtering and browser lifecycle foundations
+
+- Replaced the placeholder op_js crate with the first executable original ECMAScript slice:
+  lexer, AST parser, bytecode compiler and stack interpreter. The current subset covers
+  primitive literals, single let/const/var declarations, identifier assignment/load,
+  unary/arithmetic/comparison/equality operators, string concatenation and persistent globals.
+- Added typed JavaScript syntax/reference/type errors plus project-owned lexer/parser/compiler/
+  runtime regressions. Page <script> discovery, DOM bindings, objects/functions, GC and the
+  event loop remain future work.
+- Added test262_probe, a deliberately parse-only external-suite probe that measures positive
+  parse acceptance and negative parse-error expectations without presenting the result as
+  runtime Test262 conformance.
+- Added tools/compatibility.ps1 to run the project-owned HTML/CSS/layout/engine/JavaScript
+  regression baseline and optionally invoke the Test262 parse probe. WPT automation remains
+  NEXT and owned test counts are explicitly not reported as WPT percentages.
+- Added op_net::RequestFilter and placed it before current document, stylesheet and image
+  loads. The initial Adblock-style subset supports ||host^, wildcard patterns, @@ exceptions,
+  resource-type options, per-site allowlisting and checked/allowed/blocked counters.
+- Added an integration regression proving a blocked document is rejected before transport.
+  Stylesheet/image blocks reuse the existing nonfatal subresource-failure path.
+- Added op_browser_core with canonical TabId/TabManager state, active/background/throttled/
+  frozen/discarded/restoring lifecycle states, protection flags, estimated-memory input,
+  automatic discard-candidate selection and retained address/scroll restore metadata.
+  Native tab UI, process memory-pressure signals and renderer termination/restoration remain
+  integration work rather than being falsely marked complete.
+- Accepted ADR-0002 for browser/renderer ownership and staged IPC/process isolation, with one
+  renderer process per active tab as the first target. Accepted ADR-0003 allowing DirectWrite
+  as Windows text-shaping/font infrastructure while OPBrowser continues to own CSS/layout/paint
+  semantics.
+- Reprioritized M2 around readable static sites: position/overflow/floats/flex/media/font-face/
+  background images/radius/shadows now outrank additional edge-case value polish; grid follows
+  the first usable flex slice.
+- Updated README, project plan, code graph, code slices and wiki pages for JavaScript,
+  request filtering, compatibility measurement, process ownership and text shaping.
+- GitHub CI/workflows were intentionally not changed in this pass; the account billing/CI
+  issue is being handled separately.
+- Added the first positioned-layout value slice immediately before this checkpoint: computed
+  `position: static|relative` and `top/right/bottom/left` insets now participate in cascade,
+  global keywords and relative-unit/percentage parsing. Layout translation is not wired yet,
+  so this is explicitly computed-style support rather than completed CSS positioning.
+- Checkpoint verification: rustfmt passed, workspace Clippy passed with `-D warnings`, browser
+  build and native `--smoke-test` passed, and the full workspace test suite passed on retry
+  with 355 tests. One initial run hit the existing Windows localhost socket `10035 WouldBlock`
+  flake in `http_linked_stylesheet_reaches_native_display_list`; the complete op_engine suite
+  and then the complete workspace suite passed immediately afterward.
+

@@ -5,8 +5,9 @@ not collapse into one dependency knot.
 
 Current crates:
 
-- op_browser: entry point, native-event routing and navigation worker/channels.
-- op_engine: subsystem orchestration.
+- op_browser: entry point, native-event routing and current navigation worker/channels.
+- op_browser_core: UI-independent canonical tab/lifecycle/discard policy state.
+- op_engine: renderer subsystem orchestration.
 - op_platform_win: Win32 integration and current temporary GDI backend.
 - op_dom: document/node storage and element attributes.
 - op_html: HTML tokenizer and tree builder.
@@ -14,9 +15,9 @@ Current crates:
 - op_layout: platform-neutral text/layout geometry.
 - op_image: validated raster buffers and Windows WIC infrastructure codec adapter.
 - op_paint: platform-neutral display list.
-- op_js: original ECMAScript runtime.
-- op_net: source loading, initial owned HTTP URL parsing, bounded WinHTTP transport
-  and response validation; future cache/cookies/request filtering.
+- op_js: original ECMAScript lexer/parser/bytecode/runtime foundation plus Test262 parse probe.
+- op_net: source loading, initial owned HTTP URL parsing, bounded WinHTTP transport,
+  response validation and native request filtering; cache/cookies remain future work.
 
 The first visible renderer path is live:
 
@@ -43,11 +44,13 @@ native cursor/click hit testing. Engine tracks the last loaded document address
 separately from history requests so link bases follow redirects during reload.
 
 Display-list, scroll and measured link-region storage are currently process-global
-because M1 has one browser window.
-Multi-window and multi-process work will replace this with explicit per-window /
-per-renderer ownership.
+because M1 still has one browser window and one worker-owned renderer.
 
-Multi-process isolation remains a planned architectural requirement.
+The target process model is fixed by ADR-0002: the browser process owns windows, tabs,
+lifecycle policy, permissions and renderer supervision; renderer processes own
+Engine/DOM/CSS/layout/paint/JavaScript state. The first migration target is one renderer
+process per active tab, followed by sandboxing and only then measured renderer sharing.
+The current worker is a staging implementation, not the final ownership model.
 
 Document decoding is owned by op_net::encoding: compact Windows-1251/1252 tables,
 strict Unicode conversion, charset aliases and a bounded byte-level meta prescan.
@@ -83,3 +86,14 @@ viewport-tagged results prevent stale-width presentation; native present_reflow
 preserves address edits/scroll bounds and rebuilds link regions. The worker and UI
 share a short GDI text gate for font creation, use and cleanup. See
 [Page Reflow](Page-Reflow.md) for lifetime/costs and verification.
+
+Request filtering is owned by op_net and is applied before current document, stylesheet
+and image loads. The initial Adblock-style subset supports host/wildcard network rules,
+exceptions, resource types and per-site allowlisting; see [Request Filtering](Request-Filtering.md).
+
+The first op_js execution slice is deliberately independent of DOM scripting: lexer -> AST
+-> bytecode -> VM, with a parse-only Test262 probe. See [JavaScript Engine](JavaScript-Engine.md).
+
+For text, ADR-0003 permits DirectWrite as a focused Windows shaping/raster infrastructure
+service behind the platform-neutral text interface. OPBrowser still owns CSS font policy,
+line breaking, layout and paint semantics.

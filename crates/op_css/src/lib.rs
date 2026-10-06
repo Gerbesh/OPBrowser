@@ -14,8 +14,9 @@ pub use computed::{
     BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide,
     ComputedBorder, ComputedFontWeight, ComputedLineHeight, ComputedPseudoStyle, ComputedQuotes,
     ComputedStyle, ComputedStyleMap, CssColor, CustomPropertyMap, Display, FontStyle,
-    GeneratedContentItem, LengthPercentage, MarginEdges, MarginValue, PaddingEdges, TableLayout,
-    TextAlign, TextDecorationLine, TextTransform, VerticalAlign, WhiteSpace, compute_styles,
+    GeneratedContentItem, InsetEdges, LengthPercentage, MarginEdges, MarginValue, PaddingEdges,
+    Position, TableLayout, TextAlign, TextDecorationLine, TextTransform, VerticalAlign, WhiteSpace,
+    compute_styles,
 };
 pub use parser::{parse_declaration_list, parse_stylesheet};
 pub use style::{

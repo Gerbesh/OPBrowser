@@ -17,6 +17,8 @@ and original ECMAScript engine.
 - [Inline Layout](Inline-Layout.md)
 - [Page Reflow](Page-Reflow.md)
 - [Navigation](Navigation.md)
+- [JavaScript Engine](JavaScript-Engine.md)
+- [Request Filtering](Request-Filtering.md)
 - [Development Workflow](Development-Workflow.md)
 - [Compatibility Strategy](Compatibility-Strategy.md)
 

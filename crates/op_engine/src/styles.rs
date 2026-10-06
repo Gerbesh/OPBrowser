@@ -66,7 +66,7 @@ pub(super) fn load(network: &NetworkContext, document: &Document, base: &str) ->
 
             requests += 1;
             let css = network
-                .load_stylesheet(&source, TEXT_BUDGET - text_bytes)
+                .load_stylesheet_for_page(&source, Some(base), TEXT_BUDGET - text_bytes)
                 .ok()
                 .filter(|loaded| {
                     text_bytes = text_bytes.saturating_add(loaded.text.len());

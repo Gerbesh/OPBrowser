@@ -6,9 +6,13 @@ mod encoding;
 mod http;
 mod images;
 mod links;
+mod request_filter;
 mod stylesheets;
 pub use images::resolve_image_source;
 pub use links::resolve_link;
+pub use request_filter::{
+    FilterImportReport, FilterStats, RequestDecision, RequestFilter, ResourceType,
+};
 pub use stylesheets::resolve_stylesheet_source;
 
 use std::fmt;
@@ -57,6 +61,7 @@ pub enum LoadError {
     ImageTooLarge,
     StylesheetTooLarge,
     InvalidLink(String),
+    BlockedRequest { url: String, rule: String },
 }
 
 impl fmt::Display for LoadError {
@@ -93,6 +98,12 @@ impl fmt::Display for LoadError {
             Self::ImageTooLarge => write!(formatter, "image exceeds the byte budget"),
             Self::StylesheetTooLarge => write!(formatter, "stylesheet exceeds the byte budget"),
             Self::InvalidLink(message) => write!(formatter, "cannot open link: {message}"),
+            Self::BlockedRequest { url, rule } => {
+                write!(
+                    formatter,
+                    "request blocked by content filter: {url} ({rule})"
+                )
+            }
         }
     }
 }
@@ -100,14 +111,35 @@ impl fmt::Display for LoadError {
 impl std::error::Error for LoadError {}
 
 #[derive(Debug, Default)]
-pub struct NetworkContext;
+pub struct NetworkContext {
+    request_filter: RequestFilter,
+}
 
 impl NetworkContext {
+    pub fn request_filter(&self) -> &RequestFilter {
+        &self.request_filter
+    }
+
+    pub fn request_filter_mut(&mut self) -> &mut RequestFilter {
+        &mut self.request_filter
+    }
+
     pub fn load_image(&self, source: &str, byte_limit: usize) -> Result<Vec<u8>, LoadError> {
+        self.load_image_for_page(source, None, byte_limit)
+    }
+
+    pub fn load_image_for_page(
+        &self,
+        source: &str,
+        top_level_url: Option<&str>,
+        byte_limit: usize,
+    ) -> Result<Vec<u8>, LoadError> {
+        self.enforce_filter(source, ResourceType::Image, top_level_url)?;
         images::load(source, byte_limit)
     }
 
     pub fn load_document(&self, source: &str) -> Result<LoadedDocument, LoadError> {
+        self.enforce_filter(source, ResourceType::Document, Some(source))?;
         load_document(source)
     }
 
@@ -116,7 +148,35 @@ impl NetworkContext {
         source: &str,
         byte_limit: usize,
     ) -> Result<LoadedStylesheet, LoadError> {
+        self.load_stylesheet_for_page(source, None, byte_limit)
+    }
+
+    pub fn load_stylesheet_for_page(
+        &self,
+        source: &str,
+        top_level_url: Option<&str>,
+        byte_limit: usize,
+    ) -> Result<LoadedStylesheet, LoadError> {
+        self.enforce_filter(source, ResourceType::Stylesheet, top_level_url)?;
         stylesheets::load(source, byte_limit)
+    }
+
+    fn enforce_filter(
+        &self,
+        source: &str,
+        resource_type: ResourceType,
+        top_level_url: Option<&str>,
+    ) -> Result<(), LoadError> {
+        match self
+            .request_filter
+            .check(source, resource_type, top_level_url)
+        {
+            RequestDecision::Allow => Ok(()),
+            RequestDecision::Block { rule } => Err(LoadError::BlockedRequest {
+                url: source.to_owned(),
+                rule,
+            }),
+        }
     }
 }
 
@@ -479,5 +539,19 @@ mod tests {
             !has_uri_scheme(r"C:\pages\test.html")
                 || looks_like_windows_path(r"C:\pages\test.html")
         );
+    }
+
+    #[test]
+    fn network_context_blocks_before_transport() {
+        let mut network = NetworkContext::default();
+        network
+            .request_filter_mut()
+            .import_adblock_rules("||blocked.example^");
+
+        let error = network
+            .load_document("https://blocked.example/page")
+            .unwrap_err();
+        assert!(matches!(error, LoadError::BlockedRequest { .. }));
+        assert_eq!(network.request_filter().stats().blocked, 1);
     }
 }

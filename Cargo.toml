@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/op_browser",
+    "crates/op_browser_core",
     "crates/op_engine",
     "crates/op_dom",
     "crates/op_html",

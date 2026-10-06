@@ -23,6 +23,12 @@ pub enum Display {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Position {
+    Static,
+    Relative,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComputedFontWeight {
     Normal,
     Bold,
@@ -153,6 +159,23 @@ impl LengthPercentage {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InsetEdges {
+    pub top: Option<LengthPercentage>,
+    pub right: Option<LengthPercentage>,
+    pub bottom: Option<LengthPercentage>,
+    pub left: Option<LengthPercentage>,
+}
+
+impl InsetEdges {
+    pub const AUTO: Self = Self {
+        top: None,
+        right: None,
+        bottom: None,
+        left: None,
+    };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MarginValue {
     Auto,
     Length(LengthPercentage),
@@ -275,6 +298,8 @@ impl BorderSpacing {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ComputedStyle {
     pub display: Display,
+    pub position: Position,
+    pub inset: InsetEdges,
     pub color: CssColor,
     pub font_size_px: f32,
     pub font_weight: ComputedFontWeight,
@@ -358,6 +383,8 @@ impl ComputedStyle {
     pub fn initial() -> Self {
         Self {
             display: Display::Inline,
+            position: Position::Static,
+            inset: InsetEdges::AUTO,
             color: CssColor::BLACK,
             font_size_px: 18.0,
             font_weight: ComputedFontWeight::Normal,
@@ -1274,6 +1301,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
     match parent {
         Some(parent) => ComputedStyle {
             display: initial.display,
+            position: initial.position,
+            inset: initial.inset,
             color: parent.color,
             font_size_px: parent.font_size_px,
             font_weight: parent.font_weight,
@@ -1455,6 +1484,13 @@ fn apply_author_declarations(
     if let Some((_, value)) = winning_value(declarations, "display", parse_display) {
         style.display = resolve_display(value, parent_style);
     }
+    if let Some((_, value)) = winning_value(declarations, "position", parse_position) {
+        style.position = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.position),
+            Position::Static,
+        );
+    }
     if let Some((_, value)) = winning_value(declarations, "color", parse_color) {
         style.color = resolve_inherited(
             value,
@@ -1474,6 +1510,30 @@ fn apply_author_declarations(
             parent_style.map(|parent| parent.font_size_px),
             ComputedStyle::initial().font_size_px,
         );
+    }
+    if let Some((_, value)) = winning_value(declarations, "top", |tokens| {
+        parse_inset(tokens, style.font_size_px, false)
+    }) {
+        style.inset.top =
+            resolve_non_inherited(value, parent_style.map(|parent| parent.inset.top), None);
+    }
+    if let Some((_, value)) = winning_value(declarations, "right", |tokens| {
+        parse_inset(tokens, style.font_size_px, true)
+    }) {
+        style.inset.right =
+            resolve_non_inherited(value, parent_style.map(|parent| parent.inset.right), None);
+    }
+    if let Some((_, value)) = winning_value(declarations, "bottom", |tokens| {
+        parse_inset(tokens, style.font_size_px, false)
+    }) {
+        style.inset.bottom =
+            resolve_non_inherited(value, parent_style.map(|parent| parent.inset.bottom), None);
+    }
+    if let Some((_, value)) = winning_value(declarations, "left", |tokens| {
+        parse_inset(tokens, style.font_size_px, true)
+    }) {
+        style.inset.left =
+            resolve_non_inherited(value, parent_style.map(|parent| parent.inset.left), None);
     }
     if let Some((_, value)) = winning_value(declarations, "font-weight", parse_font_weight) {
         style.font_weight = resolve_inherited(
@@ -1730,6 +1790,37 @@ fn parse_display(tokens: &[TokenKind]) -> Option<Specified<Display>> {
         "unset" => Some(Specified::Unset),
         _ => None,
     }
+}
+
+fn parse_position(tokens: &[TokenKind]) -> Option<Specified<Position>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "static" => Some(Specified::Value(Position::Static)),
+        "relative" => Some(Specified::Value(Position::Relative)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_inset(
+    tokens: &[TokenKind],
+    font_px: f32,
+    allow_percent: bool,
+) -> Option<Specified<Option<LengthPercentage>>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| None));
+    }
+    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("auto")) {
+        return Some(Specified::Value(None));
+    }
+    let value = parse_length_percentage_token(
+        single_significant_token(tokens)?,
+        font_px,
+        true,
+        allow_percent,
+    )?;
+    Some(Specified::Value(Some(value)))
 }
 
 fn parse_font_style(tokens: &[TokenKind]) -> Option<Specified<FontStyle>> {
@@ -3984,6 +4075,22 @@ mod tests {
                 alpha: 255,
             }
         );
+    }
+
+    #[test]
+    fn computes_relative_position_and_insets() {
+        let document = parse_document(
+            "<div id='box' style='font-size:20px; position:relative; top:1em; left:25%; right:4px; bottom:auto'>x</div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let style = computed.style_for(find_by_id(&document, "box")).unwrap();
+
+        assert_eq!(style.position, Position::Relative);
+        assert_eq!(style.inset.top, Some(LengthPercentage::Px(20.0)));
+        assert_eq!(style.inset.left, Some(LengthPercentage::Percent(0.25)));
+        assert_eq!(style.inset.right, Some(LengthPercentage::Px(4.0)));
+        assert_eq!(style.inset.bottom, None);
     }
 
     #[test]

@@ -136,7 +136,7 @@ impl Engine {
     pub fn new() -> Self {
         Self {
             state: EngineState::Created,
-            network: NetworkContext,
+            network: NetworkContext::default(),
             navigation: NavigationState::default(),
             document_address: None,
             active_document: None,
@@ -153,6 +153,14 @@ impl Engine {
 
     pub fn navigation(&self) -> &NavigationState {
         &self.navigation
+    }
+
+    pub fn request_filter(&self) -> &op_net::RequestFilter {
+        self.network.request_filter()
+    }
+
+    pub fn request_filter_mut(&mut self) -> &mut op_net::RequestFilter {
+        self.network.request_filter_mut()
     }
 
     pub fn active_styles(&self) -> Option<&StyleMap> {

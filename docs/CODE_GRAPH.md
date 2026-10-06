@@ -10,7 +10,8 @@ whenever crates, important types, or ownership boundaries change.
 ```mermaid
 graph TD
     B[op_browser<br/>browser process bootstrap]
-    E[op_engine<br/>engine + navigation orchestration]
+    BC[op_browser_core<br/>tab + lifecycle policy]
+    E[op_engine<br/>renderer orchestration]
     W[op_platform_win<br/>Win32 platform]
     D[op_dom<br/>DOM storage]
     H[op_html<br/>HTML tokenizer/tree builder]
@@ -24,6 +25,7 @@ graph TD
     K[Windows WIC<br/>Microsoft raster codecs only]
     G[Windows GDI<br/>font extents + pixel output]
 
+    B --> BC
     B --> E
     B --> P
     B --> W
@@ -107,7 +109,34 @@ classDiagram
     }
 
     class NetworkContext {
+        -RequestFilter request_filter
+        +request_filter()
+        +request_filter_mut()
         +load_document(source) Result~LoadedDocument, LoadError~
+        +load_stylesheet_for_page(source, top_level, limit)
+        +load_image_for_page(source, top_level, limit)
+    }
+
+    class RequestFilter {
+        +import_adblock_rules(text) FilterImportReport
+        +check(url, resource_type, top_level) RequestDecision
+        +allow_site(host)
+        +stats() FilterStats
+    }
+
+    class TabManager {
+        +open(address, activate) TabId
+        +activate(id)
+        +close(id)
+        +automatic_discard_candidate() TabId
+        +discard(id, reason, scroll_y)
+        +finish_restore(id)
+    }
+
+    class JsRuntime {
+        +eval_script(source) JsValue
+        +execute(compiled) JsValue
+        +global(name) JsValue
     }
 
     class Encoding {
@@ -507,10 +536,14 @@ classDiagram
 
 ## Current ownership boundaries
 
-- op_browser owns bootstrap, UI command/result channels and a single worker thread.
-  The worker owns Engine and serializes navigation/reflow; only the UI thread touches
-  HWNDs. Results carry viewport dimensions; stale-width pages trigger a latest-size
-  reflow and are not presented. op_paint is used directly for smoke assertions.
+- op_browser owns the current bootstrap, UI command/result channels and one temporary
+  worker-owned renderer. Only the UI thread touches HWNDs. Results carry viewport
+  dimensions; stale-width pages trigger a latest-size reflow and are not presented.
+  ADR-0002 fixes the target boundary as browser-process-owned product state supervising
+  renderer processes, so the current worker is intentionally a migration stage.
+- op_browser_core owns UI-independent tab identity, lifecycle, protection flags, retained
+  restore metadata and the initial memory-pressure discard-candidate policy. The native UI
+  is not connected to multiple tabs yet.
 - op_platform_win owns Windows-specific window/input/surface/process glue and consumes
   platform-neutral display lists.
 - op_engine currently owns per-page navigation state plus orchestration between loading
@@ -520,10 +553,12 @@ classDiagram
   successful navigation/back/forward/reload. Stateless render_source remains uncached;
   set_html_page initializes the start page.
 - op_net owns document-source interpretation, initial link-reference resolution,
-  an initial HTTP URL parser, owned document byte decoding and bounded
-  HTTP(S) loading, response validation and errors. Its private http::windows module
-  uses RAII WinHTTP handles for transport/TLS/proxy/framing/decompression. Cache,
-  cookies and request filtering remain future work.
+  an initial HTTP URL parser, owned document byte decoding, bounded HTTP(S) loading,
+  response validation and errors. RequestFilter now runs before document, stylesheet and
+  image loads and supports the initial host/wildcard Adblock-style subset, exceptions,
+  resource types, per-site allowlisting and counters. Its private http::windows module
+  uses RAII WinHTTP handles for transport/TLS/proxy/framing/decompression. Cache and
+  cookies remain future work.
 - op_net::encoding owns charset label resolution, Unicode/single-byte decoding
   tables and a bounded initial HTML meta prescan. HTTP/file/data loaders share it;
   unsupported labels and malformed Unicode remain typed errors.
@@ -688,14 +723,17 @@ classDiagram
   HTML width/height sizes, viewport fitting, inherited href and alt fallback.
 - op_platform_win::raster owns transient DIB/DC lifetimes and alpha drawing; image
   rectangles enter the existing scroll-aware hit testing and clear on replacement.
-- op_js will own the original ECMAScript implementation.
+- op_js owns the first executable original ECMAScript slice: lexer -> AST parser -> bytecode
+  compiler -> stack VM with primitive values/global bindings plus a parse-expectation
+  Test262 probe. It is not connected to <script>, DOM bindings or the page event loop yet.
 
 ## Temporary architectural constraints
 
 - The initial Windows renderer uses GDI as an OS drawing backend.
 - Display-list, scroll and measured link-region storage are currently process-global
   because M1 has one window. Display replacement clears old link regions.
-- Navigation state is single-page/single-tab for now.
+- The visible product is still single-tab, but canonical tab/lifecycle/discard state now
+  exists in op_browser_core so renderer/UI migration no longer needs to invent that model.
 - A single in-flight navigation disables navigation buttons; the window continues
   processing paint/input/close messages. A 30 ms Win32 timer polls worker results
   only while a worker command is active and is removed on completion (no idle timer).
@@ -705,19 +743,22 @@ classDiagram
 - Win32 events are queued before calling application code, so the window procedure
   never performs networking or mutates engine history.
 - HTTP URL parsing is a documented subset, not full WHATWG URL conformance.
-- Later browser/window isolation will move display-list and navigation state to
-  per-window/per-tab/per-renderer ownership.
+- ADR-0002 requires browser/renderer process separation, one renderer per active tab as the
+  first implementation, explicit IPC, then sandboxing and measured process sharing.
 
 ## Active graph changes
 
 Connected: Win32 navigation events -> op_browser command channel -> worker-owned
-Engine -> op_net/WinHTTP -> own document pipeline -> result channel -> UI-thread
-NativeBrowserWindow::present -> WM_PAINT. Also connected: painted LinkSpan -> measured
+Engine -> NetworkContext -> RequestFilter -> allow/block -> op_net/WinHTTP-or-local source
+pipeline -> result channel -> UI-thread NativeBrowserWindow::present -> WM_PAINT. Also connected: painted LinkSpan -> measured
 LinkRegion -> scroll-aware mouse click -> FollowLink -> resolve_link -> same worker.
 Engine preparation now connects parsed DOM -> bounded external stylesheet loading ->
 DOM-order linked/embedded CSS collection -> selector matching -> cascade/inheritance ->
 retained ComputedStyleMap -> CSS-aware layout -> display-list text styling -> Win32 pixels.
 Reflow reuses author candidates and computed values without refetching/reparsing CSS.
+Separately, op_js now has source -> tokenize -> AST -> bytecode -> VM as an executable
+standalone language slice, and op_browser_core has tab -> lifecycle/protection -> discard
+candidate -> restore-state flow ready for later UI/renderer integration.
 The block-box path includes used width/min/max/auto-margin geometry, per-side borders and
 adjacent sibling margin collapse before BoxDecoration/background-border FillRects. Selector
 matching now adds attributes, +/~ and initial structural pseudos before the same cascade.

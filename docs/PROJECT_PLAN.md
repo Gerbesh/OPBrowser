@@ -259,26 +259,37 @@ Status: IN PROGRESS.
 - LATER broader custom-property grammar/registration/animation-taint behavior,
   relational selectors, sliced inline decoration edges and fuller
   parent/child margin collapsing / definite percentage-height propagation.
-- LATER broader computed values.
-- LATER normal flow block layout.
-- LATER full CSS inline formatting and Unicode line breaking (initial M1 subset exists).
-- LATER fonts/text shaping integration.
-- LATER progressively expand CSS WPT coverage.
+- IN PROGRESS readable-static-web priority: computed `position: static|relative` plus
+  `top/right/bottom/left` insets now exist with cascade/global-keyword tests; applying relative
+  offsets in layout is still NEXT, followed by absolute/fixed/sticky, `overflow`, floats,
+  flexbox, media queries, font faces, background images, border radius and shadows.
+  Grid follows the first usable flex slice; obscure value-space polish must not displace these.
+- LATER broader computed values outside the readable-static-web priority.
+- LATER fuller normal flow and CSS inline formatting plus Unicode line breaking.
+- NEXT migrate the text backend toward DirectWrite shaping/fallback behind TextMeasurer per ADR-0003.
+- NEXT wire a static HTML/CSS WPT subset; progressively expand CSS WPT coverage from measured results.
 
 ## M3 - Original JavaScript engine
 
-- LATER ECMAScript lexer.
-- LATER parser/AST.
-- LATER bytecode format/compiler.
-- LATER bytecode interpreter.
-- LATER values/objects/prototypes.
+Status: IN PROGRESS.
+
+- DONE initial owned ECMAScript lexer for scalar literals, identifiers/keywords, comments and
+  arithmetic/comparison/assignment punctuation.
+- DONE initial parser/AST for single `let`/`const`/`var` declarations, assignment, unary,
+  arithmetic, comparison/equality and scalar literals.
+- DONE initial bytecode format/compiler for the implemented syntax.
+- DONE initial stack interpreter with persistent globals, mutable/const bindings, scalar
+  coercion, arithmetic, string concatenation, truthiness and loose/strict equality.
+- NEXT values/objects/prototypes beyond the current primitive JsValue set.
 - LATER garbage collector.
-- LATER functions/closures.
-- LATER exceptions.
+- NEXT functions/closures and lexical environments.
+- NEXT exceptions and control flow.
 - LATER promises/microtasks.
 - LATER modules.
 - LATER standard built-ins.
-- LATER Test262 harness and progressive conformance.
+- DONE initial Test262 parse-expectation probe and combined compatibility command; this is
+  explicitly not runtime conformance yet.
+- NEXT build the real Test262 harness progressively as language/runtime semantics land.
 - LATER JIT only if profiling justifies it after correctness.
 
 ## M4 - DOM scripting and Web APIs
@@ -296,15 +307,23 @@ Status: IN PROGRESS.
 
 ## M5 - Browser product architecture
 
-- LATER browser/renderer/network process separation.
-- LATER renderer sandbox.
-- LATER process/site isolation policy.
-- LATER tab model and session restore.
-- LATER lifecycle states: active/background/throttled/frozen/discarded/restoring.
-- LATER intelligent memory-pressure tab discarding.
-- LATER built-in task manager.
+Status: IN PROGRESS (foundations only; current UI still exposes one renderer/tab).
+
+- DECIDED browser/renderer ownership and staged process split in ADR-0002; current navigation
+  worker remains a temporary in-process renderer boundary.
+- NEXT implement browser/renderer IPC and one renderer process per active tab.
+- LATER renderer sandbox and process/site isolation policy after IPC is stable.
+- DONE UI-independent `op_browser_core` tab model foundation.
+- DONE lifecycle states: active/background/throttled/frozen/discarded/restoring.
+- DONE initial discard protection and memory-pressure candidate policy with retained restore state;
+  OS memory-pressure triggering and renderer teardown/restoration remain later.
+- NEXT connect multiple tab-owned renderers to the native UI and session persistence.
+- LATER built-in task manager using browser/renderer memory/CPU counters.
 - LATER downloads/history/bookmarks/settings/permissions.
-- LATER native request-filter layer and ad-block list support.
+- DONE initial native request-filter layer on document/stylesheet/image loads with host/wildcard
+  rules, exceptions, resource types, site allowlisting and counters.
+- NEXT scalable filter indexing, list subscriptions/updates, third-party/domain options and UI;
+  cosmetic filtering depends on DOM/style integration.
 
 ## M6 - Advanced platform
 
@@ -319,4 +338,6 @@ Status: IN PROGRESS.
 ## Continuous work
 
 Every milestone continuously tracks security, WPT/Test262 regressions, startup time,
-memory use, binary size, background CPU, and dependency growth.
+memory use, binary size, background CPU, and dependency growth. `tools/compatibility.ps1`
+provides the project-owned baseline plus an optional Test262 parse probe; owned unit-test
+counts must not be mislabeled as external conformance percentages.

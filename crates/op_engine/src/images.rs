@@ -29,6 +29,7 @@ pub(super) fn load(
 ) -> PageImages {
     let mut loader = Loader {
         network,
+        page_base: base,
         started: Instant::now(),
         cache: HashMap::new(),
         nodes: 0,
@@ -112,6 +113,7 @@ pub(super) fn load(
 
 struct Loader<'a> {
     network: &'a NetworkContext,
+    page_base: &'a str,
     started: Instant,
     cache: HashMap<String, Option<Arc<RasterImage>>>,
     nodes: usize,
@@ -140,7 +142,7 @@ impl Loader<'_> {
         self.requests += 1;
         let image = self
             .network
-            .load_image(&source, ENCODED_BUDGET - self.encoded)
+            .load_image_for_page(&source, Some(self.page_base), ENCODED_BUDGET - self.encoded)
             .ok()
             .and_then(|bytes| {
                 self.encoded += bytes.len();

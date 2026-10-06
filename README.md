@@ -8,7 +8,7 @@ Its own tokenizer, tree builder, DOM, text layout and display list render the pa
 into a Win32 window. Text hyperlinks support current-window navigation, including
 relative HTTP(S) and local-file links. PNG/JPEG/GIF/BMP images load from HTTP(S),
 local files and data URLs, with dimensions, transparency, alt fallback and image links.
-Initial embedded, inline and external author CSS plus a block-level box model now reach native pixels; JavaScript remains future work.
+Initial embedded, inline and external author CSS plus a block-level box model now reach native pixels. A first standalone original JavaScript lexer/parser/bytecode/VM slice exists, but page `<script>` execution, DOM bindings and Web APIs are not connected yet.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 
@@ -33,7 +33,7 @@ Current rendering path:
 
 ```text
 HTTP(S) URL / local path / file: URL / data:text/html URL
-  -> op_net source loader (WinHTTP for transport/TLS only)
+  -> op_net RequestFilter + source loader (WinHTTP for transport/TLS only)
   -> op_html tokenizer/tree builder
   -> op_dom
   -> op_net bounded external stylesheet subresources
@@ -78,7 +78,11 @@ See [HTML text decoding](wiki/HTML-Text-Decoding.md) for exact limits. Requests
 use system proxy/TLS settings, keep certificate validation enabled, follow at most
 five redirects, reject HTTPS-to-HTTP redirects, and limit decompressed response bytes to 2 MiB.
 Cookies and automatic authentication are disabled. No requests run until you supply
-a document address. See [source loading](wiki/Document-Source-Loading.md) for limits.
+a document address. The initial native request-filter layer now runs before document,
+stylesheet and image loads and supports a small Adblock-style network-rule subset,
+exceptions, resource types, per-site allowlisting and counters; it does not yet ship a
+public-list subscription/update UI or cosmetic filtering. See [source loading](wiki/Document-Source-Loading.md)
+and [request filtering](wiki/Request-Filtering.md) for limits.
 Image subrequests follow that document load on the same worker. Windows WIC performs
 only raster decoding; OPBrowser owns resource policy, layout and painting. Images
 share measured lines with text; GIF shows the first frame. Line layout supports
@@ -134,9 +138,8 @@ percentage-height propagation, broader custom-property grammar/registration and
 language-aware automatic quotes, full
 full HTML image-state/quirks-mode fallback semantics, relational selectors, sliced inline decoration edges,
 advanced Color 4 spaces/functions,
-`@import`, general media queries, CSS `url(...)` resources
-and JavaScript
-are not implemented yet. Links receive a blue/underlined computed UA default; author CSS
+`@import`, general media queries and CSS `url(...)` background resources are not implemented yet.
+The standalone JavaScript engine foundation exists, but page script discovery/execution and DOM/Web API bindings remain unimplemented. Links receive a blue/underlined computed UA default; author CSS
 controls their color and decoration through native painting. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),
 [CSS box model](wiki/CSS-Box-Model.md), [stylesheet loading](wiki/Stylesheet-Loading.md),
 [inline layout](wiki/Inline-Layout.md) and [image loading](wiki/Image-Loading.md).
@@ -156,15 +159,28 @@ without creating text glyphs; wrapping, nowrap and alignment use the same line f
 Typed structural selectors first/last/only-of-type and nth-of-type/nth-last-of-type count
 same-tag siblings, ignoring intervening other element types and text.
 
+Product architecture is also moving earlier instead of waiting for a giant M5 rewrite.
+`op_browser_core` now contains the UI-independent tab/lifecycle/discard-policy model,
+including active/background/throttled/frozen/discarded/restoring states and protected-tab
+rules. The visible Win32 product is still single-tab; native tab UI, renderer processes and
+actual memory-pressure teardown/restoration are the next integration steps.
+
+Compatibility measurement has started with a project-owned baseline command plus an
+optional parse-only Test262 probe. These are regression/parse measurements, not invented
+WPT percentages. See [compatibility measurement](docs/COMPATIBILITY.md).
+
 See:
 
 - [Project plan](docs/PROJECT_PLAN.md)
 - [Requirements](docs/REQUIREMENTS.md)
+- [Compatibility measurement](docs/COMPATIBILITY.md)
 - [Code graph](docs/CODE_GRAPH.md)
 - [Code slices](docs/CODE_SLICES.md)
 - [Development log](docs/DEV_LOG.md)
 - [Local wiki source](wiki/Home.md)
 - [Language/platform ADR](docs/ADR-0001-language-and-platform.md)
+- [Browser/renderer process ADR](docs/ADR-0002-process-model.md)
+- [Windows text-shaping ADR](docs/ADR-0003-text-shaping.md)
 
 The HTML named-reference data is derived from WHATWG and incorporated under
 BSD-3-Clause; see [the third-party notice](third_party/WHATWG-HTML-LICENSE.txt).
