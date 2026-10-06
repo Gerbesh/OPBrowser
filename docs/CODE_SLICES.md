@@ -93,12 +93,14 @@ from columns and cells while content still supplies min/max preferences. table-l
 implemented for explicit-width tables using col/colgroup hints, then first-row widths, then equal
 remaining space; later rows cannot resize the tracks. caption-side:top/bottom is computed and
 captions now sit outside the table border/background in wrapper flow. display:inline-table creates
-a real atomic inline formatting object: auto width shrink-fits against intrinsic tracks, first-row
-baseline aligns with surrounding text, authored margins/padding/borders survive, and nested
-text/images/order/link identity are moved into final line output as a unit. Mode-specific layout
-quirks, processing instructions, template/frameset modes, foreign-content context, complete CSS
-Tables overconstraint/min-width/percentage edge rules, non-cell collapsed border precedence,
-deeper colgroup repair and non-baseline inline vertical-align remain later.
+a real atomic inline formatting object: auto width shrink-fits against intrinsic tracks, authored
+margins/padding/borders survive, and nested text/images/order/link identity are moved into final
+line output as a unit. Atomic baseline/top/middle/bottom vertical-align now participates in line
+ascent/descent and moves the complete retained table output together. Mode-specific layout quirks,
+processing instructions, template/frameset modes, foreign-content context, complete CSS Tables
+overconstraint/min-width/percentage edge rules, non-cell collapsed border precedence and deeper
+colgroup repair remain later; general inline sub/super/text-top/text-bottom/length/% alignment is
+still unsupported.
 
 ## S2 - Navigation to static page
 

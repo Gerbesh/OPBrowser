@@ -137,13 +137,14 @@ content negotiation: col/colgroup widths win first, first-row explicit cell widt
 tracks next, and remaining track space is distributed afterward. caption-side:top/bottom is
 computed through the cascade and captions are wrapper siblings of the table border box rather than
 being painted inside its background. display:inline-table runs the same formatter in a local
-Context, packages the result as one InlineAtomic object, shrink-fits auto width against intrinsic
-tracks and aligns the first row baseline with surrounding inline content. Its nested decorations/
-text/images/order are translated into the parent line at placement time, including inherited outer
-link identity. Complete CSS Tables overconstraint/min-width/percentage edge algorithms, deeper
-colgroup repair and non-cell collapsed-border precedence remain later. Inline vertical-align values such as
-sub/super/text-top/text-bottom/length/% and non-baseline atomic alignment are also still
-unsupported. Transformed text is
+Context, packages the result as one InlineAtomic object and shrink-fits auto width against
+intrinsic tracks. InlineAtomic carries vertical-align: baseline uses the first-row baseline,
+top/bottom align the complete atom to the line box and middle centers it around the parent text
+middle approximation; tall top/bottom atoms enlarge line height as needed. Nested decorations/
+text/images/order are translated together at the aligned position, including inherited outer link
+identity. Complete CSS Tables overconstraint/min-width/percentage edge algorithms, deeper colgroup
+repair and non-cell collapsed-border precedence remain later. General inline vertical-align values
+sub/super/text-top/text-bottom/length/% are still unsupported. Transformed text is
 measured before line placement; op_paint carries italic/decoration/spacing metadata and Win32
 uses matching text advances while drawing measured decoration/link segments. It resolves used widths/min/max/auto margins,
 box-sizing, padding, independent border edges, fixed height constraints and sibling margin

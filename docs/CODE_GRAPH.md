@@ -605,10 +605,13 @@ classDiagram
   the table background/border no longer incorrectly contains caption geometry.
   display:inline-table uses flow::inline_table_atomic: it computes an initial shrink-to-fit width,
   runs the same table_box in a local layout Context, then packages its nested decorations/text/
-  images/order into inline::InlineAtomic. Lines treats that object as one wrapping unit, aligns its
-  first-row baseline with surrounding text, offsets its retained nested output into the final line
-  and remaps LayoutItem indices without flattening the table into fake text or pixels. Outer anchor
-  identity is inherited by nested text/images when they do not already carry a link.
+  images/order into inline::InlineAtomic. Lines treats that object as one wrapping unit and carries
+  the element VerticalAlign with it. Baseline uses the table first-row baseline; top/bottom anchor
+  the whole atomic box to the final line box, middle centers it around the parent text middle
+  approximation, and tall top/bottom atoms enlarge line descent so they are not clipped. Placement
+  then offsets retained nested output into the final aligned box and remaps LayoutItem indices
+  without flattening the table into fake text or pixels. Outer anchor identity is inherited by
+  nested text/images when they do not already carry a link.
   Caption flow, real cell backgrounds/borders/padding and span geometry reach ordinary
   BoxDecoration/text/image output. Whitespace-only text between block siblings is suppressed before
   it can create anonymous line geometry.

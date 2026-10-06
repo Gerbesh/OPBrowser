@@ -98,10 +98,11 @@ background propagation and general alpha composition remain later rendering work
   table-layout:fixed on an explicit-width table uses column hints, first-row widths and remaining
   space without letting later-row content resize tracks. caption-side:top/bottom participates in
   wrapper flow outside the table border/background. display:inline-table is an atomic inline
-  formatting context using the same table formatter, with shrink-to-fit auto width, first-row
-  baseline, margins, padding and borders. Complete CSS Tables overconstraint/min-width/percentage
-  edge algorithms, non-cell collapsed-border precedence, deeper colgroup repair and non-baseline
-  atomic vertical alignment remain later;
+  formatting context using the same table formatter, with shrink-to-fit auto width, margins,
+  padding and borders. Atomic baseline/top/middle/bottom vertical-align moves the entire retained
+  table box and contributes to line height. Complete CSS Tables overconstraint/min-width/percentage
+  edge algorithms, non-cell collapsed-border precedence and deeper colgroup repair remain later;
+  general inline sub/super/text-top/text-bottom/length/% alignment is not implemented yet;
 - no floats, positioning, flexbox or CSS Grid yet;
 - no complete stacking-context/background-propagation model.
 

@@ -1923,7 +1923,7 @@ impl<'a> Context<'a, '_> {
                     if let Some(href) = href {
                         inherit_atomic_href(&mut atomic, href);
                     }
-                    items.push(Item::Atomic(atomic, current.inline));
+                    items.push(Item::Atomic(atomic, current.inline, current.vertical_align));
                 } else if display == Display::Table {
                     self.emit(items, inherited, containing_x, containing_width);
                     self.table(id, current, containing_x, containing_width);

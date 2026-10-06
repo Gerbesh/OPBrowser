@@ -2226,6 +2226,78 @@ mod tests {
     }
 
     #[test]
+    fn inline_table_vertical_align_top_middle_and_bottom_move_atomic_box_in_line() {
+        let document = op_html::parse_document(
+            "<style>
+               .host { width:300px; font-size:40px; line-height:60px; margin:0 }
+               .it { display:inline-table; width:40px; border-spacing:0; font-size:10px; line-height:10px }
+               .cell { display:table-cell; padding:0 }
+               #top { vertical-align:top; background:#ff0000 }
+               #middle { vertical-align:middle; background:#00ff00 }
+               #bottom { vertical-align:bottom; background:#0000ff }
+             </style>
+             <div class='host'>X<span id='top' class='it'><span class='cell'>a</span></span>X</div>
+             <div class='host'>X<span id='middle' class='it'><span class='cell'>a</span></span>X</div>
+             <div class='host'>X<span id='bottom' class='it'><span class='cell'>a</span></span>X</div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let top = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let middle = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+        let bottom = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+
+        let line_tops: Vec<i32> = layout
+            .text_boxes
+            .iter()
+            .filter(|text| text.text == "X")
+            .map(|text| text.y)
+            .collect();
+        assert!(line_tops.len() >= 6);
+
+        let top_relative = top.y - line_tops[0];
+        let middle_relative = middle.y - line_tops[2];
+        let bottom_relative = bottom.y - line_tops[4];
+
+        assert!(
+            top_relative < middle_relative,
+            "{top_relative} !< {middle_relative}"
+        );
+        assert!(
+            middle_relative < bottom_relative,
+            "{middle_relative} !< {bottom_relative}"
+        );
+    }
+
+    #[test]
     fn inline_table_box_model_and_margins_contribute_to_atomic_width() {
         let document = op_html::parse_document(
             "<style>

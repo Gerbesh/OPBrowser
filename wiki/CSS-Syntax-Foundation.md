@@ -143,10 +143,11 @@ inherits; border-collapse accepts separate/collapse and inherits. table-layout a
 and is non-inherited; caption-side accepts top/bottom and inherits. Explicit-width fixed tables use
 column hints and first-row widths without late-row intrinsic resizing, while auto tables retain
 percentage constraints alongside content preferences. Captions are placed above or below the table
-border box according to caption-side. vertical-align currently recognizes the table-relevant
-baseline/top/middle/bottom keywords as a non-inherited property. Table UA style starts separate at
-2px/2px. These table properties reach the grid formatter, including zero spacing, shared-cell
-border resolution and post-row vertical content placement.
+border box according to caption-side. vertical-align currently recognizes baseline/top/middle/
+bottom as a non-inherited property; table cells use those values internally and atomic inline-table
+boxes now carry the same values into line placement. Table UA style starts separate at 2px/2px.
+These table properties reach the grid formatter, including zero spacing, shared-cell border
+resolution and post-row vertical content placement.
 The formatter performs anonymous row/cell child fixup inside display:table and normal-flow
 collection groups consecutive orphan table-internal siblings under one anonymous block table,
 including initial caption and column-hint repair, so CSS-generated table structures can recover

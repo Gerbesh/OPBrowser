@@ -1490,3 +1490,23 @@ This file is append-only project history.
 - Updated project plan, code graph/slices and CSS/rendering/box-model wiki documentation.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 337 workspace tests,
   native startup smoke and optimized release build. The release executable is 890,880 bytes.
+
+## 2026-10-06 - Atomic inline-table vertical alignment
+
+- Extended InlineAtomic plumbing so each atomic inline-table carries its computed VerticalAlign into
+  line construction instead of being forced through baseline placement.
+- Added baseline/top/middle/bottom atomic alignment in Lines. Baseline keeps the table first-row
+  baseline behavior; top anchors the complete atom to the line top; bottom anchors it to the final
+  line bottom; middle centers it around the parent text middle approximation.
+- Top/bottom-aligned atomic boxes now participate in line-height growth. Tall inline tables expand
+  the line rather than overflowing into neighboring line geometry while pretending they are zero
+  ascent/descent objects.
+- Atomic placement moves the retained table decorations, text boxes and image boxes together, so
+  the internal table paint tree cannot separate from its aligned outer inline box.
+- Added a layout regression comparing top/middle/bottom inline-table placement against surrounding
+  large text. Existing baseline, wrapping, nested image/link and box-model inline-table regressions
+  remain green.
+- Updated project plan, code graph/slices and CSS/rendering/box-model wiki documentation. General
+  inline vertical-align values sub/super/text-top/text-bottom/length/% remain later work.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 338 workspace tests,
+  native startup smoke and optimized release build. The release executable is 891,392 bytes.

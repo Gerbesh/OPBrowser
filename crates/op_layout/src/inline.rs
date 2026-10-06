@@ -2,7 +2,7 @@ use super::{
     BoxDecoration, DecorationBorder, FontStyle, FontWeight, ImageBox, LayoutItem, LinkSpan,
     TextBox, TextColor, TextDecoration, TextMeasurer, TextMetrics,
 };
-use op_css::{PseudoElement, TextAlign, TextTransform, WhiteSpace};
+use op_css::{PseudoElement, TextAlign, TextTransform, VerticalAlign, WhiteSpace};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct InlineBoxStyle {
@@ -164,7 +164,7 @@ pub(super) enum Item<'a> {
     Char(InlineChar<'a>),
     EmptyInline(InlineStyle),
     Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
-    Atomic(InlineAtomic, InlineStyle),
+    Atomic(InlineAtomic, InlineStyle, VerticalAlign),
     Break,
 }
 
@@ -174,7 +174,7 @@ enum BoxItem<'a> {
         width: i32,
     },
     Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
-    Atomic(InlineAtomic, InlineStyle),
+    Atomic(InlineAtomic, InlineStyle, VerticalAlign),
     EmptyInline(InlineStyle),
 }
 
@@ -191,7 +191,7 @@ struct PreparedText {
 enum PreparedBox {
     Text(PreparedText),
     Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
-    Atomic(InlineAtomic, InlineStyle),
+    Atomic(InlineAtomic, InlineStyle, VerticalAlign),
 }
 
 pub(super) struct Lines<'a, 'm> {
@@ -281,10 +281,10 @@ impl<'a, 'm> Lines<'a, 'm> {
                     self.word(std::mem::take(&mut word));
                     self.image(image, style, own_box);
                 }
-                Item::Atomic(atomic, style) => {
+                Item::Atomic(atomic, style, vertical_align) => {
                     preserved_cr = false;
                     self.word(std::mem::take(&mut word));
-                    self.atomic(atomic, style);
+                    self.atomic(atomic, style, vertical_align);
                 }
                 Item::EmptyInline(style) => {
                     preserved_cr = false;
@@ -341,7 +341,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             Some(BoxItem::Text { chars, .. }) => chars.last().and_then(|ch| ch.style.boxes),
             Some(
                 BoxItem::Image(_, style, _)
-                | BoxItem::Atomic(_, style)
+                | BoxItem::Atomic(_, style, _)
                 | BoxItem::EmptyInline(style),
             ) => style.boxes,
             None => None,
@@ -528,7 +528,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         self.boxes.push(BoxItem::Image(image, style, own_box));
     }
 
-    fn atomic(&mut self, atomic: InlineAtomic, style: InlineStyle) {
+    fn atomic(&mut self, atomic: InlineAtomic, style: InlineStyle, vertical_align: VerticalAlign) {
         let space = if self.boxes.is_empty() {
             None
         } else {
@@ -560,7 +560,8 @@ impl<'a, 'm> Lines<'a, 'm> {
                 self.inline_boxes
                     .contribution(self.tail(), style.boxes, atomic.width),
             );
-        self.boxes.push(BoxItem::Atomic(atomic, style));
+        self.boxes
+            .push(BoxItem::Atomic(atomic, style, vertical_align));
     }
 
     fn empty_inline(&mut self, style: InlineStyle) {
@@ -659,7 +660,9 @@ impl<'a, 'm> Lines<'a, 'm> {
                 BoxItem::Image(image, style, own_box) => {
                     prepared.push(PreparedBox::Image(image, style, own_box))
                 }
-                BoxItem::Atomic(atomic, style) => prepared.push(PreparedBox::Atomic(atomic, style)),
+                BoxItem::Atomic(atomic, style, vertical_align) => {
+                    prepared.push(PreparedBox::Atomic(atomic, style, vertical_align))
+                }
                 BoxItem::EmptyInline(style) => {
                     prepared.push(PreparedBox::Text(self.prepare_text(&[], style)))
                 }
@@ -681,6 +684,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         }
 
         let (_, default_ascent, default_descent) = self.metrics_for(self.default_style);
+        let middle_shift = self.default_style.font_size / 4;
         let ascent = prepared
             .iter()
             .map(|item| match item {
@@ -692,27 +696,65 @@ impl<'a, 'm> Lines<'a, 'm> {
                             .saturating_add(box_style.bottom_extra())
                     }))
                     .saturating_add(self.inline_boxes.top(style.boxes)),
-                PreparedBox::Atomic(atomic, style) => atomic
-                    .baseline
-                    .saturating_add(self.inline_boxes.top(style.boxes)),
+                PreparedBox::Atomic(atomic, style, vertical_align) => match vertical_align {
+                    VerticalAlign::Baseline => atomic
+                        .baseline
+                        .saturating_add(self.inline_boxes.top(style.boxes)),
+                    VerticalAlign::Middle => atomic
+                        .height
+                        .saturating_add(1)
+                        .saturating_div(2)
+                        .saturating_add(middle_shift)
+                        .saturating_add(self.inline_boxes.top(style.boxes)),
+                    VerticalAlign::Top | VerticalAlign::Bottom => 0,
+                },
                 PreparedBox::Text(text) => text.ascent,
             })
             .max()
             .unwrap_or(default_ascent)
             .max(default_ascent);
-        let descent = prepared
+        let mut descent = prepared
             .iter()
             .map(|item| match item {
                 PreparedBox::Text(text) => text.descent,
                 PreparedBox::Image(_, style, _) => self.inline_boxes.bottom(style.boxes),
-                PreparedBox::Atomic(atomic, style) => atomic
-                    .height
-                    .saturating_sub(atomic.baseline)
-                    .saturating_add(self.inline_boxes.bottom(style.boxes)),
+                PreparedBox::Atomic(atomic, style, vertical_align) => match vertical_align {
+                    VerticalAlign::Baseline => atomic
+                        .height
+                        .saturating_sub(atomic.baseline)
+                        .saturating_add(self.inline_boxes.bottom(style.boxes)),
+                    VerticalAlign::Middle => atomic
+                        .height
+                        .saturating_div(2)
+                        .saturating_sub(middle_shift)
+                        .max(0)
+                        .saturating_add(self.inline_boxes.bottom(style.boxes)),
+                    VerticalAlign::Top | VerticalAlign::Bottom => 0,
+                },
             })
             .max()
             .unwrap_or(default_descent)
             .max(default_descent);
+
+        let aligned_height = prepared
+            .iter()
+            .filter_map(|item| match item {
+                PreparedBox::Atomic(atomic, style, VerticalAlign::Top | VerticalAlign::Bottom) => {
+                    Some(
+                        atomic
+                            .height
+                            .saturating_add(self.inline_boxes.top(style.boxes))
+                            .saturating_add(self.inline_boxes.bottom(style.boxes)),
+                    )
+                }
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        let line_height = ascent.saturating_add(descent);
+        if aligned_height > line_height {
+            descent = descent.saturating_add(aligned_height - line_height);
+        }
 
         let baseline = self.y + ascent;
         let remaining = self.width.saturating_sub(self.line_width).max(0);
@@ -726,7 +768,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         for item in prepared {
             let next_box = match &item {
                 PreparedBox::Text(text) => text.style.boxes,
-                PreparedBox::Image(_, style, _) | PreparedBox::Atomic(_, style) => style.boxes,
+                PreparedBox::Image(_, style, _) | PreparedBox::Atomic(_, style, _) => style.boxes,
             };
             let path = self.inline_boxes.path(next_box);
             let common = active_fragments
@@ -801,8 +843,19 @@ impl<'a, 'm> Lines<'a, 'm> {
                     x += image.width;
                     x = x.saturating_add(own_box.map_or(0, InlineBoxStyle::right_extra));
                 }
-                PreparedBox::Atomic(mut atomic, _) => {
-                    let top = baseline.saturating_sub(atomic.baseline);
+                PreparedBox::Atomic(mut atomic, _, vertical_align) => {
+                    let top = match vertical_align {
+                        VerticalAlign::Baseline => baseline.saturating_sub(atomic.baseline),
+                        VerticalAlign::Top => self.y,
+                        VerticalAlign::Bottom => self
+                            .y
+                            .saturating_add(ascent)
+                            .saturating_add(descent)
+                            .saturating_sub(atomic.height),
+                        VerticalAlign::Middle => baseline
+                            .saturating_sub(self.default_style.font_size / 4)
+                            .saturating_sub(atomic.height / 2),
+                    };
                     let text_base = self.text_boxes.len();
                     let image_base = self.image_boxes.len();
 
