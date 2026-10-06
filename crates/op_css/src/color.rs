@@ -6,6 +6,48 @@
 
 type Vec3 = [f64; 3];
 
+/// Deterministic browser-owned system palette.
+///
+/// CSS allows system colors to come from the OS/user theme, but fixed values are explicitly
+/// permitted to reduce fingerprinting. Keeping the palette here also makes headless/WPT paint
+/// deterministic. Deprecated CSS2 system colors map to their mandated modern counterparts.
+pub(crate) fn system_color_rgba(name: &str) -> Option<[u8; 4]> {
+    let normalized = name.to_ascii_lowercase();
+    let canonical = match normalized.as_str() {
+        // Deprecated system colors: CSS Color 4 Appendix A aliases.
+        "activeborder" | "inactiveborder" | "threeddarkshadow" | "threedhighlight"
+        | "threedlightshadow" | "threedshadow" | "windowframe" => "buttonborder",
+        "activecaption" | "appworkspace" | "background" | "inactivecaption" | "infobackground"
+        | "menu" | "scrollbar" | "window" => "canvas",
+        "buttonhighlight" | "buttonshadow" | "threedface" => "buttonface",
+        "captiontext" | "infotext" | "menutext" | "windowtext" => "canvastext",
+        "inactivecaptiontext" => "graytext",
+        other => other,
+    };
+
+    let rgba = match canonical {
+        "accentcolor" => [0x00, 0x67, 0xc0, 0xff],
+        "accentcolortext" => [0xff, 0xff, 0xff, 0xff],
+        "activetext" => [0xee, 0x00, 0x00, 0xff],
+        "buttonborder" => [0x76, 0x76, 0x76, 0xff],
+        "buttonface" => [0xf0, 0xf0, 0xf0, 0xff],
+        "buttontext" => [0x00, 0x00, 0x00, 0xff],
+        "canvas" => [0xff, 0xff, 0xff, 0xff],
+        "canvastext" => [0x00, 0x00, 0x00, 0xff],
+        "field" => [0xff, 0xff, 0xff, 0xff],
+        "fieldtext" => [0x00, 0x00, 0x00, 0xff],
+        "graytext" => [0x6d, 0x6d, 0x6d, 0xff],
+        "highlight" | "selecteditem" => [0x33, 0x90, 0xff, 0xff],
+        "highlighttext" | "selecteditemtext" => [0xff, 0xff, 0xff, 0xff],
+        "linktext" => [0x00, 0x00, 0xee, 0xff],
+        "mark" => [0xff, 0xff, 0x00, 0xff],
+        "marktext" => [0x00, 0x00, 0x00, 0xff],
+        "visitedtext" => [0x55, 0x1a, 0x8b, 0xff],
+        _ => return None,
+    };
+    Some(rgba)
+}
+
 const D50_TO_D65: [[f64; 3]; 3] = [
     [0.955473421488075, -0.02309845494876471, 0.06325924320057072],
     [

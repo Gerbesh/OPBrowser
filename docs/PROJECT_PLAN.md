@@ -273,7 +273,9 @@ Status: IN PROGRESS.
 - DONE GitHub Actions publishes compatibility artifacts and README badge data after successful main pushes.
 - DONE CSS Color 4 Lab/LCH/OKLab/OKLCH plus display-p3/display-p3-linear, A98 RGB, ProPhoto RGB, Rec.2020 and XYZ predefined-space conversion to the current 8-bit sRGB paint target; `currentColor` now resolves for color/background/borders.
 - DONE first metric-driven WPT pass raised WPT Static v1 from 86/200 (43.00%) to 126/200 (63.00%) without changing the manifest.
-- NEXT continue from the remaining WPT Static v1 failure families; gamut mapping, relative colors, color-mix, system colors/@supports and layout/display gaps are now measurable work queues.
+- DONE deterministic CSS system colors/deprecated aliases, simple declaration-form `@supports`, Selectors 4 `:lang()` Extended Filtering, inherited `:dir(ltr|rtl)`, and initial `:open`/`:required`/`:optional`/`:visited` semantics.
+- DONE second metric-driven pass raised the unchanged WPT Static v1 manifest from 126/200 (63.00%) to 151/200 (75.50%).
+- NEXT continue from the remaining WPT Static v1 failure families; deferred `currentColor` for color-mix/relative colors, gamut mapping, `display: contents`, first-line/first-letter, ICC/tagged images and deeper layout/display work are now the larger queues.
 
 ## M3 - Original JavaScript engine
 

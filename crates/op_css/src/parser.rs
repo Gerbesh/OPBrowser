@@ -52,12 +52,40 @@ impl Parser<'_> {
                 break;
             }
 
-            if matches!(self.tokens[index].kind, TokenKind::AtKeyword(_)) {
+            if let TokenKind::AtKeyword(name) = &self.tokens[index].kind {
+                if name.eq_ignore_ascii_case("supports") {
+                    let start = self.tokens[index].start;
+                    let Some(open) = find_rule_block_start(self.tokens, index + 1) else {
+                        self.errors.push(CssError {
+                            offset: start,
+                            message: "@supports is missing an opening block".into(),
+                        });
+                        break;
+                    };
+                    let Some(close) = find_matching_close_curly(self.tokens, open) else {
+                        self.errors.push(CssError {
+                            offset: start,
+                            message: "unterminated @supports block".into(),
+                        });
+                        break;
+                    };
+                    if supports_declaration_condition(&self.tokens[index + 1..open]) {
+                        let mut nested = Parser {
+                            tokens: &self.tokens[open + 1..close],
+                            errors: Vec::new(),
+                        };
+                        rules.extend(nested.parse_rule_list());
+                        self.errors.extend(nested.errors);
+                    }
+                    index = close + 1;
+                    continue;
+                }
+
                 let start = self.tokens[index].start;
                 index = skip_at_rule(self.tokens, index);
                 self.errors.push(CssError {
                     offset: start,
-                    message: "at-rules are not supported yet and were ignored".into(),
+                    message: "at-rule is not supported yet and was ignored".into(),
                 });
                 continue;
             }
@@ -128,6 +156,47 @@ impl Parser<'_> {
         }
         declarations
     }
+}
+
+fn supports_declaration_condition(tokens: &[Token]) -> bool {
+    let tokens = trim_whitespace(tokens);
+    let [
+        Token {
+            kind: TokenKind::OpenParen,
+            ..
+        },
+        middle @ ..,
+        Token {
+            kind: TokenKind::CloseParen,
+            ..
+        },
+    ] = tokens
+    else {
+        return false;
+    };
+    let middle = trim_whitespace(middle);
+    let Some(colon) = middle
+        .iter()
+        .position(|token| matches!(token.kind, TokenKind::Colon))
+    else {
+        return false;
+    };
+    let property = trim_whitespace(&middle[..colon]);
+    let value = trim_whitespace(&middle[colon + 1..]);
+    let [
+        Token {
+            kind: TokenKind::Ident(property),
+            ..
+        },
+    ] = property
+    else {
+        return false;
+    };
+    if value.is_empty() {
+        return false;
+    }
+    let value: Vec<TokenKind> = value.iter().map(|token| token.kind.clone()).collect();
+    crate::computed::supports_declaration_value(property, &value)
 }
 
 fn parse_declaration(tokens: &[Token]) -> Result<Declaration, CssError> {
@@ -671,6 +740,10 @@ fn parse_pseudo_class(tokens: &[Token], start: usize) -> Result<(SimpleSelector,
                 "only-of-type" => PseudoClass::OnlyOfType,
                 "empty" => PseudoClass::Empty,
                 "link" => PseudoClass::Link,
+                "visited" => PseudoClass::Visited,
+                "required" => PseudoClass::Required,
+                "optional" => PseudoClass::Optional,
+                "open" => PseudoClass::Open,
                 _ => {
                     return Err(CssError {
                         offset: token.start,
@@ -724,6 +797,8 @@ fn parse_functional_pseudo(
             tokens[function_index].start,
             false,
         )?),
+        "lang" => SimpleSelector::Lang(parse_lang_ranges(arguments, tokens[function_index].start)?),
+        "dir" => SimpleSelector::Dir(parse_dir_value(arguments, tokens[function_index].start)?),
         "nth-child" | "nth-last-child" => SimpleSelector::NthChild(parse_nth_selector(
             arguments,
             name.eq_ignore_ascii_case("nth-last-child"),
@@ -746,6 +821,57 @@ fn parse_functional_pseudo(
         }
     };
     Ok((selector, close + 1))
+}
+
+fn parse_lang_ranges(tokens: &[Token], offset: usize) -> Result<Vec<String>, CssError> {
+    let mut ranges = Vec::new();
+    let mut start = 0usize;
+    for end in 0..=tokens.len() {
+        if end != tokens.len() && !matches!(tokens[end].kind, TokenKind::Comma) {
+            continue;
+        }
+        let segment = trim_whitespace(&tokens[start..end]);
+        let [token] = segment else {
+            return Err(CssError {
+                offset,
+                message: ":lang() requires a comma-separated list of identifiers or strings".into(),
+            });
+        };
+        let range = match &token.kind {
+            TokenKind::Ident(value) | TokenKind::String(value) => value.clone(),
+            _ => {
+                return Err(CssError {
+                    offset: token.start,
+                    message: ":lang() ranges must be identifiers or strings".into(),
+                });
+            }
+        };
+        ranges.push(range);
+        start = end.saturating_add(1);
+    }
+    if ranges.is_empty() {
+        return Err(CssError {
+            offset,
+            message: ":lang() requires at least one language range".into(),
+        });
+    }
+    Ok(ranges)
+}
+
+fn parse_dir_value(tokens: &[Token], offset: usize) -> Result<String, CssError> {
+    let [
+        Token {
+            kind: TokenKind::Ident(value),
+            ..
+        },
+    ] = trim_whitespace(tokens)
+    else {
+        return Err(CssError {
+            offset,
+            message: ":dir() requires one identifier".into(),
+        });
+    };
+    Ok(value.clone())
 }
 
 fn parse_function_selector_list(
@@ -1475,11 +1601,22 @@ mod tests {
     }
 
     #[test]
-    fn ignores_at_rules_as_an_explicit_initial_limitation() {
+    fn unsupported_at_rules_are_ignored_without_poisoning_following_rules() {
         let parsed = parse_stylesheet("@media screen { p { color:red } } h1 { color: blue }");
         assert_eq!(parsed.value.rules.len(), 1);
         assert_eq!(parsed.errors.len(), 1);
-        assert!(parsed.errors[0].message.contains("at-rules"));
+        assert!(parsed.errors[0].message.contains("at-rule"));
+    }
+
+    #[test]
+    fn supports_declaration_conditions_include_only_supported_nested_rules() {
+        let parsed = parse_stylesheet(
+            "@supports (color: ActiveBorder) { .yes { color: ActiveBorder } }              @supports (color: madeup-color) { .no { color: red } }              h1 { color: blue }",
+        );
+        assert_eq!(parsed.errors.len(), 0);
+        assert_eq!(parsed.value.rules.len(), 2);
+        assert_eq!(parsed.value.rules[0].selectors[0].specificity.classes, 1);
+        assert_eq!(parsed.value.rules[1].selectors[0].specificity.types, 1);
     }
 
     #[test]

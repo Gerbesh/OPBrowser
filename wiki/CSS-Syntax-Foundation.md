@@ -60,6 +60,11 @@ The supported selectors are matched right-to-left against op_dom. Each matching 
 gets StyleMap candidates rather than a prematurely resolved winner. Functional
 `:is()`/`:where()`/`:not()` recursively reuse the same Selector matcher, while
 `:nth-child()`/`:nth-last-child()` index element siblings matching optional `of` filters.
+Selectors 4 `:lang()` uses case-insensitive RFC 4647-style extended filtering over the nearest
+inherited HTML `lang`, including wildcard subtags and comma-separated ranges. `:dir()` currently
+resolves inherited valid `ltr`/`rtl` HTML direction values; full `dir=auto` bidi inference is
+later work. Initial `:required`, `:optional`, `:open` and `:visited` parsing/matching is present;
+visited history is deliberately not exposed yet and therefore never matches.
 Terminal `::before`/`::after` are represented
 as a selector target rather than fake DOM nodes and contribute type-level specificity.
 
@@ -295,7 +300,11 @@ and on the color property behaves as inherited color. Shared modern argument par
 rejects commas and malformed counts. Perceptual gamut mapping, missing-component preservation,
 interpolation/serialization precision, calc(), relative colors and color-mix remain later work.
 The same values feed text/background/border/pseudo cascade, var() substitution, painting and
-retained reflow. Reference: [CSS Color predefined spaces](https://www.w3.org/TR/css-color-4/#predefined).
+retained reflow. CSS system colors use a deterministic browser-owned palette, with deprecated
+CSS2 system names mapped to their CSS Color 4 modern equivalents; fixed system values are used
+instead of exposing host theme details. Simple declaration-form `@supports (property: value)`
+can now gate nested rules for the supported color declarations; boolean/composed supports
+conditions remain later work. Reference: [CSS Color predefined spaces](https://www.w3.org/TR/css-color-4/#predefined).
 
 Modern RGB/HSL also accept none channels/alpha through the shared modern argument parser.
 RGB may mix numeric and percentage channels in modern syntax; comma syntax requires all

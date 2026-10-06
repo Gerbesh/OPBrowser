@@ -329,6 +329,8 @@ fn compound_matches(document: &Document, node: NodeId, compound: &crate::Compoun
         SimpleSelector::Id(name) => attribute_value(element, "id").is_some_and(|id| id == name),
         SimpleSelector::Attribute(attribute) => attribute_matches(element, attribute),
         SimpleSelector::PseudoClass(pseudo) => pseudo_class_matches(document, node, *pseudo),
+        SimpleSelector::Lang(ranges) => language_matches(document, node, ranges),
+        SimpleSelector::Dir(direction) => direction_matches(document, node, direction),
         SimpleSelector::Is(selectors) | SimpleSelector::Where(selectors) => selectors
             .iter()
             .any(|selector| selector_matches(document, node, selector)),
@@ -390,6 +392,96 @@ fn attribute_matches(element: &op_dom::ElementData, selector: &AttributeSelector
     }
 }
 
+fn language_matches(document: &Document, node: NodeId, ranges: &[String]) -> bool {
+    let language = effective_language(document, node).unwrap_or("");
+    ranges
+        .iter()
+        .any(|range| extended_language_range_matches(language, range))
+}
+
+fn effective_language(document: &Document, mut node: NodeId) -> Option<&str> {
+    loop {
+        if let Some(element) = document.element(node)
+            && let Some(language) = attribute_value(element, "lang")
+        {
+            // An explicit empty lang means "unknown", and intentionally stops inheritance.
+            return Some(language);
+        }
+        node = document.node(node)?.parent?;
+    }
+}
+
+fn extended_language_range_matches(language: &str, range: &str) -> bool {
+    if range.is_empty() {
+        return language.is_empty();
+    }
+    if language.is_empty() {
+        return false;
+    }
+
+    let language: Vec<_> = language.split('-').collect();
+    let range: Vec<_> = range.split('-').collect();
+    if language.iter().any(|part| part.is_empty()) || range.iter().any(|part| part.is_empty()) {
+        return false;
+    }
+
+    let first_range = range[0];
+    if first_range != "*" && !first_range.eq_ignore_ascii_case(language[0]) {
+        return false;
+    }
+
+    let mut language_index = 1usize;
+    let mut range_index = 1usize;
+    while range_index < range.len() {
+        let expected = range[range_index];
+        if expected == "*" {
+            range_index += 1;
+            continue;
+        }
+        if language_index >= language.len() {
+            return false;
+        }
+        let actual = language[language_index];
+        if expected.eq_ignore_ascii_case(actual) {
+            range_index += 1;
+            language_index += 1;
+            continue;
+        }
+        if actual.len() == 1 && actual.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+            return false;
+        }
+        language_index += 1;
+    }
+    true
+}
+
+fn direction_matches(document: &Document, node: NodeId, requested: &str) -> bool {
+    if !requested.eq_ignore_ascii_case("ltr") && !requested.eq_ignore_ascii_case("rtl") {
+        return false;
+    }
+    effective_direction(document, node).eq_ignore_ascii_case(requested)
+}
+
+fn effective_direction(document: &Document, mut node: NodeId) -> &'static str {
+    loop {
+        if let Some(element) = document.element(node)
+            && let Some(direction) = attribute_value(element, "dir")
+        {
+            if direction.eq_ignore_ascii_case("ltr") {
+                return "ltr";
+            }
+            if direction.eq_ignore_ascii_case("rtl") {
+                return "rtl";
+            }
+            // Invalid values are ignored for directionality and inherit from the ancestor.
+        }
+        let Some(parent) = document.node(node).and_then(|current| current.parent) else {
+            return "ltr";
+        };
+        node = parent;
+    }
+}
+
 fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) -> bool {
     match pseudo {
         PseudoClass::Root => document
@@ -428,7 +520,36 @@ fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) 
         PseudoClass::Link => document.element(node).is_some_and(|element| {
             element.tag_name.eq_ignore_ascii_case("a") && attribute_value(element, "href").is_some()
         }),
+        // Link-history state is intentionally not exposed yet. Treating all links as unvisited
+        // preserves privacy while still giving :visited valid selector semantics.
+        PseudoClass::Visited => false,
+        PseudoClass::Required => document.element(node).is_some_and(|element| {
+            supports_required_state(element) && attribute_value(element, "required").is_some()
+        }),
+        PseudoClass::Optional => document.element(node).is_some_and(|element| {
+            supports_required_state(element) && attribute_value(element, "required").is_none()
+        }),
+        PseudoClass::Open => document.element(node).is_some_and(|element| {
+            element.tag_name.eq_ignore_ascii_case("details")
+                && attribute_value(element, "open").is_some()
+        }),
     }
+}
+
+fn supports_required_state(element: &op_dom::ElementData) -> bool {
+    if element.tag_name.eq_ignore_ascii_case("select")
+        || element.tag_name.eq_ignore_ascii_case("textarea")
+    {
+        return true;
+    }
+    if !element.tag_name.eq_ignore_ascii_case("input") {
+        return false;
+    }
+    let input_type = attribute_value(element, "type").unwrap_or("text");
+    !matches!(
+        input_type.to_ascii_lowercase().as_str(),
+        "hidden" | "range" | "color" | "submit" | "reset" | "button" | "image"
+    )
 }
 
 fn nth_child_matches(document: &Document, node: NodeId, nth: &NthSelector) -> bool {
@@ -715,6 +836,45 @@ mod tests {
         assert!(matches(two, "li:nth-child(2)"));
         assert!(matches(four, "li:nth-child(-n+4)"));
         assert!(!matches(four, "li:nth-child(2n+1)"));
+    }
+
+    #[test]
+    fn matches_language_direction_and_basic_state_pseudos() {
+        let document = parse_document(
+            "<html lang='en-US' dir='rtl'><body>
+               <div id='fr' lang='fr-Latn-FR'><span id='fr-child'></span></div>
+               <div id='ltr' dir='ltr'><span id='ltr-child' dir='foopy'></span></div>
+               <input id='required' required><input id='optional'>
+               <details id='details' open><summary>x</summary></details>
+               <a id='link' href='#'>x</a>
+             </body></html>",
+        );
+        let matches = |node, source: &str| {
+            let parsed = parse_stylesheet(&format!("{source} {{ color:red }}"));
+            assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+            selector_matches(&document, node, &parsed.value.rules[0].selectors[0])
+        };
+
+        let fr_child = element_by_id(&document, "fr-child");
+        assert!(matches(fr_child, r#":lang("FR")"#));
+        assert!(matches(fr_child, r#":lang("*-Latn")"#));
+        assert!(matches(fr_child, r#":lang(de, "*-FR")"#));
+        assert!(!matches(fr_child, r#":lang("fr-CH")"#));
+
+        let ltr_child = element_by_id(&document, "ltr-child");
+        assert!(matches(ltr_child, ":dir(ltr)"));
+        assert!(!matches(ltr_child, ":dir(rtl)"));
+        assert!(!matches(ltr_child, ":dir(foopy)"));
+        assert!(matches(
+            first_element_by_tag(&document, "body"),
+            ":dir(rtl)"
+        ));
+
+        assert!(matches(element_by_id(&document, "required"), ":required"));
+        assert!(matches(element_by_id(&document, "optional"), ":optional"));
+        assert!(matches(element_by_id(&document, "details"), ":open"));
+        assert!(matches(element_by_id(&document, "link"), ":link"));
+        assert!(!matches(element_by_id(&document, "link"), ":visited"));
     }
 
     #[test]

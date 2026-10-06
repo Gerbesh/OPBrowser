@@ -647,9 +647,10 @@ pinned WPT/Test262 revisions + committed manifests
 The initial baselines are WPT Static v1 86/200 (43.00%) and Test262 Parser v1
 364/1983 executable scripts (18.36%, with 17 module entries skipped). The first measured
 CSS Color 4 implementation pass moved the unchanged WPT Static v1 manifest to 126/200
-(63.00%). These numbers name their subsets explicitly and are not full browser or ECMAScript
-conformance scores. Future scope changes require a new manifest version so agents can compare
-before/after results without moving the denominator underneath themselves.
+(63.00%); the following system-color/@supports and selector-semantics pass moved it to
+151/200 (75.50%). These numbers name their subsets explicitly and are not full browser or
+ECMAScript conformance scores. Future scope changes require a new manifest version so agents
+can compare before/after results without moving the denominator underneath themselves.
 
 ## Rule
 

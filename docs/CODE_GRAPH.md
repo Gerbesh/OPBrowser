@@ -760,6 +760,10 @@ CSS color parsing now feeds op_css::color for Lab/LCH/OKLab/OKLCH and predefined
 space conversion -> D50/D65 adaptation where required -> encoded sRGB CssColor -> existing
 layout/paint commands. currentColor is resolved after the element's own foreground color so
 background/border use the same computed color without a platform-specific color path.
+System/deprecated color identifiers feed the same CssColor path through a deterministic
+browser-owned palette. The stylesheet parser can conditionally recurse into simple declaration
+`@supports` blocks. Selector matching now also resolves inherited HTML language/direction
+for `:lang()`/`:dir()`, plus initial open/required/optional/link-history state pseudos.
 Separately, op_js now has source -> tokenize -> AST -> bytecode -> VM as an executable
 standalone language slice, and op_browser_core has tab -> lifecycle/protection -> discard
 candidate -> restore-state flow ready for later UI/renderer integration.

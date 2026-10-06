@@ -1,4 +1,4 @@
-use crate::color::{lab_to_srgb, oklab_to_srgb, predefined_to_srgb};
+use crate::color::{lab_to_srgb, oklab_to_srgb, predefined_to_srgb, system_color_rgba};
 use crate::custom::{contains_var, resolve_custom_values, substitute_vars};
 use crate::{MatchedDeclaration, PseudoElement, Specificity, StyleMap, StyleSource, TokenKind};
 use op_dom::{Document, ElementData, NodeId};
@@ -2928,6 +2928,14 @@ fn parse_color(tokens: &[TokenKind]) -> Option<Specified<CssColor>> {
     parse_css_color(tokens).map(Specified::Value)
 }
 
+pub(crate) fn supports_declaration_value(property: &str, tokens: &[TokenKind]) -> bool {
+    match property.to_ascii_lowercase().as_str() {
+        "color" => parse_color(tokens).is_some(),
+        "background-color" => parse_css_color(tokens).is_some(),
+        _ => false,
+    }
+}
+
 fn parse_css_color(tokens: &[TokenKind]) -> Option<CssColor> {
     if let Some(token) = single_significant_token(tokens) {
         return parse_color_token(token);
@@ -2964,15 +2972,22 @@ fn parse_color_token(token: &TokenKind) -> Option<CssColor> {
 
 fn named_color(value: &str) -> Option<CssColor> {
     if value.eq_ignore_ascii_case("transparent") {
-        Some(CssColor {
+        return Some(CssColor {
             red: 0,
             green: 0,
             blue: 0,
             alpha: 0,
-        })
-    } else {
-        crate::named::lookup(value)
+        });
     }
+    if let Some([red, green, blue, alpha]) = system_color_rgba(value) {
+        return Some(CssColor {
+            red,
+            green,
+            blue,
+            alpha,
+        });
+    }
+    crate::named::lookup(value)
 }
 
 fn parse_rgb_function(tokens: &[&TokenKind]) -> Option<CssColor> {

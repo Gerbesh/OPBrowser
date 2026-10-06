@@ -105,6 +105,10 @@ pub enum PseudoClass {
     OnlyOfType,
     Empty,
     Link,
+    Visited,
+    Required,
+    Optional,
+    Open,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,6 +133,8 @@ pub enum SimpleSelector {
     Id(String),
     Attribute(AttributeSelector),
     PseudoClass(PseudoClass),
+    Lang(Vec<String>),
+    Dir(String),
     Is(Vec<Selector>),
     Where(Vec<Selector>),
     Not(Vec<Selector>),
@@ -156,7 +162,9 @@ impl Specificity {
             SimpleSelector::Id(_) => self.ids = self.ids.saturating_add(1),
             SimpleSelector::Class(_)
             | SimpleSelector::Attribute(_)
-            | SimpleSelector::PseudoClass(_) => {
+            | SimpleSelector::PseudoClass(_)
+            | SimpleSelector::Lang(_)
+            | SimpleSelector::Dir(_) => {
                 self.classes = self.classes.saturating_add(1);
             }
             SimpleSelector::NthChild(nth) => {

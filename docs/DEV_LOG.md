@@ -1621,3 +1621,24 @@ This file is append-only project history.
   suite, Win32 startup smoke, optimized release build, `git diff --check` and a repeated external
   compatibility run with the same 126/200 WPT result and unchanged 364/1983 Test262 parser result.
 
+## 2026-10-07 - System colors and selector semantics WPT pass
+
+- Added a deterministic browser-owned CSS system-color palette and the mandatory deprecated CSS2
+  system-color aliases to their modern CSS Color 4 counterparts. Fixed values avoid leaking the
+  host theme while making native/offscreen rendering deterministic.
+- Added simple declaration-form `@supports (property: value)` evaluation. Supported conditions
+  recurse into their nested rules; unsupported declarations skip the block without poisoning the
+  following stylesheet. Boolean/composed supports conditions remain future work.
+- Added Selectors 4 `:lang()` parsing and RFC 4647 extended filtering with inherited HTML language,
+  ASCII case-insensitive matching, wildcard subtags, quoted/identifier ranges and lists.
+- Added `:dir()` with inherited valid HTML `ltr`/`rtl` directionality, including invalid-value
+  fallback to an ancestor. Full `dir=auto` bidi-content inference remains later work.
+- Added initial `:required`, `:optional`, `:open` and `:visited` semantics. Link history is not
+  exposed yet, so `:visited` is valid but intentionally never matches.
+- Targeted WPT slices passed 14/14 for the pinned language/direction tests and 3/3 for the selected
+  state pseudos. The unchanged WPT Static v1 manifest improved from 126/200 (63.00%) to 151/200
+  (75.50%), with zero render/infrastructure errors.
+- Final local verification passed rustfmt, warning-free workspace Clippy, the complete workspace
+  test suite, Win32 startup smoke, optimized release build, `git diff --check` and the repeated
+  external compatibility run. Test262 Parser v1 remained 364/1983 (18.36%).
+

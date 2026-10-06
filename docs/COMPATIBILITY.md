@@ -75,15 +75,13 @@ Initial baseline:
 
 This is a score for the named static subset, not full WPT conformance.
 
-Current measured result after the first CSS Color 4 failure-family pass:
+Measured progress on the unchanged v1 manifest:
 
-- 200 reftests checked;
-- 126 passed;
-- 74 failed;
-- 0 render/infrastructure errors;
-- **63.00% WPT Static v1**.
+- first CSS Color 4 pass: 126/200, **63.00%**;
+- system-color/@supports and selector-semantics pass: 151/200, **75.50%**;
+- current result: 151 passed, 49 failed, 0 render/infrastructure errors.
 
-The manifest and upstream revision are unchanged, so the 43.00% -> 63.00% change is directly comparable. Two pinned Rec.2020 tests still encode the older piecewise Rec.2020 transfer expectation; OPBrowser follows the current 2026 CSS Color 4 BT.1886 gamma-2.40 definition instead of special-casing those tests. Near-zero OKLab/OKLCH failures are left for real gamut mapping rather than threshold hacks.
+The manifest and upstream revision are unchanged, so 43.00% -> 63.00% -> 75.50% is directly comparable. Two pinned Rec.2020 tests still encode the older piecewise Rec.2020 transfer expectation; OPBrowser follows the current 2026 CSS Color 4 BT.1886 gamma-2.40 definition instead of special-casing those tests. Near-zero OKLab/OKLCH failures are left for real gamut mapping rather than threshold hacks. The v1 harness also intentionally retains exact BGR comparison, so WPT fuzzy metadata does not silently change historical scoring semantics.
 
 ## GitHub Actions and public metrics
 
