@@ -1108,3 +1108,17 @@ This file is append-only project history.
   preservation and higher-precision interpolation/serialization remain later work.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 249 workspace tests,
   native startup/CSS demo smoke (262 commands) and optimized workspace release build.
+
+## 2026-10-06 - Empty inline frames around invisible descendants
+
+- Flow now synthesizes an own EmptyInline frame after collecting hidden/empty descendants
+  or only collapsed whitespace. The old childless-only check dropped visible padding/borders
+  around such hosts. Nested empty frames share arena ancestry without duplicate parent items.
+- Added a block epoch guard so child/pseudo block boundaries, including zero-height blocks,
+  do not create an extra synthetic inline line. Preformatted spaces remain real text.
+- Added centered exact edge/height/position regressions, nested/no-duplicate geometry,
+  block-boundary/preformatted cases and Engine background/hidden-text/reflow coverage.
+- Updated plan, graph/slices, inline wiki and CSS demo. The added fixture exposed separately
+  that HTML comments are currently rendered as literal text; declaration-token work follows.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 252 workspace tests,
+  native startup/CSS demo smoke (268 commands) and optimized workspace release build.

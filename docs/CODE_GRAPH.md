@@ -469,7 +469,7 @@ classDiagram
     InlineStyle --> InlineBoxes : one stack index per character or image
     InlineBoxes --> BoxDecoration : per-line nested fragments / outer-before-inner allocation
     ComputedPseudoStyle --> EmptyInline : decorated empty generated strings
-    Document --> EmptyInline : childless inline with its own box decoration
+    Document --> EmptyInline : visually empty inline with its own box decoration
     EmptyInline --> BoxDecoration : edge width / line metrics / alignment without TextBox
     LayoutTree --> BoxDecoration : block + inline backgrounds / solid borders
     BoxDecoration --> DisplayList : background + four border FillRects
@@ -656,3 +656,8 @@ block decorations without allocating pixels or native image hit regions. Nonempt
 the styled inline formatter or BlockContent::ImageAlt normal block path. Mixed generated
 failures omit anonymous images while preserving empty pseudo decorations.
 Next: sliced inline decoration edges and broader computed values.
+
+Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
+descendants if no visible item was produced. A block epoch counter guards against emitting
+an extra empty inline fragment after a block child/pseudo flushed the collection. Nested
+empty frames share arena ancestry rather than adding duplicate parent items.

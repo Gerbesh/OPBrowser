@@ -110,9 +110,12 @@ scalar while layout width stays anchored to whole-run GDI measurement plus CSS s
 Inline replaced image boxes honor nowrap and keep their own padding/borders inside ancestor
 fragments; generated pseudos on DOM replaced elements remain unsupported. Generated `display:block` uses the ordinary block box model with
 dimensions/min/max, margins, padding, borders and background. Empty generated block strings
-still materialize decorations. Empty generated strings and ordinary childless inline elements
+still materialize decorations. Empty generated strings and ordinary visually empty inline elements
 with their own box carry EmptyInline items: edge width affects wrapping/nowrap/alignment and
 font/vertical-edge metrics affect line geometry. They emit BoxDecoration without TextBox glyphs.
+Hidden/empty descendants and only collapsible whitespace also preserve an own empty host
+frame, while block boundaries prevent an extra synthesized line. Nested empty frames share
+all ancestor geometry; preformatted spaces retain their existing text behavior.
 Generated `url()` images share ordered inline text/image lists, baselines, atomic wrapping,
 intrinsic sizes and anchor click identity. Missing sole-URL replacements preserve CSS geometry
 around zero natural dimensions without pixels; mixed failures skip images and preserve text/

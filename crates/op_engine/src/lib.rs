@@ -1361,6 +1361,27 @@ mod tests {
     }
 
     #[test]
+    fn empty_inline_descendant_frames_paint_without_hidden_text_and_survive_reflow() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page("<p><span style='padding:2px;border:1px solid red;background:blue'><em style='display:none'>hidden</em></span>Tail</p><p><span style='padding:2px;border:1px solid green;background:red'> \n </span></p>",800,600);
+        assert!(original.commands.iter().any(|command| matches!(command,PaintCommand::FillRect { width:6,color,.. } if *color==(op_paint::Color { r:0,g:0,b:255 }))));
+        assert!(original.commands.iter().any(
+            |command| matches!(command,PaintCommand::FillRect { width:6,height,.. } if *height>6)
+        ));
+        assert!(!contains_text(&original, "hidden"));
+        assert_eq!(
+            original
+                .commands
+                .iter()
+                .filter(|command| matches!(command, PaintCommand::Text { .. }))
+                .count(),
+            1
+        );
+        engine.reflow(240, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn nested_inline_backgrounds_paint_outer_first_and_survive_reflow() {
         let html = "<p><a href=next style='padding:2px 3px;background:red'>A<span style='padding:4px 5px;background:blue'><b>nested label wraps across lines</b></span>Z</a></p>";
         let mut engine = Engine::new();

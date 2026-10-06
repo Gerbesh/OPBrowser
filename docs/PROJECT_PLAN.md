@@ -181,6 +181,8 @@ Status: IN PROGRESS.
   functional selector nesting is bounded to 64 levels.
 - DONE empty generated/DOM inline decoration boxes reserve edges, wrap/align and paint
   without fabricated text commands; nowrap and line extents use the existing formatter.
+- DONE empty inline frames with hidden/empty descendants or only collapsed whitespace;
+  block boundaries suppress duplicate empty-fragment synthesis and preformatted spaces remain text.
 - DONE first/last/only-of-type and nth-of-type/nth-last-of-type share sibling indexing with
   same-tag filtering, token-aware An+B grammar and normal pseudo-class specificity.
 - DONE generated `url()` images in ordered before/after text/image lists, stylesheet-relative

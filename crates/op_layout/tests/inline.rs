@@ -354,6 +354,71 @@ fn unavailable_inline_replacements_wrap_atomically_and_obey_nowrap() {
 }
 
 #[test]
+fn visually_empty_inline_descendants_keep_own_frames_without_fake_text() {
+    for descendants in [
+        "<em style='display:none'>hidden</em>",
+        "<em></em>",
+        " \n\t ",
+        "<span></span><em style='display:none'>hidden</em>",
+        "<style>ignored</style>",
+    ] {
+        let html = format!(
+            "<p style='line-height:18px;width:100px;text-align:center'><span style='padding:2px;border:1px solid red;background:blue'>{descendants}</span>Z</p>"
+        );
+        let page = layout(&html, 300, &mut Fixed);
+        assert_eq!(page.box_decorations.len(), 1, "{descendants}");
+        let box_style = &page.box_decorations[0];
+        assert_eq!(
+            (box_style.x, box_style.width, box_style.height),
+            (74, 6, 24),
+            "{descendants}"
+        );
+        assert_eq!(page.text_boxes.len(), 1, "{descendants}");
+        assert_eq!(
+            (page.text_boxes[0].text.as_str(), page.text_boxes[0].x),
+            ("Z", 80),
+            "{descendants}"
+        );
+    }
+}
+
+#[test]
+fn nested_empty_descendants_do_not_duplicate_ancestors_or_cross_block_boundaries() {
+    let page = layout(
+        "<p><span style='padding:2px;border:1px solid red'><span style='padding:1px;border:1px solid blue'><em style='display:none'>hidden</em></span></span>Z</p>",
+        300,
+        &mut Fixed,
+    );
+    assert_eq!(page.box_decorations.len(), 2);
+    assert_eq!(
+        (page.box_decorations[0].x, page.box_decorations[0].width),
+        (32, 10)
+    );
+    assert_eq!(
+        (page.box_decorations[1].x, page.box_decorations[1].width),
+        (35, 4)
+    );
+    assert_eq!(page.text_boxes.len(), 1);
+    assert_eq!(page.text_boxes[0].x, 42);
+    let page = layout(
+        "<div><span style='padding:2px;border:1px solid red'><div style='height:0'></div></span>Z</div>",
+        300,
+        &mut Fixed,
+    );
+    assert!(page.box_decorations.is_empty());
+    assert_eq!(page.text_boxes.len(), 1);
+    assert_eq!(page.text_boxes[0].x, 32);
+    let page = layout(
+        "<p><span style='padding:2px;border:1px solid red;white-space:pre'>  </span>Z</p>",
+        300,
+        &mut Fixed,
+    );
+    assert_eq!(page.box_decorations.len(), 1);
+    assert_eq!(page.box_decorations[0].width, 26);
+    assert_eq!(page.text_boxes[0].text, "  ");
+}
+
+#[test]
 fn shares_baseline_and_exact_horizontal_extents_between_text_image_and_unicode_link() {
     let page = layout(
         "<p>Before <a href='/next'><img src=ok width=40 height=32> Привет 😀</a> after</p>",

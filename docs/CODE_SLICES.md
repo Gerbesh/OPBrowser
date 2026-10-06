@@ -391,11 +391,15 @@ Language-aware automatic quote selection remains later (`auto` currently uses En
 box-sizing, percentage sizing, auto/negative margins, padding, borders, backgrounds and sibling
 margin collapse. Empty generated block strings still materialize sized/decorated boxes without
 inventing text or changing the DOM. Fixed block heights bound flow and decoration while text
-may overflow. Empty generated and childless ordinary inline boxes carry an EmptyInline item
+may overflow. Empty generated and visually empty ordinary inline boxes carry an EmptyInline item
 through the formatter: padding/border width contributes to wrapping/nowrap/alignment, font
 and vertical-edge extents contribute to the line, decorations paint without emitting glyphs
 or TextBox/LinkSpan commands. Empty descendants without their own box do not duplicate an
-inherited decoration. Replaced elements do not yet
+inherited decoration.
+Visually empty descendants (hidden/empty nodes or only collapsed whitespace) preserve the
+host's own EmptyInline frame. A flow block-epoch guard suppresses synthesis across block
+boundaries, including zero-height blocks; preserved preformatted spaces remain real text.
+Replaced elements do not yet
 receive generated pseudos. Broader property/value coverage, `@import`, media queries and CSS
 background `url(...)` resources remain later work.
 

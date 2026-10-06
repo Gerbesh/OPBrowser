@@ -37,6 +37,7 @@ pub(super) fn layout(
         width: (viewport_width - 64).max(160),
         y: 28,
         pending_margin: None,
+        block_epoch: 0,
         decorations: Vec::new(),
         text: Vec::new(),
         images_out: Vec::new(),
@@ -81,6 +82,7 @@ struct Context<'a, 'm> {
     width: i32,
     y: i32,
     pending_margin: Option<i32>,
+    block_epoch: usize,
     decorations: Vec<BoxDecoration>,
     text: Vec<TextBox>,
     images_out: Vec<ImageBox>,
@@ -185,6 +187,7 @@ impl<'a> Context<'a, '_> {
         containing_x: i32,
         containing_width: i32,
     ) {
+        self.block_epoch = self.block_epoch.saturating_add(1);
         let used = resolve_block_horizontal(style, containing_width);
         let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
         let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
@@ -401,6 +404,8 @@ impl<'a> Context<'a, '_> {
                         containing_width,
                     );
                 } else {
+                    let initial_len = items.len();
+                    let initial_epoch = self.block_epoch;
                     self.collect_generated(
                         id,
                         PseudoElement::Before,
@@ -409,22 +414,6 @@ impl<'a> Context<'a, '_> {
                         (containing_x, containing_width),
                         items,
                     );
-                    if node.children.is_empty()
-                        && self
-                            .computed_styles
-                            .pseudo_style_for(id, PseudoElement::Before)
-                            .is_none()
-                        && self
-                            .computed_styles
-                            .pseudo_style_for(id, PseudoElement::After)
-                            .is_none()
-                        && current.inline.boxes.is_some_and(|box_id| {
-                            let box_style = self.inline_boxes.style(box_id);
-                            box_style.node == id && box_style.pseudo.is_none()
-                        })
-                    {
-                        items.push(Item::EmptyInline(current.inline));
-                    }
                     for child in &node.children {
                         self.collect(*child, href, current, containing_x, containing_width, items);
                     }
@@ -436,6 +425,21 @@ impl<'a> Context<'a, '_> {
                         (containing_x, containing_width),
                         items,
                     );
+                    if self.block_epoch == initial_epoch
+                        && current.inline.boxes.is_some_and(|box_id| {
+                            let box_style = self.inline_boxes.style(box_id);
+                            box_style.node == id && box_style.pseudo.is_none()
+                        })
+                        && items.get(initial_len..).is_some_and(|collected| {
+                            collected.iter().all(|item| matches!(item,
+                                Item::Char(ch)
+                                    if matches!(ch.ch, ' ' | '\t' | '\n' | '\r' | '\u{c}')
+                                        && matches!(ch.style.white_space, WhiteSpace::Normal | WhiteSpace::NoWrap)
+                            ))
+                        })
+                    {
+                        items.push(Item::EmptyInline(current.inline));
+                    }
                 }
             }
             NodeKind::Document => {
@@ -636,6 +640,7 @@ impl<'a> Context<'a, '_> {
         image: Option<&Arc<RasterImage>>,
         containing: (i32, i32),
     ) {
+        self.block_epoch = self.block_epoch.saturating_add(1);
         let (containing_x, containing_width) = containing;
         let box_style = resolve_inline_box_style(target.0, target.1, style, containing_width);
         let left = box_style.map_or(0, InlineBoxStyle::left_extra);
