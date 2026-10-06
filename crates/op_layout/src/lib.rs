@@ -234,6 +234,51 @@ mod tests {
     use super::*;
 
     #[test]
+    fn sole_inline_generated_images_use_css_sizes_and_own_decorated_boxes() {
+        let document = op_html::parse_document(
+            "<style>a::before { content:url(icon.png); width:64px; height:44px; box-sizing:border-box; padding:4px; border:2px solid red; background:blue } a::after { content:'' url(icon.png); width:200px; height:100px }</style><p><a href=next.html>Body</a></p>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let mut generated = GeneratedImageResources::new();
+        let image =
+            Arc::new(RasterImage::from_premultiplied_bgra(80, 32, vec![255; 80 * 32 * 4]).unwrap());
+        let mut nodes = vec![document.root()];
+        while let Some(node) = nodes.pop() {
+            for pseudo in [op_css::PseudoElement::Before, op_css::PseudoElement::After] {
+                if computed.pseudo_style_for(node, pseudo).is_some() {
+                    generated.insert((node, pseudo, 0), image.clone());
+                }
+            }
+            nodes.extend(document.children(node));
+        }
+        let page = layout_document_with_resources_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &generated,
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        assert_eq!(page.image_boxes.len(), 2);
+        let before = &page.image_boxes[0];
+        assert_eq!((before.width, before.height), (52, 32));
+        let decoration = page
+            .box_decorations
+            .iter()
+            .find(|decoration| decoration.border_left.width == 2)
+            .unwrap();
+        assert_eq!((decoration.width, decoration.height), (64, 44));
+        assert_eq!((before.x, before.y), (decoration.x + 6, decoration.y + 6));
+        assert_eq!(before.href.as_deref(), Some("next.html"));
+        assert_eq!(
+            (page.image_boxes[1].width, page.image_boxes[1].height),
+            (80, 32)
+        );
+        let body = &page.text_boxes[0];
+        assert_eq!(body.x, decoration.x + decoration.width);
+    }
+
+    #[test]
     fn css_image_sizes_override_attributes_and_use_containing_width_box_sizing_and_limits() {
         for (attributes, css, expected) in [
             ("width=300 height=150", "width:80px;height:auto", (80, 40)),

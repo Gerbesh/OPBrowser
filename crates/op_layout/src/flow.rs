@@ -487,12 +487,29 @@ impl<'a> Context<'a, '_> {
                 })),
                 op_css::GeneratedContentItem::Image { .. } => {
                     if let Some(image) = self.generated_images.get(&(target.0, target.1, index)) {
-                        let width = (image.width() as i32).min(containing_width.max(1));
-                        let height = (i64::from(image.height()) * i64::from(width)
-                            / i64::from(image.width()))
-                        .max(1) as i32;
                         let mut image_style = style.inline;
                         image_style.box_style = None;
+                        let sizing = if generated.replaced_image
+                            && generated.style.display == Display::Inline
+                        {
+                            image_style.box_style = resolve_inline_box_style(
+                                target.0,
+                                Some(target.1),
+                                style,
+                                containing_width,
+                            );
+                            style
+                        } else {
+                            default_style()
+                        };
+                        let Some((width, height)) = resolve_image_size(
+                            sizing,
+                            image,
+                            image_style.box_style,
+                            containing_width,
+                        ) else {
+                            continue;
+                        };
                         items.push(Item::Image(
                             ImageBox {
                                 x: 0,
@@ -522,62 +539,17 @@ impl<'a> Context<'a, '_> {
         if let Some(image) = self.images.get(&id) {
             let mut image_style = style.inline;
             image_style.box_style = resolve_inline_box_style(id, None, style, available_width);
-            let horizontal_extras = image_style.box_style.map_or(0, |box_style| {
-                box_style
-                    .left_extra()
-                    .saturating_add(box_style.right_extra())
-            });
-            let vertical_extras = image_style.box_style.map_or(0, |box_style| {
-                box_style
-                    .top_extra()
-                    .saturating_add(box_style.bottom_extra())
-            });
-            let width_value = |value| {
-                size_to_content_width(value, style.box_sizing, available_width, horizontal_extras)
-            };
-            let height_value = |value| match value {
-                LengthPercentage::Px(_) => Some(size_to_content_width(
-                    value,
-                    style.box_sizing,
-                    0,
-                    vertical_extras,
-                )),
-                LengthPercentage::Percent(_) => None,
-            };
-            let (width, height) = super::replaced::dimensions(
-                (image.width(), image.height()),
-                style.width.map(width_value),
-                style.height.and_then(height_value),
-                (
-                    width_value(style.min_width),
-                    style.max_width.map(width_value),
-                ),
-                (
-                    height_value(style.min_height).unwrap_or(0),
-                    style.max_height.and_then(height_value),
-                ),
-            );
-            if width == 0 || height == 0 {
+            let Some((width, height)) =
+                resolve_image_size(style, image, image_style.box_style, available_width)
+            else {
                 return;
-            }
-            let (mut width, mut height) = (width as u32, height as u32);
-            let available_width = available_width.saturating_sub(horizontal_extras).max(1) as u32;
-            if width > available_width {
-                height = (u64::from(height) * u64::from(available_width) / u64::from(width)).max(1)
-                    as u32;
-                width = available_width;
-            }
-            if height > op_image::MAX_DIMENSION {
-                width = (u64::from(width) * u64::from(op_image::MAX_DIMENSION) / u64::from(height))
-                    .max(1) as u32;
-                height = op_image::MAX_DIMENSION;
-            }
+            };
             items.push(Item::Image(
                 ImageBox {
                     x: 0,
                     y: 0,
-                    width: width as i32,
-                    height: height as i32,
+                    width,
+                    height,
                     image: image.clone(),
                     href: href.map(str::to_owned),
                 },
@@ -619,6 +591,59 @@ impl<'a> Context<'a, '_> {
             .map(computed_style)
             .unwrap_or_else(|| fallback_style(tag, inherited))
     }
+}
+
+fn resolve_image_size(
+    style: Style,
+    image: &RasterImage,
+    box_style: Option<InlineBoxStyle>,
+    available_width: i32,
+) -> Option<(i32, i32)> {
+    let horizontal_extras = box_style.map_or(0, |value| {
+        value.left_extra().saturating_add(value.right_extra())
+    });
+    let vertical_extras = box_style.map_or(0, |value| {
+        value.top_extra().saturating_add(value.bottom_extra())
+    });
+    let width_value =
+        |value| size_to_content_width(value, style.box_sizing, available_width, horizontal_extras);
+    let height_value = |value| match value {
+        LengthPercentage::Px(_) => Some(size_to_content_width(
+            value,
+            style.box_sizing,
+            0,
+            vertical_extras,
+        )),
+        LengthPercentage::Percent(_) => None,
+    };
+    let (width, height) = super::replaced::dimensions(
+        (image.width(), image.height()),
+        style.width.map(width_value),
+        style.height.and_then(height_value),
+        (
+            width_value(style.min_width),
+            style.max_width.map(width_value),
+        ),
+        (
+            height_value(style.min_height).unwrap_or(0),
+            style.max_height.and_then(height_value),
+        ),
+    );
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let (mut width, mut height) = (width as u32, height as u32);
+    let available_width = available_width.saturating_sub(horizontal_extras).max(1) as u32;
+    if width > available_width {
+        height = (u64::from(height) * u64::from(available_width) / u64::from(width)).max(1) as u32;
+        width = available_width;
+    }
+    if height > op_image::MAX_DIMENSION {
+        width = (u64::from(width) * u64::from(op_image::MAX_DIMENSION) / u64::from(height)).max(1)
+            as u32;
+        height = op_image::MAX_DIMENSION;
+    }
+    Some((width as i32, height as i32))
 }
 
 fn resolve_inline_box_style(

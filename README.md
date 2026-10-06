@@ -102,6 +102,8 @@ line fitting and baseline geometry; nowrap suppresses soft image wrapping.
 DOM images honor CSS width/height/min/max and box-sizing. HTML size attributes supply
 defaults before author cascade; auto restores intrinsic sizing and one fixed dimension
 preserves ratio. Percentage heights await containing-height propagation.
+An inline before/after containing only one URL gets the same CSS sizes/decorations;
+mixed content images keep intrinsic anonymous item sizing.
 Author declarations retain their style/link/inline source node; the engine retains effective
 external stylesheet addresses after redirects, preparing correct CSS resource bases.
 `background` also supports the initial color-only shorthand subset. Inherited, case-sensitive
@@ -120,7 +122,7 @@ Adjacent sibling vertical margins collapse. External CSS is merged with embedded
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
 percentage-height propagation, broader custom-property grammar/registration and
 language-aware automatic quotes, full
-generated replaced-content geometry/image sizing, relational selectors, nested decorated
+block generated replaced-content geometry, relational selectors, nested decorated
 inline box stacks/generated replaced inline decorations, advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources
 and JavaScript

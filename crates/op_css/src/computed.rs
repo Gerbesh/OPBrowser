@@ -256,6 +256,7 @@ pub struct ComputedPseudoStyle {
     /// Concatenated textual content for inspection; layout consumes ordered items.
     pub content: String,
     pub items: Vec<GeneratedContentItem>,
+    pub replaced_image: bool,
     pub quotes: ComputedQuotes,
 }
 
@@ -604,6 +605,7 @@ fn compute_pseudo_style(
         .flatten()
         .expect("validated generated content");
     generated.counters.restore_lengths(&pseudo_scope);
+    let replaced_image = matches!(pieces.as_slice(), [ContentPiece::Image(_)]);
     let (content, items) = render_generated_content(
         pieces,
         &quotes,
@@ -616,6 +618,7 @@ fn compute_pseudo_style(
             style,
             content,
             items,
+            replaced_image,
             quotes,
         },
     );
@@ -2908,6 +2911,30 @@ mod tests {
         }
 
         find(document, document.root(), id).expect("expected id")
+    }
+
+    #[test]
+    fn generated_image_replacement_distinguishes_empty_text_and_quote_commands() {
+        for (content, replaced) in [
+            ("url(icon.png)", true),
+            ("url('icon.png')", true),
+            ("'' url(icon.png)", false),
+            ("no-open-quote url(icon.png)", false),
+            ("url(icon.png) url(other.png)", false),
+        ] {
+            let document = parse_document(&format!(
+                "<style>p::before {{ content:{content} }}</style><p id=host>Body</p>"
+            ));
+            let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+            assert_eq!(
+                computed
+                    .pseudo_style_for(find_by_id(&document, "host"), PseudoElement::Before)
+                    .unwrap()
+                    .replaced_image,
+                replaced,
+                "{content}"
+            );
+        }
     }
 
     #[test]

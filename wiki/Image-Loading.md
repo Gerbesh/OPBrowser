@@ -81,7 +81,7 @@ skipped. Image rectangles use the existing toolbar/scroll-aware click/cursor hit
 testing and clear when the display list is replaced.
 
 Full CSS replaced-element layout, progressive loading, animation, srcset/picture,
-generated replaced-image sizing, percentage-height propagation, SVG/WebP/AVIF, EXIF orientation
+block replaced-image geometry, percentage-height propagation, SVG/WebP/AVIF, EXIF orientation
 and color management remain future work.
 
 ## CSS generated image content
@@ -99,9 +99,16 @@ images. Both share the cache and all bounds above; failed URLs remain cached. Ge
 images use intrinsic sizes, shrink to available content width, share normal text baselines,
 wrap atomically and can enter generated block flow. They inherit anchor href for native clicks.
 Unavailable generated images add no inline image or alt label. Their surrounding content
-still renders. Sole-image CSS replaced sizing, image modifiers/gradients and alternative-text
+still renders. Block replaced geometry, image modifiers/gradients and alternative-text
 content syntax remain future work. In-memory render_html/set_html_page still perform no
 subresource loading; use source navigation for images.
+
+A content declaration consisting of exactly one URL marks an image replacement before text
+materialization. Inline image pseudos share DOM img CSS size/box-sizing/min/max/ratio/fitting
+and their own padding/background/border geometry. A URL beside even an empty string or quote
+action remains an anonymous image in a content list. Block replaced geometry and unavailable
+replaced-image box behavior remain later work; missing generated resources currently omit the
+image. Native hit regions continue to cover raster content pixels.
 
     cargo run -p op_browser -- --image-smoke-test examples/css/generated-images.html
     cargo run -p op_browser -- --link-smoke-test examples/css/generated-images.html

@@ -269,6 +269,7 @@ classDiagram
         style
         content
         items Text / Image(url,style_node)
+        replaced_image sole parsed URL
         quotes
     }
     class ComputedQuotes {
@@ -521,6 +522,9 @@ classDiagram
   op_layout::replaced resolves raster intrinsic/explicit/auto sizes and min/max ratio conflicts.
   flow converts CSS percentage-width/font-relative/content-vs-border-box sizes and applies
   the existing available-width/4096-height fitting policy after CSS used sizes.
+  flow::resolve_image_size shares this path between DOM img and sole-URL inline pseudos;
+  mixed generated lists retain anonymous intrinsic image items. Pseudo image box identity
+  preserves host/pseudo separation and does not duplicate inherited decorated ancestors.
 - op_paint owns platform-neutral paint commands/display lists, CSS color conversion and
   BoxDecoration -> FillRect expansion for backgrounds/four border sides. Computed UA link
   color/underline defaults and author overrides use ordinary text commands; LinkSpan carries

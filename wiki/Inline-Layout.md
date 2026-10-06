@@ -3,15 +3,19 @@
 DOM image content sizes come from computed CSS width/height/min/max/box-sizing around the
 intrinsic raster ratio. HTML size attributes are hints before author cascade; CSS auto resets
 them. Percent widths/font-relative units and definite heights are supported. Percentage
-height propagation and generated replaced-image sizing remain later work. Existing viewport
+height propagation and block replaced-image geometry remain later work. Existing viewport
 fitting still runs after CSS constraints and can shrink below minima.
 
 DOM img elements now carry their own padding/background/solid-border box. The outer width
 participates in atomic wrapping/alignment; raster fitting reserves horizontal edge space.
 The border-box bottom aligns to the text baseline and vertical edges expand safe line ascent.
 Decorations use exact image bounds. nowrap suppresses soft wrapping of image items. Nested
-ancestor box stacks and generated replaced image decoration remain later work; native image
+ancestor box stacks and block replaced geometry remain later work; native image
 click regions still cover the painted raster rectangle.
+
+Inline before/after with exactly one parsed URL now uses the same CSS dimensions and own
+decorated atomic image box as DOM img. Mixed content lists retain intrinsic anonymous images,
+including lists whose text resolves empty. Computed replacement identity survives retained reflow.
 
 The initial M1 layout places text and raster images on the same measured lines.
 It remains an original OPBrowser algorithm; Windows GDI supplies font metrics only.
@@ -106,7 +110,7 @@ with their own box carry EmptyInline items: edge width affects wrapping/nowrap/a
 font/vertical-edge metrics affect line geometry. They emit BoxDecoration without TextBox glyphs.
 Generated `url()` images share ordered inline text/image lists, baselines, atomic wrapping,
 intrinsic sizes and anchor click identity. Missing generated resources add no inline image;
-surrounding text remains. CSS image sizing/full replaced geometry,
+surrounding text remains. Block replaced geometry,
 language-aware automatic quote selection, custom counter styles and fully spec-complete counter
 scope edge cases are not implemented. Only one decorated inline
 ancestor is represented at a time; a nested inline with

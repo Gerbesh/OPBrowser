@@ -180,7 +180,9 @@ Status: IN PROGRESS.
   intrinsic inline/block image flow, generated image links and retained reflow.
 - DONE DOM image CSS width/height/min/max/box-sizing, inherited font-relative and percentage
   width resolution, HTML size hints before author cascade and intrinsic ratio constraints.
-- NEXT generated replaced-image sizing/decorations and nested-inline geometry.
+- DONE sole-URL inline generated image replacement with CSS width/height/min/max/box-sizing,
+  own padding/background/borders, intrinsic ratio constraints and retained image link identity.
+- NEXT block replaced-image geometry and nested-inline stacks.
 - DONE DOM image padding/background/solid borders as atomic inline boxes, edge-aware
   width fitting, border-box baseline extents, text alignment and nowrap behavior.
 - DONE declaration source-node provenance and retained effective external stylesheet

@@ -19,6 +19,21 @@ fn rasters(commands: &[PaintCommand]) -> Vec<&Arc<RasterImage>> {
 }
 
 #[test]
+fn sole_generated_image_css_geometry_reaches_paint_and_native_link_identity() {
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/css/generated-images.html");
+    let mut engine = Engine::new();
+    let original = engine
+        .navigate(source.to_str().unwrap(), 800, 600)
+        .unwrap()
+        .display_list;
+    assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::Image { width:40, height:32, href:Some(href), .. } if href == "../navigation/destination.html")));
+    assert!(original.commands.iter().any(|command| matches!(command, PaintCommand::FillRect { width:52, height:44, color, .. } if *color == op_paint::Color { r:238, g:242, b:255 })));
+    engine.reflow(240, 600).unwrap();
+    assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+}
+
+#[test]
 fn decorated_dom_image_boxes_reach_paint_links_and_retained_reflow() {
     let src = format!(
         "data:image/png,{}",

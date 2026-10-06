@@ -340,7 +340,7 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> generated replaced-image sizing/decorations/nested-inline geometry
+  -> block replaced-image geometry/nested-inline stacks
   -> broader custom-property grammar/registration/animation-taint semantics
   -> nested/generated replaced inline decoration stacks
   -> additional computed properties
@@ -382,8 +382,8 @@ content strings / URL tokens / quoted url() / var() / quotes / counters
 
 Invalid/unavailable generated URLs add no inline image while surrounding text remains.
 Hidden subtrees/pseudos do not request resources. Ordinary and generated URLs share the
-32-candidate, 8-request, 8 MiB encoded and 32 MiB decoded budgets/cache. Sole-image CSS
-replaced sizing, gradients/image modifiers and alternative-text syntax remain future work.
+32-candidate, 8-request, 8 MiB encoded and 32 MiB decoded budgets/cache. Block replaced
+geometry, gradients/image modifiers and alternative-text syntax remain future work.
 The native generated image/link fixture is examples/css/generated-images.html.
 
 DOM img items carry InlineStyle with their own InlineBoxStyle. Padding/solid borders reserve
@@ -410,6 +410,13 @@ may stretch. One explicit side derives the auto side before its limits; two expl
 can stretch. Minimum constraints win over smaller maxima. Percentage heights remain auto-like
 without containing-height propagation. Existing viewport fitting can shrink below CSS minima;
 zero final dimensions suppress drawing, including the previous zero-attribute fallback rule.
+
+ComputedPseudoStyle.replaced_image records exactly one parsed URL before empty text/quote
+materialization. Sole-URL inline pseudos use the DOM image resolve_image_size path for CSS
+dimensions, box-sizing, ratio constraints and fitting; their own pseudo InlineBoxStyle adds
+padding/background/borders and atomic baseline/wrapping geometry. Mixed content images remain
+anonymous intrinsic items, even when adjacent text happens to resolve empty. Block replaced
+geometry, unavailable replaced image boxes and nested decorated stacks remain later work.
 
 ## S4 - Scripted page
 

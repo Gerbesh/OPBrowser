@@ -970,3 +970,19 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 217 workspace tests,
   startup smoke, generated/decorated image smoke (25 commands), ordinary mixed-image smoke
   (19 commands), native generated image-link navigation and optimized workspace release build.
+
+## 2026-10-06 - Sole-URL inline generated image replacement
+
+- ComputedPseudoStyle.replaced_image marks exactly one parsed image URL before empty text/
+  quote materialization. Empty-string/quote/image lists keep anonymous content-list semantics.
+- Shared flow::resolve_image_size now resolves DOM images and inline image replacements:
+  CSS sizes/min/max/box-sizing, intrinsic ratio constraints and viewport/draw-height fitting.
+- Sole-image inline pseudos use their own host/pseudo box identity for padding/background/
+  borders and atomic wrapping/baseline geometry without duplicating inherited decoration.
+- Added replacement-classification, exact layout/decoration and Engine paint/link/reflow tests.
+  Enlarged the image-only link fixture with CSS and updated README, plan, graph/slices/wiki.
+- Block replaced geometry, unavailable replacement boxes and nested decorated stacks remain
+  later work; mixed content images keep intrinsic sizing and native hit regions cover raster pixels.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 220 workspace tests,
+  startup smoke, CSS-sized generated image smoke (30 commands), native image-only link
+  navigation and optimized workspace release build.
