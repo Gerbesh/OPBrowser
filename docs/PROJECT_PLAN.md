@@ -176,6 +176,8 @@ Status: IN PROGRESS.
 - DONE first/last/only-of-type and nth-of-type/nth-last-of-type share sibling indexing with
   same-tag filtering, token-aware An+B grammar and normal pseudo-class specificity.
 - NEXT generated `url()` content and fuller replaced-content/nested-inline geometry.
+- DONE declaration source-node provenance and retained effective external stylesheet
+  addresses across redirects, duplicate link reuse and resize reflow.
 - DONE CSS Url/BadUrl tokenization with escapes, punctuation-preserving addresses/data URLs,
   quoted function distinction, bounded bad-URL recovery and declaration rejection.
 - DONE computed UA link color/underline defaults and author overrides through native GDI,

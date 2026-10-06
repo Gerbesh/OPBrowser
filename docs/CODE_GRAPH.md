@@ -228,6 +228,7 @@ classDiagram
         +declarations_for_pseudo(node,pseudo)
     }
     class MatchedDeclaration {
+        style_node
         declaration
         specificity
         source_order

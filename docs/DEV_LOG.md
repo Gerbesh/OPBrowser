@@ -900,3 +900,17 @@ This file is append-only project history.
 - Generated URL image loading and stylesheet-relative resource bases remain next steps.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 202 workspace tests,
   startup/CSS demo smoke (225 paint commands) and optimized workspace release build.
+
+## 2026-10-06 - CSS resource source provenance
+
+- MatchedDeclaration now retains the source style/link NodeId or inline-styled element;
+  CollectedRule carries stylesheet provenance through normal and pseudo matching.
+- External stylesheet discovery caches full LoadedStylesheet values and retains effective
+  addresses after redirects per link NodeId beside text. PreparedDocument retains this map
+  across reflow; Engine exposes active_stylesheet_address() for inspection/resource lookup.
+- Added declaration-origin coverage across embedded/linked/inline and before/after buckets.
+  A bounded loopback HTTP regression verifies redirected bases, duplicate-link reuse and
+  stable resize reflow without new requests.
+- Updated README, project plan, graph/slices and stylesheet/reflow wiki.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 204 workspace tests,
+  startup/CSS demo smoke (225 paint commands) and optimized workspace release build.

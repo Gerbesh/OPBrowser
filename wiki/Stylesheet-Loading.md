@@ -45,6 +45,9 @@ Current bounds per prepared document are:
 
 Duplicate resolved stylesheet URLs share one fetched text payload but each link node keeps
 its own position in document source order.
+The cache also preserves the final stylesheet address after redirects; each link NodeId
+retains that effective base in PreparedDocument. Engine exposes active_stylesheet_address()
+for resource-base inspection. Reflow reuses this metadata without fetching again.
 
 A stylesheet load failure is nonfatal to the HTML document. The failed link contributes
 no rules and preparation continues.
@@ -70,6 +73,8 @@ Loaded external stylesheets are attached to their DOM link NodeId. `op_css` trav
 document and parses embedded `<style>` and loaded `<link rel="stylesheet">` rules at their
 actual DOM positions. This preserves stylesheet source order across external and embedded
 rules before inline `style=""` declarations enter the author cascade.
+MatchedDeclaration.style_node identifies the originating style/link node or inline-styled
+element. Computed var() copies preserve that provenance for later CSS resource resolution.
 
 A successfully prepared document retains its author StyleCollection and ComputedStyleMap.
 Resize reflow therefore does not refetch external CSS or rerun stylesheet discovery.

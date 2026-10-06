@@ -9,14 +9,23 @@ const MAX_STYLESHEET_NODES: usize = 32;
 const MAX_REQUESTS: usize = 8;
 const TEXT_BUDGET: usize = 2 * 1024 * 1024;
 
-pub(super) fn load(
-    network: &NetworkContext,
-    document: &Document,
-    base: &str,
-) -> HashMap<NodeId, String> {
+#[derive(Debug, Default)]
+pub(super) struct LoadedStylesheets {
+    pub texts: HashMap<NodeId, String>,
+    pub addresses: HashMap<NodeId, String>,
+}
+
+impl LoadedStylesheets {
+    fn insert(&mut self, node: NodeId, sheet: &op_net::LoadedStylesheet) {
+        self.texts.insert(node, sheet.text.clone());
+        self.addresses.insert(node, sheet.address.clone());
+    }
+}
+
+pub(super) fn load(network: &NetworkContext, document: &Document, base: &str) -> LoadedStylesheets {
     let started = Instant::now();
-    let mut linked = HashMap::new();
-    let mut cache: HashMap<String, Option<String>> = HashMap::new();
+    let mut linked = LoadedStylesheets::default();
+    let mut cache: HashMap<String, Option<op_net::LoadedStylesheet>> = HashMap::new();
     let mut nodes = 0usize;
     let mut requests = 0usize;
     let mut text_bytes = 0usize;
@@ -42,7 +51,7 @@ pub(super) fn load(
             };
 
             if let Some(Some(css)) = cache.get(&source) {
-                linked.insert(node, css.clone());
+                linked.insert(node, css);
                 stack.extend(document.children(node).iter().rev());
                 continue;
             }
@@ -59,14 +68,13 @@ pub(super) fn load(
             let css = network
                 .load_stylesheet(&source, TEXT_BUDGET - text_bytes)
                 .ok()
-                .map(|loaded| loaded.text)
-                .filter(|text| {
-                    text_bytes = text_bytes.saturating_add(text.len());
+                .filter(|loaded| {
+                    text_bytes = text_bytes.saturating_add(loaded.text.len());
                     text_bytes <= TEXT_BUDGET
                 });
 
             if let Some(css) = &css {
-                linked.insert(node, css.clone());
+                linked.insert(node, css);
             }
             cache.insert(source, css);
         }
@@ -137,6 +145,79 @@ mod tests {
             stack.extend(document.children(node).iter().rev());
         }
         panic!("expected link");
+    }
+
+    #[test]
+    fn redirected_stylesheets_retain_effective_bases_through_cache_and_reflow() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut paths = Vec::new();
+            for index in 0..3 {
+                let started = Instant::now();
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream, _)) => break stream,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(started.elapsed() < Duration::from_secs(5));
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("{error}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut request = String::new();
+                while !request.ends_with("\r\n\r\n") {
+                    let mut buffer = [0; 1024];
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0 && request.len() < 32 * 1024);
+                    request.push_str(std::str::from_utf8(&buffer[..count]).unwrap());
+                }
+                paths.push(request.lines().next().unwrap().to_owned());
+                if index == 1 {
+                    write!(stream, "HTTP/1.1 302 Found\r\nLocation: /assets/theme.css\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                } else {
+                    let (mime, body) = if index == 0 {
+                        (
+                            "text/html",
+                            "<link rel='stylesheet' href='/theme.css'><link rel='stylesheet' href='/theme.css'><p>Styled</p>",
+                        )
+                    } else {
+                        ("text/css", "p { color:red }")
+                    };
+                    write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                }
+            }
+            paths
+        });
+        let mut engine = crate::Engine::new();
+        let original = engine
+            .navigate(&format!("{address}/index.html"), 800, 600)
+            .unwrap()
+            .display_list;
+        let prepared = engine.active_document.as_ref().unwrap();
+        assert_eq!(prepared.stylesheet_addresses.len(), 2);
+        for node in prepared.stylesheet_addresses.keys() {
+            assert_eq!(
+                engine.active_stylesheet_address(*node),
+                Some(format!("{address}/assets/theme.css").as_str())
+            );
+        }
+        engine.reflow(300, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+        assert_eq!(
+            server.join().unwrap(),
+            [
+                "GET /index.html HTTP/1.1",
+                "GET /theme.css HTTP/1.1",
+                "GET /assets/theme.css HTTP/1.1"
+            ]
+        );
     }
 
     #[test]

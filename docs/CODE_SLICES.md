@@ -205,6 +205,7 @@ HTML
   -> op_engine stylesheet discovery
        -> op_net local/file/data/HTTP(S) CSS loading
        -> loaded CSS attached to each <link rel=stylesheet> NodeId
+       -> effective stylesheet addresses retained after redirects/cache reuse
   -> collect linked + <style> rules in DOM order + style="" declarations
   -> op_css tokenizer/parser
        unquoted Url tokens + quoted url()/String components
@@ -218,6 +219,7 @@ HTML
        terminal ::before / ::after pseudo-element targets
   -> right-to-left selector matching against op_dom
   -> StyleMap host buckets + (NodeId, PseudoElement) author buckets
+       MatchedDeclaration.style_node preserves embedded/link/inline provenance
   -> cascade: !important -> inline source -> specificity -> source order
   -> inherited CustomPropertyMap per element/pseudo target
        case-sensitive --name winners -> directed dependency graph/SCC -> bounded var() resolution/fallbacks

@@ -18,6 +18,8 @@ pub struct MatchedDeclaration {
     pub specificity: Specificity,
     pub source_order: usize,
     pub source: StyleSource,
+    /// DOM style/link node, or the element carrying an inline style attribute.
+    pub style_node: NodeId,
     /// Computed copies retain pending-substitution priority after var() expansion.
     pub value_from_var: bool,
 }
@@ -116,6 +118,7 @@ pub fn selector_matches(document: &Document, node: NodeId, selector: &Selector) 
 
 #[derive(Debug)]
 struct CollectedRule {
+    style_node: NodeId,
     rule: StyleRule,
     declaration_orders: Vec<usize>,
 }
@@ -176,6 +179,7 @@ fn append_parsed_rules(
             })
             .collect();
         rules.push(CollectedRule {
+            style_node: node,
             rule,
             declaration_orders,
         });
@@ -219,6 +223,7 @@ fn apply_author_styles(
                             specificity,
                             source_order,
                             source: StyleSource::Stylesheet,
+                            style_node: collected.style_node,
                             value_from_var: false,
                         };
                         if let Some(pseudo) = pseudo {
@@ -256,6 +261,7 @@ fn apply_author_styles(
                         specificity: Specificity::default(),
                         source_order,
                         source: StyleSource::Inline,
+                        style_node: node,
                         value_from_var: false,
                     });
             }
@@ -647,6 +653,41 @@ mod tests {
         assert!(!matches(notempty, "div:empty"));
         assert!(!matches(span, "a + em"));
         assert!(!matches(span, "[data-mode=dark]"));
+    }
+
+    #[test]
+    fn matched_declarations_retain_style_link_and_inline_source_nodes() {
+        let document = parse_document(
+            "<style id='embedded'>p { color:red } p::before { content:'A' }</style><link id='linked' rel='stylesheet'><p id='target' style='font-size:20px'>Body</p>",
+        );
+        let target = element_by_id(&document, "target");
+        let embedded = element_by_id(&document, "embedded");
+        let linked = element_by_id(&document, "linked");
+        let sheets = HashMap::from([(linked, "p { color:blue } p::after { content:'B' }".into())]);
+        let collection = collect_author_styles_with_linked(&document, &sheets);
+        assert!(collection.errors.is_empty());
+        let declarations = collection.styles.declarations_for(target);
+        assert_eq!(
+            declarations
+                .iter()
+                .map(|declaration| declaration.style_node)
+                .collect::<Vec<_>>(),
+            [embedded, linked, target]
+        );
+        assert_eq!(
+            collection
+                .styles
+                .declarations_for_pseudo(target, PseudoElement::Before)[0]
+                .style_node,
+            embedded
+        );
+        assert_eq!(
+            collection
+                .styles
+                .declarations_for_pseudo(target, PseudoElement::After)[0]
+                .style_node,
+            linked
+        );
     }
 
     #[test]

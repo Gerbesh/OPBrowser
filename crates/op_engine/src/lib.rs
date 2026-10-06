@@ -99,6 +99,7 @@ struct PreparedDocument {
     images: ImageResources,
     style_collection: StyleCollection,
     computed_styles: ComputedStyleMap,
+    stylesheet_addresses: std::collections::HashMap<op_dom::NodeId, String>,
 }
 
 impl PreparedDocument {
@@ -162,6 +163,15 @@ impl Engine {
         Some(&self.active_document.as_ref()?.computed_styles)
     }
 
+    /// Effective resource base for an active external style/link source node.
+    pub fn active_stylesheet_address(&self, style_node: op_dom::NodeId) -> Option<&str> {
+        self.active_document
+            .as_ref()?
+            .stylesheet_addresses
+            .get(&style_node)
+            .map(String::as_str)
+    }
+
     pub fn render_html(
         &self,
         html: &str,
@@ -204,6 +214,7 @@ impl Engine {
             images: ImageResources::new(),
             style_collection,
             computed_styles,
+            stylesheet_addresses: std::collections::HashMap::new(),
         };
         let page = prepared.render(width, height);
         self.active_document = Some(prepared);
@@ -303,7 +314,8 @@ impl Engine {
         let loaded: LoadedDocument = self.network.load_document(source)?;
         let document = parse_document(&loaded.text);
         let linked_stylesheets = styles::load(&self.network, &document, &loaded.address);
-        let style_collection = collect_author_styles_with_linked(&document, &linked_stylesheets);
+        let style_collection =
+            collect_author_styles_with_linked(&document, &linked_stylesheets.texts);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let images = images::load(&self.network, &document, &loaded.address);
         Ok(PreparedDocument {
@@ -313,6 +325,7 @@ impl Engine {
             images,
             style_collection,
             computed_styles,
+            stylesheet_addresses: linked_stylesheets.addresses,
         })
     }
 }
