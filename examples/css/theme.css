@@ -18,3 +18,6 @@ h1 { color: #6d28d9; font-size: 42px; }
 .color-functions span { color: rgba(3, 105, 161, .65); }
 .typography-center { width: 60%; margin: 14px auto; padding: 10px; text-align: center; line-height: 1.8; font-weight: 650; background-color: #f8fafc; border: 2px solid #0369a1; box-sizing: border-box; }
 .typography-right { width: 60%; margin: 10px auto; padding: 8px; text-align: right; line-height: 32px; font-weight: 500; background-color: #fff7ed; border: 2px solid #ea580c; box-sizing: border-box; }
+.inline-style-demo { width: 62%; margin: 12px auto; padding: 10px; font-style: italic; text-decoration: underline line-through; background-color: #fefce8; border: 2px solid #ca8a04; box-sizing: border-box; }
+.pre-demo { width: 62%; margin: 12px auto; padding: 10px; white-space: pre-wrap; background-color: #f0fdf4; border: 2px solid #16a34a; box-sizing: border-box; }
+.nowrap-demo { width: 220px; margin: 12px auto; padding: 8px; white-space: nowrap; background-color: #eff6ff; border: 2px solid #2563eb; box-sizing: border-box; }

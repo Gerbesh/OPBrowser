@@ -16,12 +16,41 @@ pub enum ComputedFontWeight {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontStyle {
+    Normal,
+    Italic,
+    Oblique,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextAlign {
     Start,
     End,
     Left,
     Right,
     Center,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhiteSpace {
+    Normal,
+    NoWrap,
+    Pre,
+    PreWrap,
+    PreLine,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextDecorationLine {
+    pub underline: bool,
+    pub line_through: bool,
+}
+
+impl TextDecorationLine {
+    pub const NONE: Self = Self {
+        underline: false,
+        line_through: false,
+    };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -183,8 +212,11 @@ pub struct ComputedStyle {
     pub color: CssColor,
     pub font_size_px: f32,
     pub font_weight: ComputedFontWeight,
+    pub font_style: FontStyle,
     pub line_height: ComputedLineHeight,
     pub text_align: TextAlign,
+    pub white_space: WhiteSpace,
+    pub text_decoration_line: TextDecorationLine,
     pub background_color: CssColor,
     pub margin: MarginEdges,
     pub padding: PaddingEdges,
@@ -205,8 +237,11 @@ impl ComputedStyle {
             color: CssColor::BLACK,
             font_size_px: 18.0,
             font_weight: ComputedFontWeight::Normal,
+            font_style: FontStyle::Normal,
             line_height: ComputedLineHeight::Normal,
             text_align: TextAlign::Start,
+            white_space: WhiteSpace::Normal,
+            text_decoration_line: TextDecorationLine::NONE,
             background_color: CssColor::TRANSPARENT,
             margin: MarginEdges::ZERO,
             padding: PaddingEdges::ZERO,
@@ -282,8 +317,11 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             color: parent.color,
             font_size_px: parent.font_size_px,
             font_weight: parent.font_weight,
+            font_style: parent.font_style,
             line_height: parent.line_height,
             text_align: parent.text_align,
+            white_space: parent.white_space,
+            text_decoration_line: parent.text_decoration_line,
             background_color: initial.background_color,
             margin: initial.margin,
             padding: initial.padding,
@@ -337,6 +375,11 @@ fn apply_ua_defaults(style: &mut ComputedStyle, tag: &str) {
         "p" | "li" => {
             style.margin.bottom = MarginValue::Length(LengthPercentage::Px(12.0));
         }
+        "b" | "strong" => style.font_weight = ComputedFontWeight::Bold,
+        "i" | "em" => style.font_style = FontStyle::Italic,
+        "u" => style.text_decoration_line.underline = true,
+        "s" | "strike" | "del" => style.text_decoration_line.line_through = true,
+        "pre" => style.white_space = WhiteSpace::Pre,
         _ => {}
     }
 }
@@ -417,6 +460,13 @@ fn apply_author_declarations(
             ComputedFontWeight::Normal,
         );
     }
+    if let Some((_, value)) = winning_value(declarations, "font-style", parse_font_style) {
+        style.font_style = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.font_style),
+            FontStyle::Normal,
+        );
+    }
     if let Some((_, value)) = winning_value(declarations, "line-height", |tokens| {
         parse_line_height(tokens, style.font_size_px)
     }) {
@@ -431,6 +481,20 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.text_align),
             TextAlign::Start,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "white-space", parse_white_space) {
+        style.white_space = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.white_space),
+            WhiteSpace::Normal,
+        );
+    }
+    if let Some((_, value)) = winning_text_decoration(declarations) {
+        style.text_decoration_line = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.text_decoration_line),
+            TextDecorationLine::NONE,
         );
     }
     if let Some((_, value)) = winning_value(declarations, "background-color", parse_color) {
@@ -569,6 +633,18 @@ fn parse_display(tokens: &[TokenKind]) -> Option<Specified<Display>> {
     }
 }
 
+fn parse_font_style(tokens: &[TokenKind]) -> Option<Specified<FontStyle>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "normal" => Some(Specified::Value(FontStyle::Normal)),
+        "italic" => Some(Specified::Value(FontStyle::Italic)),
+        "oblique" => Some(Specified::Value(FontStyle::Oblique)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
 fn parse_font_weight(tokens: &[TokenKind]) -> Option<Specified<ComputedFontWeight>> {
     if let Some(ident) = single_ident(tokens) {
         return match ident.to_ascii_lowercase().as_str() {
@@ -596,6 +672,61 @@ fn parse_font_weight(tokens: &[TokenKind]) -> Option<Specified<ComputedFontWeigh
         ComputedFontWeight::Bold
     };
     Some(Specified::Value(weight))
+}
+
+fn parse_white_space(tokens: &[TokenKind]) -> Option<Specified<WhiteSpace>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "normal" => Some(Specified::Value(WhiteSpace::Normal)),
+        "nowrap" => Some(Specified::Value(WhiteSpace::NoWrap)),
+        "pre" => Some(Specified::Value(WhiteSpace::Pre)),
+        "pre-wrap" => Some(Specified::Value(WhiteSpace::PreWrap)),
+        "pre-line" => Some(Specified::Value(WhiteSpace::PreLine)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn winning_text_decoration(
+    declarations: &[MatchedDeclaration],
+) -> Option<(&MatchedDeclaration, Specified<TextDecorationLine>)> {
+    declarations
+        .iter()
+        .filter_map(|matched| {
+            if !matches!(
+                matched.declaration.name.as_str(),
+                "text-decoration" | "text-decoration-line"
+            ) {
+                return None;
+            }
+            parse_text_decoration_line(&matched.declaration.value).map(|value| (matched, value))
+        })
+        .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
+}
+
+fn parse_text_decoration_line(tokens: &[TokenKind]) -> Option<Specified<TextDecorationLine>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| TextDecorationLine::NONE));
+    }
+    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("none")) {
+        return Some(Specified::Value(TextDecorationLine::NONE));
+    }
+
+    let mut decoration = TextDecorationLine::NONE;
+    let mut saw_value = false;
+    for token in significant_tokens(tokens) {
+        let TokenKind::Ident(value) = token else {
+            return None;
+        };
+        match value.to_ascii_lowercase().as_str() {
+            "underline" if !decoration.underline => decoration.underline = true,
+            "line-through" if !decoration.line_through => decoration.line_through = true,
+            _ => return None,
+        }
+        saw_value = true;
+    }
+    saw_value.then_some(Specified::Value(decoration))
 }
 
 fn parse_text_align(tokens: &[TokenKind]) -> Option<Specified<TextAlign>> {
@@ -2120,6 +2251,73 @@ mod tests {
         assert_eq!(percent.font_weight, ComputedFontWeight::Normal);
         assert_eq!(length.line_height, ComputedLineHeight::Px(40.0));
         assert_eq!(length.font_weight, ComputedFontWeight::Normal);
+    }
+
+    #[test]
+    fn computes_font_style_white_space_and_text_decoration_with_ua_defaults() {
+        let document = parse_document(
+            "<div id='parent' style='font-style:italic; white-space:pre-wrap; text-decoration:underline line-through'>
+                <span id='child'>x</span>
+                <span id='clear' style='font-style:normal; white-space:nowrap; text-decoration:none'>y</span>
+             </div>
+             <strong id='strong'>b</strong><em id='em'>i</em><u id='u'>u</u><del id='del'>d</del><pre id='pre'>p</pre>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let parent = computed.style_for(find_by_id(&document, "parent")).unwrap();
+        let child = computed.style_for(find_by_id(&document, "child")).unwrap();
+        let clear = computed.style_for(find_by_id(&document, "clear")).unwrap();
+
+        assert_eq!(parent.font_style, FontStyle::Italic);
+        assert_eq!(parent.white_space, WhiteSpace::PreWrap);
+        assert_eq!(
+            parent.text_decoration_line,
+            TextDecorationLine {
+                underline: true,
+                line_through: true,
+            }
+        );
+        assert_eq!(child.font_style, FontStyle::Italic);
+        assert_eq!(child.white_space, WhiteSpace::PreWrap);
+        assert_eq!(child.text_decoration_line, parent.text_decoration_line);
+        assert_eq!(clear.font_style, FontStyle::Normal);
+        assert_eq!(clear.white_space, WhiteSpace::NoWrap);
+        assert_eq!(clear.text_decoration_line, TextDecorationLine::NONE);
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "strong"))
+                .unwrap()
+                .font_weight,
+            ComputedFontWeight::Bold
+        );
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "em"))
+                .unwrap()
+                .font_style,
+            FontStyle::Italic
+        );
+        assert!(
+            computed
+                .style_for(find_by_id(&document, "u"))
+                .unwrap()
+                .text_decoration_line
+                .underline
+        );
+        assert!(
+            computed
+                .style_for(find_by_id(&document, "del"))
+                .unwrap()
+                .text_decoration_line
+                .line_through
+        );
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "pre"))
+                .unwrap()
+                .white_space,
+            WhiteSpace::Pre
+        );
     }
 
     #[test]

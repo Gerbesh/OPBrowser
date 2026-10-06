@@ -535,3 +535,30 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 132 workspace tests,
   normal startup smoke, the 66-command CSS demo smoke and optimized release build.
 - Rebuilt `target/release/op_browser.exe`; this build is 576,000 bytes.
+
+## 2026-10-06 - Font style, text decoration and white-space modes
+
+- Added inherited `font-style: normal|italic|oblique`; italic/oblique now select the same
+  italic GDI face during both native measurement and paint, with worker font-cache keys
+  extended by style so text geometry matches the rendered face.
+- Added initial `text-decoration` / `text-decoration-line` handling for `none`, `underline`
+  and `line-through` combinations. TextBox and PaintCommand now carry decoration flags;
+  Win32 draws measured decoration segments for normal/link runs instead of keeping the state
+  as parser-only metadata.
+- Added `white-space: normal|nowrap|pre|pre-wrap|pre-line` to the owned line formatter.
+  Newline preservation, ASCII-space collapsing/preservation and soft wrapping now depend on
+  the computed mode; preserved tabs currently expand to four spaces.
+- Added UA defaults for b/strong, i/em, u, s/strike/del and pre so common semantic HTML uses
+  the same computed-style path without separate renderer special cases.
+- Added deterministic computed-style/layout/Engine regressions covering inheritance, UA
+  defaults, nowrap, preserved spaces/newlines, italic and decoration display-list flags.
+  Native Windows tests continue to pass with italic font creation and decoration painting.
+- Updated the built-in start page and CSS demo with italic, underline/line-through, pre-wrap
+  and nowrap examples; the CSS demo smoke now emits 85 paint commands.
+- Updated project plan, code slices/graph, README and CSS/rendering/inline-layout wiki pages.
+- Deliberate limits remain: oblique maps to italic, decoration color/style/thickness are not
+  implemented, decoration propagation is simplified, tab-size is fixed, inline replaced
+  elements do not fully honor nowrap, and full Unicode/grapheme/bidi breaking remains later.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 135 workspace tests,
+  native Windows tests, normal startup smoke, the 85-command CSS demo smoke and release build.
+- Rebuilt `target/release/op_browser.exe`; this build is 583,680 bytes.

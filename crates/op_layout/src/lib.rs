@@ -23,6 +23,25 @@ pub enum FontWeight {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontStyle {
+    Normal,
+    Italic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextDecoration {
+    pub underline: bool,
+    pub line_through: bool,
+}
+
+impl TextDecoration {
+    pub const NONE: Self = Self {
+        underline: false,
+        line_through: false,
+    };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextColor {
     pub red: u8,
     pub green: u8,
@@ -69,6 +88,8 @@ pub struct TextBox {
     pub text: String,
     pub font_size: i32,
     pub weight: FontWeight,
+    pub style: FontStyle,
+    pub decoration: TextDecoration,
     pub color: TextColor,
     pub links: Vec<LinkSpan>,
 }
@@ -149,12 +170,24 @@ pub struct TextMetrics {
 
 /// The layout algorithm owns wrapping and placement; this supplies only font extents.
 pub trait TextMeasurer {
-    fn measure(&mut self, text: &str, font_size: i32, weight: FontWeight) -> TextMetrics;
+    fn measure(
+        &mut self,
+        text: &str,
+        font_size: i32,
+        weight: FontWeight,
+        style: FontStyle,
+    ) -> TextMetrics;
 }
 
 pub struct ApproximateTextMeasurer;
 impl TextMeasurer for ApproximateTextMeasurer {
-    fn measure(&mut self, text: &str, font_size: i32, _weight: FontWeight) -> TextMetrics {
+    fn measure(
+        &mut self,
+        text: &str,
+        font_size: i32,
+        _weight: FontWeight,
+        _style: FontStyle,
+    ) -> TextMetrics {
         TextMetrics {
             width: ((text.chars().count() as f32) * font_size as f32 * 0.55).ceil() as i32,
             ascent: font_size * 4 / 5,
@@ -487,6 +520,57 @@ mod tests {
         assert_eq!(center.x, content_x + (content_width - center.width) / 2);
         assert_eq!(right.x, content_x + content_width - right.width);
         assert_eq!(second.y - first.y, 40);
+    }
+
+    #[test]
+    fn white_space_modes_and_inline_text_styles_reach_real_layout() {
+        let document = op_html::parse_document(
+            "<div id='normal' style='width:90px'>a   b ccc ddd</div>
+             <div id='nowrap' style='width:90px; white-space:nowrap'>a   b ccc ddd</div>
+             <div id='pre' style='white-space:pre'>a  b\n c</div>
+             <div id='preline' style='white-space:pre-line'>a   b\n c</div>
+             <p><span style='font-style:italic; text-decoration:underline line-through'>styled</span></p>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            400,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let texts: Vec<&str> = layout
+            .text_boxes
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect();
+        assert!(
+            texts
+                .iter()
+                .filter(|text| text.contains("ccc") || text.contains("ddd"))
+                .count()
+                >= 3
+        );
+        assert!(texts.contains(&"a  b"));
+        assert!(texts.contains(&" c"));
+        assert!(texts.contains(&"a b"));
+
+        let nowrap_lines = layout
+            .text_boxes
+            .iter()
+            .filter(|line| line.text == "a b ccc ddd")
+            .count();
+        assert_eq!(nowrap_lines, 1);
+        let styled = layout
+            .text_boxes
+            .iter()
+            .find(|line| line.text == "styled")
+            .unwrap();
+        assert_eq!(styled.style, FontStyle::Italic);
+        assert!(styled.decoration.underline);
+        assert!(styled.decoration.line_through);
     }
 
     #[test]

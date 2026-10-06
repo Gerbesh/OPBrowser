@@ -29,8 +29,10 @@ emits this sequence instead of painting all text before all images.
 - Font ascent/descent plus computed `line-height` establish each run's line strut.
   `normal`, unitless multipliers, percentages and lengths reach real ascent/descent geometry;
   larger styled runs increase the shared line box while smaller runs share its baseline.
-- ASCII HTML spaces, tabs, LF, CR and form feed collapse to one space; leading and
-  trailing collapsed spaces disappear. NBSP and other Unicode spaces stay intact.
+- `white-space: normal` collapses ASCII HTML whitespace as before. `nowrap` keeps the same
+  collapse behavior but disables soft text wrapping. `pre` preserves spaces/tabs/newlines
+  without soft wrapping; `pre-wrap` preserves them and wraps; `pre-line` preserves explicit
+  newlines while collapsing other whitespace. Tabs currently expand to four spaces.
 - `br` forces a line; repeated breaks produce empty lines with normal line height.
 - Words normally move whole to the next line. Oversized words use an emergency
   Unicode-scalar split. Exponential probing and binary search measure prefixes
@@ -39,9 +41,10 @@ emits this sequence instead of painting all text before all images.
   rectangles retain inherited hrefs and use existing scroll-aware hit testing.
 - Computed display:none/block/inline participates in flow. Heading/paragraph/list spacing
   is now represented as temporary UA computed margins in the block box-model path.
-- Computed font-size, font-weight, line-height and text color can change inside one inline
-  line. `text-align: start/end/left/right/center` offsets each completed line inside the
-  content box after wrapping. Consecutive inline nodes around blocks form anonymous groups.
+- Computed font-size, font-weight, font-style, line-height, text decoration and text color
+  can change inside one inline line. Italic/oblique use italic GDI font realization for both
+  measurement and paint. Underline/line-through are carried through the display list and
+  painted over measured segment widths. `text-align` offsets each completed line.
 
 Image source policy, dimensions, viewport fitting and pixel budgets are described
 in [Image Loading](Image-Loading.md).
@@ -64,10 +67,11 @@ a click through to the linked destination.
 This is still an initial left-to-right subset. Mixed computed inline size/weight/color
 is supported, but inline padding/background/border fragments are not. Block-level box-model
 support, including adjacent sibling margin collapse, is described in
-[CSS Block Box Model](CSS-Box-Model.md). Parent/child margin collapse, font-style/families,
-text decoration, white-space modes, advanced
-shaping/font fallback, bidi, grapheme-aware/full Unicode line breaking, preformatted
-whitespace modes, floats/tables/flex/grid remain future work. Hyperlink glyph color is
+[CSS Block Box Model](CSS-Box-Model.md). Parent/child margin collapse, font families,
+letter/word spacing, text-transform, decoration color/style/thickness, `tab-size`, advanced
+shaping/font fallback, bidi and grapheme-aware/full Unicode line breaking remain future work.
+Inline replaced elements do not yet fully honor nowrap semantics and there are no inline
+box fragments/backgrounds/borders yet. Floats/tables/flex/grid also remain future work. Hyperlink glyph color is
 still the native default blue. These tests do not claim complete CSS conformance.
 
 [Page Reflow](Page-Reflow.md) now rebuilds these lines on window resize using the

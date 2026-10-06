@@ -16,8 +16,9 @@ impl op_layout::TextMeasurer for Measurer {
         text: &str,
         size: i32,
         weight: op_layout::FontWeight,
+        style: op_layout::FontStyle,
     ) -> op_layout::TextMetrics {
-        op_layout::ApproximateTextMeasurer.measure(text, size, weight)
+        op_layout::ApproximateTextMeasurer.measure(text, size, weight, style)
     }
 }
 
@@ -26,7 +27,7 @@ pub(super) use native::Measurer;
 
 #[cfg(windows)]
 mod native {
-    use op_layout::{ApproximateTextMeasurer, FontWeight, TextMeasurer, TextMetrics};
+    use op_layout::{ApproximateTextMeasurer, FontStyle, FontWeight, TextMeasurer, TextMetrics};
     use std::collections::HashMap;
     use std::mem::zeroed;
     use std::ptr::null_mut;
@@ -42,7 +43,7 @@ mod native {
     }
 
     impl Font {
-        fn new(size: i32, bold: bool) -> Option<Self> {
+        fn new(size: i32, bold: bool, italic: bool) -> Option<Self> {
             let guard = op_paint::GDI_TEXT_LOCK
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
@@ -61,7 +62,7 @@ mod native {
                     0,
                     0,
                     if bold { FW_BOLD } else { FW_NORMAL } as i32,
-                    0,
+                    u32::from(italic),
                     0,
                     0,
                     DEFAULT_CHARSET as u32,
@@ -114,7 +115,7 @@ mod native {
     }
 
     pub(crate) struct Measurer {
-        fonts: HashMap<(i32, bool), Option<Font>>,
+        fonts: HashMap<(i32, bool, bool), Option<Font>>,
     }
     impl Measurer {
         pub(crate) fn new() -> Self {
@@ -125,12 +126,19 @@ mod native {
     }
 
     impl TextMeasurer for Measurer {
-        fn measure(&mut self, text: &str, size: i32, weight: FontWeight) -> TextMetrics {
+        fn measure(
+            &mut self,
+            text: &str,
+            size: i32,
+            weight: FontWeight,
+            style: FontStyle,
+        ) -> TextMetrics {
             let bold = weight == FontWeight::Bold;
+            let italic = style == FontStyle::Italic;
             let font = self
                 .fonts
-                .entry((size, bold))
-                .or_insert_with(|| Font::new(size, bold));
+                .entry((size, bold, italic))
+                .or_insert_with(|| Font::new(size, bold, italic));
             if let Some(font) = font {
                 let utf16: Vec<u16> = text.encode_utf16().collect();
                 let _guard = op_paint::GDI_TEXT_LOCK
@@ -154,7 +162,7 @@ mod native {
                     };
                 }
             }
-            ApproximateTextMeasurer.measure(text, size, weight)
+            ApproximateTextMeasurer.measure(text, size, weight, style)
         }
     }
 
@@ -165,12 +173,14 @@ mod native {
         #[test]
         fn measures_unicode_variable_width_and_reuses_worker_fonts() {
             let mut measurer = Measurer::new();
-            let narrow = measurer.measure("iiii", 18, FontWeight::Normal);
-            let wide = measurer.measure("WWWW", 18, FontWeight::Normal);
+            let narrow = measurer.measure("iiii", 18, FontWeight::Normal, FontStyle::Normal);
+            let wide = measurer.measure("WWWW", 18, FontWeight::Normal, FontStyle::Normal);
             assert!(wide.width > narrow.width);
-            let unicode = measurer.measure("Привет 😀", 18, FontWeight::Normal);
+            let unicode = measurer.measure("Привет 😀", 18, FontWeight::Normal, FontStyle::Normal);
+            let italic = measurer.measure("italic", 18, FontWeight::Normal, FontStyle::Italic);
             assert!(unicode.width > 0 && unicode.ascent > 0 && unicode.descent >= 0);
-            assert_eq!(measurer.fonts.len(), 1);
+            assert!(italic.width > 0);
+            assert_eq!(measurer.fonts.len(), 2);
             assert!(measurer.fonts.values().all(Option::is_some));
         }
 
@@ -214,7 +224,8 @@ mod native {
                 panic!("text must precede the inline image");
             };
             assert_eq!(text, "До картинки ");
-            let measured = Measurer::new().measure(text, *font_size, FontWeight::Normal);
+            let measured =
+                Measurer::new().measure(text, *font_size, FontWeight::Normal, FontStyle::Normal);
             let PaintCommand::Image {
                 x: image_x,
                 y: image_y,

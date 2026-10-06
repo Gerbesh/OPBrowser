@@ -1,13 +1,17 @@
 use super::{
-    FontWeight, ImageBox, LayoutItem, LinkSpan, TextBox, TextColor, TextMeasurer, TextMetrics,
+    FontStyle, FontWeight, ImageBox, LayoutItem, LinkSpan, TextBox, TextColor, TextDecoration,
+    TextMeasurer, TextMetrics,
 };
-use op_css::TextAlign;
+use op_css::{TextAlign, WhiteSpace};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct InlineStyle {
     pub font_size: i32,
     pub line_height: i32,
     pub weight: FontWeight,
+    pub font_style: FontStyle,
+    pub decoration: TextDecoration,
+    pub white_space: WhiteSpace,
     pub color: TextColor,
 }
 
@@ -89,24 +93,48 @@ impl<'a, 'm> Lines<'a, 'm> {
 
     pub fn layout(mut self, items: Vec<Item<'a>>) -> Self {
         let mut word = Vec::new();
+        let mut preserved_cr = false;
         for item in items {
             match item {
-                Item::Char(ch) if matches!(ch.ch, ' ' | '\t' | '\n' | '\r' | '\u{c}') => {
-                    self.word(std::mem::take(&mut word));
-                    if self.pending_space.is_none() {
-                        self.pending_space = Some(InlineChar {
-                            ch: ' ',
-                            href: ch.href,
-                            style: ch.style,
-                        });
+                Item::Char(ch) => {
+                    let preserve_newline = matches!(
+                        ch.style.white_space,
+                        WhiteSpace::Pre | WhiteSpace::PreWrap | WhiteSpace::PreLine
+                    );
+                    if preserve_newline && matches!(ch.ch, '\r' | '\n') {
+                        if ch.ch == '\n' && preserved_cr {
+                            preserved_cr = false;
+                            continue;
+                        }
+                        preserved_cr = ch.ch == '\r';
+                        self.word(std::mem::take(&mut word));
+                        self.flush(true);
+                        continue;
+                    }
+                    preserved_cr = false;
+
+                    if matches!(ch.ch, ' ' | '\t' | '\n' | '\r' | '\u{c}') {
+                        self.word(std::mem::take(&mut word));
+                        if matches!(ch.style.white_space, WhiteSpace::Pre | WhiteSpace::PreWrap) {
+                            self.preserved_space(ch);
+                        } else if self.pending_space.is_none() {
+                            self.pending_space = Some(InlineChar {
+                                ch: ' ',
+                                href: ch.href,
+                                style: ch.style,
+                            });
+                        }
+                    } else {
+                        word.push(ch);
                     }
                 }
-                Item::Char(ch) => word.push(ch),
                 Item::Image(image) => {
+                    preserved_cr = false;
                     self.word(std::mem::take(&mut word));
                     self.image(image);
                 }
                 Item::Break => {
+                    preserved_cr = false;
                     self.word(std::mem::take(&mut word));
                     self.flush(true);
                 }
@@ -134,7 +162,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             let text: String = chars[start..end].iter().map(|ch| ch.ch).collect();
             width = width.saturating_add(
                 self.measurer
-                    .measure(&text, style.font_size, style.weight)
+                    .measure(&text, style.font_size, style.weight, style.font_style)
                     .width
                     .max(0),
             );
@@ -213,6 +241,16 @@ impl<'a, 'm> Lines<'a, 'm> {
             self.pending_space.take()
         };
         self.pending_space = None;
+        let allows_wrap = word.iter().all(|ch| {
+            matches!(
+                ch.style.white_space,
+                WhiteSpace::Normal | WhiteSpace::PreWrap | WhiteSpace::PreLine
+            )
+        });
+        if !allows_wrap {
+            self.append(&word, space);
+            return;
+        }
         if !self.boxes.is_empty() && self.fitting_prefix(&word, space) < word.len() {
             self.flush(false);
         }
@@ -229,6 +267,21 @@ impl<'a, 'm> Lines<'a, 'm> {
             if start < word.len() {
                 self.flush(false);
             }
+        }
+    }
+
+    fn preserved_space(&mut self, ch: InlineChar<'a>) {
+        self.pending_space = None;
+        let count = if ch.ch == '\t' { 4 } else { 1 };
+        for _ in 0..count {
+            let space = InlineChar { ch: ' ', ..ch };
+            if ch.style.white_space == WhiteSpace::PreWrap
+                && !self.boxes.is_empty()
+                && self.appended_width(&[space], None) > self.width
+            {
+                self.flush(false);
+            }
+            self.append(&[space], None);
         }
     }
 
@@ -253,7 +306,9 @@ impl<'a, 'm> Lines<'a, 'm> {
     }
 
     fn metrics_for(&mut self, style: InlineStyle) -> (TextMetrics, i32, i32) {
-        let metrics = self.measurer.measure("", style.font_size, style.weight);
+        let metrics = self
+            .measurer
+            .measure("", style.font_size, style.weight, style.font_style);
         let line_height = style.line_height.max(0);
         let leading = line_height - metrics.ascent - metrics.descent;
         let ascent = (metrics.ascent + leading / 2).max(0);
@@ -370,6 +425,8 @@ impl<'a, 'm> Lines<'a, 'm> {
                         text: text.text,
                         font_size: text.style.font_size,
                         weight: text.style.weight,
+                        style: text.style.font_style,
+                        decoration: text.style.decoration,
                         color: text.style.color,
                         links: text.links,
                     });

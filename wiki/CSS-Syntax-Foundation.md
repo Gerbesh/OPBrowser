@@ -97,10 +97,10 @@ reflow therefore does not reparse, rematch or recascade CSS.
 
 ComputedStyleMap is now consumed by op_layout. display:none removes the subtree from
 layout, display:block creates a flow boundary, and display:inline stays in the current
-inline flow. font-size, font-weight, line-height and color are carried on inline character
-runs, so a span can change typography without forcing a new line. text-align is inherited
-into the block formatter and offsets completed lines inside the content box. Runs with
-different metrics still share the same baseline.
+inline flow. font-size, font-weight/style, line-height, decoration and color are carried on
+inline character runs. text-align offsets completed lines, while white-space controls
+collapse/newline preservation/soft wrapping. Italic styling participates in both measurement
+and GDI font creation, so geometry and native paint use the same realized face.
 
 Text color reaches op_paint and the Win32 painter through TextBox/paint commands. Block
 background, margin/padding, sizing/box-sizing and independent solid border sides also flow
@@ -120,7 +120,8 @@ The local demonstration page is `examples/css/index.html`; it now links a real
 The built-in start page also describes the supported subset in a normal release launch.
 
 The expanded block-level box model is documented in [CSS Block Box Model](CSS-Box-Model.md).
-Initial text alignment and line-height now reach layout geometry. Next S3 work moves into
-inline box fragments/decorations, font-style/text-decoration and white-space controls.
+Initial text alignment, line-height, font-style, underline/line-through and white-space modes
+now reach layout/native paint. Next S3 work moves into inline box fragments/decorations and
+letter/word spacing plus text-transform.
 Functional pseudos, pseudo-elements, advanced color spaces, at-rules, media queries and full
 CSS conformance remain later.

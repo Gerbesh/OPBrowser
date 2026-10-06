@@ -2,7 +2,8 @@ use super::inline::{InlineChar, InlineStyle, Item, Lines};
 use super::*;
 use op_css::{
     BorderEdges, BorderStyle, BoxSizing, ComputedFontWeight, ComputedLineHeight, ComputedStyle,
-    ComputedStyleMap, Display, LengthPercentage, MarginEdges, MarginValue, PaddingEdges, TextAlign,
+    ComputedStyleMap, Display, FontStyle as CssFontStyle, LengthPercentage, MarginEdges,
+    MarginValue, PaddingEdges, TextAlign, WhiteSpace,
 };
 
 pub(super) fn layout(
@@ -126,7 +127,9 @@ impl<'a> Context<'a, '_> {
         if items.iter().all(|item| {
             matches!(
                 item,
-                Item::Char(ch) if matches!(ch.ch, ' ' | '\t' | '\n' | '\r' | '\u{c}')
+                Item::Char(ch)
+                    if matches!(ch.ch, ' ' | '\t' | '\n' | '\r' | '\u{c}')
+                        && matches!(ch.style.white_space, WhiteSpace::Normal | WhiteSpace::NoWrap)
             )
         }) {
             items.clear();
@@ -600,6 +603,15 @@ fn computed_style(style: ComputedStyle) -> Style {
                 ComputedFontWeight::Normal => FontWeight::Normal,
                 ComputedFontWeight::Bold => FontWeight::Bold,
             },
+            font_style: match style.font_style {
+                CssFontStyle::Normal => FontStyle::Normal,
+                CssFontStyle::Italic | CssFontStyle::Oblique => FontStyle::Italic,
+            },
+            decoration: TextDecoration {
+                underline: style.text_decoration_line.underline,
+                line_through: style.text_decoration_line.line_through,
+            },
+            white_space: style.white_space,
             color: style.color.into(),
         },
         text_align: style.text_align,
@@ -668,6 +680,9 @@ fn default_style() -> Style {
             font_size: 18,
             line_height: 24,
             weight: FontWeight::Normal,
+            font_style: FontStyle::Normal,
+            decoration: TextDecoration::NONE,
+            white_space: WhiteSpace::Normal,
             color: TextColor {
                 red: 0,
                 green: 0,

@@ -722,6 +722,37 @@ mod tests {
     }
 
     #[test]
+    fn font_style_decorations_and_white_space_reach_display_list() {
+        let display_list = Engine::new().render_html(
+            "<p><span style='font-style:italic; text-decoration:underline line-through'>styled</span></p><div style='white-space:pre'>a  b\n c</div>",
+            800,
+            600,
+        );
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text {
+                text,
+                italic: true,
+                underline: true,
+                line_through: true,
+                ..
+            } if text == "styled"
+        )));
+        let preserved: Vec<&str> = display_list
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::Text { text, .. } if text == "a  b" || text == " c" => {
+                    Some(text.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(preserved, ["a  b", " c"]);
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,

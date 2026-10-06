@@ -136,7 +136,10 @@ Status: IN PROGRESS.
 - DONE richer initial typography: inherited `text-align` start/end/left/right/center,
   `line-height` normal/number/percent/length with real line-box geometry, and numeric
   `font-weight` 1-1000 plus bolder/lighter mapped onto the current normal/bold backend.
-- NEXT add inline box fragments/decorations plus `font-style`, `text-decoration` and white-space controls.
+- DONE `font-style` normal/italic/oblique through GDI font realization/measurement, initial
+  `text-decoration`/`text-decoration-line` underline + line-through native painting, and
+  `white-space` normal/nowrap/pre/pre-wrap/pre-line behavior in the owned line formatter.
+- NEXT add inline box fragments/decorations plus letter/word spacing and text-transform.
 - LATER functional pseudo-classes (:is/:where/:not/:nth-child), pseudo-elements and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.

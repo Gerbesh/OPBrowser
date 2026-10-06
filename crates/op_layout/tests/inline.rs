@@ -1,13 +1,14 @@
 use op_html::parse_document;
 use op_image::RasterImage;
 use op_layout::{
-    FontWeight, ImageResources, LayoutTree, TextMeasurer, TextMetrics, layout_document_with_metrics,
+    FontStyle, FontWeight, ImageResources, LayoutTree, TextMeasurer, TextMetrics,
+    layout_document_with_metrics,
 };
 use std::sync::Arc;
 
 struct Fixed;
 impl TextMeasurer for Fixed {
-    fn measure(&mut self, text: &str, _: i32, _: FontWeight) -> TextMetrics {
+    fn measure(&mut self, text: &str, _: i32, _: FontWeight, _: FontStyle) -> TextMetrics {
         TextMetrics {
             width: text.chars().count() as i32 * 10,
             ascent: 14,
@@ -143,9 +144,9 @@ fn splits_long_unicode_words_without_quadratic_suffix_measurement() {
         chars: usize,
     }
     impl TextMeasurer for Counting {
-        fn measure(&mut self, text: &str, _: i32, _: FontWeight) -> TextMetrics {
+        fn measure(&mut self, text: &str, _: i32, _: FontWeight, _: FontStyle) -> TextMetrics {
             self.chars += text.chars().count();
-            Fixed.measure(text, 18, FontWeight::Normal)
+            Fixed.measure(text, 18, FontWeight::Normal, FontStyle::Normal)
         }
     }
     let text = "я😀".repeat(2500);

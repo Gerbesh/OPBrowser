@@ -636,6 +636,9 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
             text,
             font_size,
             bold,
+            italic,
+            underline,
+            line_through,
             color,
             links,
         } => {
@@ -652,7 +655,7 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
                     0,
                     0,
                     weight,
-                    0,
+                    u32::from(*italic),
                     0,
                     0,
                     DEFAULT_CHARSET as u32,
@@ -691,22 +694,27 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
                 let Some(label) = text.get(link.start..link.end) else {
                     continue;
                 };
-                cursor_x += paint_text_segment(hdc, cursor_x, *y, plain, *color);
+                let plain_width = paint_text_segment(hdc, cursor_x, *y, plain, *color);
+                paint_text_decorations(
+                    hdc,
+                    cursor_x,
+                    *y,
+                    plain_width,
+                    *font_size,
+                    *color,
+                    (*underline, *line_through),
+                );
+                cursor_x += plain_width;
                 let width = paint_text_segment(hdc, cursor_x, *y, label, Color::LINK);
-                // Underline through the OS drawing backend, using measured glyph width.
-                let underline = RECT {
-                    left: cursor_x,
-                    top: *y + *font_size + 2,
-                    right: cursor_x + width,
-                    bottom: *y + *font_size + 3,
-                };
-                let brush = unsafe { CreateSolidBrush(color_ref(Color::LINK)) };
-                if !brush.is_null() {
-                    unsafe {
-                        FillRect(hdc, &underline, brush);
-                        DeleteObject(brush);
-                    }
-                }
+                paint_text_decorations(
+                    hdc,
+                    cursor_x,
+                    *y,
+                    width,
+                    *font_size,
+                    Color::LINK,
+                    (true, *line_through),
+                );
                 link_regions.push(LinkRegion {
                     bounds: RECT {
                         left: cursor_x,
@@ -719,7 +727,16 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
                 cursor_x += width;
                 offset = link.end;
             }
-            paint_text_segment(hdc, cursor_x, *y, &text[offset..], *color);
+            let tail_width = paint_text_segment(hdc, cursor_x, *y, &text[offset..], *color);
+            paint_text_decorations(
+                hdc,
+                cursor_x,
+                *y,
+                tail_width,
+                *font_size,
+                *color,
+                (*underline, *line_through),
+            );
 
             if !font.is_null() {
                 unsafe {
@@ -731,6 +748,45 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
             }
         }
     }
+}
+
+fn paint_text_decorations(
+    hdc: *mut c_void,
+    x: i32,
+    y: i32,
+    width: i32,
+    font_size: i32,
+    color: Color,
+    decoration: (bool, bool),
+) {
+    let (underline, line_through) = decoration;
+    if width <= 0 || (!underline && !line_through) {
+        return;
+    }
+    let brush = unsafe { CreateSolidBrush(color_ref(color)) };
+    if brush.is_null() {
+        return;
+    }
+    if underline {
+        let rect = RECT {
+            left: x,
+            top: y + font_size + 2,
+            right: x + width,
+            bottom: y + font_size + 3,
+        };
+        unsafe { FillRect(hdc, &rect, brush) };
+    }
+    if line_through {
+        let middle = y + (font_size * 11 / 20);
+        let rect = RECT {
+            left: x,
+            top: middle,
+            right: x + width,
+            bottom: middle + 1,
+        };
+        unsafe { FillRect(hdc, &rect, brush) };
+    }
+    unsafe { DeleteObject(brush) };
 }
 
 fn paint_text_segment(hdc: *mut c_void, x: i32, y: i32, text: &str, color: Color) -> i32 {
@@ -858,6 +914,9 @@ mod tests {
                                     text: "Before link after".into(),
                                     font_size: 18,
                                     bold: false,
+                                    italic: false,
+                                    underline: false,
+                                    line_through: false,
                                     color: Color::BLACK,
                                     links: vec![op_paint::LinkSpan {
                                         start: 7,
@@ -973,6 +1032,9 @@ mod tests {
                                 text: "New link".into(),
                                 font_size: 18,
                                 bold: false,
+                                italic: false,
+                                underline: false,
+                                line_through: false,
                                 color: Color::BLACK,
                                 links: vec![op_paint::LinkSpan {
                                     start: 0,

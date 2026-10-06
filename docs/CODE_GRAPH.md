@@ -227,8 +227,11 @@ classDiagram
         color
         font_size_px
         font_weight
+        font_style
         line_height
         text_align
+        white_space
+        text_decoration_line
         background_color
         margin_edges
         padding_edges
@@ -253,7 +256,7 @@ classDiagram
         Image_index
     }
     class TextMeasurer {
-        +measure(text, size, weight) TextMetrics
+        +measure(text, size, weight, style) TextMetrics
     }
     class TextMetrics {
         width
@@ -318,7 +321,7 @@ classDiagram
     PreparedDocument --> Document : DOM snapshot
     PreparedDocument --> RasterImage : shared Arc image resources
     Document --> LayoutTree : flow grouping / inline lines
-    ComputedStyleMap --> LayoutTree : display/text style + line-height/alignment + block box geometry
+    ComputedStyleMap --> LayoutTree : display/text style + line-height/alignment/white-space/decorations + block box geometry
     LayoutTree --> BoxDecoration : block backgrounds / solid borders
     BoxDecoration --> DisplayList : background + four border FillRects
     LayoutTree --> DisplayList : styled text / image paint commands
