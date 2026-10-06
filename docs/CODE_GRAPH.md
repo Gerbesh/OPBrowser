@@ -758,8 +758,11 @@ retained ComputedStyleMap -> CSS-aware layout -> display-list text styling -> Wi
 Reflow reuses author candidates and computed values without refetching/reparsing CSS.
 CSS color parsing now feeds op_css::color for Lab/LCH/OKLab/OKLCH and predefined RGB/XYZ
 space conversion -> D50/D65 adaptation where required -> encoded sRGB CssColor -> existing
-layout/paint commands. currentColor is resolved after the element's own foreground color so
-background/border use the same computed color without a platform-specific color path.
+layout/paint commands. Background colors also retain a private ComputedColorValue expression
+when they depend on `currentColor`; inheritance copies that expression and resolves the used
+CssColor against the receiving element. Initial `color-mix()` supports sRGB/LCH interpolation,
+and the current relative-color slice preserves or overrides channels from `currentColor` before
+feeding the same 8-bit paint path.
 System/deprecated color identifiers feed the same CssColor path through a deterministic
 browser-owned palette. The stylesheet parser can conditionally recurse into simple declaration
 `@supports` blocks. Selector matching now also resolves inherited HTML language/direction
@@ -768,8 +771,11 @@ Separately, op_js now has source -> tokenize -> AST -> bytecode -> VM as an exec
 standalone language slice, and op_browser_core has tab -> lifecycle/protection -> discard
 candidate -> restore-state flow ready for later UI/renderer integration.
 The block-box path includes used width/min/max/auto-margin geometry, per-side borders and
-adjacent sibling margin collapse before BoxDecoration/background-border FillRects. Selector
-matching now adds attributes, +/~ and initial structural pseudos before the same cascade.
+adjacent sibling margin collapse before BoxDecoration/background-border FillRects. `Display::Contents`
+uses the existing child/generated-content collection path without creating a principal box; flex,
+table-internal and SVG-specific contents behavior remains separate work. Selector matching now adds
+attributes, +/~ and structural pseudos before the same cascade, including filtered nth selectors
+whose `of` list may begin immediately after the `of` token.
 Nested inline text/image/empty/pseudo items now retain parent-linked decoration stacks.
 Flow owns the InlineBoxes arena; each character stores one optional index, without copying
 ancestors per character. Cached cumulative edges and iterative common-ancestor transitions

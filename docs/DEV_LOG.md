@@ -1642,3 +1642,27 @@ This file is append-only project history.
   test suite, Win32 startup smoke, optimized release build, `git diff --check` and the repeated
   external compatibility run. Test262 Parser v1 remained 364/1983 (18.36%).
 
+## 2026-10-07 - Deferred color expressions and display contents WPT pass
+
+- Added a private computed-color expression layer so non-`color` properties can retain a
+  `currentColor` dependency through `inherit` and resolve the used RGBA against the receiving
+  element instead of freezing the parent's pixels.
+- Added the initial `color-mix()` implementation for two stops in sRGB or LCH, including percentage
+  normalization, alpha reduction when the authored total is below 100%, deferred `currentColor`
+  operands and the inverse sRGB -> D50 Lab path required for LCH interpolation.
+- Added the pinned relative-color `from currentColor` slice for RGB/HSL/Lab/OKLab and predefined/XYZ
+  identity channels plus literal HSL hue replacement. The safe no-history `:visited` policy remains
+  unchanged, so the visited-specific color-mix WPT is intentionally still red.
+- Added `Display::Contents`; the existing transparent child/generated-content collection path now
+  suppresses the principal box for basic `display:contents` while preserving inherited content.
+  Flex, table-internal and SVG-specific contents semantics remain future formatting-context work.
+- Fixed Selectors 4 filtered nth grammar so the selector list may begin immediately after `of`;
+  whitespace is required before `of`, not after it.
+- Targeted color-expression WPT passed 10/11 (the remaining case requires visited history), the
+  simple display-contents slice passed 5/5, and the no-space filtered-nth pair now passes.
+- The unchanged WPT Static v1 manifest improved from 151/200 (75.50%) to 172/200 (86.00%), with
+  zero render/infrastructure errors.
+- Final local verification passed rustfmt, warning-free workspace Clippy, the full workspace test
+  suite, Win32 startup smoke, optimized release build, `git diff --check` and the repeated external
+  compatibility run. Test262 Parser v1 remained 364/1983 (18.36%).
+

@@ -1,4 +1,6 @@
-use crate::color::{lab_to_srgb, oklab_to_srgb, predefined_to_srgb, system_color_rgba};
+use crate::color::{
+    lab_to_srgb, oklab_to_srgb, predefined_to_srgb, srgb_to_lab, system_color_rgba,
+};
 use crate::custom::{contains_var, resolve_custom_values, substitute_vars};
 use crate::{MatchedDeclaration, PseudoElement, Specificity, StyleMap, StyleSource, TokenKind};
 use op_dom::{Document, ElementData, NodeId};
@@ -20,6 +22,7 @@ pub enum Display {
     TableFooterGroup,
     TableRow,
     TableCell,
+    Contents,
     None,
 }
 
@@ -147,6 +150,39 @@ impl CssColor {
         blue: 0,
         alpha: 0,
     };
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ColorInterpolationSpace {
+    Srgb,
+    Lch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ColorSource {
+    Absolute(CssColor),
+    CurrentColor,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RelativeCurrentColor {
+    Identity,
+    HslHue(f32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ComputedColorValue {
+    Absolute(CssColor),
+    CurrentColor,
+    Mix {
+        space: ColorInterpolationSpace,
+        left: ColorSource,
+        right: ColorSource,
+        left_weight: f32,
+        right_weight: f32,
+        alpha_multiplier: f32,
+    },
+    RelativeCurrent(RelativeCurrentColor),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -314,6 +350,7 @@ pub struct ComputedStyle {
     pub word_spacing_px: f32,
     pub text_transform: TextTransform,
     pub background_color: CssColor,
+    background_color_value: ComputedColorValue,
     pub margin: MarginEdges,
     pub padding: PaddingEdges,
     pub border: BorderEdges,
@@ -399,6 +436,7 @@ impl ComputedStyle {
             word_spacing_px: 0.0,
             text_transform: TextTransform::None,
             background_color: CssColor::TRANSPARENT,
+            background_color_value: ComputedColorValue::Absolute(CssColor::TRANSPARENT),
             margin: MarginEdges::ZERO,
             padding: PaddingEdges::ZERO,
             border: BorderEdges::NONE,
@@ -1317,6 +1355,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             word_spacing_px: parent.word_spacing_px,
             text_transform: parent.text_transform,
             background_color: initial.background_color,
+            background_color_value: initial.background_color_value,
             margin: initial.margin,
             padding: initial.padding,
             border: initial.border,
@@ -1492,12 +1531,9 @@ fn apply_author_declarations(
             Position::Static,
         );
     }
+    let inherited_color = parent_style.map_or(CssColor::BLACK, |parent| parent.color);
     if let Some((_, value)) = winning_value(declarations, "color", parse_color) {
-        style.color = resolve_inherited(
-            value,
-            parent_style.map(|parent| parent.color),
-            CssColor::BLACK,
-        );
+        style.color = resolve_color_property(value, inherited_color);
     }
 
     let parent_font_size = parent_style
@@ -1612,12 +1648,13 @@ fn apply_author_declarations(
             TextTransform::None,
         );
     }
-    if let Some((_, value)) = winning_background_color(declarations, style.color) {
-        style.background_color = resolve_non_inherited(
+    if let Some((_, value)) = winning_background_color(declarations) {
+        style.background_color_value = resolve_non_inherited(
             value,
-            parent_style.map(|parent| parent.background_color),
-            CssColor::TRANSPARENT,
+            parent_style.map(|parent| parent.background_color_value),
+            ComputedColorValue::Absolute(CssColor::TRANSPARENT),
         );
+        style.background_color = resolve_computed_color(style.background_color_value, style.color);
     }
 
     if let Some((_, value)) = winning_value(declarations, "box-sizing", parse_box_sizing) {
@@ -1785,6 +1822,7 @@ fn parse_display(tokens: &[TokenKind]) -> Option<Specified<Display>> {
         "table-footer-group" => Some(Specified::Value(Display::TableFooterGroup)),
         "table-row" => Some(Specified::Value(Display::TableRow)),
         "table-cell" => Some(Specified::Value(Display::TableCell)),
+        "contents" => Some(Specified::Value(Display::Contents)),
         "none" => Some(Specified::Value(Display::None)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
@@ -2880,18 +2918,168 @@ fn top_level_components(tokens: &[TokenKind]) -> Option<Vec<&[TokenKind]>> {
     Some(components)
 }
 
+fn resolve_color_property(value: Specified<ComputedColorValue>, inherited: CssColor) -> CssColor {
+    match value {
+        Specified::Value(value) => resolve_computed_color(value, inherited),
+        Specified::Inherit | Specified::Unset => inherited,
+        Specified::Initial => CssColor::BLACK,
+    }
+}
+
+fn resolve_computed_color(value: ComputedColorValue, current_color: CssColor) -> CssColor {
+    match value {
+        ComputedColorValue::Absolute(color) => color,
+        ComputedColorValue::CurrentColor => current_color,
+        ComputedColorValue::RelativeCurrent(relative) => match relative {
+            RelativeCurrentColor::Identity => current_color,
+            RelativeCurrentColor::HslHue(hue) => {
+                let [_, saturation, lightness] = css_color_to_hsl(current_color);
+                let channels = hsl_channels(hue, saturation, lightness);
+                CssColor {
+                    red: fraction_byte(channels[0]),
+                    green: fraction_byte(channels[1]),
+                    blue: fraction_byte(channels[2]),
+                    alpha: current_color.alpha,
+                }
+            }
+        },
+        ComputedColorValue::Mix {
+            space,
+            left,
+            right,
+            left_weight,
+            right_weight,
+            alpha_multiplier,
+        } => {
+            let left = resolve_color_source(left, current_color);
+            let right = resolve_color_source(right, current_color);
+            mix_colors(
+                space,
+                left,
+                right,
+                left_weight,
+                right_weight,
+                alpha_multiplier,
+            )
+        }
+    }
+}
+
+fn resolve_color_source(source: ColorSource, current_color: CssColor) -> CssColor {
+    match source {
+        ColorSource::Absolute(color) => color,
+        ColorSource::CurrentColor => current_color,
+    }
+}
+
+fn mix_colors(
+    space: ColorInterpolationSpace,
+    left: CssColor,
+    right: CssColor,
+    left_weight: f32,
+    right_weight: f32,
+    alpha_multiplier: f32,
+) -> CssColor {
+    let left_alpha = f32::from(left.alpha) / 255.0;
+    let right_alpha = f32::from(right.alpha) / 255.0;
+    let mixed_alpha = left_alpha * left_weight + right_alpha * right_weight;
+    let final_alpha = (mixed_alpha * alpha_multiplier).clamp(0.0, 1.0);
+
+    let srgb = match space {
+        ColorInterpolationSpace::Srgb => {
+            if mixed_alpha <= f32::EPSILON {
+                [0.0; 3]
+            } else {
+                [
+                    ((f32::from(left.red) / 255.0) * left_alpha * left_weight
+                        + (f32::from(right.red) / 255.0) * right_alpha * right_weight)
+                        / mixed_alpha,
+                    ((f32::from(left.green) / 255.0) * left_alpha * left_weight
+                        + (f32::from(right.green) / 255.0) * right_alpha * right_weight)
+                        / mixed_alpha,
+                    ((f32::from(left.blue) / 255.0) * left_alpha * left_weight
+                        + (f32::from(right.blue) / 255.0) * right_alpha * right_weight)
+                        / mixed_alpha,
+                ]
+            }
+        }
+        ColorInterpolationSpace::Lch => {
+            let left_lab = srgb_to_lab([
+                f64::from(left.red) / 255.0,
+                f64::from(left.green) / 255.0,
+                f64::from(left.blue) / 255.0,
+            ]);
+            let right_lab = srgb_to_lab([
+                f64::from(right.red) / 255.0,
+                f64::from(right.green) / 255.0,
+                f64::from(right.blue) / 255.0,
+            ]);
+            let left_lch = lab_to_lch(left_lab);
+            let right_lch = lab_to_lch(right_lab);
+            let hue_delta = (right_lch[2] - left_lch[2] + 540.0).rem_euclid(360.0) - 180.0;
+            let lch = [
+                left_lch[0] * f64::from(left_weight) + right_lch[0] * f64::from(right_weight),
+                left_lch[1] * f64::from(left_weight) + right_lch[1] * f64::from(right_weight),
+                (left_lch[2] + hue_delta * f64::from(right_weight)).rem_euclid(360.0),
+            ];
+            let hue = lch[2].to_radians();
+            let converted = lab_to_srgb([lch[0], lch[1] * hue.cos(), lch[1] * hue.sin()]);
+            [
+                converted[0] as f32,
+                converted[1] as f32,
+                converted[2] as f32,
+            ]
+        }
+    };
+
+    CssColor {
+        red: fraction_byte(srgb[0]),
+        green: fraction_byte(srgb[1]),
+        blue: fraction_byte(srgb[2]),
+        alpha: fraction_byte(final_alpha),
+    }
+}
+
+fn lab_to_lch(lab: [f64; 3]) -> [f64; 3] {
+    [
+        lab[0],
+        lab[1].hypot(lab[2]),
+        lab[2].atan2(lab[1]).to_degrees().rem_euclid(360.0),
+    ]
+}
+
+fn css_color_to_hsl(color: CssColor) -> [f32; 3] {
+    let red = f32::from(color.red) / 255.0;
+    let green = f32::from(color.green) / 255.0;
+    let blue = f32::from(color.blue) / 255.0;
+    let max = red.max(green).max(blue);
+    let min = red.min(green).min(blue);
+    let delta = max - min;
+    let lightness = (max + min) / 2.0;
+    if delta <= f32::EPSILON {
+        return [0.0, 0.0, lightness];
+    }
+    let saturation = delta / (1.0 - (2.0 * lightness - 1.0).abs());
+    let hue = if max == red {
+        60.0 * ((green - blue) / delta).rem_euclid(6.0)
+    } else if max == green {
+        60.0 * ((blue - red) / delta + 2.0)
+    } else {
+        60.0 * ((red - green) / delta + 4.0)
+    };
+    [hue, saturation, lightness]
+}
+
 fn winning_background_color(
     declarations: &[MatchedDeclaration],
-    current_color: CssColor,
-) -> Option<(&MatchedDeclaration, Specified<CssColor>)> {
+) -> Option<(&MatchedDeclaration, Specified<ComputedColorValue>)> {
     declarations
         .iter()
         .filter_map(|matched| {
             let value = match matched.declaration.name.as_str() {
-                "background-color" => {
-                    parse_background_color(&matched.declaration.value, current_color)
+                "background-color" | "background" => {
+                    parse_background_color(&matched.declaration.value)
                 }
-                "background" => parse_background_color(&matched.declaration.value, current_color),
                 _ => return None,
             };
             let value = parsed_or_unset(matched, value)?;
@@ -2900,40 +3088,217 @@ fn winning_background_color(
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
 }
 
-fn parse_background_color(
-    tokens: &[TokenKind],
-    current_color: CssColor,
-) -> Option<Specified<CssColor>> {
+fn parse_background_color(tokens: &[TokenKind]) -> Option<Specified<ComputedColorValue>> {
     if let Some(keyword) = global_keyword(tokens) {
-        return Some(keyword.map(|()| CssColor::TRANSPARENT));
+        return Some(keyword.map(|()| ComputedColorValue::Absolute(CssColor::TRANSPARENT)));
     }
-    if let Some(value) = single_ident(tokens) {
-        if value.eq_ignore_ascii_case("none") {
-            return Some(Specified::Value(CssColor::TRANSPARENT));
-        }
-        if value.eq_ignore_ascii_case("currentcolor") {
-            return Some(Specified::Value(current_color));
-        }
+    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("none")) {
+        return Some(Specified::Value(ComputedColorValue::Absolute(
+            CssColor::TRANSPARENT,
+        )));
     }
-    parse_css_color(tokens).map(Specified::Value)
+    parse_computed_color(tokens).map(Specified::Value)
 }
 
-fn parse_color(tokens: &[TokenKind]) -> Option<Specified<CssColor>> {
+fn parse_color(tokens: &[TokenKind]) -> Option<Specified<ComputedColorValue>> {
     if let Some(keyword) = global_keyword(tokens) {
-        return Some(keyword.map(|()| CssColor::BLACK));
+        return Some(keyword.map(|()| ComputedColorValue::Absolute(CssColor::BLACK)));
     }
-    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("currentcolor")) {
-        return Some(Specified::Inherit);
-    }
-    parse_css_color(tokens).map(Specified::Value)
+    parse_computed_color(tokens).map(Specified::Value)
 }
 
 pub(crate) fn supports_declaration_value(property: &str, tokens: &[TokenKind]) -> bool {
     match property.to_ascii_lowercase().as_str() {
         "color" => parse_color(tokens).is_some(),
-        "background-color" => parse_css_color(tokens).is_some(),
+        "background-color" => parse_background_color(tokens).is_some(),
         _ => false,
     }
+}
+
+fn parse_computed_color(tokens: &[TokenKind]) -> Option<ComputedColorValue> {
+    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("currentcolor")) {
+        return Some(ComputedColorValue::CurrentColor);
+    }
+    if let Some(color) = parse_css_color(tokens) {
+        return Some(ComputedColorValue::Absolute(color));
+    }
+
+    let significant: Vec<&TokenKind> = significant_tokens(tokens).collect();
+    let TokenKind::Function(name) = significant.first()? else {
+        return None;
+    };
+    if !matches!(significant.last(), Some(TokenKind::CloseParen)) {
+        return None;
+    }
+    let arguments = &significant[1..significant.len() - 1];
+    match name.to_ascii_lowercase().as_str() {
+        "color-mix" => parse_color_mix_function(arguments),
+        "rgb" | "hsl" | "lab" | "oklab" | "color" => parse_relative_current_color(name, arguments),
+        _ => None,
+    }
+}
+
+fn parse_color_mix_function(tokens: &[&TokenKind]) -> Option<ComputedColorValue> {
+    let groups = split_top_level_comma_groups(tokens)?;
+    if groups.len() != 3 {
+        return None;
+    }
+    let header = groups[0].as_slice();
+    let [TokenKind::Ident(in_keyword), TokenKind::Ident(space)] = header else {
+        return None;
+    };
+    if !in_keyword.eq_ignore_ascii_case("in") {
+        return None;
+    }
+    let space = match space.to_ascii_lowercase().as_str() {
+        "srgb" => ColorInterpolationSpace::Srgb,
+        "lch" => ColorInterpolationSpace::Lch,
+        _ => return None,
+    };
+
+    let (left, left_percentage) = parse_color_mix_stop(&groups[1])?;
+    let (right, right_percentage) = parse_color_mix_stop(&groups[2])?;
+    let (left_weight, right_weight, alpha_multiplier) =
+        normalize_mix_percentages(left_percentage, right_percentage)?;
+
+    Some(ComputedColorValue::Mix {
+        space,
+        left,
+        right,
+        left_weight,
+        right_weight,
+        alpha_multiplier,
+    })
+}
+
+fn split_top_level_comma_groups<'a>(tokens: &[&'a TokenKind]) -> Option<Vec<Vec<&'a TokenKind>>> {
+    let mut groups = vec![Vec::new()];
+    let mut depth = 0usize;
+    for token in tokens {
+        match token {
+            TokenKind::Function(_) | TokenKind::OpenParen => {
+                depth = depth.checked_add(1)?;
+                groups.last_mut()?.push(*token);
+            }
+            TokenKind::CloseParen => {
+                depth = depth.checked_sub(1)?;
+                groups.last_mut()?.push(*token);
+            }
+            TokenKind::Comma if depth == 0 => {
+                if groups.last().is_none_or(Vec::is_empty) {
+                    return None;
+                }
+                groups.push(Vec::new());
+            }
+            _ => groups.last_mut()?.push(*token),
+        }
+    }
+    (depth == 0 && groups.last().is_some_and(|group| !group.is_empty())).then_some(groups)
+}
+
+fn parse_color_mix_stop(tokens: &[&TokenKind]) -> Option<(ColorSource, Option<f32>)> {
+    let (color_tokens, percentage) = match tokens.last() {
+        Some(TokenKind::Percentage(number)) if tokens.len() > 1 => {
+            let percentage = parse_number(number)? / 100.0;
+            if percentage < 0.0 {
+                return None;
+            }
+            (&tokens[..tokens.len() - 1], Some(percentage))
+        }
+        _ => (tokens, None),
+    };
+    Some((parse_color_source(color_tokens)?, percentage))
+}
+
+fn parse_color_source(tokens: &[&TokenKind]) -> Option<ColorSource> {
+    if let [TokenKind::Ident(value)] = tokens
+        && value.eq_ignore_ascii_case("currentcolor")
+    {
+        return Some(ColorSource::CurrentColor);
+    }
+    let owned: Vec<TokenKind> = tokens.iter().map(|token| (*token).clone()).collect();
+    parse_css_color(&owned).map(ColorSource::Absolute)
+}
+
+fn normalize_mix_percentages(left: Option<f32>, right: Option<f32>) -> Option<(f32, f32, f32)> {
+    let (left, right) = match (left, right) {
+        (None, None) => (0.5, 0.5),
+        (Some(left), None) if left <= 1.0 => (left, 1.0 - left),
+        (None, Some(right)) if right <= 1.0 => (1.0 - right, right),
+        (Some(left), Some(right)) => (left, right),
+        _ => return None,
+    };
+    let total = left + right;
+    if total <= f32::EPSILON {
+        return None;
+    }
+    let alpha_multiplier = total.min(1.0);
+    Some((left / total, right / total, alpha_multiplier))
+}
+
+fn parse_relative_current_color(
+    function: &str,
+    tokens: &[&TokenKind],
+) -> Option<ComputedColorValue> {
+    if !matches!(
+        tokens.first(),
+        Some(TokenKind::Ident(value)) if value.eq_ignore_ascii_case("from")
+    ) || !matches!(
+        tokens.get(1),
+        Some(TokenKind::Ident(value)) if value.eq_ignore_ascii_case("currentcolor")
+    ) {
+        return None;
+    }
+
+    let identity = || {
+        Some(ComputedColorValue::RelativeCurrent(
+            RelativeCurrentColor::Identity,
+        ))
+    };
+    match function.to_ascii_lowercase().as_str() {
+        "rgb" if matches_relative_channels(&tokens[2..], &["r", "g", "b"]) => identity(),
+        "lab" if matches_relative_channels(&tokens[2..], &["l", "a", "b"]) => identity(),
+        "oklab" if matches_relative_channels(&tokens[2..], &["l", "a", "b"]) => identity(),
+        "hsl" if tokens.len() == 5 => {
+            if matches_relative_channels(&tokens[2..], &["h", "s", "l"]) {
+                return identity();
+            }
+            if !token_ident_eq(tokens[3], "s") || !token_ident_eq(tokens[4], "l") {
+                return None;
+            }
+            let hue = parse_hue(tokens[2])?;
+            Some(ComputedColorValue::RelativeCurrent(
+                RelativeCurrentColor::HslHue(hue),
+            ))
+        }
+        "color" if tokens.len() == 6 => {
+            let TokenKind::Ident(space) = tokens[2] else {
+                return None;
+            };
+            let channels = match space.to_ascii_lowercase().as_str() {
+                "xyz" | "xyz-d50" | "xyz-d65" => ["x", "y", "z"],
+                "srgb" | "srgb-linear" | "display-p3" | "display-p3-linear" | "a98-rgb"
+                | "prophoto-rgb" | "rec2020" => ["r", "g", "b"],
+                _ => return None,
+            };
+            matches_relative_channels(&tokens[3..], &channels).then_some(
+                ComputedColorValue::RelativeCurrent(RelativeCurrentColor::Identity),
+            )
+        }
+        _ => None,
+    }
+}
+
+fn matches_relative_channels(tokens: &[&TokenKind], expected: &[&str; 3]) -> bool {
+    tokens.len() == 3
+        && tokens
+            .iter()
+            .zip(expected)
+            .all(|(token, expected)| token_ident_eq(token, expected))
+}
+
+fn token_ident_eq(token: &TokenKind, expected: &str) -> bool {
+    matches!(token, TokenKind::Ident(value) if value.eq_ignore_ascii_case(expected))
 }
 
 fn parse_css_color(tokens: &[TokenKind]) -> Option<CssColor> {
@@ -4429,6 +4794,38 @@ mod tests {
         assert_eq!(inner.background_color, CssColor::GREEN);
         assert_eq!(inner.border.top.color, CssColor::GREEN);
         assert_eq!(inherited.color, CssColor::RED);
+    }
+
+    #[test]
+    fn deferred_currentcolor_expressions_recompute_after_inheritance() {
+        let document = parse_document(
+            "<style>
+               #parent { color:red; background-color:rgb(from currentColor r g b) }
+               #child { color:green; background-color:inherit }
+               #hsl-parent { color:hsl(none 100% 25%); background-color:hsl(from currentColor 120 s l) }
+               #hsl-child { color:hsl(none 100% 25%); background-color:inherit }
+               #mix-a { background:color-mix(in srgb, red 50%, blue 50%) }
+               #mix-b { background:color-mix(in srgb, red 70%, blue 70%) }
+               #mix-c { background:color-mix(in lch, red 125%, blue 125%) }
+               #contents { display:contents }
+             </style>
+             <div id=parent><div id=child></div></div>
+             <div id=hsl-parent><div id=hsl-child></div></div>
+             <div id=mix-a></div><div id=mix-b></div><div id=mix-c></div>
+             <div id=contents><span>x</span></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let style = |id| computed.style_for(find_by_id(&document, id)).unwrap();
+
+        assert_eq!(style("parent").background_color, CssColor::RED);
+        assert_eq!(style("child").background_color, CssColor::GREEN);
+        assert_eq!(style("hsl-child").background_color, CssColor::GREEN);
+        assert_eq!(
+            style("mix-a").background_color,
+            style("mix-b").background_color
+        );
+        assert_eq!(style("contents").display, Display::Contents);
+        assert_ne!(style("mix-c").background_color, CssColor::TRANSPARENT);
     }
 
     #[test]

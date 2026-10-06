@@ -62,6 +62,30 @@ const D50_TO_D65: [[f64; 3]; 3] = [
     ],
 ];
 
+const D65_TO_D50: [[f64; 3]; 3] = [
+    [
+        1.0479298208405488,
+        0.022946793341019088,
+        -0.05019222954313557,
+    ],
+    [
+        0.029627815688159344,
+        0.990434484573249,
+        -0.01707382502938514,
+    ],
+    [
+        -0.009243058152591178,
+        0.015055144896577895,
+        0.7518742814281371,
+    ],
+];
+
+const LINEAR_SRGB_TO_XYZ_D65: [[f64; 3]; 3] = [
+    [506752.0 / 1228815.0, 87881.0 / 245763.0, 12673.0 / 70218.0],
+    [87098.0 / 409605.0, 175762.0 / 245763.0, 12673.0 / 175545.0],
+    [7918.0 / 409605.0, 87881.0 / 737289.0, 1001167.0 / 1053270.0],
+];
+
 const XYZ_D65_TO_LINEAR_SRGB: [[f64; 3]; 3] = [
     [12831.0 / 3959.0, -329.0 / 214.0, -1974.0 / 3959.0],
     [
@@ -201,6 +225,31 @@ fn lab_to_xyz_d50(lab: Vec3) -> Vec3 {
         relative[1] * D50[1],
         relative[2] * D50[2],
     ]
+}
+
+pub(crate) fn srgb_to_lab(srgb: Vec3) -> Vec3 {
+    const KAPPA: f64 = 24389.0 / 27.0;
+    const EPSILON: f64 = 216.0 / 24389.0;
+    const D50: Vec3 = [0.3457 / 0.3585, 1.0, (1.0 - 0.3457 - 0.3585) / 0.3585];
+
+    let xyz_d65 = multiply(LINEAR_SRGB_TO_XYZ_D65, srgb.map(linearize_srgb));
+    let xyz_d50 = multiply(D65_TO_D50, xyz_d65);
+    let relative = [
+        xyz_d50[0] / D50[0],
+        xyz_d50[1] / D50[1],
+        xyz_d50[2] / D50[2],
+    ];
+    let f = |value: f64| {
+        if value > EPSILON {
+            value.cbrt()
+        } else {
+            (KAPPA * value + 16.0) / 116.0
+        }
+    };
+    let fx = f(relative[0]);
+    let fy = f(relative[1]);
+    let fz = f(relative[2]);
+    [116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)]
 }
 
 pub(crate) fn lab_to_srgb(lab: Vec3) -> Vec3 {

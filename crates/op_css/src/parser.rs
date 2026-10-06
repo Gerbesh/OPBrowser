@@ -908,16 +908,10 @@ fn parse_nth_selector(
         message: "invalid nth-child/nth-last-child expression".into(),
     })?;
     let of = if let Some(index) = of_index {
-        if index == 0
-            || !matches!(tokens[index - 1].kind, TokenKind::Whitespace)
-            || !matches!(
-                tokens.get(index + 1).map(|token| &token.kind),
-                Some(TokenKind::Whitespace)
-            )
-        {
+        if index == 0 || !matches!(tokens[index - 1].kind, TokenKind::Whitespace) {
             return Err(CssError {
                 offset,
-                message: "nth selector requires whitespace around 'of'".into(),
+                message: "nth selector requires whitespace before 'of'".into(),
             });
         }
         let selectors =
@@ -1405,6 +1399,17 @@ mod tests {
             matches!(&selectors[1].compounds[0].simple[0], SimpleSelector::NthChild(nth)
             if nth.from_end && nth.expression == NthExpression { a:-1, b:2 } && nth.of.len() == 1)
         );
+
+        for selector in [
+            ":nth-child(3 of.target)",
+            ":nth-child(3 of[target])",
+            ":nth-last-child(3 of.target)",
+        ] {
+            let parsed = parse_stylesheet(&format!("{selector} {{ color:red }}"));
+            assert!(parsed.errors.is_empty(), "{selector}: {:?}", parsed.errors);
+            assert_eq!(parsed.value.rules.len(), 1, "{selector}");
+        }
+
         for selector in [
             ":nth-child(1 of)",
             ":nth-child(1 of )",

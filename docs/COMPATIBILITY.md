@@ -79,9 +79,10 @@ Measured progress on the unchanged v1 manifest:
 
 - first CSS Color 4 pass: 126/200, **63.00%**;
 - system-color/@supports and selector-semantics pass: 151/200, **75.50%**;
-- current result: 151 passed, 49 failed, 0 render/infrastructure errors.
+- deferred-color/display-contents/nth-grammar pass: 172/200, **86.00%**;
+- current result: 172 passed, 28 failed, 0 render/infrastructure errors.
 
-The manifest and upstream revision are unchanged, so 43.00% -> 63.00% -> 75.50% is directly comparable. Two pinned Rec.2020 tests still encode the older piecewise Rec.2020 transfer expectation; OPBrowser follows the current 2026 CSS Color 4 BT.1886 gamma-2.40 definition instead of special-casing those tests. Near-zero OKLab/OKLCH failures are left for real gamut mapping rather than threshold hacks. The v1 harness also intentionally retains exact BGR comparison, so WPT fuzzy metadata does not silently change historical scoring semantics.
+The manifest and upstream revision are unchanged, so 43.00% -> 63.00% -> 75.50% -> 86.00% is directly comparable. Two pinned Rec.2020 tests still encode the older piecewise Rec.2020 transfer expectation; OPBrowser follows the current 2026 CSS Color 4 BT.1886 gamma-2.40 definition instead of special-casing those tests. Near-zero OKLab/OKLCH failures are left for real gamut mapping rather than threshold hacks. The v1 harness also intentionally retains exact BGR comparison, so WPT fuzzy metadata does not silently change historical scoring semantics.
 
 ## GitHub Actions and public metrics
 

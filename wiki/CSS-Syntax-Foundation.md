@@ -108,10 +108,14 @@ absolute CSS length units and the current keyword set. Global inherit/initial/un
 is shared by the supported properties.
 
 color, font-size, font-weight, line-height and text-align inherit through the element tree.
-display uses its initial value unless explicitly inherited. Temporary UA defaults mirror the existing M1
-block/hidden tag rules and heading font sizes/weights, avoiding an unrelated visual
-regression when layout begins consuming computed styles. The CSS hash tokenizer also
-accepts digit-leading hash values required by hexadecimal colors.
+display uses its initial value unless explicitly inherited. `display:contents` now has an explicit
+computed value; normal-flow layout suppresses the element's principal box while still traversing its
+generated and DOM children with inherited style. The currently pinned simple block/generated/text,
+float-wrapper, list/button/details/fieldset cases pass through this path; flex, table-internal and SVG
+contents behavior still needs dedicated formatting-context work. Temporary UA defaults mirror the
+existing M1 block/hidden tag rules and heading font sizes/weights, avoiding an unrelated visual
+regression when layout begins consuming computed styles. The CSS hash tokenizer also accepts
+digit-leading hash values required by hexadecimal colors.
 
 CSS custom properties now have their own computed token environment. Case-sensitive `--name`
 declarations use the same author importance/specificity/source-order cascade, inherit by
@@ -280,8 +284,8 @@ typed selector behavior remains outside the current HTML-only selector subset.
 
 HWB uses shared unquantized HSL channels before final 8-bit sRGB conversion. Hue angles
 normalize before unit scaling, so large finite turns cannot overflow the color conversion.
-Missing-component preservation for interpolation/serialization, relative colors and calc()
-inside colors remain later work. Reference: [CSS Color 4 HWB](https://www.w3.org/TR/css-color-4/#the-hwb-notation).
+Missing-component preservation for general interpolation/serialization and calc() inside colors
+remain later work. Reference: [CSS Color 4 HWB](https://www.w3.org/TR/css-color-4/#the-hwb-notation).
 
 Named colors use allocation-free ASCII case-insensitive binary search in op_css::named.
 Packed names plus six-byte RGB records total 2,210 static bytes. The full source is pinned
@@ -295,10 +299,14 @@ color: lab(), lch(), oklab(), oklch(), color(srgb ...), color(srgb-linear ...), 
 display-p3-linear, a98-rgb, prophoto-rgb, rec2020 and xyz/xyz-d50/xyz-d65. Percentage
 reference ranges, D50/D65 chromatic adaptation, RGB transfer curves and matrix conversions
 live in op_css::color; final used colors are clipped/rounded to the current 8-bit sRGB paint
-target. currentColor resolves from the same element's computed color for background/borders,
-and on the color property behaves as inherited color. Shared modern argument parsing still
-rejects commas and malformed counts. Perceptual gamut mapping, missing-component preservation,
-interpolation/serialization precision, calc(), relative colors and color-mix remain later work.
+target. Plain currentColor resolves from the same element's computed color for background/borders,
+and on the color property uses the inherited foreground. Background computed values can now retain
+a private currentColor-dependent expression across `inherit`, then resolve it against the receiving
+element. The initial relative-color slice supports the pinned `from currentColor` RGB/HSL/Lab/OKLab
+and predefined/XYZ identity-channel forms plus literal HSL hue replacement. `color-mix()` currently
+supports two color stops in sRGB or LCH, percentage normalization, alpha scaling for totals below
+100%, and deferred currentColor operands. Broader interpolation spaces, arbitrary relative channel
+math/calc(), missing-component preservation and perceptual gamut mapping remain later work.
 The same values feed text/background/border/pseudo cascade, var() substitution, painting and
 retained reflow. CSS system colors use a deterministic browser-owned palette, with deprecated
 CSS2 system names mapped to their CSS Color 4 modern equivalents; fixed system values are used

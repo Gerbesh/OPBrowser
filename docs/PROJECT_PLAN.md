@@ -275,7 +275,10 @@ Status: IN PROGRESS.
 - DONE first metric-driven WPT pass raised WPT Static v1 from 86/200 (43.00%) to 126/200 (63.00%) without changing the manifest.
 - DONE deterministic CSS system colors/deprecated aliases, simple declaration-form `@supports`, Selectors 4 `:lang()` Extended Filtering, inherited `:dir(ltr|rtl)`, and initial `:open`/`:required`/`:optional`/`:visited` semantics.
 - DONE second metric-driven pass raised the unchanged WPT Static v1 manifest from 126/200 (63.00%) to 151/200 (75.50%).
-- NEXT continue from the remaining WPT Static v1 failure families; deferred `currentColor` for color-mix/relative colors, gamut mapping, `display: contents`, first-line/first-letter, ICC/tagged images and deeper layout/display work are now the larger queues.
+- DONE deferred computed color expressions preserve `currentColor` dependencies across inheritance; initial `color-mix()` (`srgb`/`lch`) and relative `from currentColor` forms now reach used sRGB colors.
+- DONE basic `display: contents` suppresses the principal box while preserving generated/child content, and `nth-child(... of ...)` accepts selector lists immediately after the required whitespace-before-`of` separator.
+- DONE third metric-driven pass raised the unchanged WPT Static v1 manifest from 151/200 (75.50%) to 172/200 (86.00%).
+- NEXT continue from the remaining WPT Static v1 failure families; flex/BFC/table/SVG display contexts, first-line/first-letter, `:has()`, ICC/tagged images, gamut mapping and fuller relative-color/interpolation semantics are now the larger queues.
 
 ## M3 - Original JavaScript engine
 
