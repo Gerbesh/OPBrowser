@@ -139,6 +139,8 @@ Status: IN PROGRESS.
   case-insensitive lookup, 2,210-byte static table and reproducible offline generation/CI check.
 - DONE `color(srgb ...)` and `color(srgb-linear ...)` with percentage/number channels,
   optional alpha/none, linear-to-encoded transfer and initial 8-bit channel clipping.
+- DONE modern RGB/HSL none components and numeric HSL saturation/lightness on the percent
+  reference scale; strict legacy RGB uniform channel units and comma-HSL percentage grammar.
 - DONE richer initial typography: inherited `text-align` start/end/left/right/center,
   `line-height` normal/number/percent/length with real line-box geometry, and numeric
   `font-weight` 1-1000 plus bolder/lighter mapped onto the current normal/bold backend.

@@ -579,6 +579,9 @@ classDiagram
   color(srgb)/color(srgb-linear) share modern three-channel/alpha parsing with HWB. Linear
   channels use the sRGB transfer curve before final 8-bit CssColor encoding; initial channel
   clipping/used-value none resolution do not preserve color-space metadata for interpolation.
+  All modern RGB/HSL/HWB/color() functions share three-component/slash-alpha parsing. Modern
+  HSL accepts numeric/percentage saturation/lightness and missing components. Legacy RGB
+  requires uniform number or percentage channels; legacy HSL keeps percentage-only S/L.
   op_css::named owns allocation-free ASCII case-insensitive binary search through packed
   names and six-byte records (2,210 static bytes). Its generated named::data comes from pinned
   crates/op_css/data/named-colors.tsv; tools/generate_css_named_colors.py regenerates/checks

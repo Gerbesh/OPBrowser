@@ -1093,3 +1093,18 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 246 workspace tests,
   named-color generator check, native startup/CSS demo smoke (256 commands) and optimized
   workspace release build.
+
+## 2026-10-06 - Modern RGB/HSL components and strict legacy color grammar
+
+- Modern RGB/HSL now share component/slash-alpha parsing with HWB/color(). Missing channels/
+  alpha resolve to zero for current painting; modern RGB permits number/percentage mixing.
+  Numeric HSL saturation/lightness uses the 0..100 percent reference scale and clamping.
+- Legacy comma RGB now requires uniform numeric or percentage color channels. Comma HSL
+  retains percentage-only saturation/lightness; legacy forms reject none and slash mixing.
+- Added independent channel/alpha/number/clamping cases and cascade regressions proving
+  invalid literal fallback versus invalid var() winner unset inheritance. Native display-list
+  tests cover modern text/background/border/pseudo colors and retained reflow.
+- Updated CSS demo, README, plan, graph/slices and syntax wiki. Missing-component metadata
+  preservation and higher-precision interpolation/serialization remain later work.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 249 workspace tests,
+  native startup/CSS demo smoke (262 commands) and optimized workspace release build.

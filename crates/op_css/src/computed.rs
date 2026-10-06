@@ -2651,6 +2651,16 @@ fn parse_rgb_function(tokens: &[&TokenKind]) -> Option<CssColor> {
         if !(3..=4).contains(&groups.len()) || groups.iter().any(|group| group.len() != 1) {
             return None;
         }
+        let percentages = matches!(groups[0][0], TokenKind::Percentage(_));
+        if !groups[..3].iter().all(|group| {
+            if percentages {
+                matches!(group[0], TokenKind::Percentage(_))
+            } else {
+                matches!(group[0], TokenKind::Number(_))
+            }
+        }) {
+            return None;
+        }
         let alpha = if groups.len() == 4 {
             Some(parse_alpha(groups[3][0])?)
         } else {
@@ -2665,25 +2675,21 @@ fn parse_rgb_function(tokens: &[&TokenKind]) -> Option<CssColor> {
             alpha,
         )
     } else {
-        let slash = tokens
-            .iter()
-            .position(|token| matches!(token, TokenKind::Delim('/')));
-        let color_end = slash.unwrap_or(tokens.len());
-        if color_end != 3 {
-            return None;
-        }
-        let alpha = match slash {
-            Some(index) if index + 2 == tokens.len() => Some(parse_alpha(tokens[index + 1])?),
-            Some(_) => return None,
-            None => None,
+        let (components, alpha) = modern_color_components(tokens)?;
+        let channel = |token| {
+            if missing_color_component(token) {
+                Some(0)
+            } else {
+                parse_rgb_channel(token)
+            }
         };
         (
             [
-                parse_rgb_channel(tokens[0])?,
-                parse_rgb_channel(tokens[1])?,
-                parse_rgb_channel(tokens[2])?,
+                channel(components[0])?,
+                channel(components[1])?,
+                channel(components[2])?,
             ],
-            alpha,
+            Some(alpha),
         )
     };
 
@@ -2713,23 +2719,16 @@ fn parse_hsl_function(tokens: &[&TokenKind]) -> Option<CssColor> {
                 },
             )
         } else {
-            let slash = tokens
-                .iter()
-                .position(|token| matches!(token, TokenKind::Delim('/')));
-            let color_end = slash.unwrap_or(tokens.len());
-            if color_end != 3 {
-                return None;
-            }
-            let alpha = match slash {
-                Some(index) if index + 2 == tokens.len() => Some(parse_alpha(tokens[index + 1])?),
-                Some(_) => return None,
-                None => None,
-            };
+            let (components, alpha) = modern_color_components(tokens)?;
             (
-                parse_hue(tokens[0])?,
-                parse_percentage_fraction(tokens[1])?,
-                parse_percentage_fraction(tokens[2])?,
-                alpha,
+                if missing_color_component(components[0]) {
+                    0.0
+                } else {
+                    parse_hue(components[0])?
+                },
+                parse_modern_percentage_fraction(components[1])?,
+                parse_modern_percentage_fraction(components[2])?,
+                Some(alpha),
             )
         };
 
@@ -2885,6 +2884,14 @@ fn parse_percentage_fraction(token: &TokenKind) -> Option<f32> {
         return None;
     };
     Some((parse_number(number)? / 100.0).clamp(0.0, 1.0))
+}
+
+fn parse_modern_percentage_fraction(token: &TokenKind) -> Option<f32> {
+    match token {
+        TokenKind::Number(number) => Some(parse_number(number)?.clamp(0.0, 100.0) / 100.0),
+        _ if missing_color_component(token) => Some(0.0),
+        _ => parse_percentage_fraction(token),
+    }
 }
 
 fn parse_hue(token: &TokenKind) -> Option<f32> {
@@ -3786,6 +3793,75 @@ mod tests {
                 (color.red, color.green, color.blue, color.alpha),
                 expected,
                 "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn modern_rgb_hsl_resolve_none_mixed_units_numeric_percent_scale_and_alpha() {
+        for (source, expected) in [
+            ("rgb(none 100% none / 50%)", (0, 255, 0, 128)),
+            ("rgba(none none none)", (0, 0, 0, 255)),
+            ("rgb(10 none 30 / none)", (10, 0, 30, 0)),
+            ("rgb(10 20% 30)", (10, 51, 30, 255)),
+            ("hsl(none 100 50)", (255, 0, 0, 255)),
+            ("hsl(120 none 50)", (128, 128, 128, 255)),
+            ("hsl(120 100 none)", (0, 0, 0, 255)),
+            ("hsla(240 100 50 / none)", (0, 0, 255, 0)),
+            ("hsl(.5turn 100 50 / .25)", (0, 255, 255, 64)),
+            ("hsl(120 150 25)", (0, 128, 0, 255)),
+            ("hsl(120 0 150)", (255, 255, 255, 255)),
+            ("hsl(120 100 -10)", (0, 0, 0, 255)),
+            ("rgba(255,0,0,50%)", (255, 0, 0, 128)),
+            ("rgb(100%,0%,0%,.5)", (255, 0, 0, 128)),
+        ] {
+            let tokens = crate::tokenize(source)
+                .tokens
+                .into_iter()
+                .map(|token| token.kind)
+                .collect::<Vec<_>>();
+            let color = parse_css_color(&tokens).unwrap_or_else(|| panic!("{source}"));
+            assert_eq!(
+                (color.red, color.green, color.blue, color.alpha),
+                expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_color_grammar_rejection_preserves_literal_and_var_cascade_semantics() {
+        for invalid in [
+            "rgb(255,0%,0)",
+            "rgba(100%,0,0%,.5)",
+            "rgb(none,0,0)",
+            "rgba(255,0,0,none)",
+            "hsl(none,100%,50%)",
+            "hsl(120,100,50%)",
+            "hsl(120,100%,50)",
+            "hsla(120,100%,50%,none)",
+            "rgb(1 2 3 / .5 .6)",
+            "hsl(120 100 50 / .5 / .5)",
+        ] {
+            let document = parse_document(&format!(
+                "<body style='color:blue'><p id=literal style='color:green;color:{invalid}'>X</p><p id=variable style='--value:{invalid};color:green;color:var(--value)'>Y</p></body>"
+            ));
+            let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+            assert_eq!(
+                computed
+                    .style_for(find_by_id(&document, "literal"))
+                    .unwrap()
+                    .color,
+                named_color("green").unwrap(),
+                "{invalid}"
+            );
+            assert_eq!(
+                computed
+                    .style_for(find_by_id(&document, "variable"))
+                    .unwrap()
+                    .color,
+                CssColor::BLUE,
+                "{invalid}"
             );
         }
     }

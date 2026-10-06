@@ -253,7 +253,9 @@ text-transform none/uppercase/lowercase/capitalize, color-only `background` shor
 #RGB(A)/#RRGGBB(AA), all 148 opaque CSS named colors with aliases, transparent,
 and legacy/modern rgb()/rgba()/hsl()/hsla(). Functional RGB accepts numeric
 or percentage channels plus number/percentage alpha; HSL accepts deg/grad/rad/turn hue,
-percentage saturation/lightness and alpha. Channels clamp to the CSS output range. The
+legacy percentage or modern percentage/number saturation/lightness and alpha. Modern RGB/HSL
+accept none components; legacy RGB channels must use uniform number/percentage units. Channels
+clamp to the CSS output range. The
 global keywords inherit/initial/unset remain shared. color/font-size/font-weight/font-style/line-height/text-align/white-space/letter-spacing/word-spacing/text-transform inherit; display
 does not unless explicitly set to inherit. Unsupported/invalid literal values are discarded
 before cascade winner selection so a lower-priority valid declaration may still win.
@@ -360,6 +362,12 @@ background/border/pseudo paint. Initial channel clipping is explicit; wide-gamut
 perceptual gamut mapping and color-space/missing-component preservation remain later work.
 Reference/transfer-boundary, malformed syntax/cascade, var() and Engine reflow tests cover
 the two supported spaces without adding dependencies or touching raster decoding.
+
+Modern RGB/HSL now share component/slash-alpha parsing with HWB/color(). Missing channels and
+alpha become zero for current painting; numeric HSL saturation/lightness use the 0..100
+percentage scale. Legacy comma RGB rejects mixed number/percentage channels and none; comma
+HSL keeps percentage-only saturation/lightness. Regressions distinguish parse-time literal
+recovery from invalid-at-computed-time var() unset semantics and cover native paint/reflow.
 
 Planned next path:
 

@@ -277,3 +277,11 @@ wide-gamut spaces, perceptual gamut mapping, interpolation/serialization precisi
 and relative syntax remain later work. The same values feed text/background/border/pseudo
 cascade, var() substitution, painting and retained reflow.
 Reference: [CSS Color predefined spaces](https://www.w3.org/TR/css-color-4/#predefined).
+
+Modern RGB/HSL also accept none channels/alpha through the shared modern argument parser.
+RGB may mix numeric and percentage channels in modern syntax; comma syntax requires all
+three channels to be numbers or all percentages. Modern HSL saturation/lightness accept
+numbers on the 0..100 percentage reference scale and clamp before conversion; comma HSL
+retains percentage-only saturation/lightness. Legacy forms reject none and mixed slash/
+comma grammar. Invalid literals allow lower-priority valid declarations to win; invalid
+var() winners resolve as unset. Reference: [CSS Color RGB/HSL syntax](https://www.w3.org/TR/css-color-4/#color-syntax).
