@@ -172,12 +172,19 @@ fn parse_declaration(tokens: &[Token]) -> Result<Declaration, CssError> {
         name.to_ascii_lowercase()
     };
 
+    let value: Vec<_> = value_tokens
+        .iter()
+        .map(|token| token.kind.clone())
+        .collect();
+    if !crate::custom::valid_var_syntax(&value) {
+        return Err(CssError {
+            offset: tokens[colon].end,
+            message: format!("property {name} has invalid var() syntax"),
+        });
+    }
     Ok(Declaration {
         name: normalized_name,
-        value: value_tokens
-            .iter()
-            .map(|token| token.kind.clone())
-            .collect(),
+        value,
         important,
     })
 }
@@ -1074,6 +1081,18 @@ mod tests {
         assert!(parsed.value[1].value.is_empty());
         assert!(parsed.value[1].important);
         assert_eq!(parsed.value[2].name, "--valid");
+    }
+
+    #[test]
+    fn rejects_malformed_var_syntax_even_inside_unused_fallback_branches() {
+        let parsed = parse_declaration_list(
+            "color:red; color:var(foo); color:var(--known,var(--)); --x:var(--a --b); padding:var(--missing,); color:var(--good,blue)",
+        );
+        assert_eq!(parsed.errors.len(), 3);
+        assert_eq!(parsed.value.len(), 3);
+        assert_eq!(parsed.value[0].value, vec![TokenKind::Ident("red".into())]);
+        assert_eq!(parsed.value[1].name, "padding");
+        assert_eq!(parsed.value[2].name, "color");
     }
 
     #[test]

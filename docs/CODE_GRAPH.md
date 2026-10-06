@@ -224,6 +224,7 @@ classDiagram
         specificity
         source_order
         source
+        value_from_var
     }
     class StyleCollection {
         styles
@@ -391,6 +392,7 @@ classDiagram
     ValueBudget --> CustomPropertyMap : bounded expansion and per-target retained storage
     CustomPropertyMap --> ComputedStyleMap : retained host + pseudo snapshots
     StyleMap --> ComputedStyleMap : host + pseudo cascade / substituted value parsing
+    MatchedDeclaration --> ComputedStyleMap : invalid computed var() candidate keeps priority and resolves unset
     StyleMap --> CounterOperation : counter-reset/set/increment winner parsing
     CounterOperation --> CounterContext : document-order scoped counter mutation
     Document --> CounterContext : sibling-aware nested scope traversal

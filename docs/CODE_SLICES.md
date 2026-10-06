@@ -249,15 +249,17 @@ rebeccapurple, and legacy/modern rgb()/rgba()/hsl()/hsla(). Functional RGB accep
 or percentage channels plus number/percentage alpha; HSL accepts deg/grad/rad/turn hue,
 percentage saturation/lightness and alpha. Channels clamp to the CSS output range. The
 global keywords inherit/initial/unset remain shared. color/font-size/font-weight/font-style/line-height/text-align/white-space/letter-spacing/word-spacing/text-transform inherit; display
-does not unless explicitly set to inherit. Unsupported/invalid values are discarded
+does not unless explicitly set to inherit. Unsupported/invalid literal values are discarded
 before cascade winner selection so a lower-priority valid declaration may still win.
 Custom property names remain case-sensitive and inherit by default. Their selected token values
 are resolved on the element where they are computed, so an inherited `--frozen:var(--accent)`
 does not rebind when a child later overrides `--accent`. `var()` supports nested fallbacks and
 directed dependency-cycle invalidation including unused fallback branches, and substitution works inside shorthands, functional
-colors, dimensions and generated `content`. In this initial slice an unresolved `var()` causes
-that declaration candidate to be discarded before the existing normal-property winner parser,
-so full CSS invalid-at-computed-value-time behavior remains later work.
+colors, dimensions and generated `content`. A value_from_var candidate retains its cascade
+priority when substitution fails, expands to empty or produces the wrong property grammar;
+it resolves to unset per affected longhand rather than revealing an older candidate. This
+also suppresses invalid generated content and restores inherited quotes/initial counters.
+Malformed var() syntax is rejected before cascade, including malformed unused fallbacks.
 UA defaults preserve M1 block/hidden behavior and heading typography. Former semantic
 heading/paragraph/list spacing now lives in computed margins and goes through the same
 block geometry path as author margins. Inline text runs may differ in size, weight/style,
@@ -327,8 +329,7 @@ Planned next path:
 ```text
 Rendering/property expansion
   -> generated url() + fuller replaced-content/empty-inline geometry
-  -> full invalid-at-computed-value-time var() / custom-property cycle semantics
-     (dependency-cycle graph implemented; normal-property invalidation remains)
+  -> broader custom-property grammar/registration/animation-taint semantics
   -> nested/replaced inline decoration stacks
   -> additional computed properties
 ```

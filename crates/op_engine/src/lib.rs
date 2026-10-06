@@ -1060,6 +1060,29 @@ mod tests {
     }
 
     #[test]
+    fn invalid_computed_var_winners_reach_paint_as_inherited_or_initial_values() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(
+            "<style>#parent { color:#123456 }
+             #child { --bad:nope; color:red; color:var(--missing); padding:20px; padding:var(--bad);
+                 background:red; background:var(--bad); border:4px solid red; border:var(--missing) }
+             #child::before { content:'BAD'; content:var(--missing) }
+             </style><div id='parent'><div id='child'>Body</div></div>", 800, 600);
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::Text { x:32, text, color, .. } if text == "Body"
+                && *color == op_paint::Color { r:0x12, g:0x34, b:0x56 }
+        )));
+        assert!(!original.commands.iter().any(|command| matches!(command,
+            PaintCommand::Text { text, .. } if text.contains("BAD")
+        )));
+        assert!(!original.commands.iter().any(|command| matches!(command,
+            PaintCommand::FillRect { color, .. } if *color == op_paint::Color { r:255, g:0, b:0 }
+        )));
+        engine.reflow(300, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn custom_properties_and_var_reach_native_display_list() {
         let display_list = Engine::new().render_html(
             "<style>

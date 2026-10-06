@@ -107,7 +107,7 @@ Status: IN PROGRESS.
   candidates with specificity, source order, stylesheet/inline source and parse errors.
 - DONE Engine retains the author StyleMap beside DOM/images across resize reflow.
 - DONE initial author cascade over !important, inline-vs-stylesheet source, specificity
-  and source order; invalid supported-property values are ignored before winner choice.
+  and source order; invalid literal supported-property values are ignored before winner choice.
 - DONE initial inheritance/global keywords plus ComputedStyleMap for display, color,
   font-size and font-weight, with temporary UA defaults matching the M1 layout baseline.
 - DONE Engine retains computed styles across resize reflow.
@@ -165,9 +165,12 @@ Status: IN PROGRESS.
 - DONE definite block height controls flow/decorations even when text overflows.
 - DONE iterative custom-property dependency graph/SCC resolution including unused fallback
   edges and self-cycles, valid empty custom values and bounded expansion/storage/depth.
+- DONE invalid-at-computed-value-time var() winners resolve to unset for supported properties,
+  including shorthand components/pseudo content/quotes/counters; malformed var() is rejected
+  before cascade. Literal invalid values remain parse-time exclusions.
 - NEXT generated `url()` content and fuller replaced-content/empty-inline geometry.
 - LATER language-aware `quotes:auto` (currently deterministic English Unicode pairs).
-- LATER complete invalid-at-computed-value-time `var()` semantics,
+- LATER broader custom-property grammar/registration/animation-taint behavior,
   forgiving functional-selector recovery, `:nth-child(... of ...)`, nested decorated-inline
   stacks/replaced inline decorations and fuller
   parent/child margin collapsing / definite percentage-height propagation.

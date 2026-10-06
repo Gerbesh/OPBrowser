@@ -7,6 +7,20 @@ const MAX_VALUE_BYTES: usize = 256 * 1024;
 const MAX_CUSTOM_BYTES: usize = 2 * 1024 * 1024;
 const MAX_FALLBACK_DEPTH: usize = 64;
 
+pub(super) fn contains_var(tokens: &[TokenKind]) -> bool {
+    tokens.iter().any(|token| {
+        matches!(token,
+        TokenKind::Function(name) if name.eq_ignore_ascii_case("var"))
+    })
+}
+
+pub(super) fn valid_var_syntax(tokens: &[TokenKind]) -> bool {
+    tokens.iter().enumerate().all(|(index, token)| {
+        !matches!(token, TokenKind::Function(name) if name.eq_ignore_ascii_case("var"))
+            || parse_var_function(tokens, index).is_some()
+    })
+}
+
 pub(super) fn resolve_custom_values(raw: &CustomPropertyMap) -> CustomPropertyMap {
     let mut names: Vec<&str> = raw.keys().map(String::as_str).collect();
     names.sort_unstable();

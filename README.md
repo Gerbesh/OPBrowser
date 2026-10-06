@@ -107,7 +107,7 @@ auto/negative/percentage margins, background color, independent solid/none borde
 width/height with min/max, `box-sizing`, percentages, em/rem and CSS absolute length units.
 Adjacent sibling vertical margins collapse. External CSS is merged with embedded rules in
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
-percentage-height propagation, full invalid-at-computed-value-time `var()` semantics and
+percentage-height propagation, broader custom-property grammar/registration and
 language-aware automatic quotes, generated `url()` and full
 generated replaced-content/empty-inline geometry, forgiving-selector-list recovery/full `:nth-child(... of ...)`, nested decorated
 inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions,
@@ -122,6 +122,8 @@ Custom-property cycles include self-references and references in unused fallback
 iterative dependency graph resolves long chains; empty values remain valid. Substitution
 is bounded to 16,384 tokens/256 KiB per value, 2 MiB retained custom values per element/pseudo
 and 64 nested fallback levels. Over-budget values become invalid and permit consumer fallbacks.
+Invalid computed var() winners keep their cascade priority and become unset for supported
+properties; they cannot reveal older declarations. Malformed var() syntax is rejected earlier.
 
 See:
 

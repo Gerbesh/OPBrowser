@@ -158,10 +158,8 @@ reach layout/native paint. Functional `:is()`/`:where()`/`:not()` and `:nth-chil
 participate in selector matching with their initial specificity rules. Terminal
 `::before`/`::after`, generated strings/`attr()`/counters, inherited custom properties and
 `var()` fallbacks now reach native layout/paint too. Counter traversal computes `::before`
-before children and `::after` after completed child counter work. The initial `var()` slice deliberately
-reuses OPBrowser's current invalid-value filtering, so a declaration whose substitution fails
-can expose a lower valid candidate instead of full CSS invalid-at-computed-value-time behavior;
-normal-property invalidation remains later. Generated `url()` images, language-aware automatic quotes,
+before children and `::after` after completed child counter work. Computed var() failures retain
+their cascade priority and become unset for supported properties. Generated `url()` images, language-aware automatic quotes,
 custom counter styles and complete counter scoping remain later. Next S3 work moves into generated
 replaced content and empty-inline geometry, then forgiving selector-list
 recovery, nth-child `of`, advanced color spaces, at-rules, media queries and full CSS
@@ -203,5 +201,15 @@ bytes) per value, 2 MiB retained resolved values per element/pseudo and 64 neste
 levels. Expansion checks happen before cloning tokens. Oversized values become invalid and
 ordinary consumers can select fallback values. Graph traversal and dependency resolution
 do not recurse on the native stack; tests exercise a 10,001-variable chain and exponential
-expansion. Normal-property invalid-at-computed-value-time cascade behavior is still deferred.
+expansion. Broader custom-property grammar, registration and animation-taint handling remain later.
 Reference: [CSS variable cycles and length limits](https://www.w3.org/TR/css-variables-1/#cycles).
+
+Computed declaration copies carry value_from_var so failed/empty substitutions and values
+that fail the supported property's grammar resolve as unset while retaining importance,
+specificity and source order. Shorthands compete separately for each longhand, preserving
+later overrides. Literal parse-time invalid values still allow lower valid declarations.
+Invalid content winners suppress pseudos and their counter mutations; invalid quotes inherit
+and invalid counter operations reset to their initial empty list. var() syntax is validated
+before cascade, including references inside unused fallback branches. A table-driven regression
+compares missing/wrong-type/empty var() results with explicit unset across all 52 supported
+ordinary style property names; Engine tests verify inherited/initial paint and retained reflow.

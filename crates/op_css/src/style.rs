@@ -18,6 +18,8 @@ pub struct MatchedDeclaration {
     pub specificity: Specificity,
     pub source_order: usize,
     pub source: StyleSource,
+    /// Computed copies retain pending-substitution priority after var() expansion.
+    pub value_from_var: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -217,6 +219,7 @@ fn apply_author_styles(
                             specificity,
                             source_order,
                             source: StyleSource::Stylesheet,
+                            value_from_var: false,
                         };
                         if let Some(pseudo) = pseudo {
                             styles
@@ -253,6 +256,7 @@ fn apply_author_styles(
                         specificity: Specificity::default(),
                         source_order,
                         source: StyleSource::Inline,
+                        value_from_var: false,
                     });
             }
         }

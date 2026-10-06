@@ -104,6 +104,9 @@ Generated block pseudos use the same BlockContent sizing and decoration path as 
 including empty generated boxes. Definite heights constrain boxes even when text overflows.
 Custom values now resolve via an iterative dependency graph with fallback edges and exact
 cycle components. Token/byte/depth budgets limit expansion and retained custom storage.
+Computed declarations retain a value_from_var flag: invalid computed winners become unset
+per supported property/component while preserving cascade priority. Malformed var() syntax
+is rejected before author collection; literal invalid values remain parse-time exclusions.
 Inheritance produces per-node styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 

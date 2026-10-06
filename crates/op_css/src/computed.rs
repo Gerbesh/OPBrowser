@@ -1,4 +1,4 @@
-use crate::custom::{resolve_custom_values, substitute_vars};
+use crate::custom::{contains_var, resolve_custom_values, substitute_vars};
 use crate::{MatchedDeclaration, PseudoElement, Specificity, StyleMap, StyleSource, TokenKind};
 use op_dom::{Document, ElementData, NodeId};
 use std::collections::HashMap;
@@ -613,7 +613,9 @@ fn compute_quotes(
         .iter()
         .filter(|matched| matched.declaration.name == "quotes")
         .filter_map(|matched| {
-            parse_quotes(&matched.declaration.value, &inherited).map(|value| (matched, value))
+            parse_quotes(&matched.declaration.value, &inherited)
+                .or_else(|| matched.value_from_var.then(|| inherited.clone()))
+                .map(|value| (matched, value))
         })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
         .map(|(_, value)| value)
@@ -676,6 +678,7 @@ fn winning_counter_operations(
         .filter(|matched| matched.declaration.name == property)
         .filter_map(|matched| {
             parse_counter_operations(&matched.declaration.value, default_value)
+                .or_else(|| matched.value_from_var.then(Vec::new))
                 .map(|value| (matched, value))
         })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
@@ -799,11 +802,18 @@ fn substitute_declarations(
         .iter()
         .filter(|matched| !matched.declaration.name.starts_with("--"))
         .filter_map(|matched| {
+            let from_var = contains_var(&matched.declaration.value);
             let value = substitute_vars(&matched.declaration.value, |name| {
                 custom.get(name).map(Vec::as_slice)
-            })?;
+            });
+            if value.is_none() && !from_var {
+                return None;
+            }
             let mut resolved = matched.clone();
-            resolved.declaration.value = value;
+            // Empty normal-property tokens represent failed substitution. The property
+            // parser converts their retained candidate to unset, preserving cascade priority.
+            resolved.declaration.value = value.unwrap_or_default();
+            resolved.value_from_var = from_var;
             Some(resolved)
         })
         .collect()
@@ -829,6 +839,7 @@ fn winning_generated_content<'a>(
         .filter(|matched| matched.declaration.name == "content")
         .filter_map(|matched| {
             parse_generated_content(&matched.declaration.value, element, counters)
+                .or_else(|| matched.value_from_var.then_some(None))
                 .map(|value| (matched, value))
         })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
@@ -1442,6 +1453,13 @@ enum Specified<T> {
     Unset,
 }
 
+fn parsed_or_unset<T>(
+    matched: &MatchedDeclaration,
+    parsed: Option<Specified<T>>,
+) -> Option<Specified<T>> {
+    parsed.or_else(|| matched.value_from_var.then_some(Specified::Unset))
+}
+
 fn winning_value<'a, T: Copy, F>(
     declarations: &'a [MatchedDeclaration],
     property: &str,
@@ -1453,7 +1471,10 @@ where
     declarations
         .iter()
         .filter(|matched| matched.declaration.name == property)
-        .filter_map(|matched| parse(&matched.declaration.value).map(|value| (matched, value)))
+        .filter_map(|matched| {
+            parsed_or_unset(matched, parse(&matched.declaration.value))
+                .map(|value| (matched, value))
+        })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
 }
 
@@ -1569,7 +1590,11 @@ fn winning_text_decoration(
             ) {
                 return None;
             }
-            parse_text_decoration_line(&matched.declaration.value).map(|value| (matched, value))
+            parsed_or_unset(
+                matched,
+                parse_text_decoration_line(&matched.declaration.value),
+            )
+            .map(|value| (matched, value))
         })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
 }
@@ -1816,8 +1841,9 @@ fn winning_margin_side(
             } else if matched.declaration.name == margin_longhand(side) {
                 parse_margin_value(&matched.declaration.value, font_px)
             } else {
-                None
-            }?;
+                return None;
+            };
+            let value = parsed_or_unset(matched, value)?;
             Some((matched, value))
         })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
@@ -1837,8 +1863,9 @@ fn winning_padding_side(
             } else if matched.declaration.name == padding_longhand(side) {
                 parse_padding_value(&matched.declaration.value, font_px)
             } else {
-                None
-            }?;
+                return None;
+            };
+            let value = parsed_or_unset(matched, value)?;
             Some((matched, value))
         })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
@@ -2047,7 +2074,10 @@ fn border_component_value(
     let tokens = &matched.declaration.value;
 
     if name == "border" || name == border_side_shorthand(side) {
-        let border = parse_border_shorthand(tokens, font_px, current_color)?;
+        let border = parsed_or_unset(
+            matched,
+            parse_border_shorthand(tokens, font_px, current_color),
+        )?;
         return Some(BorderCandidate {
             width: matches!(component, BorderComponent::Width)
                 .then(|| border.map(|border| border.width_px)),
@@ -2061,10 +2091,12 @@ fn border_component_value(
     match component {
         BorderComponent::Width if name == "border-width" || name == border_width_longhand(side) => {
             let value = if name == "border-width" {
-                parse_border_width_list(tokens, font_px)?.map(|values| values[side_index(side)])
+                parse_border_width_list(tokens, font_px)
+                    .map(|value| value.map(|values| values[side_index(side)]))
             } else {
-                parse_border_width_value(tokens, font_px)?
+                parse_border_width_value(tokens, font_px)
             };
+            let value = parsed_or_unset(matched, value)?;
             Some(BorderCandidate {
                 width: Some(value),
                 style: None,
@@ -2073,10 +2105,12 @@ fn border_component_value(
         }
         BorderComponent::Style if name == "border-style" || name == border_style_longhand(side) => {
             let value = if name == "border-style" {
-                parse_border_style_list(tokens)?.map(|values| values[side_index(side)])
+                parse_border_style_list(tokens)
+                    .map(|value| value.map(|values| values[side_index(side)]))
             } else {
-                parse_border_style_value(tokens)?
+                parse_border_style_value(tokens)
             };
+            let value = parsed_or_unset(matched, value)?;
             Some(BorderCandidate {
                 width: None,
                 style: Some(value),
@@ -2085,11 +2119,12 @@ fn border_component_value(
         }
         BorderComponent::Color if name == "border-color" || name == border_color_longhand(side) => {
             let value = if name == "border-color" {
-                parse_border_color_list(tokens, current_color)?
-                    .map(|values| values[side_index(side)])
+                parse_border_color_list(tokens, current_color)
+                    .map(|value| value.map(|values| values[side_index(side)]))
             } else {
-                parse_border_color_value(tokens, current_color)?
+                parse_border_color_value(tokens, current_color)
             };
+            let value = parsed_or_unset(matched, value)?;
             Some(BorderCandidate {
                 width: None,
                 style: None,
@@ -2477,8 +2512,9 @@ fn winning_background_color(
             let value = match matched.declaration.name.as_str() {
                 "background-color" => parse_color(&matched.declaration.value),
                 "background" => parse_background_color(&matched.declaration.value),
-                _ => None,
-            }?;
+                _ => return None,
+            };
+            let value = parsed_or_unset(matched, value)?;
             Some((matched, value))
         })
         .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
@@ -3019,6 +3055,179 @@ mod tests {
                 .unwrap()
                 .content,
             "GOOD"
+        );
+    }
+
+    #[test]
+    fn invalid_computed_var_winners_unset_instead_of_revealing_older_values() {
+        let document = parse_document(
+            "<style>#parent { color:#123456; font-size:24px; font-weight:bold; quotes:'A' 'Z' }
+             #child { --bad:banana; --empty:; color:red; color:var(--missing);
+                 font-size:40px; font-size:var(--bad); font-weight:normal; font-weight:var(--empty);
+                 background:red; background:var(--bad); display:block; display:var(--missing);
+                 width:80px; width:var(--bad); letter-spacing:3px; letter-spacing:var(--missing);
+                 quotes:none; quotes:var(--bad); }
+             #child::before { content:'BAD'; content:var(--missing); counter-increment:n 99 }
+             #next::before { content:counter(n) }
+             </style><div id='parent'><span id='child'>x</span><span id='next'>y</span></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let child = find_by_id(&document, "child");
+        let parent = find_by_id(&document, "parent");
+        let style = computed.style_for(child).unwrap();
+        assert_eq!(style.color, computed.style_for(parent).unwrap().color);
+        assert_eq!(style.font_size_px, 24.0);
+        assert_eq!(style.font_weight, ComputedFontWeight::Bold);
+        assert_eq!(style.background_color, CssColor::TRANSPARENT);
+        assert_eq!(style.display, Display::Inline);
+        assert_eq!(style.width, None);
+        assert_eq!(style.letter_spacing_px, 0.0);
+        assert_eq!(computed.quotes_for(child), computed.quotes_for(parent));
+        assert!(
+            computed
+                .pseudo_style_for(child, PseudoElement::Before)
+                .is_none()
+        );
+        assert_eq!(
+            computed
+                .pseudo_style_for(find_by_id(&document, "next"), PseudoElement::Before)
+                .unwrap()
+                .content,
+            "0"
+        );
+    }
+
+    #[test]
+    fn invalid_var_shorthands_preserve_component_cascade_and_importance() {
+        let document = parse_document(
+            "<style>#box { --bad:nope; margin:9px; margin:var(--missing); margin-left:7px;
+                 padding:9px; padding:var(--bad) !important; padding-left:7px;
+                 border:4px solid red; border:var(--missing); border-left:2px solid blue;
+                 color:red; color:var(--bad) !important; counter-increment:n 10;
+                 counter-increment:var(--bad); }
+             #box::before { content:counter(n); color:blue; color:var(--bad) }
+             </style><div id='box' style='color:green'>x</div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let box_id = find_by_id(&document, "box");
+        let style = computed.style_for(box_id).unwrap();
+        assert_eq!(
+            style.margin.left,
+            MarginValue::Length(LengthPercentage::Px(7.0))
+        );
+        assert_eq!(style.margin.top, MarginValue::ZERO);
+        assert_eq!(style.padding, PaddingEdges::ZERO);
+        assert_eq!(style.border.top.style, BorderStyle::None);
+        assert_eq!(style.border.left.style, BorderStyle::Solid);
+        assert_eq!(style.border.left.width_px, 2.0);
+        assert_eq!(style.border.left.color, CssColor::BLUE);
+        assert_eq!(style.color, CssColor::BLACK);
+        let before = computed
+            .pseudo_style_for(box_id, PseudoElement::Before)
+            .unwrap();
+        assert_eq!(before.content, "0");
+        assert_eq!(before.style.color, CssColor::BLACK);
+    }
+
+    #[test]
+    fn invalid_var_values_match_explicit_unset_for_every_supported_style_property() {
+        let properties = [
+            ("display", "block"),
+            ("color", "red"),
+            ("font-size", "40px"),
+            ("font-weight", "normal"),
+            ("font-style", "italic"),
+            ("line-height", "2"),
+            ("text-align", "right"),
+            ("white-space", "pre"),
+            ("text-decoration", "underline"),
+            ("text-decoration-line", "line-through"),
+            ("text-transform", "uppercase"),
+            ("letter-spacing", "4px"),
+            ("word-spacing", "6px"),
+            ("background", "red"),
+            ("background-color", "blue"),
+            ("box-sizing", "border-box"),
+            ("width", "100px"),
+            ("min-width", "40px"),
+            ("max-width", "90px"),
+            ("height", "70px"),
+            ("min-height", "20px"),
+            ("max-height", "50px"),
+            ("margin", "20px"),
+            ("margin-top", "20px"),
+            ("margin-right", "20px"),
+            ("margin-bottom", "20px"),
+            ("margin-left", "20px"),
+            ("padding", "20px"),
+            ("padding-top", "20px"),
+            ("padding-right", "20px"),
+            ("padding-bottom", "20px"),
+            ("padding-left", "20px"),
+            ("border", "4px solid red"),
+            ("border-top", "4px solid red"),
+            ("border-right", "4px solid red"),
+            ("border-bottom", "4px solid red"),
+            ("border-left", "4px solid red"),
+            ("border-width", "4px"),
+            ("border-style", "solid"),
+            ("border-color", "red"),
+            ("border-top-width", "4px"),
+            ("border-right-width", "4px"),
+            ("border-bottom-width", "4px"),
+            ("border-left-width", "4px"),
+            ("border-top-style", "solid"),
+            ("border-right-style", "solid"),
+            ("border-bottom-style", "solid"),
+            ("border-left-style", "solid"),
+            ("border-top-color", "red"),
+            ("border-right-color", "red"),
+            ("border-bottom-color", "red"),
+            ("border-left-color", "red"),
+        ];
+        for (property, older) in properties {
+            for invalid in ["var(--missing)", "var(--bad)", "var(--empty)"] {
+                let document = parse_document(&format!(
+                    "<div style='color:green;font-size:24px;font-weight:bold;font-style:italic;line-height:1.5;text-align:center'>
+                     <span id='actual' style='--bad:!; --empty:; {property}:{older}; {property}:{invalid}'>x</span>
+                     <span id='reference' style='{property}:unset'>y</span></div>"
+                ));
+                let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+                assert_eq!(
+                    computed.style_for(find_by_id(&document, "actual")),
+                    computed.style_for(find_by_id(&document, "reference")),
+                    "{property}:{invalid}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn valid_var_fallbacks_and_literal_invalid_values_keep_their_distinct_cascade_rules() {
+        let document = parse_document(
+            "<style>#one { --empty:; color:red; color:invalid; padding:5px; padding:var(--missing,2px 4px) }
+             #two { color:green; color:var(--empty,red) }
+             #three { color:var(--missing); color:blue }
+             </style><div id='one'><span id='two'>x</span><span id='three'>y</span></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let one = computed.style_for(find_by_id(&document, "one")).unwrap();
+        assert_eq!(one.color, CssColor::RED);
+        assert_eq!(one.padding.top, LengthPercentage::Px(2.0));
+        assert_eq!(one.padding.left, LengthPercentage::Px(4.0));
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "two"))
+                .unwrap()
+                .color,
+            CssColor::RED
+        );
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "three"))
+                .unwrap()
+                .color,
+            CssColor::BLUE
         );
     }
 

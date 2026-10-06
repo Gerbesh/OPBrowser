@@ -802,3 +802,23 @@ This file is append-only project history.
   cascade correction; this update does not claim complete custom-property conformance.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 175 workspace tests,
   startup/CSS demo native paint smokes and optimized workspace release build.
+
+## 2026-10-06 - Invalid computed var() values preserve cascade priority
+
+- Computed MatchedDeclaration copies now retain value_from_var priority. Missing variables,
+  empty substitutions, over-budget expansion and wrong property grammar become unset instead
+  of exposing older declarations; inherited/non-inherited resolution reuses existing rules.
+- Applied the rule to ordinary supported properties, margin/padding/border/background and
+  text-decoration shorthand components, generated content, quotes and counter operations.
+  Later component declarations still override earlier invalid shorthands by normal priority.
+- Validated var() syntax before author cascade, including malformed unused fallback branches.
+  Literal parse-time invalid values retain their existing lower-valid-value behavior.
+- Added inheritance/initial-value, important/inline/source-order, empty-value, shorthand,
+  pseudo-state and parser regressions. A table-driven check compares all 52 ordinary supported
+  style property names against explicit unset for missing/wrong-type/empty substitutions.
+- Added Engine paint/reflow coverage and a visible external CSS demo explaining recovered
+  inherited color and initial transparent background. Updated plan, README, graph/slices/wiki.
+- Broader custom-property grammar, registration/animation taint and unsupported CSS properties
+  remain outside this milestone; no complete CSS conformance claim is made.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 181 workspace tests,
+  startup/CSS demo native paint smokes and optimized workspace release build.

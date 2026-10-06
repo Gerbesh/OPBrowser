@@ -42,3 +42,5 @@ h1 { color: #6d28d9; font-size: 42px; }
 .quote-demo q::before, .quote-demo q::after { color:#7c3aed; font-weight:bold; }
 .generated-block-demo::before { display:block; content:"Generated block: 60% border-box with auto margins"; width:60%; margin:10px auto; padding:8px; border:2px solid #0369a1; background:#eff6ff; box-sizing:border-box; text-align:center; }
 .generated-block-demo::after { display:block; content:""; width:120px; height:14px; margin:8px auto; background:#7c3aed; border:2px solid #4c1d95; box-sizing:border-box; }
+.var-invalid-demo { color:#087a35; }
+.var-invalid-demo span { color:red; color:var(--missing-color); background:red; background:var(--missing-background); }
