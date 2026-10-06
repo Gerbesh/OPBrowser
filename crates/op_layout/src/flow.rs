@@ -144,6 +144,32 @@ struct Style {
     box_sizing: BoxSizing,
 }
 
+const TABLE_BORDER_SPACING: i32 = 2;
+
+#[derive(Debug, Clone, Copy)]
+struct TableCellPlacement {
+    node: NodeId,
+    row: usize,
+    column: usize,
+    colspan: usize,
+    rowspan: usize,
+}
+
+#[derive(Debug, Default)]
+struct TableGrid {
+    rows: Vec<NodeId>,
+    cells: Vec<TableCellPlacement>,
+    columns: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TableCellLayout {
+    decoration: Option<usize>,
+    row: usize,
+    rowspan: usize,
+    natural_height: i32,
+}
+
 impl<'a> Context<'a, '_> {
     fn emit(&mut self, items: &mut Vec<Item<'a>>, style: Style, x: i32, width: i32) {
         if items.iter().all(|item| {
@@ -301,6 +327,375 @@ impl<'a> Context<'a, '_> {
         self.pending_margin = Some(margin_bottom);
     }
 
+    fn table(&mut self, id: NodeId, style: Style, containing_x: i32, containing_width: i32) {
+        self.block_epoch = self.block_epoch.saturating_add(1);
+        let used = resolve_block_horizontal(style, containing_width);
+        let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
+        let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
+
+        self.apply_collapsed_margin(margin_top);
+        let border_x = containing_x.saturating_add(used.margin_left);
+        let border_y = self.y;
+        let content_x = border_x
+            .saturating_add(used.border.left.width)
+            .saturating_add(used.padding.left);
+        let content_width = used.content_width.max(1);
+
+        let has_border = used.border.top.width > 0
+            || used.border.right.width > 0
+            || used.border.bottom.width > 0
+            || used.border.left.width > 0;
+        let table_decoration = if style.background.alpha > 0 || has_border {
+            let index = self.decorations.len();
+            self.decorations.push(BoxDecoration {
+                x: border_x,
+                y: border_y,
+                width: used.border_width,
+                height: 0,
+                background: style.background,
+                border_top: DecorationBorder {
+                    width: used.border.top.width,
+                    color: used.border.top.color,
+                },
+                border_right: DecorationBorder {
+                    width: used.border.right.width,
+                    color: used.border.right.color,
+                },
+                border_bottom: DecorationBorder {
+                    width: used.border.bottom.width,
+                    color: used.border.bottom.color,
+                },
+                border_left: DecorationBorder {
+                    width: used.border.left.width,
+                    color: used.border.left.color,
+                },
+            });
+            Some(index)
+        } else {
+            None
+        };
+
+        self.y = self
+            .y
+            .saturating_add(used.border.top.width)
+            .saturating_add(used.padding.top);
+
+        for child in self.document.children(id) {
+            let Some(element) = self.document.element(*child) else {
+                continue;
+            };
+            if self.element_display(*child, &element.tag_name) == Display::TableCaption {
+                let caption_style = self.element_style(*child, &element.tag_name, style);
+                self.block(
+                    BlockContent::Element(*child),
+                    None,
+                    caption_style,
+                    content_x,
+                    content_width,
+                );
+                self.flush_pending_margin();
+            }
+        }
+
+        let grid = self.build_table_grid(id);
+        if !grid.rows.is_empty() && grid.columns > 0 {
+            let column_widths = table_column_widths(content_width, grid.columns);
+            let column_offsets = table_column_offsets(content_x, &column_widths);
+            let mut row_heights = vec![0; grid.rows.len()];
+            let mut cell_layouts = Vec::new();
+            let mut row_top = self.y.saturating_add(TABLE_BORDER_SPACING);
+
+            for (row, row_height) in row_heights.iter_mut().enumerate() {
+                for placement in grid.cells.iter().filter(|cell| cell.row == row) {
+                    let slot_width =
+                        table_cell_slot_width(&column_widths, placement.column, placement.colspan);
+                    let x = column_offsets
+                        .get(placement.column)
+                        .copied()
+                        .unwrap_or(content_x);
+                    let layout = self.layout_table_cell(*placement, x, row_top, slot_width, style);
+                    *row_height = (*row_height).max(layout.natural_height);
+                    cell_layouts.push(layout);
+                }
+                *row_height = (*row_height).max(1);
+                row_top = row_top
+                    .saturating_add(*row_height)
+                    .saturating_add(TABLE_BORDER_SPACING);
+            }
+
+            for cell in cell_layouts {
+                let Some(index) = cell.decoration else {
+                    continue;
+                };
+                let end = cell.row.saturating_add(cell.rowspan).min(row_heights.len());
+                let span_height = row_heights[cell.row..end]
+                    .iter()
+                    .copied()
+                    .fold(0i32, i32::saturating_add)
+                    .saturating_add(
+                        TABLE_BORDER_SPACING
+                            .saturating_mul(end.saturating_sub(cell.row + 1) as i32),
+                    );
+                self.decorations[index].height = span_height.max(cell.natural_height);
+            }
+
+            self.y = row_top;
+        }
+
+        self.y = self
+            .y
+            .saturating_add(used.padding.bottom)
+            .saturating_add(used.border.bottom.width);
+
+        if let Some(index) = table_decoration {
+            self.decorations[index].height = self.y.saturating_sub(border_y).max(0);
+        }
+        self.pending_margin = Some(margin_bottom);
+    }
+
+    fn build_table_grid(&self, table: NodeId) -> TableGrid {
+        let rows = self.table_row_nodes(table);
+        let mut grid = TableGrid {
+            columns: self.table_declared_columns(table),
+            rows,
+            cells: Vec::new(),
+        };
+        let mut occupied_until = Vec::<usize>::new();
+
+        for (row_index, row) in grid.rows.iter().copied().enumerate() {
+            for cell in self.document.children(row) {
+                let Some(element) = self.document.element(*cell) else {
+                    continue;
+                };
+                if self.element_display(*cell, &element.tag_name) != Display::TableCell {
+                    continue;
+                }
+
+                let colspan = table_span(element, "colspan", 1, 1000).max(1);
+                let rowspan = match table_span(element, "rowspan", 1, 65534) {
+                    0 => grid.rows.len().saturating_sub(row_index).max(1),
+                    value => value,
+                };
+                let mut column = 0usize;
+                loop {
+                    let end = column.saturating_add(colspan);
+                    if occupied_until.len() < end {
+                        occupied_until.resize(end, 0);
+                    }
+                    if occupied_until[column..end]
+                        .iter()
+                        .all(|occupied| *occupied <= row_index)
+                    {
+                        break;
+                    }
+                    column = column.saturating_add(1);
+                }
+
+                let end = column.saturating_add(colspan);
+                for occupied in &mut occupied_until[column..end] {
+                    *occupied = row_index.saturating_add(rowspan);
+                }
+                grid.columns = grid.columns.max(end);
+                grid.cells.push(TableCellPlacement {
+                    node: *cell,
+                    row: row_index,
+                    column,
+                    colspan,
+                    rowspan,
+                });
+            }
+        }
+
+        grid
+    }
+
+    fn table_row_nodes(&self, table: NodeId) -> Vec<NodeId> {
+        let mut rows = Vec::new();
+        for child in self.document.children(table) {
+            let Some(element) = self.document.element(*child) else {
+                continue;
+            };
+            match self.element_display(*child, &element.tag_name) {
+                Display::TableRow => rows.push(*child),
+                Display::TableHeaderGroup | Display::TableRowGroup | Display::TableFooterGroup => {
+                    rows.extend(
+                        self.document
+                            .children(*child)
+                            .iter()
+                            .copied()
+                            .filter(|row| {
+                                self.document.element(*row).is_some_and(|element| {
+                                    self.element_display(*row, &element.tag_name)
+                                        == Display::TableRow
+                                })
+                            }),
+                    );
+                }
+                _ => {}
+            }
+        }
+        rows
+    }
+
+    fn table_declared_columns(&self, table: NodeId) -> usize {
+        let mut columns = 0usize;
+        for child in self.document.children(table) {
+            let Some(element) = self.document.element(*child) else {
+                continue;
+            };
+            match self.element_display(*child, &element.tag_name) {
+                Display::TableColumn => {
+                    columns = columns.saturating_add(table_span(element, "span", 1, 1000).max(1));
+                }
+                Display::TableColumnGroup => {
+                    let child_columns = self
+                        .document
+                        .children(*child)
+                        .iter()
+                        .filter_map(|column| {
+                            let element = self.document.element(*column)?;
+                            (self.element_display(*column, &element.tag_name)
+                                == Display::TableColumn)
+                                .then_some(table_span(element, "span", 1, 1000).max(1))
+                        })
+                        .sum::<usize>();
+                    columns = columns.saturating_add(if child_columns == 0 {
+                        table_span(element, "span", 1, 1000).max(1)
+                    } else {
+                        child_columns
+                    });
+                }
+                _ => {}
+            }
+        }
+        columns
+    }
+
+    fn layout_table_cell(
+        &mut self,
+        placement: TableCellPlacement,
+        x: i32,
+        row_top: i32,
+        slot_width: i32,
+        inherited: Style,
+    ) -> TableCellLayout {
+        let Some(element) = self.document.element(placement.node) else {
+            return TableCellLayout {
+                decoration: None,
+                row: placement.row,
+                rowspan: placement.rowspan,
+                natural_height: 1,
+            };
+        };
+        let style = self.element_style(placement.node, &element.tag_name, inherited);
+        let padding = Edges {
+            top: resolve_length(style.padding.top, slot_width).max(0),
+            right: resolve_length(style.padding.right, slot_width).max(0),
+            bottom: resolve_length(style.padding.bottom, slot_width).max(0),
+            left: resolve_length(style.padding.left, slot_width).max(0),
+        };
+        let border = resolve_border_edges(style.border);
+        let horizontal_extras = padding
+            .left
+            .saturating_add(padding.right)
+            .saturating_add(border.left.width)
+            .saturating_add(border.right.width);
+        let content_width = slot_width.saturating_sub(horizontal_extras).max(1);
+
+        let has_border = border.top.width > 0
+            || border.right.width > 0
+            || border.bottom.width > 0
+            || border.left.width > 0;
+        let decoration = if style.background.alpha > 0 || has_border {
+            let index = self.decorations.len();
+            self.decorations.push(BoxDecoration {
+                x,
+                y: row_top,
+                width: slot_width.max(1),
+                height: 0,
+                background: style.background,
+                border_top: DecorationBorder {
+                    width: border.top.width,
+                    color: border.top.color,
+                },
+                border_right: DecorationBorder {
+                    width: border.right.width,
+                    color: border.right.color,
+                },
+                border_bottom: DecorationBorder {
+                    width: border.bottom.width,
+                    color: border.bottom.color,
+                },
+                border_left: DecorationBorder {
+                    width: border.left.width,
+                    color: border.left.color,
+                },
+            });
+            Some(index)
+        } else {
+            None
+        };
+
+        let saved_y = self.y;
+        let saved_margin = self.pending_margin.take();
+        let content_x = x
+            .saturating_add(border.left.width)
+            .saturating_add(padding.left);
+        let content_top = row_top
+            .saturating_add(border.top.width)
+            .saturating_add(padding.top);
+        self.y = content_top;
+        self.pending_margin = None;
+
+        let mut items = Vec::new();
+        self.collect_generated(
+            placement.node,
+            PseudoElement::Before,
+            None,
+            style,
+            (content_x, content_width),
+            &mut items,
+        );
+        for child in self.document.children(placement.node) {
+            self.collect(*child, None, style, content_x, content_width, &mut items);
+        }
+        self.collect_generated(
+            placement.node,
+            PseudoElement::After,
+            None,
+            style,
+            (content_x, content_width),
+            &mut items,
+        );
+        self.emit(&mut items, style, content_x, content_width);
+        self.flush_pending_margin();
+
+        let natural_content_height = self.y.saturating_sub(content_top).max(0);
+        let target_content_height = resolve_block_content_height(
+            style,
+            natural_content_height,
+            padding.top,
+            padding.bottom,
+            border,
+        );
+        let natural_height = target_content_height
+            .saturating_add(padding.top)
+            .saturating_add(padding.bottom)
+            .saturating_add(border.top.width)
+            .saturating_add(border.bottom.width)
+            .max(1);
+
+        self.y = saved_y;
+        self.pending_margin = saved_margin;
+
+        TableCellLayout {
+            decoration,
+            row: placement.row,
+            rowspan: placement.rowspan,
+            natural_height,
+        }
+    }
+
     fn apply_collapsed_margin(&mut self, next: i32) {
         let used = self
             .pending_margin
@@ -362,7 +757,10 @@ impl<'a> Context<'a, '_> {
                     href
                 };
 
-                if tag == "img" {
+                if display == Display::Table {
+                    self.emit(items, inherited, containing_x, containing_width);
+                    self.table(id, current, containing_x, containing_width);
+                } else if tag == "img" {
                     if display == Display::Block {
                         self.emit(items, inherited, containing_x, containing_width);
                         let image = self.images.get(&id).cloned();
@@ -394,7 +792,7 @@ impl<'a> Context<'a, '_> {
                     } else {
                         items.push(Item::Break);
                     }
-                } else if display == Display::Block {
+                } else if display == Display::Block || is_table_internal_display(display) {
                     self.emit(items, inherited, containing_x, containing_width);
                     self.block(
                         BlockContent::Element(id),
@@ -827,6 +1225,52 @@ fn resolve_inline_box_style(
     })
 }
 
+fn table_span(element: &op_dom::ElementData, name: &str, default: usize, maximum: usize) -> usize {
+    element
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name.eq_ignore_ascii_case(name))
+        .and_then(|attribute| attribute.value.trim().parse::<usize>().ok())
+        .map(|value| value.min(maximum))
+        .unwrap_or(default)
+}
+
+fn table_column_widths(content_width: i32, columns: usize) -> Vec<i32> {
+    if columns == 0 {
+        return Vec::new();
+    }
+
+    let spacing = TABLE_BORDER_SPACING.saturating_mul(columns.saturating_add(1) as i32);
+    let usable = content_width.saturating_sub(spacing).max(columns as i32);
+    let base = usable / columns as i32;
+    let remainder = usable % columns as i32;
+    (0..columns)
+        .map(|column| base.saturating_add(((column as i32) < remainder) as i32))
+        .collect()
+}
+
+fn table_column_offsets(content_x: i32, widths: &[i32]) -> Vec<i32> {
+    let mut offsets = Vec::with_capacity(widths.len());
+    let mut x = content_x.saturating_add(TABLE_BORDER_SPACING);
+    for width in widths {
+        offsets.push(x);
+        x = x
+            .saturating_add(*width)
+            .saturating_add(TABLE_BORDER_SPACING);
+    }
+    offsets
+}
+
+fn table_cell_slot_width(widths: &[i32], column: usize, colspan: usize) -> i32 {
+    let end = column.saturating_add(colspan).min(widths.len());
+    widths[column.min(widths.len())..end]
+        .iter()
+        .copied()
+        .fold(0i32, i32::saturating_add)
+        .saturating_add(TABLE_BORDER_SPACING.saturating_mul(end.saturating_sub(column + 1) as i32))
+        .max(1)
+}
+
 fn resolve_block_horizontal(style: Style, containing_width: i32) -> UsedBlockHorizontal {
     let containing_width = containing_width.max(1);
     let padding = Edges {
@@ -1077,13 +1521,37 @@ fn fallback_inline_style(tag: &str, inherited: InlineStyle) -> InlineStyle {
     }
 }
 
+fn is_table_internal_display(display: Display) -> bool {
+    matches!(
+        display,
+        Display::TableCaption
+            | Display::TableColumnGroup
+            | Display::TableColumn
+            | Display::TableHeaderGroup
+            | Display::TableRowGroup
+            | Display::TableFooterGroup
+            | Display::TableRow
+            | Display::TableCell
+    )
+}
+
 fn fallback_display(tag: &str) -> Display {
     if hidden_tag(tag) {
-        Display::None
-    } else if is_block(tag) {
-        Display::Block
-    } else {
-        Display::Inline
+        return Display::None;
+    }
+
+    match tag {
+        "table" => Display::Table,
+        "caption" => Display::TableCaption,
+        "colgroup" => Display::TableColumnGroup,
+        "col" => Display::TableColumn,
+        "thead" => Display::TableHeaderGroup,
+        "tbody" => Display::TableRowGroup,
+        "tfoot" => Display::TableFooterGroup,
+        "tr" => Display::TableRow,
+        "td" | "th" => Display::TableCell,
+        _ if is_block(tag) => Display::Block,
+        _ => Display::Inline,
     }
 }
 

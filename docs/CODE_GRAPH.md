@@ -573,11 +573,18 @@ classDiagram
   merge rules, Comment nodes, DocumentTypeData (name/public/system/force-quirks),
   DocumentMode (NoQuirks/LimitedQuirks/Quirks), DOM parent/child invariants, append_child
   reparenting and insert_before for parser-required sibling placement such as foster parenting.
-- op_layout owns text-flow and block-box used-value geometry, structural-container traversal
-  and UTF-8 LinkSpan ranges preserved across whitespace normalization and line wrapping.
-  It resolves percent/auto/min/max/content-vs-border-box widths, independent border sides,
-  block height minima/maxima and adjacent-sibling vertical margin collapse. Whitespace-only
-  text between block siblings is suppressed before it can create anonymous line geometry.
+- op_layout owns text-flow, block-box used-value geometry, the initial table formatting context,
+  structural-container traversal and UTF-8 LinkSpan ranges preserved across whitespace
+  normalization and line wrapping. It resolves percent/auto/min/max/content-vs-border-box
+  widths, independent border sides, block height minima/maxima and adjacent-sibling vertical
+  margin collapse. Table layout consumes computed Table/TableCaption/TableColumnGroup/
+  TableColumn/TableHeaderGroup/TableRowGroup/TableFooterGroup/TableRow/TableCell roles,
+  collects rows across row groups, builds an occupancy grid for colspan/rowspan, assigns
+  equal-width column tracks within the table used width, places cells in two dimensions and
+  reuses existing block/inline layout inside each cell. Caption flow, the 2px UA spacing,
+  cell backgrounds/borders/padding and span geometry reach ordinary BoxDecoration/text/image
+  output. Whitespace-only text between block siblings is suppressed before it can create
+  anonymous line geometry.
   op_layout::replaced resolves raster intrinsic/explicit/auto sizes and min/max ratio conflicts.
   flow converts CSS percentage-width/font-relative/content-vs-border-box sizes and applies
   the existing available-width/4096-height fitting policy after CSS used sizes.
@@ -604,9 +611,12 @@ classDiagram
   initial structural/link pseudo-class set. compute_styles resolves supported values using
   !important, inline source,
   specificity and source order, then applies inheritance/global keywords into a
-  ComputedStyleMap. Properties now include display, color, font-size/font-weight,
-  background-color, margin/padding edges, independent border edges, width/height min/max and
-  box-sizing. Box shorthand/longhand candidates are compared by normal cascade priority;
+  ComputedStyleMap. Display now distinguishes inline/block/none plus table, caption, column,
+  row-group, row and cell roles; the HTML UA defaults assign native table elements those roles,
+  center captions, bold th cells, give td/th 1px padding and make table sizing border-box.
+  Properties also include color, font-size/font-weight, background-color, margin/padding edges,
+  independent border edges, width/height min/max and box-sizing. Box shorthand/longhand
+  candidates are compared by normal cascade priority;
   length parsing covers percent, em/rem and CSS absolute units. One CssColor parser now
   handles hex/all 148 opaque named colors plus RGB/HSL/HWB for text/background/borders.
   Unquantized HSL channels feed HWB white/black mixing before final CssColor byte conversion.

@@ -157,8 +157,12 @@ uses an active-formatting marker boundary. Pending table character tokens keep a
 runs in the table, while non-whitespace runs and other misnested table content are foster
 parented before the last open table. The DOM layer exposes insert_before so foster parenting
 can place nodes at the required sibling position. Head text tokens such as style/script routed
-from table mode return to that table mode after text parsing. Template/frameset modes,
-foreign-content parsing and a real CSS table formatting/layout context remain future work.
+from table mode return to that table mode after text parsing. The resulting table DOM now feeds
+the initial table formatting context: row groups/rows/cells form a two-dimensional grid,
+colspan/rowspan affect occupied tracks, captions flow above the grid, and table/cell
+backgrounds, borders, padding and text reach paint. Template/frameset modes, foreign-content
+parsing and advanced table layout such as intrinsic column sizing, border-collapse,
+author border-spacing, vertical-align and anonymous table boxes remain future work.
 
 Unknown <! declarations and CDATA-like declarations in the current HTML-only context become
 Comment nodes and remain non-rendering. Raw-text/RCDATA and attributes still keep declaration

@@ -73,9 +73,14 @@ covers in-table/text/caption/column-group/table-body/row/cell states, implicit t
 creation, table-scope closure and cell formatting markers. Non-whitespace character runs and
 misnested elements in table contexts use foster parenting before the last open table through
 op_dom sibling insertion, while whitespace table text stays in table context. Head text tokens
-encountered in tables return to the original table mode after text parsing. Mode-specific
-layout quirks, processing instructions, template/frameset modes, foreign-content context and
-the CSS table formatting/layout algorithm remain later.
+encountered in tables return to the original table mode after text parsing. That DOM now feeds
+an initial CSS table formatting context: native table tags receive table display roles, captions
+flow above the grid, row groups supply rows, colspan/rowspan occupy multiple tracks, cells share
+row geometry instead of ordinary vertical block flow, and cell padding/backgrounds/borders plus
+header boldness reach native paint. Columns currently divide the used table width evenly with
+the 2px UA spacing. Mode-specific layout quirks, processing instructions, template/frameset
+modes, foreign-content context, content-driven intrinsic table sizing, border-collapse,
+author border-spacing, col/colgroup sizing, vertical-align and anonymous table boxes remain later.
 
 ## S2 - Navigation to static page
 

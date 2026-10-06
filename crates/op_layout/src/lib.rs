@@ -1397,6 +1397,147 @@ mod tests {
     }
 
     #[test]
+    fn html_table_layout_places_rows_and_columns_in_a_real_grid() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:300px; background:#eeeeee; border:2px solid #222 }
+               td, th { border:1px solid #000; padding:4px }
+               #left { background:#ff0000 }
+               #right { background:#0000ff }
+             </style>
+             <table>
+               <caption>Title</caption>
+               <tr><th>A</th><th>B</th></tr>
+               <tr><td id='left'>one</td><td id='right'>two</td></tr>
+             </table>
+             <p>after</p>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let text = |value: &str| {
+            layout
+                .text_boxes
+                .iter()
+                .find(|line| line.text.contains(value))
+                .unwrap()
+        };
+        let title = text("Title");
+        let a = text("A");
+        let b = text("B");
+        let one = text("one");
+        let two = text("two");
+        let after = text("after");
+
+        assert!(title.y < a.y);
+        assert_eq!(a.y, b.y);
+        assert_eq!(one.y, two.y);
+        assert!(b.x > a.x + 100);
+        assert!((one.x - a.x).abs() <= 2);
+        assert!((two.x - b.x).abs() <= 2);
+        assert!(after.y > one.y);
+
+        let red = TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        };
+        let blue = TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        };
+        let left = layout
+            .box_decorations
+            .iter()
+            .find(|decoration| decoration.background == red)
+            .unwrap();
+        let right = layout
+            .box_decorations
+            .iter()
+            .find(|decoration| decoration.background == blue)
+            .unwrap();
+        assert_eq!(left.y, right.y);
+        assert_eq!(left.width, right.width);
+        assert!(right.x > left.x);
+    }
+
+    #[test]
+    fn table_colspan_and_rowspan_affect_cell_geometry() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:300px }
+               td { border:1px solid #111; padding:3px }
+               #wide { background:#ff0000 }
+               #span { background:#0000ff }
+               #right { background:#00ff00 }
+               #bottom { background:#ffff00 }
+             </style>
+             <table>
+               <tr><td id='wide' colspan='2'>wide</td></tr>
+               <tr><td id='span' rowspan='2'>span</td><td id='right'>right</td></tr>
+               <tr><td id='bottom'>bottom</td></tr>
+             </table>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let wide = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let span = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+        let right = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+        let bottom = decoration(TextColor {
+            red: 255,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+
+        assert!(wide.width > right.width);
+        assert!(span.height > right.height);
+        assert_eq!(right.x, bottom.x);
+        assert!(bottom.y > right.y);
+        assert_eq!(span.x, wide.x);
+    }
+
+    #[test]
     fn wraps_link_spans_without_losing_unicode_or_nested_labels() {
         let mut document = Document::new();
         let p = document.create_element("p");

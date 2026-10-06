@@ -1294,3 +1294,34 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 302 workspace tests,
   native startup smoke and optimized release build. The release executable is 824,832 bytes.
   The full verification passed without the pre-existing generated-image socket flake.
+
+## 2026-10-06 - Initial CSS table formatting context
+
+- Expanded computed display values with table, table-caption, table-column-group/table-column,
+  table-header-group/table-row-group/table-footer-group, table-row and table-cell roles.
+  Native HTML table elements receive those UA roles; table uses border-box sizing, caption is
+  centered, td/th receive 1px UA padding and th is bold. Author display table-role keywords use
+  the ordinary cascade.
+- Added an initial dedicated table formatter in op_layout instead of routing table structure
+  through generic vertical block flow. Rows are collected across direct rows and
+  thead/tbody/tfoot groups into a TableGrid.
+- The grid tracks occupied columns across rowspan, supports colspan up to the bounded HTML
+  range, treats rowspan=0 as the remaining rows, and counts col/colgroup span declarations when
+  establishing the column grid.
+- Table columns currently share the used table content width evenly with the 2px UA spacing.
+  Captions flow above the grid; cells in the same row share a row top and cell contents reuse
+  the existing block/inline formatter inside their own content rectangles.
+- Table and cell backgrounds/borders/padding now emit ordinary BoxDecoration geometry.
+  Colspan combines multiple column tracks and internal spacing; rowspan decoration extends over
+  multiple row heights. Existing text/image paint therefore consumes table geometry without a
+  special platform drawing path.
+- Added one computed-style regression, two deterministic layout regressions covering real
+  row/column placement plus colspan/rowspan geometry, and one Engine regression proving table
+  coordinates and th boldness reach the display list.
+- This is intentionally the initial table formatting context, not full CSS Tables conformance.
+  Content-driven intrinsic/min/max column sizing, the border-spacing property, border-collapse,
+  col/colgroup sizing hints, vertical-align, anonymous table boxes and inline-table remain later.
+- Updated project plan, code graph/slices and CSS/rendering/HTML wiki documentation.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 306 workspace tests,
+  native startup smoke and optimized release build. The release executable is 837,120 bytes.
+  The full verification passed without the generated-image socket flake.

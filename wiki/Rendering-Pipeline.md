@@ -71,7 +71,9 @@ The M1 layout layer currently provides:
 - HTML whitespace collapsing, preserved NBSP and explicit/repeated br breaks;
 - image boxes with intrinsic/HTML dimensions, viewport fitting and alpha pixels;
 - mixed text/image lines with shared baselines and inline alt fallback;
-- inherited anchor hrefs on image rectangles.
+- inherited anchor hrefs on image rectangles;
+- an initial table formatting context with captions, row groups, equal-width column tracks,
+  2D cell placement, colspan/rowspan occupancy and cell box decoration.
 
 Text paint commands carry LinkSpan byte ranges. The native painter draws linked
 ranges blue/underlined and measures their glyph bounds with GDI; cursor and click
@@ -115,9 +117,13 @@ emit BoxDecoration without creating TextBox glyphs or artificial link ranges.
 Inheritance produces per-node styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 
-op_layout consumes that map for display:none/block/inline, mixed inline text runs,
-line-height/text-align/white-space geometry, font style/decorations, text transforms,
-letter/word spacing and the expanded [block box model](CSS-Box-Model.md). Transformed text is
+op_layout consumes that map for display:none/block/inline plus table/table-caption/
+table-column-group/table-column/table-header-group/table-row-group/table-footer-group/table-row/
+table-cell, mixed inline text runs, line-height/text-align/white-space geometry, font
+style/decorations, text transforms, letter/word spacing and the expanded
+[block box model](CSS-Box-Model.md). Native table roles enter a dedicated grid formatter;
+advanced intrinsic table sizing, border-collapse, configurable border-spacing, vertical-align
+and anonymous table boxes are not implemented yet. Transformed text is
 measured before line placement; op_paint carries italic/decoration/spacing metadata and Win32
 uses matching text advances while drawing measured decoration/link segments. It resolves used widths/min/max/auto margins,
 box-sizing, padding, independent border edges, fixed height constraints and sibling margin

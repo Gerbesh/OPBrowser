@@ -68,9 +68,13 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE table tree-construction slice: in-table/text/caption/column-group/table-body/row/cell
   insertion modes, implicit tbody/tr recovery, table-scope cleanup, cell formatting markers,
   pending table-text buffering and foster parenting before the last table.
+- DONE initial CSS table formatting context: table display roles/UA defaults, captions, row-group
+  collection, equal-width column tracks, 2D row/cell placement, colspan/rowspan occupancy,
+  cell padding/borders/backgrounds and end-to-end paint.
 - LATER mode-specific legacy CSS/layout quirks, processing instructions, foreign content/CDATA,
-  template/frameset insertion modes, complete script-data escape states and a real CSS table
-  formatting/layout context.
+  template/frameset insertion modes, complete script-data escape states and advanced table
+  layout: content-driven intrinsic column sizing, border-spacing property, border-collapse,
+  col/colgroup sizing hints, vertical-align, anonymous table boxes and inline-table.
 - DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
 - DONE initial HTML tree builder from tokenizer output into op_dom::Document.
 - DONE initial document-to-layout pipeline with basic text flow and wrapping.

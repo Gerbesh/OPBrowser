@@ -776,6 +776,49 @@ mod tests {
     }
 
     #[test]
+    fn table_grid_geometry_and_header_weight_reach_display_list() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               table { width:300px; border:2px solid #222 }
+               td, th { border:1px solid #000; padding:4px }
+             </style>
+             <table>
+               <caption>Cap</caption>
+               <tr><th>A</th><th>B</th></tr>
+               <tr><td>one</td><td>two</td></tr>
+             </table>",
+            800,
+            600,
+        );
+
+        let find_text = |needle: &str| {
+            display_list
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::Text {
+                        x, y, text, bold, ..
+                    } if text.contains(needle) => Some((*x, *y, *bold)),
+                    _ => None,
+                })
+                .expect("table text must reach paint")
+        };
+
+        let cap = find_text("Cap");
+        let a = find_text("A");
+        let b = find_text("B");
+        let one = find_text("one");
+        let two = find_text("two");
+
+        assert!(cap.1 < a.1);
+        assert_eq!(a.1, b.1);
+        assert_eq!(one.1, two.1);
+        assert!(b.0 > a.0 + 100);
+        assert!(a.2 && b.2);
+        assert!(!one.2 && !two.2);
+    }
+
+    #[test]
     fn table_foster_parenting_and_cell_text_reach_display_list() {
         let display_list =
             Engine::new().render_html("<table>outside<tr><td>cell</td></tr></table>tail", 800, 600);

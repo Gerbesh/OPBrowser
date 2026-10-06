@@ -9,6 +9,15 @@ pub type CustomPropertyMap = HashMap<String, Vec<TokenKind>>;
 pub enum Display {
     Inline,
     Block,
+    Table,
+    TableCaption,
+    TableColumnGroup,
+    TableColumn,
+    TableHeaderGroup,
+    TableRowGroup,
+    TableFooterGroup,
+    TableRow,
+    TableCell,
     None,
 }
 
@@ -1246,13 +1255,41 @@ fn apply_ua_defaults(style: &mut ComputedStyle, element: &ElementData) {
     let tag = element.tag_name.as_str();
     style.display = if hidden_tag(tag) {
         Display::None
-    } else if block_tag(tag) {
-        Display::Block
     } else {
-        Display::Inline
+        match tag {
+            "table" => Display::Table,
+            "caption" => Display::TableCaption,
+            "colgroup" => Display::TableColumnGroup,
+            "col" => Display::TableColumn,
+            "thead" => Display::TableHeaderGroup,
+            "tbody" => Display::TableRowGroup,
+            "tfoot" => Display::TableFooterGroup,
+            "tr" => Display::TableRow,
+            "td" | "th" => Display::TableCell,
+            _ if block_tag(tag) => Display::Block,
+            _ => Display::Inline,
+        }
     };
 
     match tag {
+        "table" => {
+            style.box_sizing = BoxSizing::BorderBox;
+        }
+        "td" | "th" => {
+            let one = LengthPercentage::Px(1.0);
+            style.padding = PaddingEdges {
+                top: one,
+                right: one,
+                bottom: one,
+                left: one,
+            };
+            if tag == "th" {
+                style.font_weight = ComputedFontWeight::Bold;
+            }
+        }
+        "caption" => {
+            style.text_align = TextAlign::Center;
+        }
         "img" => {
             let dimension = |name: &str| {
                 element
@@ -1580,6 +1617,15 @@ fn parse_display(tokens: &[TokenKind]) -> Option<Specified<Display>> {
     match single_ident(tokens)?.to_ascii_lowercase().as_str() {
         "inline" => Some(Specified::Value(Display::Inline)),
         "block" => Some(Specified::Value(Display::Block)),
+        "table" => Some(Specified::Value(Display::Table)),
+        "table-caption" => Some(Specified::Value(Display::TableCaption)),
+        "table-column-group" => Some(Specified::Value(Display::TableColumnGroup)),
+        "table-column" => Some(Specified::Value(Display::TableColumn)),
+        "table-header-group" => Some(Specified::Value(Display::TableHeaderGroup)),
+        "table-row-group" => Some(Specified::Value(Display::TableRowGroup)),
+        "table-footer-group" => Some(Specified::Value(Display::TableFooterGroup)),
+        "table-row" => Some(Specified::Value(Display::TableRow)),
+        "table-cell" => Some(Specified::Value(Display::TableCell)),
         "none" => Some(Specified::Value(Display::None)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
@@ -4595,6 +4641,60 @@ mod tests {
                 alpha: 136,
             }
         );
+    }
+
+    #[test]
+    fn table_ua_defaults_and_display_keywords_use_table_roles() {
+        let document = parse_document(
+            "<style>#custom { display:table-row }</style>
+             <table id='table'>
+               <caption id='caption'>Cap</caption>
+               <colgroup id='colgroup'><col id='col'></colgroup>
+               <thead id='thead'><tr id='headrow'><th id='th'>H</th></tr></thead>
+               <tbody id='tbody'><tr id='row'><td id='td'>D</td></tr></tbody>
+               <tfoot id='tfoot'><tr><td>F</td></tr></tfoot>
+             </table>
+             <div id='custom'>x</div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+
+        let cases = [
+            ("table", Display::Table),
+            ("caption", Display::TableCaption),
+            ("colgroup", Display::TableColumnGroup),
+            ("col", Display::TableColumn),
+            ("thead", Display::TableHeaderGroup),
+            ("tbody", Display::TableRowGroup),
+            ("tfoot", Display::TableFooterGroup),
+            ("headrow", Display::TableRow),
+            ("row", Display::TableRow),
+            ("th", Display::TableCell),
+            ("td", Display::TableCell),
+            ("custom", Display::TableRow),
+        ];
+        for (id, expected) in cases {
+            assert_eq!(
+                computed
+                    .style_for(find_by_id(&document, id))
+                    .unwrap()
+                    .display,
+                expected,
+                "{id}"
+            );
+        }
+
+        let caption = computed
+            .style_for(find_by_id(&document, "caption"))
+            .unwrap();
+        assert_eq!(caption.text_align, TextAlign::Center);
+
+        let th = computed.style_for(find_by_id(&document, "th")).unwrap();
+        assert_eq!(th.font_weight, ComputedFontWeight::Bold);
+        assert_eq!(th.padding.top, LengthPercentage::Px(1.0));
+
+        let td = computed.style_for(find_by_id(&document, "td")).unwrap();
+        assert_eq!(td.padding.left, LengthPercentage::Px(1.0));
     }
 
     #[test]

@@ -134,8 +134,10 @@ Resize reflow therefore does not reparse, rematch or recascade CSS.
 ## Rendering integration
 
 ComputedStyleMap is now consumed by op_layout. display:none removes the subtree from
-layout, display:block creates a flow boundary, and display:inline stays in the current
-inline flow. font-size, font-weight/style, line-height, decoration, spacing, transform and
+layout, display:block creates a flow boundary, display:inline stays in the current inline
+flow, and table/table-caption/table-column-group/table-column/table-header-group/
+table-row-group/table-footer-group/table-row/table-cell feed the initial table formatting
+context. font-size, font-weight/style, line-height, decoration, spacing, transform and
 color are carried on inline character runs. text-align offsets completed lines, while
 white-space controls collapse/newline preservation/soft wrapping. text-transform is applied
 before measurement and link-range reconstruction; spacing changes wrapping and native paint.
