@@ -1558,3 +1558,19 @@ This file is append-only project history.
   flake in `http_linked_stylesheet_reaches_native_display_list`; the complete op_engine suite
   and then the complete workspace suite passed immediately afterward.
 
+## 2026-10-06 - GitHub Actions CI restored
+
+- Restored `.github/workflows/ci.yml` after the earlier billing-related disablement.
+- CI now runs on pushes to `main`, pull requests targeting `main`, and manual dispatch, with
+  read-only repository permissions, a 30-minute job timeout and concurrency cancellation for
+  superseded runs.
+- Restored the previous Windows verification coverage: rustfmt, generated HTML/CSS data checks,
+  warning-free workspace Clippy, full workspace tests, native startup/navigation/link/image/resize
+  smoke tests and the optimized release build.
+- Added the current `tools/compatibility.ps1` project-owned regression baseline to CI so the HTML,
+  CSS, layout, engine and JavaScript compatibility guardrail is visible in public runs. This is
+  explicitly not a WPT or runtime Test262 percentage.
+- Local verification passed rustfmt, warning-free workspace Clippy, all workspace tests, the
+  compatibility baseline, native startup smoke and the optimized release build. Live GitHub
+  runner/account verification remains pending until this restoration commit is pushed.
+

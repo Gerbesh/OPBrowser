@@ -63,10 +63,12 @@ scroll clamps, address edits and stale hit regions. See [Page Reflow](Page-Reflo
 
 ## Current GitHub Actions status
 
-GitHub Actions is intentionally disabled for this repository. The previous push/PR
-workflow was removed because the account billing state prevented runners from starting
-and every push generated a failed workflow notification without executing any checks.
+GitHub Actions is enabled again with a Windows workflow for pushes to `main`, pull requests
+targeting `main`, and manual dispatch. It runs rustfmt, generated-data checks, warning-free
+Clippy, the workspace test suite, the project compatibility baseline, the native smoke suite
+and an optimized release build. Concurrency cancellation prevents superseded commits from
+continuing to consume runner time.
 
-Project verification is local: every coherent update still requires rustfmt, warning-free
-Clippy and the workspace test suite, plus the relevant native smoke tests and release build
-for the area being changed.
+CI supplements rather than replaces local verification: every coherent update still requires
+the relevant local checks before commit/push so the public repository is not used as a rather
+expensive syntax checker.

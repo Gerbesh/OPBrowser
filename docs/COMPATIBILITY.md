@@ -11,6 +11,10 @@ Compatibility percentages must come from repeatable suites, not milestone intuit
 This runs project-owned HTML, CSS, layout, engine-integration and JavaScript tests. Those
 counts are regression coverage, not a Web Platform Tests score.
 
+The Windows GitHub Actions workflow runs the same compatibility regression baseline on every
+main push and pull request. External Test262/WPT percentages remain separate work and must not be
+inferred from this green baseline.
+
 ## Test262
 
 With a local TC39 Test262 checkout:

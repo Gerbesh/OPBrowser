@@ -37,8 +37,9 @@ Status: DONE at initial level.
 - DONE project documentation workflow, code graph, code slices, and local wiki.
 - DONE public GitHub repository: https://github.com/Gerbesh/OPBrowser
 - DONE continuous Git commit/push workflow to public main.
-- BLOCKED GitHub Actions Windows CI execution: the workflow is configured, but
-  GitHub currently refuses to start jobs because the account is locked due to a billing issue.
+- IN PROGRESS GitHub Actions Windows CI is restored for main pushes, pull requests and manual
+  dispatch. Superseded runs are cancelled automatically; live runner/account verification is
+  pending the first post-restore push.
 
 ## M1 - First static document pipeline
 

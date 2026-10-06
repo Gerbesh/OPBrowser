@@ -23,6 +23,10 @@ Run the owned subsystem baseline with:
 The script runs the HTML, CSS, layout, engine and JavaScript project tests. These numbers
 measure regression coverage only and are not converted into a WPT percentage.
 
+The restored Windows GitHub Actions workflow also runs this baseline, making regressions visible
+on public pushes and pull requests without pretending that project-owned tests are external-suite
+conformance percentages.
+
 A local Test262 checkout can be supplied to the same script. The current
 `op_js::test262_probe` is intentionally parse-only: it checks positive parse acceptance and
 negative parse-error expectations. Runtime Test262 percentage is not reported yet because
