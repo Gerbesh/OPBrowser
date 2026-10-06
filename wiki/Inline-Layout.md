@@ -96,8 +96,9 @@ scope edge cases are not implemented. Only one decorated inline
 ancestor is represented at a time; a nested inline with
 its own box replaces the outer decoration for that nested run. Fragment edges currently clone
 on each wrapped line rather than implementing `box-decoration-break: slice`. Floats/tables/
-flex/grid also remain future work. Hyperlink glyph color is
-still the native default blue. These tests do not claim complete CSS conformance.
+flex/grid also remain future work. Hyperlinks use computed text color/decoration, with UA
+blue/underline defaults overridden by author CSS. Their byte spans and measured native hit
+regions remain independent of presentation. These tests do not claim complete CSS conformance.
 
 [Page Reflow](Page-Reflow.md) now rebuilds these lines on window resize using the
 retained DOM and shared image pixels. Engine and painter synchronize Windows font

@@ -1133,6 +1133,47 @@ mod tests {
     }
 
     #[test]
+    fn authored_link_presentation_reaches_paint_and_retained_reflow() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(
+            "<style>#styled { color:red; text-decoration:none; letter-spacing:2px }
+             #styled::before { content:'PRE'; color:green } #styled span { color:blue }</style>
+             <p><a href='default.html'>Default</a> <a id='styled' href='next.html'>Styled<span>Nested</span></a></p>",
+            800,
+            600,
+        );
+        for (label, expected_color, expected_underline, href) in [
+            ("Default", op_paint::Color::LINK, true, "default.html"),
+            (
+                "Styled",
+                op_paint::Color { r: 255, g: 0, b: 0 },
+                false,
+                "next.html",
+            ),
+            (
+                "PRE",
+                op_paint::Color { r: 0, g: 128, b: 0 },
+                false,
+                "next.html",
+            ),
+            (
+                "Nested",
+                op_paint::Color { r: 0, g: 0, b: 255 },
+                false,
+                "next.html",
+            ),
+        ] {
+            assert!(original.commands.iter().any(|command| matches!(command,
+                PaintCommand::Text { text, color, underline, links, .. }
+                    if text.contains(label) && *color == expected_color && *underline == expected_underline
+                        && links.iter().any(|link| link.href == href)
+            )), "missing computed link presentation for {label}");
+        }
+        engine.reflow(300, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn typed_structural_selectors_reach_pseudo_text_colors_and_retained_reflow() {
         let mut engine = Engine::new();
         let original = engine.set_html_page(

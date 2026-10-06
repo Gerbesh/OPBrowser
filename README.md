@@ -114,8 +114,8 @@ generated replaced-content geometry, relational selectors, nested decorated
 inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources
 and JavaScript
-are not implemented yet;
-link glyphs still use the native default blue. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),
+are not implemented yet. Links receive a blue/underlined computed UA default; author CSS
+controls their color and decoration through native painting. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),
 [CSS box model](wiki/CSS-Box-Model.md), [stylesheet loading](wiki/Stylesheet-Loading.md),
 [inline layout](wiki/Inline-Layout.md) and [image loading](wiki/Image-Loading.md).
 

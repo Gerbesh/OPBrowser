@@ -139,8 +139,9 @@ fragments before text painting. Generated `::before` text is inserted before rea
 paint path. Inline box identity includes the pseudo target so generated and host decorations
 stay distinct.
 Alpha text/box colors are currently composited over the white page background. The existing
-hyperlink glyph/underline path still paints native link blue, so author color on links
-remains an explicit temporary limitation.
+hyperlink glyph/underline path uses computed color and decoration. Anchors with href have
+blue/underlined UA defaults before author cascade; nested/generated text can override them.
+Anchors without href retain ordinary inherited presentation.
 
 External `<link rel="stylesheet">` resources now join embedded rules at their actual DOM
 positions before selector matching, so stylesheet source order crosses file boundaries.

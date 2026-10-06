@@ -871,3 +871,18 @@ This file is append-only project history.
 - Added an external CSS demo and updated README, plan, graph/slices and CSS/rendering wiki.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 194 workspace tests,
   startup smoke, the 224-command CSS demo smoke and optimized workspace release build.
+
+## 2026-10-06 - Computed hyperlink presentation
+
+- Moved blue/underline link defaults into computed UA styling for anchors with href, before
+  author cascade; anchors without href inherit ordinary text presentation.
+- GDI now paints linked glyphs and decorations with the same computed color/flags as other
+  text. LinkSpan and measured click regions retain their existing navigation behavior.
+- Added UA/author/inheritance, generated/nested link text and retained reflow regressions;
+  real GDI pixel tests verify red glyphs, optional underline and retained hit regions.
+- Updated mixed image/link layout expectations for distinct presentation runs, preserving
+  exact shared baselines, contiguous advances and linked failed-image alt text.
+- Added a visible author-styled link/pseudo prefix to the CSS demo and updated documentation.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 197 workspace tests,
+  startup/CSS demo smoke (225 paint commands), native styled-link navigation smoke and the
+  optimized workspace release build.

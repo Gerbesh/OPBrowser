@@ -44,20 +44,29 @@ fn shares_baseline_and_exact_horizontal_extents_between_text_image_and_unicode_l
         &mut Fixed,
     );
     assert_eq!(page.image_boxes.len(), 1);
-    assert_eq!(page.text_boxes.len(), 2);
+    assert_eq!(page.text_boxes.len(), 3);
     let image = &page.image_boxes[0];
-    let (before, after) = (&page.text_boxes[0], &page.text_boxes[1]);
+    let (before, linked, after) = (
+        &page.text_boxes[0],
+        &page.text_boxes[1],
+        &page.text_boxes[2],
+    );
     assert_eq!(before.text, "Before ");
     assert_eq!(image.x, before.x + before.width);
-    assert_eq!(after.x, image.x + image.width);
+    assert_eq!(linked.x, image.x + image.width);
+    assert_eq!(after.x, linked.x + linked.width);
     assert_eq!(image.y + image.height, before.y + 14);
     assert_eq!(after.y, before.y);
+    assert_eq!(linked.y, before.y);
     assert_eq!(image.href.as_deref(), Some("/next"));
     assert_eq!(
-        &after.text[after.links[0].start..after.links[0].end],
+        &linked.text[linked.links[0].start..linked.links[0].end],
         " Привет 😀"
     );
-    assert_eq!(after.links[0].href, "/next");
+    assert_eq!(linked.links[0].href, "/next");
+    assert!(linked.decoration.underline);
+    assert!(!after.decoration.underline);
+    assert!(after.links.is_empty());
     assert!(after.x + after.width <= 768);
 }
 
@@ -130,12 +139,21 @@ fn preserves_linked_alt_text_and_skips_zero_sized_images_inside_a_line() {
         &mut Fixed,
     );
     assert!(page.image_boxes.is_empty());
-    assert_eq!(page.text_boxes[0].text, "aРусскийz");
-    let text = &page.text_boxes[0];
+    assert_eq!(
+        page.text_boxes
+            .iter()
+            .map(|text| text.text.as_str())
+            .collect::<Vec<_>>(),
+        ["a", "Русский", "z"]
+    );
+    let text = &page.text_boxes[1];
     assert_eq!(
         &text.text[text.links[0].start..text.links[0].end],
         "Русский"
     );
+    assert!(text.decoration.underline);
+    assert_eq!(text.x, page.text_boxes[0].x + page.text_boxes[0].width);
+    assert_eq!(page.text_boxes[2].x, text.x + text.width);
 }
 
 #[test]

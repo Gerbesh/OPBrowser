@@ -129,6 +129,50 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
+    fn linked_text_uses_computed_color_and_optional_underline_in_gdi() {
+        for underline in [false, true] {
+            let target = Surface::new(null_mut(), 160, 48).unwrap();
+            unsafe {
+                std::ptr::write_bytes(target.bits, 255, 160 * 48 * 4);
+            }
+            let command = PaintCommand::Text {
+                x: 4,
+                y: 4,
+                text: "link".into(),
+                font_size: 18,
+                bold: false,
+                italic: false,
+                underline,
+                line_through: false,
+                letter_spacing: 2,
+                word_spacing: 0,
+                color: op_paint::Color { r: 255, g: 0, b: 0 },
+                links: vec![op_paint::LinkSpan {
+                    start: 0,
+                    end: 4,
+                    href: "next.html".into(),
+                }],
+            };
+            let mut regions = Vec::new();
+            crate::paint_command(target.dc, &command, &mut regions);
+            unsafe {
+                GdiFlush();
+            }
+            assert_eq!(regions.len(), 1);
+            assert_eq!(regions[0].href, "next.html");
+            assert!(regions[0].bounds.right > regions[0].bounds.left);
+            assert_eq!(
+                unsafe { GetPixel(target.dc, 6, 24) },
+                if underline { 0x0000ff } else { 0xffffff }
+            );
+            assert!((4..22).any(|y| (4..regions[0].bounds.right).any(|x| {
+                let pixel = unsafe { GetPixel(target.dc, x, y) };
+                pixel & 255 > 200 && (pixel >> 8) & 255 < 100 && (pixel >> 16) & 255 < 100
+            })));
+        }
+    }
+
+    #[test]
     fn paints_scaled_color_and_alpha_pixels_into_a_real_gdi_surface() {
         let target = Surface::new(null_mut(), 4, 4).unwrap();
         unsafe {

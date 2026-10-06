@@ -720,7 +720,7 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
                     cursor_x,
                     *y,
                     label,
-                    Color::LINK,
+                    *color,
                     *letter_spacing,
                     *word_spacing,
                 );
@@ -730,8 +730,8 @@ fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Ve
                     *y,
                     width,
                     *font_size,
-                    Color::LINK,
-                    (true, *line_through),
+                    *color,
+                    (*underline, *line_through),
                 );
                 link_regions.push(LinkRegion {
                     bounds: RECT {

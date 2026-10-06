@@ -110,6 +110,12 @@ impl CssColor {
         blue: 255,
         alpha: 255,
     };
+    pub const LINK: Self = Self {
+        red: 0,
+        green: 70,
+        blue: 190,
+        alpha: 255,
+    };
     pub const TRANSPARENT: Self = Self {
         red: 0,
         green: 0,
@@ -466,7 +472,7 @@ fn compute_subtree(
         let custom = compute_custom_properties(parent_custom.as_ref(), declarations);
         let resolved = substitute_declarations(declarations, &custom);
         let mut style = inherited_base(parent_style);
-        apply_ua_defaults(&mut style, element.tag_name.as_str());
+        apply_ua_defaults(&mut style, element);
         apply_author_declarations(&mut style, parent_style, &resolved);
         generated.suppressed |= style.display == Display::None;
         if !generated.suppressed {
@@ -1193,7 +1199,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
     }
 }
 
-fn apply_ua_defaults(style: &mut ComputedStyle, tag: &str) {
+fn apply_ua_defaults(style: &mut ComputedStyle, element: &ElementData) {
+    let tag = element.tag_name.as_str();
     style.display = if hidden_tag(tag) {
         Display::None
     } else if block_tag(tag) {
@@ -1203,6 +1210,14 @@ fn apply_ua_defaults(style: &mut ComputedStyle, tag: &str) {
     };
 
     match tag {
+        "a" if element
+            .attributes
+            .iter()
+            .any(|attribute| attribute.name.eq_ignore_ascii_case("href")) =>
+        {
+            style.color = CssColor::LINK;
+            style.text_decoration_line.underline = true;
+        }
         "h1" => {
             style.font_size_px = 34.0;
             style.font_weight = ComputedFontWeight::Bold;
@@ -2846,6 +2861,32 @@ mod tests {
         }
 
         find(document, document.root(), id).expect("expected id")
+    }
+
+    #[test]
+    fn link_presentation_is_a_ua_default_overridable_by_author_styles() {
+        let document = parse_document(
+            "<style>p { color:green } #styled { color:red; text-decoration:none }
+             #inherited { color:inherit; text-decoration:none }</style><p>
+             <a id='default' href='next.html'><span id='child'>Default</span></a>
+             <a id='styled' href='next.html'>Styled</a>
+             <a id='inherited' href='next.html'>Inherited</a><a id='plain'>Plain</a></p>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        for id in ["default", "child"] {
+            let style = computed.style_for(find_by_id(&document, id)).unwrap();
+            assert_eq!(style.color, CssColor::LINK);
+            assert!(style.text_decoration_line.underline);
+        }
+        for (id, color) in [
+            ("styled", CssColor::RED),
+            ("inherited", CssColor::GREEN),
+            ("plain", CssColor::GREEN),
+        ] {
+            let style = computed.style_for(find_by_id(&document, id)).unwrap();
+            assert_eq!(style.color, color);
+            assert!(!style.text_decoration_line.underline);
+        }
     }
 
     #[test]

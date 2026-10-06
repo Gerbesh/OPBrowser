@@ -274,10 +274,10 @@ Generated `::before`/`::after` quoted strings enter that same inline item stream
 computed style inherits host typography, may override normal supported properties, and box
 identity includes the pseudo target so host/before/after fragments cannot accidentally merge.
 RGBA text and box colors are currently composited
-over the white page background before native painting. Existing hyperlink glyphs/underlines
-still use the native default link blue;
-author link color is deferred until link styling is represented without breaking the
-current LinkSpan hit-testing model.
+over the white page background before native painting. Anchors with href receive blue and
+underline UA defaults before author cascade. Link glyphs/decorations consume computed text
+presentation in GDI, including nested/generated runs; LinkSpan still supplies measured,
+scroll-aware click regions independently of presentation.
 
 External stylesheet loads are bounded and nonfatal: up to 32 link nodes, 8 distinct
 requests, 1 MiB per stylesheet and 2 MiB decoded CSS per document. The current activation

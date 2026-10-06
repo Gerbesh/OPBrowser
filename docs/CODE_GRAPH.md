@@ -509,8 +509,9 @@ classDiagram
   block height minima/maxima and adjacent-sibling vertical margin collapse. Whitespace-only
   text between block siblings is suppressed before it can create anonymous line geometry.
 - op_paint owns platform-neutral paint commands/display lists, CSS color conversion and
-  BoxDecoration -> FillRect expansion for backgrounds/four border sides, plus the temporary
-  default link color. Alpha text/box colors currently composite over the white page.
+  BoxDecoration -> FillRect expansion for backgrounds/four border sides. Computed UA link
+  color/underline defaults and author overrides use ordinary text commands; LinkSpan carries
+  click identity without overriding presentation. Alpha colors composite over the white page.
   TEXT_FONT_FAMILY and Windows GDI_TEXT_LOCK are shared by engine metric adapter and
   native painter. Font realization, measurement/drawing and cleanup are synchronized
   per operation; networking and original layout do not hold this gate.

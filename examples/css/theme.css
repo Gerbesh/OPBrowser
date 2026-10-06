@@ -52,3 +52,5 @@ h1 { color: #6d28d9; font-size: 42px; }
 .typed-nth-demo > span:first-of-type { color:#b42318; }
 .typed-nth-demo > span:nth-of-type(2):nth-last-of-type(2) { color:#087a35; font-weight:bold; }
 .typed-nth-demo > span:last-of-type { color:#0369a1; }
+.styled-link-demo { color:#b42318; text-decoration:none; letter-spacing:1px; }
+.styled-link-demo::before { content:"[CSS link] "; color:#087a35; font-weight:bold; }
