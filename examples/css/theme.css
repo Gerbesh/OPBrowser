@@ -23,3 +23,5 @@ h1 { color: #6d28d9; font-size: 42px; }
 .nowrap-demo { width: 220px; margin: 12px auto; padding: 8px; white-space: nowrap; background-color: #eff6ff; border: 2px solid #2563eb; box-sizing: border-box; }
 .spacing-demo { width: 66%; margin: 12px auto; padding: 10px; text-transform: uppercase; letter-spacing: 3px; word-spacing: 8px; background-color: #f0fdf4; border: 2px solid #16a34a; box-sizing: border-box; }
 .capitalize-demo { width: 66%; margin: 12px auto; padding: 10px; text-transform: capitalize; letter-spacing: -1px; background-color: #fdf4ff; border: 2px solid #c026d3; box-sizing: border-box; }
+.inline-chip { padding: 4px 9px; background-color: #ede9fe; border: 2px solid #7c3aed; color: #4c1d95; font-weight: bold; }
+.inline-chip-alt { padding: 2px 6px; background-color: #ffedd5; border: 2px solid #ea580c; color: #9a3412; }

@@ -614,6 +614,87 @@ mod tests {
     }
 
     #[test]
+    fn inline_padding_background_and_borders_form_real_wrapping_fragments() {
+        let document = op_html::parse_document(
+            "<p>A <span style='padding:2px 5px;background-color:#eef2ff;border:2px solid #4338ca'>boxed <b>bold</b> content that wraps</span> Z</p>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            220,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let fragments: Vec<&BoxDecoration> = layout
+            .box_decorations
+            .iter()
+            .filter(|fragment| {
+                fragment.background
+                    == TextColor {
+                        red: 238,
+                        green: 242,
+                        blue: 255,
+                        alpha: 255,
+                    }
+            })
+            .collect();
+        assert!(
+            fragments.len() >= 2,
+            "the inline span should fragment across wrapped lines"
+        );
+        assert!(fragments.iter().all(|fragment| {
+            fragment.border_top.width == 2
+                && fragment.border_right.width == 2
+                && fragment.border_bottom.width == 2
+                && fragment.border_left.width == 2
+                && fragment.height >= 32
+        }));
+
+        let boxed = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("boxed"))
+            .unwrap();
+        let first_fragment = fragments
+            .iter()
+            .find(|fragment| boxed.x >= fragment.x && boxed.x < fragment.x + fragment.width)
+            .unwrap();
+        assert_eq!(boxed.x - first_fragment.x, 7);
+        assert!(
+            layout
+                .text_boxes
+                .iter()
+                .any(|text| text.text.contains("bold") && text.weight == FontWeight::Bold)
+        );
+    }
+
+    #[test]
+    fn adjacent_equal_inline_boxes_stay_separate() {
+        let document = op_html::parse_document(
+            "<p><span style='padding:1px 4px;background-color:#eef2ff;border:1px solid #4338ca'>one</span><span style='padding:1px 4px;background-color:#eef2ff;border:1px solid #4338ca'>two</span></p>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            500,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let fragments: Vec<&BoxDecoration> = layout
+            .box_decorations
+            .iter()
+            .filter(|fragment| fragment.background.red == 238 && fragment.border_left.width == 1)
+            .collect();
+        assert_eq!(fragments.len(), 2);
+        assert!(fragments[0].x + fragments[0].width <= fragments[1].x);
+    }
+
+    #[test]
     fn wraps_link_spans_without_losing_unicode_or_nested_labels() {
         let mut document = Document::new();
         let p = document.create_element("p");

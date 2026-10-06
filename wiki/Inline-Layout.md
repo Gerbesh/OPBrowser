@@ -46,6 +46,10 @@ emits this sequence instead of painting all text before all images.
   GDI font realization for both measurement and paint. Underline/line-through are carried
   through the display list and painted over measured segment widths. `text-align` offsets
   each completed line. letter/word spacing participates in wrapping and native advances.
+- Non-replaced inline elements now produce real background/padding/solid-border fragments.
+  Their horizontal extras participate in fitting and alignment; vertical extras enlarge the
+  safe line box, and wrapped fragments become independent BoxDecoration records. An ordinary
+  nested `<b>/<em>/<a>` without its own box continues the outer decorated fragment.
 
 Image source policy, dimensions, viewport fitting and pixel budgets are described
 in [Image Loading](Image-Loading.md).
@@ -65,8 +69,8 @@ verify variable glyph widths, Unicode, font-cache reuse, exact GDI-based positio
 and Text/Image/Text display-list order. Native smokes verify raster painting and
 a click through to the linked destination.
 
-This is still an initial left-to-right subset. Mixed computed inline size/weight/color
-is supported, but inline padding/background/border fragments are not. Block-level box-model
+This is still an initial left-to-right subset. Mixed computed inline typography and initial
+inline padding/background/solid-border fragments are supported. Block-level box-model
 support, including adjacent sibling margin collapse, is described in
 [CSS Block Box Model](CSS-Box-Model.md). Parent/child margin collapse, font families,
 decoration color/style/thickness, `tab-size`, advanced shaping/font fallback, bidi and
@@ -74,8 +78,11 @@ grapheme-aware/full Unicode line breaking remain future work. `text-transform: c
 currently uses whitespace word starts rather than full locale/context-sensitive CSS rules;
 word-spacing targets processed ASCII spaces, and spaced native painting advances per Unicode
 scalar while layout width stays anchored to whole-run GDI measurement plus CSS spacing.
-Inline replaced elements do not yet fully honor nowrap semantics and there are no inline
-box fragments/backgrounds/borders yet. Floats/tables/flex/grid also remain future work. Hyperlink glyph color is
+Inline replaced elements do not yet fully honor nowrap semantics or receive these box
+fragments. Only one decorated inline ancestor is represented at a time; a nested inline with
+its own box replaces the outer decoration for that nested run. Fragment edges currently clone
+on each wrapped line rather than implementing `box-decoration-break: slice`. Floats/tables/
+flex/grid also remain future work. Hyperlink glyph color is
 still the native default blue. These tests do not claim complete CSS conformance.
 
 [Page Reflow](Page-Reflow.md) now rebuilds these lines on window resize using the

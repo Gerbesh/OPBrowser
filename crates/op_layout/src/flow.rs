@@ -1,4 +1,4 @@
-use super::inline::{InlineChar, InlineStyle, Item, Lines};
+use super::inline::{InlineBoxStyle, InlineChar, InlineStyle, Item, Lines};
 use super::*;
 use op_css::{
     BorderEdges, BorderStyle, BoxSizing, ComputedFontWeight, ComputedLineHeight, ComputedStyle,
@@ -151,6 +151,7 @@ impl<'a> Context<'a, '_> {
                 LayoutItem::Text(index) => LayoutItem::Text(index + self.text.len()),
                 LayoutItem::Image(index) => LayoutItem::Image(index + self.images_out.len()),
             }));
+        self.decorations.extend(lines.decorations);
         self.text.extend(lines.text_boxes);
         self.images_out.extend(lines.image_boxes);
     }
@@ -291,7 +292,12 @@ impl<'a> Context<'a, '_> {
                 if display == Display::None {
                     return;
                 }
-                let current = self.element_style(id, tag, inherited);
+                let mut current = self.element_style(id, tag, inherited);
+                if display == Display::Inline {
+                    current.inline.box_style =
+                        resolve_inline_box_style(id, current, containing_width)
+                            .or(inherited.inline.box_style);
+                }
                 let href = if tag == "a" {
                     attribute(element, "href")
                 } else {
@@ -416,6 +422,51 @@ impl<'a> Context<'a, '_> {
             .map(computed_style)
             .unwrap_or_else(|| fallback_style(tag, inherited))
     }
+}
+
+fn resolve_inline_box_style(
+    node: NodeId,
+    style: Style,
+    containing_width: i32,
+) -> Option<InlineBoxStyle> {
+    let padding_top = resolve_length(style.padding.top, containing_width).max(0);
+    let padding_right = resolve_length(style.padding.right, containing_width).max(0);
+    let padding_bottom = resolve_length(style.padding.bottom, containing_width).max(0);
+    let padding_left = resolve_length(style.padding.left, containing_width).max(0);
+    let border = resolve_border_edges(style.border);
+    let visible = style.background.alpha > 0
+        || padding_top > 0
+        || padding_right > 0
+        || padding_bottom > 0
+        || padding_left > 0
+        || border.top.width > 0
+        || border.right.width > 0
+        || border.bottom.width > 0
+        || border.left.width > 0;
+    visible.then_some(InlineBoxStyle {
+        node,
+        padding_top,
+        padding_right,
+        padding_bottom,
+        padding_left,
+        background: style.background,
+        border_top: DecorationBorder {
+            width: border.top.width,
+            color: border.top.color,
+        },
+        border_right: DecorationBorder {
+            width: border.right.width,
+            color: border.right.color,
+        },
+        border_bottom: DecorationBorder {
+            width: border.bottom.width,
+            color: border.bottom.color,
+        },
+        border_left: DecorationBorder {
+            width: border.left.width,
+            color: border.left.color,
+        },
+    })
 }
 
 fn resolve_block_horizontal(style: Style, containing_width: i32) -> UsedBlockHorizontal {
@@ -616,6 +667,7 @@ fn computed_style(style: ComputedStyle) -> Style {
             word_spacing: style.word_spacing_px.round().clamp(-4096.0, 4096.0) as i32,
             text_transform: style.text_transform,
             color: style.color.into(),
+            box_style: None,
         },
         text_align: style.text_align,
         margin: style.margin,
@@ -695,6 +747,7 @@ fn default_style() -> Style {
                 blue: 0,
                 alpha: 255,
             },
+            box_style: None,
         },
         text_align: TextAlign::Start,
         margin: MarginEdges::ZERO,

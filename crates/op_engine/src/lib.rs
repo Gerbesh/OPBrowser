@@ -775,6 +775,61 @@ mod tests {
     }
 
     #[test]
+    fn inline_box_fragments_reach_fill_rect_paint_commands() {
+        let display_list = Engine::new().render_html(
+            "<p>before <span style='padding:3px 6px;background-color:#eef2ff;border:2px solid #4338ca'>boxed <b>inline</b></span> after</p>",
+            800,
+            600,
+        );
+
+        let background = display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::FillRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                } if *color
+                    == op_paint::Color {
+                        r: 238,
+                        g: 242,
+                        b: 255,
+                    } =>
+                {
+                    Some((*x, *y, *width, *height))
+                }
+                _ => None,
+            });
+        let background = background.expect("inline background must reach the display list");
+        assert!(background.2 > 20 && background.3 >= 34);
+        assert!(
+            display_list
+                .commands
+                .iter()
+                .filter(|command| matches!(
+                    command,
+                    PaintCommand::FillRect { color, .. }
+                        if *color == op_paint::Color { r: 67, g: 56, b: 202 }
+                ))
+                .count()
+                >= 4
+        );
+        let boxed_x = display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Text { x, text, .. } if text.contains("boxed") => Some(*x),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(boxed_x - background.0, 8);
+        assert!(contains_text(&display_list, "inline"));
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,

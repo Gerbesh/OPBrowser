@@ -90,14 +90,15 @@ sibling combinators, :root/:first-child/:last-child/:only-child/:empty/:link, ca
 relative/absolute font-size lengths, numeric/normal/bold font weight, inherited text-align,
 real line-height geometry, italic/oblique font style, underline/line-through decoration,
 white-space normal/nowrap/pre/pre-wrap/pre-line, letter/word spacing and text-transform
-none/uppercase/lowercase/capitalize. The block box model includes
-margin/padding shorthands and side longhands,
+none/uppercase/lowercase/capitalize. Inline non-replaced elements also form real
+background/padding/solid-border fragments that participate in wrapping and alignment. The
+block box model includes margin/padding shorthands and side longhands,
 auto/negative/percentage margins, background color, independent solid/none border sides,
 width/height with min/max, `box-sizing`, percentages, em/rem and CSS absolute length units.
 Adjacent sibling vertical margins collapse. External CSS is merged with embedded rules in
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
-percentage-height propagation, functional pseudos/pseudo-elements, inline box decorations,
-advanced Color 4 spaces/functions, `@import`, general media queries, CSS `url(...)` resources
+percentage-height propagation, functional pseudos/pseudo-elements, nested decorated inline
+box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions, `@import`, general media queries, CSS `url(...)` resources
 and JavaScript
 are not implemented yet;
 link glyphs still use the native default blue. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),

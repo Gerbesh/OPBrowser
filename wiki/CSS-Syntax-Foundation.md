@@ -106,6 +106,9 @@ Italic styling participates in both measurement and GDI font creation.
 Text color reaches op_paint and the Win32 painter through TextBox/paint commands. Block
 background, margin/padding, sizing/box-sizing and independent solid border sides also flow
 through computed style into layout BoxDecoration geometry and platform-neutral FillRects.
+Non-replaced inline elements now resolve background-color/padding/solid borders into an
+InlineBoxStyle, contribute those extras to line fitting, and emit per-line BoxDecoration
+fragments before text painting.
 Alpha text/box colors are currently composited over the white page background. The existing
 hyperlink glyph/underline path still paints native link blue, so author color on links
 remains an explicit temporary limitation.
@@ -122,7 +125,8 @@ The built-in start page also describes the supported subset in a normal release 
 
 The expanded block-level box model is documented in [CSS Block Box Model](CSS-Box-Model.md).
 Initial text alignment, line-height, font-style, underline/line-through, white-space,
-letter/word spacing and text-transform now reach layout/native paint. Next S3 work moves
-into inline box fragments/decorations and richer inline background/border geometry.
+letter/word spacing, text-transform and inline background/padding/solid-border fragments now
+reach layout/native paint. Next S3 work moves into functional pseudo-classes, background
+shorthand, then deeper nested/replaced inline decoration handling.
 Functional pseudos, pseudo-elements, advanced color spaces, at-rules, media queries and full
 CSS conformance remain later.

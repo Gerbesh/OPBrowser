@@ -1,8 +1,40 @@
 use super::{
-    FontStyle, FontWeight, ImageBox, LayoutItem, LinkSpan, TextBox, TextColor, TextDecoration,
-    TextMeasurer, TextMetrics,
+    BoxDecoration, DecorationBorder, FontStyle, FontWeight, ImageBox, LayoutItem, LinkSpan,
+    TextBox, TextColor, TextDecoration, TextMeasurer, TextMetrics,
 };
 use op_css::{TextAlign, TextTransform, WhiteSpace};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct InlineBoxStyle {
+    pub node: op_dom::NodeId,
+    pub padding_top: i32,
+    pub padding_right: i32,
+    pub padding_bottom: i32,
+    pub padding_left: i32,
+    pub background: TextColor,
+    pub border_top: DecorationBorder,
+    pub border_right: DecorationBorder,
+    pub border_bottom: DecorationBorder,
+    pub border_left: DecorationBorder,
+}
+
+impl InlineBoxStyle {
+    fn left_extra(self) -> i32 {
+        self.border_left.width.saturating_add(self.padding_left)
+    }
+
+    fn right_extra(self) -> i32 {
+        self.padding_right.saturating_add(self.border_right.width)
+    }
+
+    fn top_extra(self) -> i32 {
+        self.border_top.width.saturating_add(self.padding_top)
+    }
+
+    fn bottom_extra(self) -> i32 {
+        self.padding_bottom.saturating_add(self.border_bottom.width)
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct InlineStyle {
@@ -16,6 +48,7 @@ pub(super) struct InlineStyle {
     pub word_spacing: i32,
     pub text_transform: TextTransform,
     pub color: TextColor,
+    pub box_style: Option<InlineBoxStyle>,
 }
 
 #[derive(Clone, Copy)]
@@ -64,6 +97,7 @@ pub(super) struct Lines<'a, 'm> {
     line_width: i32,
     boxes: Vec<BoxItem<'a>>,
     pending_space: Option<InlineChar<'a>>,
+    pub decorations: Vec<BoxDecoration>,
     pub text_boxes: Vec<TextBox>,
     pub image_boxes: Vec<ImageBox>,
     pub order: Vec<LayoutItem>,
@@ -88,6 +122,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             line_width: 0,
             boxes: Vec::new(),
             pending_space: None,
+            decorations: Vec::new(),
             text_boxes: Vec::new(),
             image_boxes: Vec::new(),
             order: Vec::new(),
@@ -152,15 +187,14 @@ impl<'a, 'm> Lines<'a, 'm> {
         self.y
     }
 
-    fn text_width(&mut self, chars: &[InlineChar<'a>]) -> i32 {
+    fn content_width(&mut self, chars: &[InlineChar<'a>]) -> i32 {
         let mut width = 0i32;
         let mut start = 0;
         while start < chars.len() {
-            let href = chars[start].href;
             let style = chars[start].style;
             let end = chars[start..]
                 .iter()
-                .position(|ch| ch.href != href || ch.style != style)
+                .position(|ch| ch.style != style)
                 .map_or(chars.len(), |n| start + n);
             let text = transformed_text(&chars[start..end], style.text_transform);
             let measured = self
@@ -174,6 +208,29 @@ impl<'a, 'm> Lines<'a, 'm> {
                 style.word_spacing,
             ));
             start = end;
+        }
+        width
+    }
+
+    fn text_width(&mut self, chars: &[InlineChar<'a>]) -> i32 {
+        if chars.is_empty() {
+            return 0;
+        }
+        let mut width = self.content_width(chars);
+        let mut active: Option<InlineBoxStyle> = None;
+        for ch in chars {
+            if ch.style.box_style != active {
+                if let Some(previous) = active {
+                    width = width.saturating_add(previous.right_extra());
+                }
+                if let Some(next) = ch.style.box_style {
+                    width = width.saturating_add(next.left_extra());
+                }
+                active = ch.style.box_style;
+            }
+        }
+        if let Some(active) = active {
+            width = width.saturating_add(active.right_extra());
         }
         width
     }
@@ -324,7 +381,7 @@ impl<'a, 'm> Lines<'a, 'm> {
     }
 
     fn prepare_text(&mut self, chars: &[InlineChar<'a>], style: InlineStyle) -> PreparedText {
-        let width = self.text_width(chars);
+        let width = self.content_width(chars);
         let mut text = String::new();
         let mut links: Vec<LinkSpan> = Vec::new();
         let mut capitalize_next = true;
@@ -346,7 +403,11 @@ impl<'a, 'm> Lines<'a, 'm> {
                 }
             }
         }
-        let (metrics, ascent, descent) = self.metrics_for(style);
+        let (metrics, mut ascent, mut descent) = self.metrics_for(style);
+        if let Some(box_style) = style.box_style {
+            ascent = ascent.saturating_add(box_style.top_extra());
+            descent = descent.saturating_add(box_style.bottom_extra());
+        }
         PreparedText {
             text,
             links,
@@ -414,7 +475,34 @@ impl<'a, 'm> Lines<'a, 'm> {
             TextAlign::Center => remaining / 2,
         };
         let mut x = self.x.saturating_add(offset);
+        let mut active_fragment: Option<(InlineBoxStyle, i32)> = None;
         for item in prepared {
+            let next_box = match &item {
+                PreparedBox::Text(text) => text.style.box_style,
+                PreparedBox::Image(_) => None,
+            };
+            if active_fragment.map(|(style, _)| style) != next_box {
+                if let Some((style, start_x)) = active_fragment.take() {
+                    x = x.saturating_add(style.right_extra());
+                    self.decorations.push(BoxDecoration {
+                        x: start_x,
+                        y: self.y,
+                        width: x.saturating_sub(start_x).max(0),
+                        height: ascent.saturating_add(descent),
+                        background: style.background,
+                        border_top: style.border_top,
+                        border_right: style.border_right,
+                        border_bottom: style.border_bottom,
+                        border_left: style.border_left,
+                    });
+                }
+                if let Some(style) = next_box {
+                    let start_x = x;
+                    x = x.saturating_add(style.left_extra());
+                    active_fragment = Some((style, start_x));
+                }
+            }
+
             match item {
                 PreparedBox::Image(mut image) => {
                     image.x = x;
@@ -443,6 +531,20 @@ impl<'a, 'm> Lines<'a, 'm> {
                     x += text.width;
                 }
             }
+        }
+        if let Some((style, start_x)) = active_fragment.take() {
+            x = x.saturating_add(style.right_extra());
+            self.decorations.push(BoxDecoration {
+                x: start_x,
+                y: self.y,
+                width: x.saturating_sub(start_x).max(0),
+                height: ascent.saturating_add(descent),
+                background: style.background,
+                border_top: style.border_top,
+                border_right: style.border_right,
+                border_bottom: style.border_bottom,
+                border_left: style.border_left,
+            });
         }
 
         self.y += ascent + descent;

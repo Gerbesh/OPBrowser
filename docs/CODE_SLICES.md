@@ -248,7 +248,9 @@ block geometry path as author margins. Inline text runs may differ in size, weig
 line-height, decoration, spacing, transform and color while sharing a baseline. text-align
 offsets each completed line inside its actual content box. white-space controls collapse,
 preserved newlines/spaces and soft wrapping. text-transform runs before measurement so
-Unicode expansions and link byte ranges stay aligned with the transformed display text. RGBA text and box colors are currently composited
+Unicode expansions and link byte ranges stay aligned with the transformed display text.
+Non-replaced inline elements with background-color/padding/solid borders now contribute
+horizontal fragment width during wrapping/alignment and emit per-line BoxDecoration geometry. RGBA text and box colors are currently composited
 over the white page background before native painting. Existing hyperlink glyphs/underlines
 still use the native default link blue;
 author link color is deferred until link styling is represented without breaking the
@@ -276,8 +278,11 @@ for all four sides.
 Adjacent sibling block margins collapse using CSS positive/negative margin arithmetic.
 Whitespace-only inline text between block siblings no longer creates a line or breaks that
 collapse. Parent/child and empty-block margin collapsing are deliberately not implemented
-in this slice. Author box geometry still applies to ordinary non-replaced block boxes;
-inline box fragments and replaced-element CSS decorations remain later work.
+in this slice. Author box geometry applies to ordinary non-replaced block boxes and to initial non-replaced
+inline fragments. Inline fragments clone their left/right edge treatment on each wrapped line
+in this initial implementation, and vertical padding/borders expand safe line geometry to
+avoid paint overlap. Replaced-element inline decorations and simultaneous nested decorated
+inline stacks remain later work.
 
 Selector matching now also supports attribute existence/equality/token/dash/prefix/suffix/
 substring operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators
@@ -294,8 +299,8 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> inline box fragments/decorations
-  -> richer inline backgrounds/borders
+  -> functional pseudo-classes + background shorthand
+  -> nested/replaced inline decoration stacks
   -> additional computed properties
 ```
 

@@ -101,8 +101,10 @@ letter/word spacing and the expanded [block box model](CSS-Box-Model.md). Transf
 measured before line placement; op_paint carries italic/decoration/spacing metadata and Win32
 uses matching text advances while drawing measured decoration/link segments. It resolves used widths/min/max/auto margins,
 box-sizing, padding, independent border edges, fixed height constraints and sibling margin
-collapse, then emits BoxDecoration records. op_paint expands those into side-specific
-FillRect commands before text/images; Win32 remains only the native drawing backend.
+collapse, then emits BoxDecoration records. The inline formatter now emits the same
+BoxDecoration shape for padded/background/bordered text fragments, so block and inline boxes
+share one platform-neutral paint path. op_paint expands them into side-specific FillRect
+commands before text/images; Win32 remains only the native drawing backend.
 
 ## Paint smoke verification
 

@@ -588,3 +588,29 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 138 workspace tests,
   native Windows tests, normal startup smoke, the 99-command CSS demo smoke and release build.
 - Rebuilt `target/release/op_browser.exe`; this build is 596,992 bytes.
+
+## 2026-10-06 - Inline box fragments
+
+- Added initial inline fragment geometry for non-replaced inline elements with computed
+  `background-color`, padding and solid per-side borders. Horizontal padding/borders now
+  participate in fitting, wrapping and text-align instead of painting over neighboring text.
+- Wrapped decorated spans emit independent per-line BoxDecoration records through the same
+  platform-neutral block decoration path, so op_paint/Win32 did not need a second bespoke
+  inline painting backend.
+- Vertical padding/borders enlarge the safe line box in this initial implementation to avoid
+  fragment paint overlapping adjacent lines; text glyph baselines remain aligned normally.
+- Inline box identity includes the source NodeId, so adjacent elements with identical CSS stay
+  separate. Undecorated nested inline text such as b/em/a keeps the outer active decoration.
+- Added deterministic layout regressions for wrapping fragments, exact left border+padding
+  geometry, nested bold continuity and distinct adjacent equal-style spans, plus an Engine
+  regression proving background/border FillRects and text offsets reach the display list.
+- Updated the built-in start page and CSS demo with padded bordered inline chips; the CSS demo
+  smoke now emits 119 paint commands.
+- Updated project plan, README, code graph/slices and CSS/rendering/inline-layout wiki pages.
+- Deliberate limits remain: only one decorated inline ancestor is represented at once, a nested
+  decorated inline replaces the outer decoration for that nested run, inline images do not yet
+  inherit fragment decoration, and wrapped fragments currently clone horizontal edges rather
+  than implementing `box-decoration-break: slice` semantics.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 141 workspace tests,
+  normal startup smoke, the 119-command CSS demo smoke and optimized release build.
+- Rebuilt `target/release/op_browser.exe`; this build is 607,232 bytes.

@@ -243,6 +243,12 @@ classDiagram
         height / min_height / max_height
         box_sizing
     }
+    class InlineBoxStyle {
+        node_id
+        padding_edges
+        background
+        border_edges
+    }
     class BoxDecoration {
         bounds
         background
@@ -324,8 +330,10 @@ classDiagram
     PreparedDocument --> Document : DOM snapshot
     PreparedDocument --> RasterImage : shared Arc image resources
     Document --> LayoutTree : flow grouping / inline lines
-    ComputedStyleMap --> LayoutTree : display/text style + line-height/alignment/white-space/decorations/spacing/transform + block box geometry
-    LayoutTree --> BoxDecoration : block backgrounds / solid borders
+    ComputedStyleMap --> LayoutTree : display/text style + line-height/alignment/white-space/decorations/spacing/transform + block/inline box geometry
+    ComputedStyle --> InlineBoxStyle : resolved inline padding/background/solid borders
+    InlineBoxStyle --> BoxDecoration : per-line inline fragments
+    LayoutTree --> BoxDecoration : block + inline backgrounds / solid borders
     BoxDecoration --> DisplayList : background + four border FillRects
     LayoutTree --> DisplayList : styled text / image paint commands
     Engine --> TextMeasurer : worker-local GDI adapter

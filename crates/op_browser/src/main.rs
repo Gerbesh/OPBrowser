@@ -14,6 +14,7 @@ h1 { color: #6d28d9; font-size: 42px; }
 .type-demo { width: 70%; margin: 12px auto; padding: 10px; text-align: center; line-height: 1.7; font-weight: 650; background-color: #f8fafc; border: 2px solid #0369a1; }
 .inline-css-demo { width: 70%; margin: 12px auto; padding: 10px; font-style: italic; text-decoration: underline line-through; white-space: pre-wrap; background-color: #fff7ed; border: 2px solid #ea580c; }
 .spacing-demo { width: 70%; margin: 12px auto; padding: 10px; text-transform: uppercase; letter-spacing: 3px; word-spacing: 8px; background-color: #f0fdf4; border: 2px solid #16a34a; }
+.inline-box-chip { padding: 3px 8px; background-color: #ede9fe; border: 2px solid #7c3aed; color: #4c1d95; font-weight: bold; }
 .hidden-proof { display: none; }
 a { font-weight: bold; }
 </style></head><body>
@@ -29,6 +30,7 @@ a { font-weight: bold; }
 <div class="inline-css-demo">font-style:italic + underline + line-through
 white-space:pre-wrap preserves this newline and  double spaces.</div>
 <div class="spacing-demo">text-transform uppercase + letter-spacing + word-spacing now change layout and native paint.</div>
+<p>Inline fragments: normal text <span class="inline-box-chip">padded <b>bold</b> span with background + border that can wrap across lines</span> and normal text again.</p>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>

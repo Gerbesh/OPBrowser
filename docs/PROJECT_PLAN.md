@@ -142,8 +142,11 @@ Status: IN PROGRESS.
 - DONE inherited `letter-spacing`/`word-spacing` lengths plus `text-transform`
   none/uppercase/lowercase/capitalize; transformed Unicode text is measured before layout,
   spacing affects wrapping/alignment/link bounds, and Win32 paints matching visual advances.
-- NEXT add inline box fragments/decorations and richer inline background/border geometry.
-- LATER functional pseudo-classes (:is/:where/:not/:nth-child), pseudo-elements and fuller
+- DONE initial inline box fragments for non-replaced inline elements: background-color,
+  padding and solid per-side borders participate in width/wrapping/alignment, expand safe
+  line geometry, survive ordinary nested text styling and emit per-line BoxDecoration paint.
+- NEXT functional pseudo-classes (:is/:where/:not/:nth-child) plus background shorthand.
+- LATER pseudo-elements, nested decorated-inline stacks/replaced inline decorations and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.
 - LATER normal flow block layout.
