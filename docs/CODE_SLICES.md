@@ -212,8 +212,9 @@ HTML
        descendant/child/adjacent/general-sibling combinators
        root/child/empty/link pseudo-classes
        is/where/not selector-list functions + nth-child(An+B)
+       terminal ::before / ::after pseudo-element targets
   -> right-to-left selector matching against op_dom
-  -> per-NodeId StyleMap<MatchedDeclaration>
+  -> StyleMap host buckets + (NodeId, PseudoElement) author buckets
   -> cascade: !important -> inline source -> specificity -> source order
   -> inheritance + initial/inherit/unset
   -> ComputedStyleMap { display, color, font-size, font-weight/font-style,
@@ -221,7 +222,9 @@ HTML
                         letter-spacing, word-spacing, text-transform,
                         background-color, margin/padding edges, border edges,
                         width/height min/max, box-sizing }
+     + ComputedPseudoStyle { inherited host style + pseudo declarations + generated content }
   -> retained in PreparedDocument
+  -> op_layout injects ::before before DOM children and ::after after DOM children
   -> op_layout display/block/inline decisions + mixed inline style runs
        + block margin/border/padding content geometry
        + BoxDecoration background/border rectangles
@@ -252,7 +255,11 @@ offsets each completed line inside its actual content box. white-space controls 
 preserved newlines/spaces and soft wrapping. text-transform runs before measurement so
 Unicode expansions and link byte ranges stay aligned with the transformed display text.
 Non-replaced inline elements with background-color/padding/solid borders now contribute
-horizontal fragment width during wrapping/alignment and emit per-line BoxDecoration geometry. RGBA text and box colors are currently composited
+horizontal fragment width during wrapping/alignment and emit per-line BoxDecoration geometry.
+Generated `::before`/`::after` quoted strings enter that same inline item stream. Their
+computed style inherits host typography, may override normal supported properties, and box
+identity includes the pseudo target so host/before/after fragments cannot accidentally merge.
+RGBA text and box colors are currently composited
 over the white page background before native painting. Existing hyperlink glyphs/underlines
 still use the native default link blue;
 author link color is deferred until link styling is represented without breaking the
@@ -291,8 +298,11 @@ operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinator
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus
 `:is()`/`:where()`/`:not()` nested selector lists and `:nth-child(An+B)`. `:is()`/`:not()` use
 the maximum argument specificity, `:where()` contributes zero, and `:nth-child()` contributes
-one class-level component. Functional selector arguments are currently parsed strictly rather
-than with forgiving-list recovery; `:nth-child(... of selector)` and pseudo-elements remain later.
+one class-level component. Terminal `::before`/`::after` add one type-level specificity
+component and are collected into independent pseudo buckets. Pseudo-elements inside
+`:is()`/`:where()`/`:not()` are explicitly rejected in this initial strict subset. Functional
+selector arguments are currently parsed strictly rather than with forgiving-list recovery;
+`:nth-child(... of selector)` remains later.
 
 Functional colors feed the same computed CssColor path for text, backgrounds, border-color
 longhands/lists and border shorthands. A color-only `background` shorthand (including `none`,
@@ -305,13 +315,18 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> ::before / ::after + generated text content foundation
+  -> CSS custom properties + var() substitution
+  -> generated content functions / full pseudo block geometry
   -> nested/replaced inline decoration stacks
   -> additional computed properties
 ```
 
-Broader property/value coverage, `@import`, media queries and CSS `url(...)` resources
-remain later work.
+Generated content currently accepts one or more quoted strings; `none`/`normal` suppress the
+pseudo box. `attr()`/counters/quotes/images are later. `display:block` generated content is an
+initial line-boundary approximation rather than a full virtual block box, empty-string pseudo
+boxes do not yet materialize decoration without glyph items, and replaced elements do not yet
+receive generated pseudos. Broader property/value coverage, `@import`, media queries and CSS
+`url(...)` resources remain later work.
 
 ## S4 - Scripted page
 

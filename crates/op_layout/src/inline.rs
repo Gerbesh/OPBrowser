@@ -2,11 +2,12 @@ use super::{
     BoxDecoration, DecorationBorder, FontStyle, FontWeight, ImageBox, LayoutItem, LinkSpan,
     TextBox, TextColor, TextDecoration, TextMeasurer, TextMetrics,
 };
-use op_css::{TextAlign, TextTransform, WhiteSpace};
+use op_css::{PseudoElement, TextAlign, TextTransform, WhiteSpace};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct InlineBoxStyle {
     pub node: op_dom::NodeId,
+    pub pseudo: Option<PseudoElement>,
     pub padding_top: i32,
     pub padding_right: i32,
     pub padding_bottom: i32,

@@ -86,20 +86,24 @@ baseline alignment, wrapping, `<br>` and HTML whitespace. Initial CSS supports e
 `<style>`, `style=""`, and bounded `<link rel="stylesheet">` from local/file/data/HTTP(S),
 type/class/ID/universal selectors, attribute selectors, descendant/child/adjacent/general
 sibling combinators, :root/:first-child/:last-child/:only-child/:empty/:link plus
-`:is()`/`:where()`/`:not()`/`:nth-child()`, cascade/inheritance,
+`:is()`/`:where()`/`:not()`/`:nth-child()` and terminal `::before`/`::after`, cascade/inheritance,
 `display` inline/block/none, #hex/basic named colors, legacy/modern rgb()/rgba()/hsl()/hsla(),
 relative/absolute font-size lengths, numeric/normal/bold font weight, inherited text-align,
 real line-height geometry, italic/oblique font style, underline/line-through decoration,
 white-space normal/nowrap/pre/pre-wrap/pre-line, letter/word spacing and text-transform
 none/uppercase/lowercase/capitalize. Inline non-replaced elements also form real
 background/padding/solid-border fragments that participate in wrapping and alignment.
-`background` also supports the initial color-only shorthand subset. The block box model includes margin/padding shorthands and side longhands,
+`background` also supports the initial color-only shorthand subset. `::before`/`::after`
+generate quoted-string `content` with inherited text styling and their own inline
+background/padding/solid-border fragments. The block box model includes margin/padding shorthands and side longhands,
 auto/negative/percentage margins, background color, independent solid/none border sides,
 width/height with min/max, `box-sizing`, percentages, em/rem and CSS absolute length units.
 Adjacent sibling vertical margins collapse. External CSS is merged with embedded rules in
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
-percentage-height propagation, pseudo-elements, forgiving-selector-list recovery/full
-`:nth-child(... of ...)`, nested decorated inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions, `@import`, general media queries, CSS `url(...)` resources
+percentage-height propagation, `content:attr()/counter()/url()` and full generated block-box
+geometry, forgiving-selector-list recovery/full `:nth-child(... of ...)`, nested decorated
+inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions,
+`@import`, general media queries, CSS `url(...)` resources
 and JavaScript
 are not implemented yet;
 link glyphs still use the native default blue. See [CSS foundation](wiki/CSS-Syntax-Foundation.md),

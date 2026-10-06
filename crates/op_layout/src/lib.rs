@@ -672,6 +672,69 @@ mod tests {
     }
 
     #[test]
+    fn before_and_after_generated_text_join_inline_layout_with_own_styles() {
+        let document = op_html::parse_document(
+            "<style>
+               #note { color:#123456; font-size:20px }
+               #note::before { content:'['; color:#b42318; background:#eef2ff; padding:2px 4px; border:1px solid #4338ca }
+               #note::after { content:']'; color:#087a35; font-weight:bold }
+             </style><p id='note'>Body</p>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            500,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let before = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "[")
+            .unwrap();
+        let body = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "Body")
+            .unwrap();
+        let after = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "]")
+            .unwrap();
+        assert!(before.x < body.x && body.x < after.x);
+        assert_eq!(
+            before.color,
+            TextColor {
+                red: 180,
+                green: 35,
+                blue: 24,
+                alpha: 255,
+            }
+        );
+        assert_eq!(
+            body.color,
+            TextColor {
+                red: 0x12,
+                green: 0x34,
+                blue: 0x56,
+                alpha: 255,
+            }
+        );
+        assert_eq!(after.weight, FontWeight::Bold);
+        let fragment = layout
+            .box_decorations
+            .iter()
+            .find(|fragment| fragment.background.red == 238 && fragment.border_left.width == 1)
+            .unwrap();
+        assert_eq!(before.x - fragment.x, 5);
+        assert!(fragment.x + fragment.width <= body.x);
+    }
+
+    #[test]
     fn adjacent_equal_inline_boxes_stay_separate() {
         let document = op_html::parse_document(
             "<p><span style='padding:1px 4px;background-color:#eef2ff;border:1px solid #4338ca'>one</span><span style='padding:1px 4px;background-color:#eef2ff;border:1px solid #4338ca'>two</span></p>",

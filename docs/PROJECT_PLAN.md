@@ -148,8 +148,12 @@ Status: IN PROGRESS.
 - DONE functional pseudo-classes `:is()`/`:where()`/`:not()` with nested selector lists and
   correct specificity rules, plus `:nth-child(An+B)` over element siblings and a color-only
   `background` shorthand sharing cascade priority with `background-color`.
-- NEXT pseudo-elements (`::before`/`::after`) and generated text content foundation.
-- LATER forgiving functional-selector recovery, `:nth-child(... of ...)`, nested decorated-inline
+- DONE terminal `::before`/`::after` pseudo-elements with type specificity, separate author
+  cascade buckets and computed pseudo styles; quoted-string `content` enters the normal inline
+  formatter with inherited typography plus its own color/background/padding/solid borders.
+- NEXT CSS custom properties and initial `var()` substitution.
+- LATER generated `content:attr()/counter()/url()` and full pseudo block-box geometry,
+  forgiving functional-selector recovery, `:nth-child(... of ...)`, nested decorated-inline
   stacks/replaced inline decorations and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.

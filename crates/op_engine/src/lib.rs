@@ -892,6 +892,46 @@ mod tests {
     }
 
     #[test]
+    fn generated_before_after_content_reaches_native_display_list() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               #note { color:#123456; font-size:20px }
+               #note::before { content:'[GEN] '; color:#b42318; background:#eef2ff; padding:2px 4px; border:1px solid #4338ca }
+               #note::after { content:' ✓'; color:#087a35; font-weight:bold }
+             </style><p id='note'>Body</p>",
+            800,
+            600,
+        );
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, .. } if text.contains("[GEN]")
+        )));
+        assert!(contains_text(&display_list, "Body"));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, .. } if text.contains('✓')
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, color, .. }
+                if text.contains("[GEN]")
+                    && *color == op_paint::Color { r: 180, g: 35, b: 24 }
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, bold: true, color, .. }
+                if text.contains('✓')
+                    && *color == op_paint::Color { r: 8, g: 122, b: 53 }
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::FillRect { color, .. }
+                if *color == op_paint::Color { r: 238, g: 242, b: 255 }
+        )));
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,

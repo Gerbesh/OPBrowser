@@ -183,6 +183,7 @@ classDiagram
     class Selector {
         compounds
         combinators
+        pseudo_element
         specificity
     }
     class AttributeSelector {
@@ -198,6 +199,10 @@ classDiagram
         is / where / not -> Selector[]
         nth-child -> NthExpression(a,b)
     }
+    class PseudoElement {
+        Before
+        After
+    }
     class Declaration {
         name
         value
@@ -210,7 +215,9 @@ classDiagram
     }
     class StyleMap {
         NodeId -> MatchedDeclaration[]
+        (NodeId, PseudoElement) -> MatchedDeclaration[]
         +declarations_for(node)
+        +declarations_for_pseudo(node,pseudo)
     }
     class MatchedDeclaration {
         declaration
@@ -224,7 +231,13 @@ classDiagram
     }
     class ComputedStyleMap {
         NodeId -> ComputedStyle
+        (NodeId, PseudoElement) -> ComputedPseudoStyle
         +style_for(node)
+        +pseudo_style_for(node,pseudo)
+    }
+    class ComputedPseudoStyle {
+        style
+        content
     }
     class ComputedStyle {
         display
@@ -249,6 +262,7 @@ classDiagram
     }
     class InlineBoxStyle {
         node_id
+        pseudo_identity
         padding_edges
         background
         border_edges
@@ -322,13 +336,16 @@ classDiagram
     StyleRule --> Declaration
     Selector --> Specificity
     Selector --> FunctionalSelector : recursive functional pseudo arguments
+    Selector --> PseudoElement : terminal generated target
     Document --> StyleMap : DOM-order linked/embedded collection / selector matching
     StyleMap --> MatchedDeclaration
     MatchedDeclaration --> Declaration
     MatchedDeclaration --> Specificity
     StyleCollection --> StyleMap
-    StyleMap --> ComputedStyleMap : cascade / inheritance / value parsing
+    StyleMap --> ComputedStyleMap : host + pseudo cascade / inheritance / value parsing
     ComputedStyleMap --> ComputedStyle
+    ComputedStyleMap --> ComputedPseudoStyle
+    ComputedPseudoStyle --> PseudoElement : keyed generated target
     Engine --> StyleCollection : retained author style candidates/errors
     Engine --> ComputedStyleMap : retained resolved initial CSS properties
     Engine --> PreparedDocument : one retained successful page
@@ -337,6 +354,8 @@ classDiagram
     Document --> LayoutTree : flow grouping / inline lines
     ComputedStyleMap --> LayoutTree : display/text style + line-height/alignment/white-space/decorations/spacing/transform + block/inline box geometry
     ComputedStyle --> InlineBoxStyle : resolved inline padding/background/solid borders
+    ComputedPseudoStyle --> LayoutTree : generated before/after inline items
+    ComputedPseudoStyle --> InlineBoxStyle : pseudo decoration identity + box style
     InlineBoxStyle --> BoxDecoration : per-line inline fragments
     LayoutTree --> BoxDecoration : block + inline backgrounds / solid borders
     BoxDecoration --> DisplayList : background + four border FillRects

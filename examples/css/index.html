@@ -30,6 +30,7 @@ and preserves  double   spaces while still wrapping long content when needed.</d
 <div class="capitalize-demo">capitalize transforms the first character of each whitespace-separated word while negative letter spacing tightens the run.</div>
 <p>Inline box fragments now work inside normal text: <span class="inline-chip">this padded violet span contains <b>nested bold text</b> and is deliberately long enough to wrap into multiple decorated line fragments</span> then normal flow continues. <span class="inline-chip-alt">A second adjacent-style chip stays its own box.</span></p>
 <p class="functional-pseudos"><span class="hot">first matches :is + :not + :nth-child(odd)</span> <span class="hot skip">second is excluded by :not</span> <span id="functional-third" class="warm">third matches and :where adds zero-specificity bold</span> <span class="cold">fourth misses :is</span></p>
+<p class="generated-demo">This sentence is real DOM text; both labels around it come from CSS generated content.</p>
 <p>Normal text, <span class="accent">bold red inline span</span>, then normal text again.</p>
 <p>Before block span. <span class="block">This span is display:block and 24px.</span> After block span.</p>
 <p><span class="inline">This span stays inline and has its own color.</span></p>

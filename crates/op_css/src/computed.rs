@@ -1,4 +1,4 @@
-use crate::{MatchedDeclaration, Specificity, StyleMap, StyleSource, TokenKind};
+use crate::{MatchedDeclaration, PseudoElement, Specificity, StyleMap, StyleSource, TokenKind};
 use op_dom::{Document, NodeId};
 use std::collections::HashMap;
 
@@ -241,6 +241,12 @@ pub struct ComputedStyle {
     pub box_sizing: BoxSizing,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComputedPseudoStyle {
+    pub style: ComputedStyle,
+    pub content: String,
+}
+
 impl ComputedStyle {
     pub fn initial() -> Self {
         Self {
@@ -274,6 +280,7 @@ impl ComputedStyle {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ComputedStyleMap {
     entries: HashMap<NodeId, ComputedStyle>,
+    pseudo_entries: HashMap<(NodeId, PseudoElement), ComputedPseudoStyle>,
 }
 
 impl ComputedStyleMap {
@@ -281,12 +288,20 @@ impl ComputedStyleMap {
         self.entries.get(&node)
     }
 
+    pub fn pseudo_style_for(
+        &self,
+        node: NodeId,
+        pseudo: PseudoElement,
+    ) -> Option<&ComputedPseudoStyle> {
+        self.pseudo_entries.get(&(node, pseudo))
+    }
+
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.entries.len().saturating_add(self.pseudo_entries.len())
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.entries.is_empty() && self.pseudo_entries.is_empty()
     }
 }
 
@@ -314,6 +329,7 @@ fn compute_subtree(
             author_styles.declarations_for(node),
         );
         computed.entries.insert(node, style);
+        compute_pseudo_styles(node, style, author_styles, computed);
         style
     });
 
@@ -321,6 +337,61 @@ fn compute_subtree(
     for child in document.children(node) {
         compute_subtree(document, *child, inherited_parent, author_styles, computed);
     }
+}
+
+fn compute_pseudo_styles(
+    node: NodeId,
+    host_style: ComputedStyle,
+    author_styles: &StyleMap,
+    computed: &mut ComputedStyleMap,
+) {
+    for pseudo in [PseudoElement::Before, PseudoElement::After] {
+        let declarations = author_styles.declarations_for_pseudo(node, pseudo);
+        let Some(content) = winning_generated_content(declarations) else {
+            continue;
+        };
+        let Some(content) = content else {
+            continue;
+        };
+        let mut style = inherited_base(Some(host_style));
+        apply_author_declarations(&mut style, Some(host_style), declarations);
+        computed
+            .pseudo_entries
+            .insert((node, pseudo), ComputedPseudoStyle { style, content });
+    }
+}
+
+fn winning_generated_content(declarations: &[MatchedDeclaration]) -> Option<Option<String>> {
+    declarations
+        .iter()
+        .filter(|matched| matched.declaration.name == "content")
+        .filter_map(|matched| {
+            parse_generated_content(&matched.declaration.value).map(|value| (matched, value))
+        })
+        .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
+        .map(|(_, value)| value)
+}
+
+fn parse_generated_content(tokens: &[TokenKind]) -> Option<Option<String>> {
+    if let Some(ident) = single_ident(tokens)
+        && matches!(
+            ident.to_ascii_lowercase().as_str(),
+            "none" | "normal" | "inherit" | "initial" | "unset"
+        )
+    {
+        return Some(None);
+    }
+
+    let mut content = String::new();
+    let mut saw_string = false;
+    for token in significant_tokens(tokens) {
+        let TokenKind::String(value) = token else {
+            return None;
+        };
+        content.push_str(value);
+        saw_string = true;
+    }
+    saw_string.then_some(Some(content))
 }
 
 fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
@@ -2374,6 +2445,50 @@ mod tests {
                 .unwrap()
                 .background_color,
             CssColor::TRANSPARENT
+        );
+    }
+
+    #[test]
+    fn computes_generated_pseudo_content_with_host_inheritance_and_own_box_style() {
+        let document = parse_document(
+            "<style>
+               #note { color:#123456; font-size:22px }
+               #note::before { content:'[' 'NEW' '] '; color:#b42318; background:#eef2ff; padding:2px 4px; border:1px solid #4338ca }
+               #note::after { content:' hidden'; content:none }
+             </style><p id='note'>Body</p>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let note = find_by_id(&document, "note");
+        let before = computed
+            .pseudo_style_for(note, PseudoElement::Before)
+            .expect("before should be generated");
+        assert_eq!(before.content, "[NEW] ");
+        assert_eq!(before.style.font_size_px, 22.0);
+        assert_eq!(
+            before.style.color,
+            CssColor {
+                red: 180,
+                green: 35,
+                blue: 24,
+                alpha: 255,
+            }
+        );
+        assert_eq!(
+            before.style.background_color,
+            CssColor {
+                red: 238,
+                green: 242,
+                blue: 255,
+                alpha: 255,
+            }
+        );
+        assert_eq!(before.style.padding.left, LengthPercentage::Px(4.0));
+        assert_eq!(before.style.border.left.width_px, 1.0);
+        assert!(
+            computed
+                .pseudo_style_for(note, PseudoElement::After)
+                .is_none()
         );
     }
 

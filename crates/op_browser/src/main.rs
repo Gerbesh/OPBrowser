@@ -17,6 +17,8 @@ h1 { color: #6d28d9; font-size: 42px; }
 .inline-box-chip { padding: 3px 8px; background-color: #ede9fe; border: 2px solid #7c3aed; color: #4c1d95; font-weight: bold; }
 .functional-demo > span:is(.hot,.warm):not(.skip):nth-child(odd) { padding: 2px 6px; background: #eef2ff; border: 2px solid #4338ca; color: #b42318; }
 .functional-demo > span:where(#functional-third) { font-weight: bold; }
+.generated-demo::before { content: "[CSS before] "; padding: 2px 6px; background: #eef2ff; border: 1px solid #4338ca; color: #b42318; font-weight: bold; }
+.generated-demo::after { content: " ✓ after"; color: #087a35; font-weight: bold; }
 .hidden-proof { display: none; }
 a { font-weight: bold; }
 </style></head><body>
@@ -34,6 +36,7 @@ white-space:pre-wrap preserves this newline and  double spaces.</div>
 <div class="spacing-demo">text-transform uppercase + letter-spacing + word-spacing now change layout and native paint.</div>
 <p>Inline fragments: normal text <span class="inline-box-chip">padded <b>bold</b> span with background + border that can wrap across lines</span> and normal text again.</p>
 <p class="functional-demo"><span class="hot">:is + odd</span> <span class="hot skip">:not blocks this</span> <span id="functional-third" class="warm">third + :where bold</span></p>
+<p class="generated-demo">Real DOM text between generated pseudo-elements.</p>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>

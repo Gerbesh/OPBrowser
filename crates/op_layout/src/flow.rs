@@ -3,7 +3,7 @@ use super::*;
 use op_css::{
     BorderEdges, BorderStyle, BoxSizing, ComputedFontWeight, ComputedLineHeight, ComputedStyle,
     ComputedStyleMap, Display, FontStyle as CssFontStyle, LengthPercentage, MarginEdges,
-    MarginValue, PaddingEdges, TextAlign, TextTransform, WhiteSpace,
+    MarginValue, PaddingEdges, PseudoElement, TextAlign, TextTransform, WhiteSpace,
 };
 
 pub(super) fn layout(
@@ -219,9 +219,25 @@ impl<'a> Context<'a, '_> {
         let content_top = self.y;
 
         let mut items = Vec::new();
+        self.collect_generated(
+            id,
+            PseudoElement::Before,
+            href,
+            style,
+            (content_x, content_width),
+            &mut items,
+        );
         for child in self.document.children(id) {
             self.collect(*child, href, style, content_x, content_width, &mut items);
         }
+        self.collect_generated(
+            id,
+            PseudoElement::After,
+            href,
+            style,
+            (content_x, content_width),
+            &mut items,
+        );
         self.emit(&mut items, style, content_x, content_width);
         // Parent/child margin collapse is intentionally deferred; consume the final
         // child margin before this block's padding/border boundary.
@@ -295,7 +311,7 @@ impl<'a> Context<'a, '_> {
                 let mut current = self.element_style(id, tag, inherited);
                 if display == Display::Inline {
                     current.inline.box_style =
-                        resolve_inline_box_style(id, current, containing_width)
+                        resolve_inline_box_style(id, None, current, containing_width)
                             .or(inherited.inline.box_style);
                 }
                 let href = if tag == "a" {
@@ -332,9 +348,25 @@ impl<'a> Context<'a, '_> {
                     self.emit(items, inherited, containing_x, containing_width);
                     self.block(id, href, current, containing_x, containing_width);
                 } else {
+                    self.collect_generated(
+                        id,
+                        PseudoElement::Before,
+                        href,
+                        current,
+                        (containing_x, containing_width),
+                        items,
+                    );
                     for child in &node.children {
                         self.collect(*child, href, current, containing_x, containing_width, items);
                     }
+                    self.collect_generated(
+                        id,
+                        PseudoElement::After,
+                        href,
+                        current,
+                        (containing_x, containing_width),
+                        items,
+                    );
                 }
             }
             NodeKind::Document => {
@@ -349,6 +381,50 @@ impl<'a> Context<'a, '_> {
                     );
                 }
             }
+        }
+    }
+
+    fn collect_generated(
+        &mut self,
+        id: NodeId,
+        pseudo: PseudoElement,
+        href: Option<&'a str>,
+        host_style: Style,
+        containing: (i32, i32),
+        items: &mut Vec<Item<'a>>,
+    ) {
+        let (containing_x, containing_width) = containing;
+        let Some(generated) = self.computed_styles.pseudo_style_for(id, pseudo) else {
+            return;
+        };
+        if generated.style.display == Display::None {
+            return;
+        }
+
+        let mut style = computed_style(generated.style);
+        style.inline.box_style =
+            resolve_inline_box_style(id, Some(pseudo), style, containing_width)
+                .or(host_style.inline.box_style);
+        let generated_items = || {
+            generated
+                .content
+                .chars()
+                .map(|ch| {
+                    Item::Char(InlineChar {
+                        ch,
+                        href,
+                        style: style.inline,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+
+        if generated.style.display == Display::Block {
+            self.emit(items, host_style, containing_x, containing_width);
+            let mut block_items = generated_items();
+            self.emit(&mut block_items, style, containing_x, containing_width);
+        } else {
+            items.extend(generated_items());
         }
     }
 
@@ -426,6 +502,7 @@ impl<'a> Context<'a, '_> {
 
 fn resolve_inline_box_style(
     node: NodeId,
+    pseudo: Option<PseudoElement>,
     style: Style,
     containing_width: i32,
 ) -> Option<InlineBoxStyle> {
@@ -445,6 +522,7 @@ fn resolve_inline_box_style(
         || border.left.width > 0;
     visible.then_some(InlineBoxStyle {
         node,
+        pseudo,
         padding_top,
         padding_right,
         padding_bottom,

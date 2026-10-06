@@ -50,7 +50,8 @@ The engine now collects CSS from embedded style elements and from style attribut
 The supported selectors are matched right-to-left against op_dom. Each matching element
 gets StyleMap candidates rather than a prematurely resolved winner. Functional
 `:is()`/`:where()`/`:not()` recursively reuse the same Selector matcher, while
-`:nth-child(An+B)` indexes element siblings only.
+`:nth-child(An+B)` indexes element siblings only. Terminal `::before`/`::after` are represented
+as a selector target rather than fake DOM nodes and contribute type-level specificity.
 
 ```text
 DOM
@@ -58,7 +59,8 @@ DOM
   -> parse author CSS
   -> match supported selectors
   -> MatchedDeclaration { declaration, specificity, source_order, source }
-  -> StyleMap keyed by NodeId
+  -> StyleMap host bucket keyed by NodeId
+     + pseudo buckets keyed by (NodeId, Before|After)
   -> retained StyleCollection in PreparedDocument
 ```
 
@@ -93,8 +95,12 @@ block/hidden tag rules and heading font sizes/weights, avoiding an unrelated vis
 regression when layout begins consuming computed styles. The CSS hash tokenizer also
 accepts digit-leading hash values required by hexadecimal colors.
 
-PreparedDocument retains both the author StyleCollection and ComputedStyleMap. Resize
-reflow therefore does not reparse, rematch or recascade CSS.
+Pseudo buckets cascade independently from their host. A generated pseudo starts from the
+host's inherited text properties, applies its own declarations, and becomes a
+`ComputedPseudoStyle { style, content }` only when a supported `content` value generates text.
+The current `content` subset concatenates quoted strings; `none` and `normal` suppress
+creation. PreparedDocument retains both the author StyleCollection and ComputedStyleMap.
+Resize reflow therefore does not reparse, rematch or recascade CSS.
 
 ## Rendering integration
 
@@ -111,7 +117,10 @@ background, margin/padding, sizing/box-sizing and independent solid border sides
 through computed style into layout BoxDecoration geometry and platform-neutral FillRects.
 Non-replaced inline elements now resolve background-color/padding/solid borders into an
 InlineBoxStyle, contribute those extras to line fitting, and emit per-line BoxDecoration
-fragments before text painting.
+fragments before text painting. Generated `::before` text is inserted before real children and
+`::after` after them; both use the same line formatter, text transforms/spacing, and fragment
+paint path. Inline box identity includes the pseudo target so generated and host decorations
+stay distinct.
 Alpha text/box colors are currently composited over the white page background. The existing
 hyperlink glyph/underline path still paints native link blue, so author color on links
 remains an explicit temporary limitation.
@@ -130,7 +139,9 @@ The expanded block-level box model is documented in [CSS Block Box Model](CSS-Bo
 Initial text alignment, line-height, font-style, underline/line-through, white-space,
 letter/word spacing, text-transform and inline background/padding/solid-border fragments now
 reach layout/native paint. Functional `:is()`/`:where()`/`:not()` and `:nth-child(An+B)` now
-participate in selector matching with their initial specificity rules. Next S3 work moves into
-`::before`/`::after` and generated text content, then deeper nested/replaced inline decoration
-handling. Forgiving selector-list recovery, nth-child `of`, advanced color spaces, at-rules,
-media queries and full CSS conformance remain later.
+participate in selector matching with their initial specificity rules. Terminal
+`::before`/`::after` and quoted-string generated `content` now reach native layout/paint too.
+Next S3 work moves into CSS custom properties and `var()` substitution. Generated
+`attr()`/counters/quotes/images, full pseudo block-box geometry, forgiving selector-list
+recovery, nth-child `of`, advanced color spaces, at-rules, media queries and full CSS
+conformance remain later.

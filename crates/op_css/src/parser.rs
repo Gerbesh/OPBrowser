@@ -1,7 +1,7 @@
 use crate::{
     AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, CssError, Declaration,
-    NthExpression, ParseResult, PseudoClass, Selector, SimpleSelector, Specificity, StyleRule,
-    Stylesheet, Token, TokenKind, tokenize,
+    NthExpression, ParseResult, PseudoClass, PseudoElement, Selector, SimpleSelector, Specificity,
+    StyleRule, Stylesheet, Token, TokenKind, tokenize,
 };
 
 pub fn parse_stylesheet(input: &str) -> ParseResult<Stylesheet> {
@@ -266,13 +266,28 @@ fn parse_selector_list(tokens: &[Token]) -> Result<Vec<Selector>, CssError> {
 fn parse_selector(tokens: &[Token]) -> Result<Selector, CssError> {
     let mut compounds = Vec::new();
     let mut combinators = Vec::new();
+    let mut pseudo_element = None;
     let mut specificity = Specificity::default();
     let mut index = 0;
 
     loop {
-        let (compound, next) = parse_compound(tokens, index, &mut specificity)?;
+        let (compound, compound_pseudo, next) = parse_compound(tokens, index, &mut specificity)?;
         compounds.push(compound);
         index = next;
+
+        if let Some(pseudo) = compound_pseudo {
+            pseudo_element = Some(pseudo);
+            while index < tokens.len() && matches!(tokens[index].kind, TokenKind::Whitespace) {
+                index += 1;
+            }
+            if index != tokens.len() {
+                return Err(CssError {
+                    offset: tokens[index].start,
+                    message: "pseudo-element must terminate the selector".into(),
+                });
+            }
+            break;
+        }
 
         let whitespace_start = index;
         while index < tokens.len() && matches!(tokens[index].kind, TokenKind::Whitespace) {
@@ -315,6 +330,7 @@ fn parse_selector(tokens: &[Token]) -> Result<Selector, CssError> {
     Ok(Selector {
         compounds,
         combinators,
+        pseudo_element,
         specificity,
     })
 }
@@ -323,9 +339,10 @@ fn parse_compound(
     tokens: &[Token],
     start: usize,
     specificity: &mut Specificity,
-) -> Result<(CompoundSelector, usize), CssError> {
+) -> Result<(CompoundSelector, Option<PseudoElement>, usize), CssError> {
     let mut index = start;
     let mut simple = Vec::new();
+    let mut pseudo_element = None;
 
     if let Some(token) = tokens.get(index) {
         match &token.kind {
@@ -375,6 +392,18 @@ fn parse_compound(
                 simple.push(selector);
                 index = next;
             }
+            TokenKind::Colon
+                if matches!(
+                    tokens.get(index + 1).map(|token| &token.kind),
+                    Some(TokenKind::Colon)
+                ) =>
+            {
+                let (pseudo, next) = parse_pseudo_element(tokens, index)?;
+                specificity.types = specificity.types.saturating_add(1);
+                pseudo_element = Some(pseudo);
+                index = next;
+                break;
+            }
             TokenKind::Colon => {
                 let (selector, next) = parse_pseudo_class(tokens, index)?;
                 specificity.add_simple(&selector);
@@ -386,13 +415,47 @@ fn parse_compound(
     }
 
     if simple.is_empty() {
-        let token = tokens.get(start).expect("selector group is non-empty");
-        return Err(CssError {
-            offset: token.start,
-            message: "unsupported or malformed selector syntax".into(),
-        });
+        if pseudo_element.is_some() {
+            simple.push(SimpleSelector::Universal);
+        } else {
+            let token = tokens.get(start).expect("selector group is non-empty");
+            return Err(CssError {
+                offset: token.start,
+                message: "unsupported or malformed selector syntax".into(),
+            });
+        }
     }
-    Ok((CompoundSelector { simple }, index))
+    Ok((CompoundSelector { simple }, pseudo_element, index))
+}
+
+fn parse_pseudo_element(
+    tokens: &[Token],
+    start: usize,
+) -> Result<(PseudoElement, usize), CssError> {
+    let Some(name_token) = tokens.get(start + 2) else {
+        return Err(selector_error(
+            tokens,
+            start,
+            "pseudo-element is missing a name",
+        ));
+    };
+    let TokenKind::Ident(name) = &name_token.kind else {
+        return Err(CssError {
+            offset: name_token.start,
+            message: "pseudo-element requires an identifier".into(),
+        });
+    };
+    let pseudo = match name.to_ascii_lowercase().as_str() {
+        "before" => PseudoElement::Before,
+        "after" => PseudoElement::After,
+        _ => {
+            return Err(CssError {
+                offset: name_token.start,
+                message: format!("unsupported pseudo-element ::{name}"),
+            });
+        }
+    };
+    Ok((pseudo, start + 3))
 }
 
 fn parse_attribute_selector(
@@ -606,9 +669,18 @@ fn parse_functional_pseudo(
     }
 
     let selector = match name.to_ascii_lowercase().as_str() {
-        "is" => SimpleSelector::Is(parse_selector_list(arguments)?),
-        "where" => SimpleSelector::Where(parse_selector_list(arguments)?),
-        "not" => SimpleSelector::Not(parse_selector_list(arguments)?),
+        "is" => SimpleSelector::Is(parse_function_selector_list(
+            arguments,
+            tokens[function_index].start,
+        )?),
+        "where" => SimpleSelector::Where(parse_function_selector_list(
+            arguments,
+            tokens[function_index].start,
+        )?),
+        "not" => SimpleSelector::Not(parse_function_selector_list(
+            arguments,
+            tokens[function_index].start,
+        )?),
         "nth-child" => {
             SimpleSelector::NthChild(parse_nth_expression(arguments).ok_or_else(|| CssError {
                 offset: tokens[function_index].start,
@@ -623,6 +695,24 @@ fn parse_functional_pseudo(
         }
     };
     Ok((selector, close + 1))
+}
+
+fn parse_function_selector_list(
+    tokens: &[Token],
+    offset: usize,
+) -> Result<Vec<Selector>, CssError> {
+    let selectors = parse_selector_list(tokens)?;
+    if selectors
+        .iter()
+        .any(|selector| selector.pseudo_element.is_some())
+    {
+        return Err(CssError {
+            offset,
+            message: "pseudo-elements are not supported inside functional pseudo-class arguments"
+                .into(),
+        });
+    }
+    Ok(selectors)
 }
 
 fn find_matching_close_paren(tokens: &[Token], function_index: usize) -> Option<usize> {
@@ -897,6 +987,41 @@ mod tests {
             selector.compounds[1].simple[3],
             SimpleSelector::NthChild(NthExpression { a: 2, b: 1 })
         );
+    }
+
+    #[test]
+    fn parses_before_after_as_terminal_pseudo_elements_with_type_specificity() {
+        let parsed = parse_stylesheet(".note::before, ::after { content:\"!\"; color:red }");
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let selectors = &parsed.value.rules[0].selectors;
+        assert_eq!(selectors[0].pseudo_element, Some(PseudoElement::Before));
+        assert_eq!(selectors[1].pseudo_element, Some(PseudoElement::After));
+        assert_eq!(
+            selectors[0].specificity,
+            Specificity {
+                ids: 0,
+                classes: 1,
+                types: 1,
+            }
+        );
+        assert_eq!(
+            selectors[1].specificity,
+            Specificity {
+                ids: 0,
+                classes: 0,
+                types: 1,
+            }
+        );
+
+        let invalid = parse_stylesheet("div::before span { color:red }");
+        assert!(invalid.value.rules.is_empty());
+        assert_eq!(invalid.errors.len(), 1);
+        assert!(invalid.errors[0].message.contains("terminate"));
+
+        let nested = parse_stylesheet("div:is(::before,.note) { color:red }");
+        assert!(nested.value.rules.is_empty());
+        assert_eq!(nested.errors.len(), 1);
+        assert!(nested.errors[0].message.contains("inside functional"));
     }
 
     #[test]

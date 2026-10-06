@@ -91,9 +91,10 @@ The [CSS foundation](CSS-Syntax-Foundation.md) now participates in page preparat
 After HTML parsing, [stylesheet loading](Stylesheet-Loading.md) fetches eligible external
 CSS on the navigation worker. Loaded link CSS and embedded style rules are collected in
 DOM source order, inline declarations join the author cascade, functional selectors
-`:is/:where/:not/:nth-child` resolve through the same matcher/specificity path, and inheritance
-produces a per-node ComputedStyleMap for display, text properties and the initial block box-model
-properties. PreparedDocument retains author/computed style data beside DOM/images; resize
+`:is/:where/:not/:nth-child` resolve through the same matcher/specificity path. Terminal
+`::before`/`::after` declarations are collected in separate `(NodeId, PseudoElement)` buckets;
+the computed map retains generated pseudo styles alongside host styles. Inheritance produces
+per-node styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 
 op_layout consumes that map for display:none/block/inline, mixed inline text runs,
@@ -102,9 +103,10 @@ letter/word spacing and the expanded [block box model](CSS-Box-Model.md). Transf
 measured before line placement; op_paint carries italic/decoration/spacing metadata and Win32
 uses matching text advances while drawing measured decoration/link segments. It resolves used widths/min/max/auto margins,
 box-sizing, padding, independent border edges, fixed height constraints and sibling margin
-collapse, then emits BoxDecoration records. The inline formatter now emits the same
-BoxDecoration shape for padded/background/bordered text fragments, so block and inline boxes
-share one platform-neutral paint path. op_paint expands them into side-specific FillRect
+collapse, then emits BoxDecoration records. The inline formatter injects generated before/after
+quoted strings around real DOM children and emits the same BoxDecoration shape for
+padded/background/bordered host or pseudo text fragments, so block and inline boxes share one
+platform-neutral paint path. op_paint expands them into side-specific FillRect
 commands before text/images; Win32 remains only the native drawing backend.
 
 ## Paint smoke verification

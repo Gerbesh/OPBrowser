@@ -641,3 +641,38 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 145 workspace tests,
   normal startup smoke, the 133-command CSS demo smoke and optimized release build.
 - Rebuilt `target/release/op_browser.exe`; this build is 615,936 bytes.
+
+## 2026-10-06 - Generated ::before / ::after content
+
+- Added terminal `::before` and `::after` pseudo-element selector targets. They contribute
+  type-level specificity and must terminate the selector instead of masquerading as DOM nodes.
+- Split author style storage into host NodeId buckets and `(NodeId, PseudoElement)` buckets, so
+  mixed rules such as `.note, .note::before` cascade independently for the real element and
+  generated pseudo target.
+- Added `ComputedPseudoStyle { style, content }`. Generated pseudos inherit host text properties,
+  then apply their own author declarations through the normal importance/specificity/source-order
+  cascade.
+- Added the first `content` value subset: one or more quoted strings concatenate into generated
+  text; `none`/`normal` suppress generation. Invalid unsupported values do not hide a lower valid
+  declaration.
+- Routed generated text through the existing inline formatter before/after real DOM children.
+  It therefore shares wrapping, line-height, transforms, spacing, colors and native text paint.
+- Pseudo inline decoration uses `(NodeId, PseudoElement)` identity, so its background/padding/
+  solid border stays separate from an identically styled host fragment while reusing the normal
+  BoxDecoration -> FillRect paint path.
+- Generated text inside a link inherits its href and the existing hit-test path. Initial
+  `display:block` support forces a line boundary; full virtual block-box geometry is deferred.
+- Tightened functional pseudo parsing so pseudo-elements inside `:is()`/`:where()`/`:not()` are
+  explicitly rejected rather than silently matched as the host element in the current strict
+  selector-list subset.
+- Added parser, author-bucket, computed-style, layout-geometry and Engine display-list regressions,
+  including exact generated ordering (`before < DOM text < after`) and pseudo padding/border paint.
+- Updated the built-in start page and CSS demo with visible generated-content examples; the CSS
+  demo smoke now emits 141 paint commands.
+- Updated README, project plan, code graph/slices and CSS/rendering/inline-layout wiki pages.
+- Deliberate limits remain: `content:attr()`/counters/quotes/images are not implemented, empty
+  generated strings do not yet materialize a decorated box, replaced elements do not receive
+  generated pseudos, and generated `display:block` is not yet a full virtual block formatting box.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 150 workspace tests,
+  normal startup smoke, the 141-command CSS demo smoke and optimized release build.
+- Rebuilt `target/release/op_browser.exe`; this build is 626,688 bytes.

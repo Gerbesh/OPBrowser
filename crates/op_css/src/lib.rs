@@ -10,9 +10,9 @@ mod tokenizer;
 
 pub use computed::{
     BorderEdges, BorderStyle, BoxSizing, ComputedBorder, ComputedFontWeight, ComputedLineHeight,
-    ComputedStyle, ComputedStyleMap, CssColor, Display, FontStyle, LengthPercentage, MarginEdges,
-    MarginValue, PaddingEdges, TextAlign, TextDecorationLine, TextTransform, WhiteSpace,
-    compute_styles,
+    ComputedPseudoStyle, ComputedStyle, ComputedStyleMap, CssColor, Display, FontStyle,
+    LengthPercentage, MarginEdges, MarginValue, PaddingEdges, TextAlign, TextDecorationLine,
+    TextTransform, WhiteSpace, compute_styles,
 };
 pub use parser::{parse_declaration_list, parse_stylesheet};
 pub use style::{
@@ -55,6 +55,7 @@ pub struct Declaration {
 pub struct Selector {
     pub compounds: Vec<CompoundSelector>,
     pub combinators: Vec<Combinator>,
+    pub pseudo_element: Option<PseudoElement>,
     pub specificity: Specificity,
 }
 
@@ -80,6 +81,12 @@ pub enum AttributeMatcher {
     Prefix,
     Suffix,
     Substring,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PseudoElement {
+    Before,
+    After,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

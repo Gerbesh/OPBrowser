@@ -1,7 +1,7 @@
 use crate::{
     AttributeMatcher, AttributeSelector, Combinator, CssError, Declaration, NthExpression,
-    PseudoClass, Selector, SimpleSelector, Specificity, StyleRule, parse_declaration_list,
-    parse_stylesheet,
+    PseudoClass, PseudoElement, Selector, SimpleSelector, Specificity, StyleRule,
+    parse_declaration_list, parse_stylesheet,
 };
 use op_dom::{Document, NodeId, NodeKind};
 use std::collections::HashMap;
@@ -23,6 +23,7 @@ pub struct MatchedDeclaration {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StyleMap {
     entries: HashMap<NodeId, Vec<MatchedDeclaration>>,
+    pseudo_entries: HashMap<(NodeId, PseudoElement), Vec<MatchedDeclaration>>,
 }
 
 impl StyleMap {
@@ -33,12 +34,23 @@ impl StyleMap {
             .unwrap_or_default()
     }
 
+    pub fn declarations_for_pseudo(
+        &self,
+        node: NodeId,
+        pseudo: PseudoElement,
+    ) -> &[MatchedDeclaration] {
+        self.pseudo_entries
+            .get(&(node, pseudo))
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.entries.len().saturating_add(self.pseudo_entries.len())
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.entries.is_empty() && self.pseudo_entries.is_empty()
     }
 }
 
@@ -178,32 +190,44 @@ fn apply_author_styles(
 ) {
     if let Some(element) = document.element(node) {
         for collected in rules {
-            let specificity = collected
-                .rule
-                .selectors
-                .iter()
-                .filter(|selector| selector_matches(document, node, selector))
-                .map(|selector| selector.specificity)
-                .max();
-
-            if let Some(specificity) = specificity {
-                for (declaration, source_order) in collected
+            for pseudo in [
+                None,
+                Some(PseudoElement::Before),
+                Some(PseudoElement::After),
+            ] {
+                let specificity = collected
                     .rule
-                    .declarations
+                    .selectors
                     .iter()
-                    .cloned()
-                    .zip(collected.declaration_orders.iter().copied())
-                {
-                    styles
-                        .entries
-                        .entry(node)
-                        .or_default()
-                        .push(MatchedDeclaration {
+                    .filter(|selector| selector.pseudo_element == pseudo)
+                    .filter(|selector| selector_matches(document, node, selector))
+                    .map(|selector| selector.specificity)
+                    .max();
+
+                if let Some(specificity) = specificity {
+                    for (declaration, source_order) in collected
+                        .rule
+                        .declarations
+                        .iter()
+                        .cloned()
+                        .zip(collected.declaration_orders.iter().copied())
+                    {
+                        let matched = MatchedDeclaration {
                             declaration,
                             specificity,
                             source_order,
                             source: StyleSource::Stylesheet,
-                        });
+                        };
+                        if let Some(pseudo) = pseudo {
+                            styles
+                                .pseudo_entries
+                                .entry((node, pseudo))
+                                .or_default()
+                                .push(matched);
+                        } else {
+                            styles.entries.entry(node).or_default().push(matched);
+                        }
+                    }
                 }
             }
         }
@@ -600,6 +624,62 @@ mod tests {
         assert!(matches(two, "li:nth-child(2)"));
         assert!(matches(four, "li:nth-child(-n+4)"));
         assert!(!matches(four, "li:nth-child(2n+1)"));
+    }
+
+    #[test]
+    fn keeps_host_before_and_after_declarations_in_separate_style_buckets() {
+        let document = parse_document(
+            "<style>
+               .note { color:red }
+               .note::before { content:'['; color:blue }
+               .note::after { content:']'; font-weight:bold }
+               .note, .note::before { padding:2px }
+             </style><p id='note' class='note'>text</p>",
+        );
+        let note = element_by_id(&document, "note");
+        let collected = collect_author_styles(&document);
+        assert!(collected.errors.is_empty(), "{:?}", collected.errors);
+
+        let host = collected.styles.declarations_for(note);
+        let before = collected
+            .styles
+            .declarations_for_pseudo(note, PseudoElement::Before);
+        let after = collected
+            .styles
+            .declarations_for_pseudo(note, PseudoElement::After);
+        assert!(
+            host.iter()
+                .any(|matched| matched.declaration.name == "color")
+        );
+        assert!(
+            host.iter()
+                .any(|matched| matched.declaration.name == "padding")
+        );
+        assert!(
+            !host
+                .iter()
+                .any(|matched| matched.declaration.name == "content")
+        );
+        assert!(
+            before
+                .iter()
+                .any(|matched| matched.declaration.name == "content")
+        );
+        assert!(
+            before
+                .iter()
+                .any(|matched| matched.declaration.name == "padding")
+        );
+        assert!(
+            after
+                .iter()
+                .any(|matched| matched.declaration.name == "content")
+        );
+        assert!(
+            !after
+                .iter()
+                .any(|matched| matched.declaration.name == "padding")
+        );
     }
 
     #[test]
