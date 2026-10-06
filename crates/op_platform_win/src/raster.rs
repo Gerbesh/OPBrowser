@@ -6,18 +6,22 @@ use std::mem::{size_of, zeroed};
 use std::ptr::{copy_nonoverlapping, null_mut};
 use windows_sys::Win32::Graphics::Gdi::*;
 
-struct Surface {
-    dc: HDC,
+pub(super) struct Surface {
+    pub(super) dc: HDC,
     bitmap: HBITMAP,
     previous: HGDIOBJ,
-    bits: *mut u8,
+    pub(super) bits: *mut u8,
+    byte_len: usize,
 }
 
 impl Surface {
-    fn new(target: HDC, width: i32, height: i32) -> Option<Self> {
+    pub(super) fn new(target: HDC, width: i32, height: i32) -> Option<Self> {
         if width <= 0 || height <= 0 {
             return None;
         }
+        let byte_len = (width as usize)
+            .checked_mul(height as usize)?
+            .checked_mul(4)?;
         let dc = unsafe { CreateCompatibleDC(target) };
         if dc.is_null() {
             return None;
@@ -54,7 +58,18 @@ impl Surface {
             bitmap,
             previous,
             bits: bits.cast(),
+            byte_len,
         })
+    }
+
+    pub(super) fn clear_white(&self) {
+        unsafe {
+            std::ptr::write_bytes(self.bits, 255, self.byte_len);
+        }
+    }
+
+    pub(super) fn pixels(&self) -> Vec<u8> {
+        unsafe { std::slice::from_raw_parts(self.bits, self.byte_len) }.to_vec()
     }
 }
 

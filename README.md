@@ -1,6 +1,8 @@
 # OPBrowser
 
 [![CI](https://github.com/Gerbesh/OPBrowser/actions/workflows/ci.yml/badge.svg)](https://github.com/Gerbesh/OPBrowser/actions/workflows/ci.yml)
+[![WPT static v1](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FGerbesh%2FOPBrowser%2Fmetrics%2Fwpt-static-v1-badge.json)](docs/COMPATIBILITY.md)
+[![Test262 parser v1](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FGerbesh%2FOPBrowser%2Fmetrics%2Ftest262-parser-v1-badge.json)](docs/COMPATIBILITY.md)
 
 Public repository: https://github.com/Gerbesh/OPBrowser
 

@@ -628,6 +628,28 @@ policy. The current matcher is linear and is not yet suitable for EasyList-scale
 Subscriptions, domain/third-party options, scalable indexing, cosmetic filtering and UI
 statistics/settings remain planned.
 
+## S7 - Versioned external conformance measurement
+
+Status: COMPLETE for the initial static/parser v1 measurement slice.
+
+```text
+pinned WPT/Test262 revisions + committed manifests
+  -> CI/local compatibility runner
+  -> Test262 classic-script parse expectations
+  -> WPT test/reference Engine::render_source
+  -> ordinary DisplayList
+  -> offscreen Win32 GDI surface using shared paint_command
+  -> stable pass/total percentages
+  -> JSON/artifact
+  -> public metrics branch + README badges
+```
+
+The initial baselines are WPT Static v1 86/200 (43.00%) and Test262 Parser v1
+364/1983 executable scripts (18.36%, with 17 module entries skipped). These numbers name
+their subsets explicitly and are not full browser or ECMAScript conformance scores. Future
+scope changes require a new manifest version so agents can compare before/after results
+without moving the denominator underneath themselves.
+
 ## Rule
 
 When adding a major feature, either extend an existing slice or add a new slice.

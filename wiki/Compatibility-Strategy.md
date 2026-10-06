@@ -1,6 +1,7 @@
 # Compatibility Strategy
 
-OPBrowser does not treat one synthetic score as sufficient proof of compatibility.
+OPBrowser does not treat one synthetic score as proof of compatibility. External conformance,
+project regressions and product-level feature detection answer different questions.
 
 Targets:
 
@@ -9,36 +10,50 @@ Targets:
 - TC39 Test262: ECMAScript conformance suite;
 - project-owned regression tests: fast guardrails for bugs already understood.
 
-Feature-detection tests must not be gamed by exposing non-functional APIs. A feature only
-counts when its observable behavior exists.
+Feature-detection tests must not be gamed by exposing non-functional APIs. A feature only counts
+when its observable behavior exists.
 
 ## Current measurement
 
-Run the owned subsystem baseline with:
+The project now has two reproducible external metrics rather than milestone guesses:
+
+- **WPT Static v1**: 200 pinned static HTML/CSS reftests rendered at 800 x 600 through the
+  ordinary OPBrowser engine/display-list/GDI path. Initial baseline: **86/200, 43.00%**.
+- **Test262 Parser v1**: a 2,000-path deterministic Test262 language sample. Module entries are
+  skipped until module parsing is supported. Initial executable baseline: **364/1983, 18.36%**.
+
+The Test262 number is parse-only. It is not a JavaScript runtime percentage. The WPT number is a
+named static subset, not a full-platform WPT percentage.
+
+Pinned upstream commits and manifests live under `compat/`. Run both local external measurements
+with:
 
 ```powershell
-.\tools\compatibility.ps1
+.\tools\compatibility.ps1 `
+  -ExternalOnly `
+  -Test262Path C:\src\test262\test `
+  -WptPath C:\src\wpt
 ```
 
-The script runs the HTML, CSS, layout, engine and JavaScript project tests. These numbers
-measure regression coverage only and are not converted into a WPT percentage.
+The normal `.\tools\compatibility.ps1` command continues to run project-owned subsystem tests.
 
-The restored Windows GitHub Actions workflow also runs this baseline, making regressions visible
-on public pushes and pull requests without pretending that project-owned tests are external-suite
-conformance percentages.
+## CI publication
 
-A local Test262 checkout can be supplied to the same script. The current
-`op_js::test262_probe` is intentionally parse-only: it checks positive parse acceptance and
-negative parse-error expectations. Runtime Test262 percentage is not reported yet because
-objects, functions, built-ins and harness semantics are not implemented.
+GitHub Actions runs the pinned WPT/Test262 subsets separately from the normal Windows build.
+Results are uploaded as artifacts. Successful pushes to `main` publish only badge endpoint JSON
+and the summary to the `metrics` branch, which feeds the README badges. Pull requests do not
+receive repository write permission for this publishing step.
 
-WPT automation remains the next external-suite integration target. Start with static
-HTML/CSS tests that can be driven without testharness.js, then add harness support once DOM
-scripting exists.
+A low conformance percentage is not itself a CI failure while the engine is under construction.
+Infrastructure failures are. The metric exists so agents and developers can choose failing
+families, make an implementation change and show an objective before/after delta.
 
-The detailed command contract and non-goals live in
+## Expansion
+
+Static WPT coverage should grow from measured failures. Test262 runtime scoring waits for the
+runtime/harness and built-ins needed to execute it honestly. WPT testharness.js coverage waits for
+DOM scripting and the required Web APIs. When a metric changes scope or sampling semantics, create
+a new version instead of silently redefining the old percentage.
+
+The detailed command contract, exact revisions and non-goals live in
 [docs/COMPATIBILITY.md](../docs/COMPATIBILITY.md).
-
-Compatibility is developed subsystem by subsystem. Regressions receive project-owned tests
-in addition to external conformance coverage, and performance/memory metrics are tracked
-beside compatibility rather than after it.

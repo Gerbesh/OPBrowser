@@ -1575,3 +1575,28 @@ This file is append-only project history.
 - GitHub Actions run `37527054337` then completed successfully on `windows-latest`; every restored
   CI step passed, confirming the previous account billing lock no longer blocks hosted runners.
 
+## 2026-10-06 - Versioned WPT/Test262 compatibility metrics
+
+- Added deterministic, committed compatibility manifests pinned to exact upstream revisions:
+  2,000 Test262 language paths and 200 static WPT HTML/CSS reftests.
+- Extended `test262_probe` with manifest input, robust module skipping, machine-readable JSON
+  output and a versioned parser percentage. Initial executable result: 364/1983 (18.36%);
+  17 module entries were skipped.
+- Added `op_browser::wpt_probe` and `op_platform_win::render_display_list_to_bgra`. Reftests
+  render through `Engine::render_source` and the same Win32 GDI `paint_command` path as the
+  visible browser before exact BGR pixel comparison. Initial result: 86/200 (43.00%) with
+  zero render/infrastructure errors.
+- Added `tools/build_compat_manifests.py`, pinned revision metadata under `compat/`, JSON/
+  Shields badge artifacts and a combined Markdown compatibility summary.
+- Split hosted CI into the normal read-only Windows verification job, a read-only external
+  compatibility job, and a write-enabled metrics publisher that runs only after successful
+  main pushes. Public README badges consume the generated `metrics` branch.
+- Preserved existing `cargo run -p op_browser` behavior by declaring the browser binary as
+  Cargo's default run target after adding the WPT utility binary.
+- Updated compatibility documentation, development workflow, project plan, code graph, code
+  slices and wiki pages so future agents can optimize against measured failing suites instead
+  of milestone percentages.
+- Final local verification passed rustfmt, warning-free workspace Clippy, the complete workspace
+  test suite, native startup smoke, optimized release build, deterministic manifest regeneration
+  and both external subset runs; the WPT/Test262 scores repeated exactly.
+

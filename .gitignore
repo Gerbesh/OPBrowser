@@ -7,3 +7,6 @@
 *.obj
 *.user
 /.ai-bridge/
+/artifacts/
+__pycache__/
+*.pyc

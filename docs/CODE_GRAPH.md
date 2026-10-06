@@ -780,3 +780,34 @@ Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible
 descendants if no visible item was produced. A block epoch counter guards against emitting
 an extra empty inline fragment after a block child/pseudo flushed the collection. Nested
 empty frames share arena ancestry rather than adding duplicate parent items.
+
+## Compatibility measurement graph
+
+The external conformance path is now explicit and versioned:
+
+```text
+compat/test262-parser-v1.txt
+  -> op_js::bin::test262_probe
+  -> op_js::parse_script
+  -> JSON + badge metric
+
+compat/wpt-static-v1.tsv
+  -> op_browser::bin::wpt_probe
+  -> Engine::render_source(test + reference)
+  -> DisplayList
+  -> op_platform_win::render_display_list_to_bgra
+  -> shared paint_command/GDI path
+  -> exact BGR pixel comparison
+  -> JSON + badge metric
+
+.github/workflows/ci.yml
+  -> pinned upstream checkouts from compat/upstream.env
+  -> tools/compatibility.ps1
+  -> workflow artifact
+  -> metrics branch on successful main push
+```
+
+`render_display_list_to_bgra` owns only an offscreen top-down DIB surface; it does not
+replace layout or paint semantics. Both visible WM_PAINT and compatibility reftests call the
+same `paint_command` implementation. The Test262 probe remains parser-only and does not
+pretend that the current VM implements the Test262 runtime harness.

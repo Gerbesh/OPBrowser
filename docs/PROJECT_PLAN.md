@@ -268,7 +268,10 @@ Status: IN PROGRESS.
 - LATER broader computed values outside the readable-static-web priority.
 - LATER fuller normal flow and CSS inline formatting plus Unicode line breaking.
 - NEXT migrate the text backend toward DirectWrite shaping/fallback behind TextMeasurer per ADR-0003.
-- NEXT wire a static HTML/CSS WPT subset; progressively expand CSS WPT coverage from measured results.
+- DONE versioned WPT Static v1 measurement with 200 pinned HTML/CSS reftests and an initial 86/200 (43.00%) baseline.
+- DONE versioned Test262 Parser v1 measurement with 2,000 pinned language paths and an initial 364/1983 (18.36%) executable baseline; module entries are skipped.
+- DONE GitHub Actions publishes compatibility artifacts and README badge data after successful main pushes.
+- NEXT use WPT Static v1 failure families as a measured CSS/layout work queue, then version any future scope changes.
 
 ## M3 - Original JavaScript engine
 

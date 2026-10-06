@@ -215,6 +215,23 @@ creation/extents/drawing/cleanup removes the observed instability. The OS cause 
 not established. Concurrent layout tests compare 128 renders against a baseline.
 No networking or original layout algorithm runs under the gate.
 
+## Compatibility measurement
+
+Project-owned regression tests remain available through:
+
+    .\tools\compatibility.ps1
+
+For the versioned external suites, check out the pinned Test262 and WPT revisions from
+`compat/upstream.env`, then run:
+
+    .\tools\compatibility.ps1 -ExternalOnly -Test262Path C:\src\test262\test -WptPath C:\src\wpt
+
+This writes JSON, Shields endpoint data and a Markdown summary to
+`artifacts\compatibility`. The initial external baselines are WPT Static v1 86/200
+(43.00%) and Test262 Parser v1 364/1983 executable scripts (18.36%; 17 module entries
+skipped). These are named subset scores, not full browser/ECMAScript support percentages.
+See [Compatibility measurement](COMPATIBILITY.md) and `compat/README.md`.
+
 ## Dependency rule
 
 Do not add a browser engine, rendering engine, or ready-made JavaScript engine as a

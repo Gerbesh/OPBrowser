@@ -54,6 +54,27 @@ pub enum NavigationEvent {
     Poll,
 }
 
+/// Paint a display list into a deterministic top-down 32-bit BGRA DIB without
+/// creating a visible browser window. Compatibility reftests use the same GDI
+/// command painter as the real Win32 window.
+pub fn render_display_list_to_bgra(
+    display_list: &DisplayList,
+    width: i32,
+    height: i32,
+) -> Result<Vec<u8>, String> {
+    let surface = raster::Surface::new(null_mut(), width, height)
+        .ok_or_else(|| "failed to create offscreen GDI surface".to_owned())?;
+    surface.clear_white();
+    let mut link_regions = Vec::new();
+    for command in &display_list.commands {
+        paint_command(surface.dc, command, &mut link_regions);
+    }
+    unsafe {
+        windows_sys::Win32::Graphics::Gdi::GdiFlush();
+    }
+    Ok(surface.pixels())
+}
+
 pub struct NativeBrowserWindow {
     hwnd: HWND,
 }

@@ -63,12 +63,20 @@ scroll clamps, address edits and stale hit regions. See [Page Reflow](Page-Reflo
 
 ## Current GitHub Actions status
 
-GitHub Actions is enabled again with a Windows workflow for pushes to `main`, pull requests
-targeting `main`, and manual dispatch. It runs rustfmt, generated-data checks, warning-free
-Clippy, the workspace test suite, the project compatibility baseline, the native smoke suite
-and an optimized release build. Concurrency cancellation prevents superseded commits from
-continuing to consume runner time. Restored run `37527054337` completed successfully on the
-hosted Windows runner, so the former billing lock is no longer blocking job execution.
+GitHub Actions is enabled for pushes to `main`, pull requests targeting `main`, and manual
+dispatch. The normal Windows job runs rustfmt, generated-data checks, warning-free Clippy, the
+workspace test suite, native smoke tests and an optimized release build. Concurrency cancellation
+prevents superseded commits from continuing to consume runner time.
+
+A separate Windows compatibility job fetches the exact Test262/WPT revisions pinned in
+`compat/upstream.env`, runs Test262 Parser v1 and WPT Static v1, and uploads their JSON/badge
+data plus a Markdown summary. After successful pushes to `main`, a small write-enabled publish
+job updates the `metrics` branch consumed by the README badges. PR/build jobs remain read-only;
+write permission is not handed to arbitrary compatibility code.
+
+The initial local external baselines are WPT Static v1 86/200 (43.00%) and Test262 Parser v1
+364/1983 executable scripts (18.36%, 17 module entries skipped). Run the same measurement locally
+with `.\tools\compatibility.ps1 -ExternalOnly -Test262Path ... -WptPath ...`.
 
 CI supplements rather than replaces local verification: every coherent update still requires
 the relevant local checks before commit/push so the public repository is not used as a rather

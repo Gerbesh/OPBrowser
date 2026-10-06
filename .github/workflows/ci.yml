@@ -47,10 +47,6 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-      - name: Compatibility regression baseline
-        shell: pwsh
-        run: .\tools\compatibility.ps1
-
       - name: Win32 startup smoke test
         run: cargo run -p op_browser -- --smoke-test
 
@@ -83,3 +79,116 @@ jobs:
 
       - name: Release build
         run: cargo build -p op_browser --release
+
+  compatibility:
+    name: Compatibility / WPT + Test262
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+
+      - name: Load pinned upstream revisions
+        shell: pwsh
+        run: |
+          foreach ($line in Get-Content compat/upstream.env) {
+            if ($line -and -not $line.StartsWith("#")) {
+              Add-Content -Path $env:GITHUB_ENV -Value $line
+            }
+          }
+
+      - name: Fetch pinned Test262 and WPT subsets
+        shell: pwsh
+        run: |
+          $test262 = Join-Path $env:RUNNER_TEMP "test262"
+          $wpt = Join-Path $env:RUNNER_TEMP "wpt"
+
+          git clone --filter=blob:none --no-checkout https://github.com/tc39/test262.git $test262
+          git -C $test262 sparse-checkout init --cone
+          git -C $test262 sparse-checkout set test
+          git -C $test262 checkout $env:TEST262_REVISION
+          if ((git -C $test262 rev-parse HEAD) -ne $env:TEST262_REVISION) {
+            throw "Test262 checkout does not match pinned revision"
+          }
+
+          git clone --filter=blob:none --no-checkout https://github.com/web-platform-tests/wpt.git $wpt
+          git -C $wpt sparse-checkout init --cone
+          git -C $wpt sparse-checkout set css/CSS2/box-display css/CSS2/box-model css/css-box css/css-color css/css-display css/selectors
+          git -C $wpt checkout $env:WPT_REVISION
+          if ((git -C $wpt rev-parse HEAD) -ne $env:WPT_REVISION) {
+            throw "WPT checkout does not match pinned revision"
+          }
+
+      - name: Measure external compatibility
+        shell: pwsh
+        run: |
+          $test262 = Join-Path $env:RUNNER_TEMP "test262\test"
+          $wpt = Join-Path $env:RUNNER_TEMP "wpt"
+          .\tools\compatibility.ps1 -ExternalOnly -Test262Path $test262 -WptPath $wpt
+          Get-Content artifacts/compatibility/summary.md | Add-Content $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload compatibility metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-metrics
+          path: artifacts/compatibility/
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-metrics:
+    name: Publish compatibility badges
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - windows
+      - compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download compatibility metrics
+        uses: actions/download-artifact@v4
+        with:
+          name: compatibility-metrics
+          path: metrics-input
+
+      - name: Publish metrics branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          publish_dir="$RUNNER_TEMP/compatibility-metrics"
+          mkdir -p "$publish_dir"
+          cp metrics-input/*-badge.json "$publish_dir/"
+          cp metrics-input/summary.md "$publish_dir/"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git fetch origin metrics:refs/remotes/origin/metrics; then
+            git switch --force-create metrics origin/metrics
+          else
+            git switch --orphan metrics
+          fi
+
+          git rm -rf --ignore-unmatch .
+          cp "$publish_dir/"* .
+          git add summary.md test262-parser-v1-badge.json wpt-static-v1-badge.json
+
+          if git diff --cached --quiet; then
+            echo "Compatibility metrics are unchanged."
+            exit 0
+          fi
+
+          git commit -m "Update compatibility metrics for ${GITHUB_SHA}"
+          git push origin metrics
