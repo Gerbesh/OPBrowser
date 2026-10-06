@@ -761,3 +761,21 @@ This file is append-only project history.
   updated README, plan, code graph/slices and CSS/inline/rendering wiki pages.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 163 workspace tests,
   normal startup smoke, the 175-command CSS demo smoke and optimized workspace release build.
+
+## 2026-10-06 - Real generated block geometry
+
+- Replaced pseudo display:block line-boundary approximation with shared BlockContent handling
+  for ordinary DOM children and retained generated text, without creating synthetic DOM nodes.
+- Generated blocks honor dimensions/min/max, percentage widths, box-sizing, auto/negative
+  margins, padding, independent solid borders, background and normal inline wrapping/alignment.
+- Empty generated block strings now create real sized/decorated boxes without invented glyphs;
+  empty inline decoration and generated image content remain later work.
+- Corrected ordinary/generated definite block-height geometry: overflowing text no longer
+  expands the prescribed flow/background/border height. Existing parent/child and empty-block
+  margin collapsing and percentage-height limitations remain explicit.
+- Added three layout regressions for precise geometry, empty min/max boxes, adjacent pseudo
+  margin collapse and overflowing definite heights, plus an Engine regression for FillRect,
+  pseudo link spans and stable retained resize reflow.
+- Updated built-in start page, external CSS demo, README, plan, graph/slices and relevant wiki.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 167 workspace tests,
+  startup/CSS demo native paint smokes and optimized workspace release build.

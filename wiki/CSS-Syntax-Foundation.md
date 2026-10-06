@@ -162,7 +162,7 @@ reuses OPBrowser's current invalid-value filtering, so a declaration whose subst
 can expose a lower valid candidate instead of full CSS invalid-at-computed-value-time behavior;
 full dependency-graph cycle semantics are also later. Generated `url()` images, language-aware automatic quotes,
 custom counter styles and complete counter scoping remain later. Next S3 work moves into generated
-replaced content and fuller pseudo block-box geometry, then forgiving selector-list
+replaced content and empty-inline geometry, then forgiving selector-list
 recovery, nth-child `of`, advanced color spaces, at-rules, media queries and full CSS
 conformance remain later.
 
@@ -180,3 +180,10 @@ open/close pseudos, overridable by author content. `auto` currently chooses dete
 English Unicode pairs; language-specific selection remains future work.
 
 Behavior reference: [CSS quotation marks](https://www.w3.org/TR/CSS2/generate.html#quotes).
+
+Generated `display:block` now routes retained pseudo text through the ordinary block geometry
+path instead of approximating a block with line breaks. It honors widths/heights/min/max,
+percentages, box-sizing, auto/negative margins, padding, solid borders and backgrounds.
+An empty string still creates the block box, allowing CSS-only rules and bars without glyphs.
+Definite heights control normal flow and border/background extents even when text overflows.
+Parent/child and empty-block margin collapse and full replaced/empty-inline geometry remain later.

@@ -326,7 +326,7 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> generated url() + fuller pseudo block/replaced-content geometry
+  -> generated url() + fuller replaced-content/empty-inline geometry
   -> full invalid-at-computed-value-time var() / custom-property cycle semantics
   -> nested/replaced inline decoration stacks
   -> additional computed properties
@@ -341,8 +341,11 @@ Only the winning emitted content changes depth. Hidden subtrees/absent pseudos d
 quotes or counters. Pairs repeat at deeper nesting; unmatched closing commands have no effect.
 Computed pairs and materialized text survive retained reflow. Generated `url()` images and
 language-aware automatic quote selection remain later (`auto` currently uses English pairs).
-`display:block` generated content is an initial line-boundary approximation rather than a full virtual block box, empty-string pseudo
-boxes do not yet materialize decoration without glyph items, and replaced elements do not yet
+`display:block` generated content shares ordinary BlockContent geometry: width/height/min/max,
+box-sizing, percentage sizing, auto/negative margins, padding, borders, backgrounds and sibling
+margin collapse. Empty generated block strings still materialize sized/decorated boxes without
+inventing text or changing the DOM. Fixed block heights bound flow and decoration while text
+may overflow. Empty inline strings still lack decorations, and replaced elements do not yet
 receive generated pseudos. Broader property/value coverage, `@import`, media queries and CSS
 `url(...)` resources remain later work.
 

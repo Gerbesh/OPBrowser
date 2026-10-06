@@ -295,6 +295,10 @@ classDiagram
         background
         border_edges
     }
+    class BlockContent {
+        Element(NodeId)
+        Generated(retained_text)
+    }
     class BoxDecoration {
         bounds
         background
@@ -396,6 +400,9 @@ classDiagram
     ComputedStyleMap --> LayoutTree : display/text style + line-height/alignment/white-space/decorations/spacing/transform + block/inline box geometry
     ComputedStyle --> InlineBoxStyle : resolved inline padding/background/solid borders
     ComputedPseudoStyle --> LayoutTree : generated before/after inline items
+    ComputedPseudoStyle --> BlockContent : display block retained text
+    Document --> BlockContent : ordinary element child traversal
+    BlockContent --> BoxDecoration : shared normal-flow block geometry / empty boxes
     ComputedPseudoStyle --> InlineBoxStyle : pseudo decoration identity + box style
     InlineBoxStyle --> BoxDecoration : per-line inline fragments
     LayoutTree --> BoxDecoration : block + inline backgrounds / solid borders

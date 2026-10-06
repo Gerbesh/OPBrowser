@@ -994,6 +994,52 @@ mod tests {
     }
 
     #[test]
+    fn generated_block_geometry_and_empty_boxes_reach_retained_paint() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(
+            "<style>a::before { display:block; content:'PRE'; width:50%; margin:7px auto;
+                padding:4px; border:2px solid blue; background:red }
+             a::after { display:block; content:''; width:80px; height:20px; background:blue }
+             </style><a href='next.html'>Body</a>",
+            800,
+            600,
+        );
+        let background = original
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::FillRect { x, y, color, .. }
+                    if *color == op_paint::Color { r: 255, g: 0, b: 0 } =>
+                {
+                    Some((*x, *y))
+                }
+                _ => None,
+            })
+            .unwrap();
+        let pre = original
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Text {
+                    x, y, text, links, ..
+                } if text == "PRE" => {
+                    assert!(links.iter().any(|link| link.href == "next.html"));
+                    Some((*x, *y))
+                }
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(pre, (background.0 + 6, background.1 + 6));
+        assert!(original.commands.iter().any(|command| matches!(command,
+            PaintCommand::FillRect { width:80, height:20, color, .. }
+                if *color == op_paint::Color { r:0, g:0, b:255 }
+        )));
+        let narrow = engine.reflow(400, 600).unwrap();
+        assert_ne!(narrow.display_list, original);
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn custom_properties_and_var_reach_native_display_list() {
         let display_list = Engine::new().render_html(
             "<style>

@@ -46,7 +46,13 @@ pub(super) fn layout(
     if document.element(root).is_none_or(|element| {
         context.element_display(root, element.tag_name.as_str()) != Display::None
     }) {
-        context.block(root, None, root_style, 32, context.width);
+        context.block(
+            BlockContent::Element(root),
+            None,
+            root_style,
+            32,
+            context.width,
+        );
         context.flush_pending_margin();
     }
 
@@ -72,6 +78,12 @@ struct Context<'a, 'm> {
     text: Vec<TextBox>,
     images_out: Vec<ImageBox>,
     order: Vec<LayoutItem>,
+}
+
+/// Generated blocks share ordinary block sizing without adding synthetic DOM nodes.
+enum BlockContent<'a> {
+    Element(NodeId),
+    Generated(&'a str),
 }
 
 #[derive(Clone, Copy)]
@@ -158,7 +170,7 @@ impl<'a> Context<'a, '_> {
 
     fn block(
         &mut self,
-        id: NodeId,
+        content: BlockContent<'a>,
         href: Option<&'a str>,
         style: Style,
         containing_x: i32,
@@ -219,25 +231,36 @@ impl<'a> Context<'a, '_> {
         let content_top = self.y;
 
         let mut items = Vec::new();
-        self.collect_generated(
-            id,
-            PseudoElement::Before,
-            href,
-            style,
-            (content_x, content_width),
-            &mut items,
-        );
-        for child in self.document.children(id) {
-            self.collect(*child, href, style, content_x, content_width, &mut items);
+        match content {
+            BlockContent::Element(id) => {
+                self.collect_generated(
+                    id,
+                    PseudoElement::Before,
+                    href,
+                    style,
+                    (content_x, content_width),
+                    &mut items,
+                );
+                for child in self.document.children(id) {
+                    self.collect(*child, href, style, content_x, content_width, &mut items);
+                }
+                self.collect_generated(
+                    id,
+                    PseudoElement::After,
+                    href,
+                    style,
+                    (content_x, content_width),
+                    &mut items,
+                );
+            }
+            BlockContent::Generated(text) => items.extend(text.chars().map(|ch| {
+                Item::Char(InlineChar {
+                    ch,
+                    href,
+                    style: style.inline,
+                })
+            })),
         }
-        self.collect_generated(
-            id,
-            PseudoElement::After,
-            href,
-            style,
-            (content_x, content_width),
-            &mut items,
-        );
         self.emit(&mut items, style, content_x, content_width);
         // Parent/child margin collapse is intentionally deferred; consume the final
         // child margin before this block's padding/border boundary.
@@ -251,11 +274,8 @@ impl<'a> Context<'a, '_> {
             padding_bottom,
             used.border,
         );
-        if target_content_height > natural_content_height {
-            self.y = self
-                .y
-                .saturating_add(target_content_height - natural_content_height);
-        }
+        // Definite height/min/max controls the box even when its text overflows.
+        self.y = content_top.saturating_add(target_content_height);
 
         self.y = self
             .y
@@ -346,7 +366,13 @@ impl<'a> Context<'a, '_> {
                     }
                 } else if display == Display::Block {
                     self.emit(items, inherited, containing_x, containing_width);
-                    self.block(id, href, current, containing_x, containing_width);
+                    self.block(
+                        BlockContent::Element(id),
+                        href,
+                        current,
+                        containing_x,
+                        containing_width,
+                    );
                 } else {
                     self.collect_generated(
                         id,
@@ -402,6 +428,17 @@ impl<'a> Context<'a, '_> {
         }
 
         let mut style = computed_style(generated.style);
+        if generated.style.display == Display::Block {
+            self.emit(items, host_style, containing_x, containing_width);
+            self.block(
+                BlockContent::Generated(&generated.content),
+                href,
+                style,
+                containing_x,
+                containing_width,
+            );
+            return;
+        }
         style.inline.box_style =
             resolve_inline_box_style(id, Some(pseudo), style, containing_width)
                 .or(host_style.inline.box_style);
@@ -419,13 +456,7 @@ impl<'a> Context<'a, '_> {
                 .collect::<Vec<_>>()
         };
 
-        if generated.style.display == Display::Block {
-            self.emit(items, host_style, containing_x, containing_width);
-            let mut block_items = generated_items();
-            self.emit(&mut block_items, style, containing_x, containing_width);
-        } else {
-            items.extend(generated_items());
-        }
+        items.extend(generated_items());
     }
 
     fn collect_image(

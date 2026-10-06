@@ -100,6 +100,8 @@ walk, `counter-reset`/`counter-set`/`counter-increment` maintain scoped value st
 reads the originating DOM element and `counter()`/`counters()` materialize final pseudo text.
 Inherited `quotes` pairs also materialize quote commands here, using one document-order depth.
 Hidden subtrees and absent/hidden pseudos do not mutate generated state; `<q>` has UA defaults.
+Generated block pseudos use the same BlockContent sizing and decoration path as element blocks,
+including empty generated boxes. Definite heights constrain boxes even when text overflows.
 Inheritance produces per-node styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 

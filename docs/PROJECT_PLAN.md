@@ -160,7 +160,10 @@ Status: IN PROGRESS.
 - DONE inherited `quotes` auto/none/string pairs, generated open/close/no-open/no-close quote
   commands and UA `<q>` pseudos; nesting follows emitted document-order content, repeats the
   deepest pair and ignores hidden/absent pseudos and subtrees for quote/counter mutation.
-- NEXT generated `url()` content and fuller pseudo block-box/replaced-content geometry.
+- DONE generated `display:block` shares ordinary block sizing/margins/padding/borders,
+  including percentage/min/max sizes, auto margins, wrapping and empty decorated block boxes.
+- DONE definite block height controls flow/decorations even when text overflows.
+- NEXT generated `url()` content and fuller replaced-content/empty-inline geometry.
 - LATER language-aware `quotes:auto` (currently deterministic English Unicode pairs).
 - LATER complete invalid-at-computed-value-time `var()` semantics/custom-property cycle graph,
   forgiving functional-selector recovery, `:nth-child(... of ...)`, nested decorated-inline

@@ -1,5 +1,9 @@
 # CSS Block Box Model
 
+Generated `::before`/`::after` with `display:block` uses this same geometry path, including
+empty-string decorated blocks. Definite heights set the box/flow height while content may
+overflow; background/border geometry does not grow merely to contain that overflowing text.
+
 OPBrowser owns the current block box-model pipeline from specified CSS through used layout
 geometry. Windows remains only a drawing backend for platform-neutral display-list commands.
 

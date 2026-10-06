@@ -758,6 +758,118 @@ mod tests {
     }
 
     #[test]
+    fn generated_blocks_share_width_height_padding_borders_and_auto_margins() {
+        let document = op_html::parse_document(
+            "<style>
+             #host { padding:10px; border:2px solid black }
+             #host::before { display:block; content:'PRE'; width:50%; height:60px;
+                 box-sizing:border-box; margin:10px auto 7px; padding:4px;
+                 border:2px solid blue; background:red }
+             #host::after { display:block; content:''; width:80px; min-height:20px;
+                 box-sizing:border-box; margin:5px auto 0; padding:2px;
+                 border:1px solid red; background:blue }
+             </style><div id='host'>Body</div>",
+        );
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            500,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let before = layout
+            .box_decorations
+            .iter()
+            .find(|d| d.background.red == 255 && d.background.blue == 0)
+            .unwrap();
+        assert_eq!(
+            (before.x, before.y, before.width, before.height),
+            (147, 50, 206, 60)
+        );
+        let pre = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "PRE")
+            .unwrap();
+        // Approximate metrics center 18px glyph extents inside a 24px line box.
+        assert_eq!((pre.x, pre.y), (before.x + 6, before.y + 9));
+        let body = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "Body")
+            .unwrap();
+        assert_eq!(body.x, 44);
+        assert_eq!(body.y, before.y + before.height + 10);
+        let after = layout
+            .box_decorations
+            .iter()
+            .find(|d| d.background.blue == 255)
+            .unwrap();
+        assert_eq!((after.x, after.width, after.height), (210, 80, 20));
+        assert!(after.y >= body.y + body.height + 5);
+        assert_eq!(
+            layout.text_boxes.len(),
+            2,
+            "empty pseudo box must not invent glyphs"
+        );
+    }
+
+    #[test]
+    fn adjacent_empty_generated_blocks_collapse_margins_and_obey_min_max_sizes() {
+        let document = op_html::parse_document(
+            "<style>
+             #host::before { display:block; content:''; width:200px; max-width:80px;
+                 height:2px; min-height:10px; background:red; margin-bottom:12px }
+             #host::after { display:block; content:''; width:10px; min-width:60px;
+                 height:90px; max-height:15px; background:blue; margin-top:20px }
+             </style><span id='host'></span>",
+        );
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            500,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        assert!(layout.text_boxes.is_empty());
+        let before = &layout.box_decorations[0];
+        let after = &layout.box_decorations[1];
+        assert_eq!((before.width, before.height), (80, 10));
+        assert_eq!((after.width, after.height), (60, 15));
+        assert_eq!(after.y - before.y - before.height, 20);
+    }
+
+    #[test]
+    fn definite_block_height_keeps_overflow_outside_following_flow_geometry() {
+        let document = op_html::parse_document(
+            "<style>#small { width:80px; height:5px; border:1px solid red; background:blue }
+             </style><div id='small'>many words wrapping onto multiple overflowing lines</div><div>Next</div>",
+        );
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            500,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let small = &layout.box_decorations[0];
+        assert_eq!(small.height, 7);
+        let next = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "Next")
+            .unwrap();
+        assert_eq!(next.y, small.y + small.height + 3);
+        assert!(layout.text_boxes.iter().any(|text| text.y > next.y));
+    }
+
+    #[test]
     fn wraps_link_spans_without_losing_unicode_or_nested_labels() {
         let mut document = Document::new();
         let p = document.create_element("p");
