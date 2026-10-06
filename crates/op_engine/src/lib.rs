@@ -861,6 +861,52 @@ mod tests {
     }
 
     #[test]
+    fn orphan_table_cells_are_grouped_before_paint() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               #host { width:360px }
+               .cell { display:table-cell; padding:0 }
+               #a { background:#ff0000 }
+               #b { background:#0000ff }
+               #after { display:block; margin:0; background:#00ff00 }
+             </style>
+             <div id='host'>
+               <div id='a' class='cell'>A</div>
+               
+               <div id='b' class='cell'>B</div>
+               <div id='after'>after</div>
+             </div>",
+            800,
+            600,
+        );
+
+        let rect = |expected: op_paint::Color| {
+            display_list
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::FillRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        color,
+                    } if *color == expected => Some((*x, *y, *width, *height)),
+                    _ => None,
+                })
+                .expect("repaired orphan table content must reach paint")
+        };
+
+        let a = rect(op_paint::Color { r: 255, g: 0, b: 0 });
+        let b = rect(op_paint::Color { r: 0, g: 0, b: 255 });
+        let after = rect(op_paint::Color { r: 0, g: 255, b: 0 });
+
+        assert_eq!(a.1, b.1);
+        assert_eq!(b.0, a.0 + a.2);
+        assert!(after.1 >= a.1 + a.3);
+    }
+
+    #[test]
     fn anonymous_table_rows_and_cells_reach_display_list() {
         let display_list = Engine::new().render_html(
             "<style>

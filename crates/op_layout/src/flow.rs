@@ -399,9 +399,14 @@ impl<'a> Context<'a, '_> {
                     (content_x, content_width),
                     &mut items,
                 );
-                for child in self.document.children(id) {
-                    self.collect(*child, href, style, content_x, content_width, &mut items);
-                }
+                self.collect_children(
+                    id,
+                    self.document.children(id),
+                    href,
+                    style,
+                    (content_x, content_width),
+                    &mut items,
+                );
                 self.collect_generated(
                     id,
                     PseudoElement::After,
@@ -448,6 +453,36 @@ impl<'a> Context<'a, '_> {
     }
 
     fn table(&mut self, id: NodeId, style: Style, containing_x: i32, containing_width: i32) {
+        let children = self.document.children(id).to_vec();
+        self.table_box(&children, id, style, containing_x, containing_width);
+    }
+
+    fn anonymous_table(
+        &mut self,
+        children: &[NodeId],
+        inherited_from: NodeId,
+        inherited: Style,
+        containing_x: i32,
+        containing_width: i32,
+    ) {
+        let style = anonymous_table_style(inherited);
+        self.table_box(
+            children,
+            inherited_from,
+            style,
+            containing_x,
+            containing_width,
+        );
+    }
+
+    fn table_box(
+        &mut self,
+        children: &[NodeId],
+        inherited_from: NodeId,
+        style: Style,
+        containing_x: i32,
+        containing_width: i32,
+    ) {
         self.block_epoch = self.block_epoch.saturating_add(1);
         let used = resolve_block_horizontal(style, containing_width);
         let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
@@ -500,7 +535,7 @@ impl<'a> Context<'a, '_> {
             .saturating_add(used.border.top.width)
             .saturating_add(used.padding.top);
 
-        for child in self.document.children(id) {
+        for child in children {
             let Some(element) = self.document.element(*child) else {
                 continue;
             };
@@ -517,11 +552,16 @@ impl<'a> Context<'a, '_> {
             }
         }
 
-        let grid = self.build_table_grid(id);
+        let grid = self.build_table_grid(children, inherited_from);
         if grid.row_count > 0 && grid.columns > 0 {
             let (horizontal_spacing, vertical_spacing) = used_table_spacing(style);
-            let intrinsic =
-                self.table_intrinsic_columns(id, &grid, style, content_width, horizontal_spacing);
+            let intrinsic = self.table_intrinsic_columns(
+                children,
+                &grid,
+                style,
+                content_width,
+                horizontal_spacing,
+            );
             let column_widths = table_column_widths(content_width, &intrinsic, horizontal_spacing);
             let column_offsets =
                 table_column_offsets(content_x, &column_widths, horizontal_spacing);
@@ -627,11 +667,11 @@ impl<'a> Context<'a, '_> {
         self.pending_margin = Some(margin_bottom);
     }
 
-    fn build_table_grid(&self, table: NodeId) -> TableGrid {
-        let rows = self.table_row_sources(table);
+    fn build_table_grid(&self, children: &[NodeId], inherited_from: NodeId) -> TableGrid {
+        let rows = self.table_row_sources(children, inherited_from);
         let row_count = rows.len();
         let mut grid = TableGrid {
-            columns: self.table_declared_columns(table),
+            columns: self.table_declared_columns(children),
             row_count,
             cells: Vec::new(),
         };
@@ -687,32 +727,48 @@ impl<'a> Context<'a, '_> {
         grid
     }
 
-    fn table_row_sources(&self, table: NodeId) -> Vec<TableRowSource> {
+    fn table_row_sources(
+        &self,
+        children: &[NodeId],
+        inherited_from: NodeId,
+    ) -> Vec<TableRowSource> {
         let mut rows = Vec::new();
         let mut anonymous_row_children = Vec::new();
 
-        for child in self.document.children(table).iter().copied() {
+        for child in children.iter().copied() {
             if self.table_fixup_ignorable(child) {
                 continue;
             }
             match self.table_fixup_display(child) {
                 Some(Display::TableRow) => {
-                    self.flush_anonymous_table_row(&mut rows, &mut anonymous_row_children, table);
+                    self.flush_anonymous_table_row(
+                        &mut rows,
+                        &mut anonymous_row_children,
+                        inherited_from,
+                    );
                     rows.push(self.table_row_from_node(child));
                 }
                 Some(
                     Display::TableHeaderGroup | Display::TableRowGroup | Display::TableFooterGroup,
                 ) => {
-                    self.flush_anonymous_table_row(&mut rows, &mut anonymous_row_children, table);
+                    self.flush_anonymous_table_row(
+                        &mut rows,
+                        &mut anonymous_row_children,
+                        inherited_from,
+                    );
                     self.append_table_row_group(child, &mut rows);
                 }
                 Some(Display::TableColumn | Display::TableColumnGroup | Display::TableCaption) => {
-                    self.flush_anonymous_table_row(&mut rows, &mut anonymous_row_children, table);
+                    self.flush_anonymous_table_row(
+                        &mut rows,
+                        &mut anonymous_row_children,
+                        inherited_from,
+                    );
                 }
                 _ => anonymous_row_children.push(child),
             }
         }
-        self.flush_anonymous_table_row(&mut rows, &mut anonymous_row_children, table);
+        self.flush_anonymous_table_row(&mut rows, &mut anonymous_row_children, inherited_from);
         rows
     }
 
@@ -802,9 +858,9 @@ impl<'a> Context<'a, '_> {
         }
     }
 
-    fn table_declared_columns(&self, table: NodeId) -> usize {
+    fn table_declared_columns(&self, children: &[NodeId]) -> usize {
         let mut columns = 0usize;
-        for child in self.document.children(table) {
+        for child in children {
             let Some(element) = self.document.element(*child) else {
                 continue;
             };
@@ -838,14 +894,14 @@ impl<'a> Context<'a, '_> {
 
     fn table_intrinsic_columns(
         &mut self,
-        table: NodeId,
+        children: &[NodeId],
         grid: &TableGrid,
         inherited: Style,
         content_width: i32,
         spacing: i32,
     ) -> Vec<TableColumnIntrinsic> {
         let mut columns = vec![TableColumnIntrinsic::default(); grid.columns];
-        self.apply_table_column_width_hints(table, inherited, content_width, &mut columns);
+        self.apply_table_column_width_hints(children, inherited, content_width, &mut columns);
 
         for placement in grid.cells.iter().filter(|cell| cell.colspan == 1) {
             let (min, max) =
@@ -881,13 +937,13 @@ impl<'a> Context<'a, '_> {
 
     fn apply_table_column_width_hints(
         &self,
-        table: NodeId,
+        children: &[NodeId],
         inherited: Style,
         content_width: i32,
         columns: &mut [TableColumnIntrinsic],
     ) {
         let mut cursor = 0usize;
-        for child in self.document.children(table) {
+        for child in children {
             let Some(element) = self.document.element(*child) else {
                 continue;
             };
@@ -1356,9 +1412,15 @@ impl<'a> Context<'a, '_> {
                     (content_x, content_width),
                     &mut items,
                 );
-                for child in self.document.children(*node) {
-                    self.collect(*child, None, style, content_x, content_width, &mut items);
-                }
+                let children = self.document.children(*node).to_vec();
+                self.collect_children(
+                    *node,
+                    &children,
+                    None,
+                    style,
+                    (content_x, content_width),
+                    &mut items,
+                );
                 self.collect_generated(
                     *node,
                     PseudoElement::After,
@@ -1368,10 +1430,18 @@ impl<'a> Context<'a, '_> {
                     &mut items,
                 );
             }
-            TableCellSource::Anonymous { nodes, .. } => {
-                for node in nodes {
-                    self.collect(*node, None, style, content_x, content_width, &mut items);
-                }
+            TableCellSource::Anonymous {
+                nodes,
+                inherited_from,
+            } => {
+                self.collect_children(
+                    *inherited_from,
+                    nodes,
+                    None,
+                    style,
+                    (content_x, content_width),
+                    &mut items,
+                );
             }
         }
         self.emit(&mut items, style, content_x, content_width);
@@ -1440,6 +1510,64 @@ impl<'a> Context<'a, '_> {
         if let Some(margin) = self.pending_margin.take() {
             self.y = self.y.saturating_add(margin);
         }
+    }
+
+    fn collect_children(
+        &mut self,
+        parent: NodeId,
+        children: &[NodeId],
+        href: Option<&'a str>,
+        inherited: Style,
+        containing: (i32, i32),
+        items: &mut Vec<Item<'a>>,
+    ) {
+        let (containing_x, containing_width) = containing;
+        let mut index = 0usize;
+        while index < children.len() {
+            let child = children[index];
+            if !self.table_internal_node(child) {
+                self.collect(
+                    child,
+                    href,
+                    inherited,
+                    containing_x,
+                    containing_width,
+                    items,
+                );
+                index = index.saturating_add(1);
+                continue;
+            }
+
+            let mut group = Vec::new();
+            while index < children.len() {
+                let candidate = children[index];
+                if self.table_internal_node(candidate) {
+                    group.push(candidate);
+                    index = index.saturating_add(1);
+                    continue;
+                }
+
+                if self.table_fixup_ignorable(candidate) {
+                    let mut next = index.saturating_add(1);
+                    while next < children.len() && self.table_fixup_ignorable(children[next]) {
+                        next = next.saturating_add(1);
+                    }
+                    if next < children.len() && self.table_internal_node(children[next]) {
+                        index = next;
+                        continue;
+                    }
+                }
+                break;
+            }
+
+            self.emit(items, inherited, containing_x, containing_width);
+            self.anonymous_table(&group, parent, inherited, containing_x, containing_width);
+        }
+    }
+
+    fn table_internal_node(&self, node: NodeId) -> bool {
+        self.table_fixup_display(node)
+            .is_some_and(is_table_internal_display)
     }
 
     fn collect(
@@ -1544,9 +1672,14 @@ impl<'a> Context<'a, '_> {
                         (containing_x, containing_width),
                         items,
                     );
-                    for child in &node.children {
-                        self.collect(*child, href, current, containing_x, containing_width, items);
-                    }
+                    self.collect_children(
+                        id,
+                        &node.children,
+                        href,
+                        current,
+                        (containing_x, containing_width),
+                        items,
+                    );
                     self.collect_generated(
                         id,
                         PseudoElement::After,
@@ -1573,16 +1706,14 @@ impl<'a> Context<'a, '_> {
                 }
             }
             NodeKind::Document => {
-                for child in &node.children {
-                    self.collect(
-                        *child,
-                        href,
-                        inherited,
-                        containing_x,
-                        containing_width,
-                        items,
-                    );
-                }
+                self.collect_children(
+                    id,
+                    &node.children,
+                    href,
+                    inherited,
+                    (containing_x, containing_width),
+                    items,
+                );
             }
             NodeKind::Comment(_) | NodeKind::DocumentType(_) => {}
         }
@@ -2525,6 +2656,18 @@ fn fallback_display(tag: &str) -> Display {
         _ if is_block(tag) => Display::Block,
         _ => Display::Inline,
     }
+}
+
+fn anonymous_table_style(parent: Style) -> Style {
+    let mut style = default_style();
+    style.inline = InlineStyle {
+        boxes: None,
+        ..parent.inline
+    };
+    style.text_align = parent.text_align;
+    style.border_collapse = parent.border_collapse;
+    style.border_spacing = parent.border_spacing;
+    style
 }
 
 fn anonymous_table_cell_style(parent: Style) -> Style {

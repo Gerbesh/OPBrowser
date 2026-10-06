@@ -141,10 +141,11 @@ context. border-spacing accepts one/two nonnegative lengths and inherits; border
 accepts separate/collapse and inherits. vertical-align currently recognizes the table-relevant
 baseline/top/middle/bottom keywords as a non-inherited property. Table UA style starts separate
 at 2px/2px. These table properties reach the grid formatter, including zero spacing, shared-cell
-border resolution and post-row vertical content placement. The formatter also performs initial
-anonymous-row/anonymous-cell child fixup for CSS-generated table structures, so display:table can
-consume missing row/cell wrappers without altering the DOM. font-size, font-weight/style,
-line-height, decoration, spacing, transform and
+border resolution and post-row vertical content placement. The formatter performs anonymous
+row/cell child fixup inside display:table and normal-flow collection groups consecutive orphan
+table-internal siblings under one anonymous block table, so CSS-generated table structures can
+recover missing wrappers without altering the DOM. font-size, font-weight/style, line-height,
+decoration, spacing, transform and
 color are carried on inline character runs. text-align offsets completed lines, while
 white-space controls collapse/newline preservation/soft wrapping. text-transform is applied
 before measurement and link-range reconstruction; spacing changes wrapping and native paint.

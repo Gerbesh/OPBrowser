@@ -1408,3 +1408,29 @@ This file is append-only project history.
 - Updated project plan, code graph/slices and CSS/rendering/box-model wiki documentation.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 319 workspace tests,
   native startup smoke and optimized release build. The release executable is 866,304 bytes.
+
+## 2026-10-06 - Anonymous table missing-parent repair
+
+- Generalized the table formatter so real display:table elements and layout-only anonymous table
+  wrappers share one table_box path for outer geometry, captions, intrinsic tracks, row/column
+  placement, spacing, collapsed borders and cell vertical alignment.
+- Normal-flow child collection now recognizes consecutive orphan table-internal siblings and groups
+  them under one anonymous block table instead of laying each table-row/table-cell as an unrelated
+  ordinary block.
+- Repair-transparent whitespace/comments/display:none nodes between orphan table-internal siblings
+  do not split the run, while trailing whitespace before ordinary content remains available to the
+  normal flow collector.
+- Consecutive orphan table-cell siblings therefore receive one anonymous row, consecutive orphan
+  table-row siblings become rows of one anonymous table, and ordinary children of an orphan row
+  still receive the child-side anonymous-cell repair from the previous milestone.
+- Anonymous wrappers preserve inherited text presentation and reuse the existing table grid without
+  adding synthetic DOM nodes or creating a second reduced table-layout implementation.
+- Added three layout regressions for orphan cells, orphan rows and nested anonymous-cell repair, plus
+  an Engine regression proving the repaired sibling group reaches display-list geometry.
+- The initial core row/cell anonymous-table fixup is now present in both directions. True
+  inline-table and remaining anonymous column/caption edge cases remain later work.
+- Updated project plan, code graph/slices and CSS/rendering/box-model wiki documentation.
+- The first full verification exposed only a Clippy too-many-arguments warning in the new sibling
+  collector; its containing geometry was folded into one pair and verification was rerun.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 323 workspace tests,
+  native startup smoke and optimized release build. The release executable is 869,888 bytes.

@@ -126,12 +126,13 @@ It measures cell text/images for min/max track preferences, honors cell/col/colg
 distributes the available table width across those preferences, applies horizontal/vertical
 border-spacing, performs initial per-segment collapsed cell-border conflict resolution and then
 repositions each cell's nested output for baseline/top/middle/bottom vertical-align after final
-row heights are known. Before grid construction it also performs initial child-side anonymous
-table fixup: improper table children and row-group children gain layout-only rows, while non-cell
-row children gain layout-only cells without mutating the DOM. Missing-parent fixup for orphan
-table-internal boxes, inline-table and the full CSS Tables percentage/intrinsic algorithms remain
-later. Inline vertical-align values such as sub/super/text-top/text-bottom/length/% are also still
-unsupported. Transformed text is
+row heights are known. Anonymous table fixup works in both core directions without mutating the
+DOM: improper table/row-group children gain layout-only rows, non-cell row children gain
+layout-only cells, and consecutive orphan table-internal siblings found in normal flow are grouped
+under one anonymous block table. Real and anonymous table roots share the same table_box/grid
+implementation. Inline-table, remaining anonymous column/caption edge cases and the full CSS Tables
+percentage/intrinsic algorithms remain later. Inline vertical-align values such as
+sub/super/text-top/text-bottom/length/% are also still unsupported. Transformed text is
 measured before line placement; op_paint carries italic/decoration/spacing metadata and Win32
 uses matching text advances while drawing measured decoration/link segments. It resolves used widths/min/max/auto margins,
 box-sizing, padding, independent border edges, fixed height constraints and sibling margin

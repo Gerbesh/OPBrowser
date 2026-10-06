@@ -592,7 +592,10 @@ classDiagram
   sources: consecutive improper table children form anonymous rows, row-group children that are
   not rows form anonymous rows, and consecutive non-cell row children form anonymous cells.
   Anonymous cells inherit the parent table/row text properties but keep initial non-inherited box
-  properties; no synthetic DOM nodes are created. Caption flow, real cell backgrounds/borders/
+  properties; no synthetic DOM nodes are created. Normal flow also groups consecutive orphan
+  table-internal siblings, ignoring only repair-transparent whitespace/comments/display:none
+  separators between them, and sends that run through an anonymous block table using the exact
+  same table_box/grid path as a real display:table. Caption flow, real cell backgrounds/borders/
   padding and span geometry reach ordinary BoxDecoration/text/image output. Whitespace-only text
   between block siblings is suppressed before it can create anonymous line geometry.
   op_layout::replaced resolves raster intrinsic/explicit/auto sizes and min/max ratio conflicts.
