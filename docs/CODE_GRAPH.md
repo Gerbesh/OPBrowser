@@ -542,7 +542,11 @@ classDiagram
   in-body insertion modes, automatically creates missing html/head/body elements, routes
   metadata/text-only head tokens back to the head pointer, merges duplicate html/body
   attributes and ignores the self-closing flag for ordinary non-void HTML elements.
-  Foreign-content/CDATA and the remaining insertion modes remain later work.
+  InBody now owns normal/list-item/button scope checks, implied-end-tag generation,
+  p/block/list/description/heading/button recovery and special-element boundaries for
+  generic end tags; head-only tokens encountered in body are routed back through the
+  stored head pointer. Active formatting/adoption-agency logic, foreign-content/CDATA and
+  the remaining insertion modes remain later work.
   Its private
   references module consumes the full named-reference table and numeric references
   before text/attribute tokens enter the DOM. Characters carries one or two Unicode

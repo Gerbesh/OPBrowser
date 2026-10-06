@@ -129,7 +129,17 @@ noframes content uses a dedicated text mode and returns to its previous insertio
 permitted metadata tokens encountered after head are inserted back under the stored head
 element. Repeated html/body start tags merge only previously missing attributes, and the
 self-closing slash is ignored for ordinary non-void HTML elements rather than incorrectly
-closing them. Remaining table/template/frameset/after-body modes are still future work.
+closing them.
+
+The in-body mode now implements the first scope-sensitive recovery layer from WHATWG:
+normal, list-item and button scope checks; implied end-tag generation; automatic paragraph
+closure before block starts; li/dd/dt predecessor closure; heading recovery; nested-button
+recovery; special-element boundaries for generic end tags; </br> recovery; and the legacy
+<image> alias to img. Supported head-only tokens found after body parsing has started are
+processed against the stored head element without discarding the current body stack.
+Active formatting elements and the adoption agency algorithm are intentionally the next
+separate parser layer rather than being approximated by ordinary stack popping. Remaining
+table/template/frameset/after-body modes are still future work.
 
 Unknown <! declarations and CDATA-like declarations in the current HTML-only context become
 Comment nodes and remain non-rendering. Raw-text/RCDATA and attributes still keep declaration

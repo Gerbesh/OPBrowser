@@ -20,6 +20,13 @@ enum TokenAction {
     Stop,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScopeKind {
+    Normal,
+    ListItem,
+    Button,
+}
+
 pub fn parse_document(input: &str) -> Document {
     let mut builder = TreeBuilder::new();
 
@@ -322,6 +329,7 @@ impl TreeBuilder {
 
     fn handle_in_body(&mut self, token: &Token) -> TokenAction {
         match token {
+            Token::Character('\0') => TokenAction::Consumed,
             Token::Character(character) => {
                 self.text_buffer.push(*character);
                 TokenAction::Consumed
@@ -340,6 +348,13 @@ impl TreeBuilder {
                 self.merge_html_attributes(attributes);
                 TokenAction::Consumed
             }
+            Token::StartTag {
+                name, attributes, ..
+            } if is_head_token(name) => {
+                self.flush_text();
+                self.process_head_token_from_body(name, attributes);
+                TokenAction::Consumed
+            }
             Token::StartTag { name, .. } if name == "head" => TokenAction::Consumed,
             Token::StartTag {
                 name, attributes, ..
@@ -352,19 +367,275 @@ impl TreeBuilder {
             }
             Token::StartTag {
                 name, attributes, ..
+            } if is_p_closing_block_start(name) => {
+                self.flush_text();
+                self.close_p_if_in_button_scope();
+                self.insert_element(name, attributes, None, false);
+                TokenAction::Consumed
+            }
+            Token::StartTag {
+                name, attributes, ..
+            } if is_heading(name) => {
+                self.flush_text();
+                self.close_p_if_in_button_scope();
+                if self
+                    .open_elements
+                    .last()
+                    .and_then(|node| self.document.element(*node))
+                    .is_some_and(|element| is_heading(&element.tag_name))
+                {
+                    self.open_elements.pop();
+                }
+                self.insert_element(name, attributes, None, false);
+                TokenAction::Consumed
+            }
+            Token::StartTag {
+                name, attributes, ..
+            } if name == "li" => {
+                self.flush_text();
+                self.close_previous_list_item();
+                self.close_p_if_in_button_scope();
+                self.insert_element(name, attributes, None, false);
+                TokenAction::Consumed
+            }
+            Token::StartTag {
+                name, attributes, ..
+            } if matches!(name.as_str(), "dd" | "dt") => {
+                self.flush_text();
+                self.close_previous_description_item();
+                self.close_p_if_in_button_scope();
+                self.insert_element(name, attributes, None, false);
+                TokenAction::Consumed
+            }
+            Token::StartTag {
+                name, attributes, ..
+            } if name == "button" => {
+                self.flush_text();
+                if self.has_in_scope("button", ScopeKind::Normal) {
+                    self.generate_implied_end_tags(None);
+                    self.pop_until("button");
+                }
+                self.insert_element(name, attributes, None, false);
+                TokenAction::Consumed
+            }
+            Token::StartTag {
+                name, attributes, ..
+            } if name == "image" => {
+                self.flush_text();
+                self.insert_element("img", attributes, None, true);
+                TokenAction::Consumed
+            }
+            Token::StartTag {
+                name, attributes, ..
             } => {
                 self.flush_text();
                 self.insert_element(name, attributes, None, false);
                 TokenAction::Consumed
             }
+            Token::EndTag { name } if is_scoped_block_end(name) => {
+                self.flush_text();
+                if self.has_in_scope(name, ScopeKind::Normal) {
+                    self.generate_implied_end_tags(None);
+                    self.pop_until(name);
+                }
+                TokenAction::Consumed
+            }
+            Token::EndTag { name } if name == "p" => {
+                self.flush_text();
+                if !self.has_in_scope("p", ScopeKind::Button) {
+                    self.insert_element("p", &[], None, false);
+                }
+                self.close_p();
+                TokenAction::Consumed
+            }
+            Token::EndTag { name } if name == "li" => {
+                self.flush_text();
+                if self.has_in_scope("li", ScopeKind::ListItem) {
+                    self.generate_implied_end_tags(Some("li"));
+                    self.pop_until("li");
+                }
+                TokenAction::Consumed
+            }
+            Token::EndTag { name } if matches!(name.as_str(), "dd" | "dt") => {
+                self.flush_text();
+                if self.has_in_scope(name, ScopeKind::Normal) {
+                    self.generate_implied_end_tags(Some(name));
+                    self.pop_until(name);
+                }
+                TokenAction::Consumed
+            }
+            Token::EndTag { name } if is_heading(name) => {
+                self.flush_text();
+                if self.has_heading_in_scope() {
+                    self.generate_implied_end_tags(None);
+                    self.pop_until_heading();
+                }
+                TokenAction::Consumed
+            }
+            Token::EndTag { name } if name == "br" => {
+                self.flush_text();
+                self.insert_element("br", &[], None, true);
+                TokenAction::Consumed
+            }
             Token::EndTag { name } => {
                 self.flush_text();
-                self.close_matching(name);
+                self.close_generic_end_tag(name);
                 TokenAction::Consumed
             }
             Token::Eof => {
                 self.flush_text();
                 TokenAction::Stop
+            }
+        }
+    }
+
+    fn process_head_token_from_body(&mut self, name: &str, attributes: &[Attribute]) {
+        let Some(head) = self.head_element else {
+            return;
+        };
+
+        if is_head_void_element(name) {
+            self.insert_element(name, attributes, Some(head), true);
+        } else if is_head_text_element(name) {
+            self.insert_element(name, attributes, Some(head), false);
+            self.original_mode = InsertionMode::InBody;
+            self.mode = InsertionMode::Text;
+        }
+    }
+
+    fn has_in_scope(&self, target: &str, kind: ScopeKind) -> bool {
+        for node in self.open_elements.iter().rev() {
+            let Some(element) = self.document.element(*node) else {
+                continue;
+            };
+            if element.tag_name == target {
+                return true;
+            }
+            if is_scope_boundary(&element.tag_name, kind) {
+                return false;
+            }
+        }
+        false
+    }
+
+    fn has_heading_in_scope(&self) -> bool {
+        for node in self.open_elements.iter().rev() {
+            let Some(element) = self.document.element(*node) else {
+                continue;
+            };
+            if is_heading(&element.tag_name) {
+                return true;
+            }
+            if is_scope_boundary(&element.tag_name, ScopeKind::Normal) {
+                return false;
+            }
+        }
+        false
+    }
+
+    fn generate_implied_end_tags(&mut self, except: Option<&str>) {
+        while let Some(name) = self
+            .open_elements
+            .last()
+            .and_then(|node| self.document.element(*node))
+            .map(|element| element.tag_name.as_str())
+        {
+            if !is_implied_end_tag(name) || except == Some(name) {
+                break;
+            }
+            self.open_elements.pop();
+        }
+    }
+
+    fn close_p_if_in_button_scope(&mut self) {
+        if self.has_in_scope("p", ScopeKind::Button) {
+            self.close_p();
+        }
+    }
+
+    fn close_p(&mut self) {
+        self.generate_implied_end_tags(Some("p"));
+        self.pop_until("p");
+    }
+
+    fn close_previous_list_item(&mut self) {
+        let mut found = false;
+        for node in self.open_elements.iter().rev() {
+            let Some(element) = self.document.element(*node) else {
+                continue;
+            };
+            if element.tag_name == "li" {
+                found = true;
+                break;
+            }
+            if is_special_element(&element.tag_name)
+                && !matches!(element.tag_name.as_str(), "address" | "div" | "p")
+            {
+                break;
+            }
+        }
+
+        if found {
+            self.generate_implied_end_tags(Some("li"));
+            self.pop_until("li");
+        }
+    }
+
+    fn close_previous_description_item(&mut self) {
+        let mut target = None;
+        for node in self.open_elements.iter().rev() {
+            let Some(element) = self.document.element(*node) else {
+                continue;
+            };
+            if matches!(element.tag_name.as_str(), "dd" | "dt") {
+                target = Some(element.tag_name.clone());
+                break;
+            }
+            if is_special_element(&element.tag_name)
+                && !matches!(element.tag_name.as_str(), "address" | "div" | "p")
+            {
+                break;
+            }
+        }
+
+        if let Some(target) = target {
+            self.generate_implied_end_tags(Some(&target));
+            self.pop_until(&target);
+        }
+    }
+
+    fn pop_until(&mut self, tag_name: &str) {
+        if let Some(position) = self.open_elements.iter().rposition(|node| {
+            self.document
+                .element(*node)
+                .is_some_and(|element| element.tag_name == tag_name)
+        }) {
+            self.open_elements.truncate(position);
+        }
+    }
+
+    fn pop_until_heading(&mut self) {
+        if let Some(position) = self.open_elements.iter().rposition(|node| {
+            self.document
+                .element(*node)
+                .is_some_and(|element| is_heading(&element.tag_name))
+        }) {
+            self.open_elements.truncate(position);
+        }
+    }
+
+    fn close_generic_end_tag(&mut self, tag_name: &str) {
+        for (position, node) in self.open_elements.iter().enumerate().rev() {
+            let Some(element) = self.document.element(*node) else {
+                continue;
+            };
+            if element.tag_name == tag_name {
+                self.generate_implied_end_tags(Some(tag_name));
+                self.open_elements.truncate(position);
+                return;
+            }
+            if is_special_element(&element.tag_name) {
+                return;
             }
         }
     }
@@ -514,12 +785,201 @@ fn is_ascii_whitespace(character: char) -> bool {
     matches!(character, '\t' | '\n' | '\x0c' | '\r' | ' ')
 }
 
+fn is_head_token(tag_name: &str) -> bool {
+    is_head_void_element(tag_name) || is_head_text_element(tag_name)
+}
+
 fn is_head_void_element(tag_name: &str) -> bool {
     matches!(tag_name, "base" | "basefont" | "bgsound" | "link" | "meta")
 }
 
 fn is_head_text_element(tag_name: &str) -> bool {
     matches!(tag_name, "title" | "style" | "script" | "noframes")
+}
+
+fn is_p_closing_block_start(tag_name: &str) -> bool {
+    matches!(
+        tag_name,
+        "address"
+            | "article"
+            | "aside"
+            | "blockquote"
+            | "center"
+            | "details"
+            | "dialog"
+            | "dir"
+            | "div"
+            | "dl"
+            | "fieldset"
+            | "figcaption"
+            | "figure"
+            | "footer"
+            | "header"
+            | "hgroup"
+            | "main"
+            | "menu"
+            | "nav"
+            | "ol"
+            | "p"
+            | "search"
+            | "section"
+            | "summary"
+            | "ul"
+    )
+}
+
+fn is_scoped_block_end(tag_name: &str) -> bool {
+    matches!(
+        tag_name,
+        "address"
+            | "article"
+            | "aside"
+            | "blockquote"
+            | "button"
+            | "center"
+            | "details"
+            | "dialog"
+            | "dir"
+            | "div"
+            | "dl"
+            | "fieldset"
+            | "figcaption"
+            | "figure"
+            | "footer"
+            | "header"
+            | "hgroup"
+            | "listing"
+            | "main"
+            | "menu"
+            | "nav"
+            | "ol"
+            | "pre"
+            | "search"
+            | "section"
+            | "select"
+            | "summary"
+            | "ul"
+    )
+}
+
+fn is_heading(tag_name: &str) -> bool {
+    matches!(tag_name, "h1" | "h2" | "h3" | "h4" | "h5" | "h6")
+}
+
+fn is_implied_end_tag(tag_name: &str) -> bool {
+    matches!(
+        tag_name,
+        "dd" | "dt" | "li" | "optgroup" | "option" | "p" | "rb" | "rp" | "rt" | "rtc"
+    )
+}
+
+fn is_scope_boundary(tag_name: &str, kind: ScopeKind) -> bool {
+    let normal = matches!(
+        tag_name,
+        "applet"
+            | "caption"
+            | "html"
+            | "table"
+            | "td"
+            | "th"
+            | "marquee"
+            | "object"
+            | "select"
+            | "template"
+    );
+
+    normal
+        || matches!(kind, ScopeKind::ListItem) && matches!(tag_name, "ol" | "ul")
+        || matches!(kind, ScopeKind::Button) && tag_name == "button"
+}
+
+fn is_special_element(tag_name: &str) -> bool {
+    matches!(
+        tag_name,
+        "address"
+            | "applet"
+            | "area"
+            | "article"
+            | "aside"
+            | "base"
+            | "basefont"
+            | "bgsound"
+            | "blockquote"
+            | "body"
+            | "br"
+            | "button"
+            | "caption"
+            | "center"
+            | "col"
+            | "colgroup"
+            | "dd"
+            | "details"
+            | "dir"
+            | "div"
+            | "dl"
+            | "dt"
+            | "embed"
+            | "fieldset"
+            | "figcaption"
+            | "figure"
+            | "footer"
+            | "form"
+            | "frame"
+            | "frameset"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "head"
+            | "header"
+            | "hgroup"
+            | "hr"
+            | "html"
+            | "iframe"
+            | "img"
+            | "input"
+            | "keygen"
+            | "li"
+            | "link"
+            | "listing"
+            | "main"
+            | "marquee"
+            | "menu"
+            | "meta"
+            | "nav"
+            | "noembed"
+            | "noframes"
+            | "noscript"
+            | "object"
+            | "ol"
+            | "p"
+            | "param"
+            | "plaintext"
+            | "pre"
+            | "script"
+            | "search"
+            | "section"
+            | "select"
+            | "source"
+            | "style"
+            | "summary"
+            | "table"
+            | "tbody"
+            | "td"
+            | "template"
+            | "textarea"
+            | "tfoot"
+            | "th"
+            | "thead"
+            | "title"
+            | "tr"
+            | "track"
+            | "ul"
+            | "wbr"
+            | "xmp"
+    )
 }
 
 fn is_void_element(tag_name: &str) -> bool {

@@ -1206,3 +1206,26 @@ This file is append-only project history.
 - The remaining table/template/frameset/after-body insertion modes, active formatting
   elements/adoption agency, foster parenting, foreign content and script escape states
   remain explicit follow-up work.
+
+## 2026-10-06 - Scope-aware in-body HTML recovery
+
+- Expanded InBody from generic stack insertion/removal to WHATWG-style normal, list-item
+  and button scope checks plus shared implied-end-tag generation.
+- Block-level starts now close an open paragraph in button scope. Repeated p, li, dd and dt
+  structures recover into sibling DOM nodes instead of nesting indefinitely; stray </p>
+  synthesizes and immediately closes the required empty paragraph.
+- Heading starts close paragraphs and replace a current heading; heading end tags close the
+  heading in scope even when the literal h1-h6 name is mismatched, matching HTML recovery.
+- Nested button starts close the button already in scope. Generic end tags now stop at
+  special-element boundaries instead of tunneling through unrelated structural elements.
+- Added in-body recovery for </br> -> <br>, the legacy <image> -> <img> alias and U+0000
+  character suppression. Supported head-only tokens encountered after body parsing begins
+  are attached to the stored head while preserving the existing body open-element stack.
+- Expanded tree-builder coverage from 10 to 17 tests for paragraphs, lists, description
+  lists, headings, buttons, generic end-tag boundaries, misplaced head tokens and legacy
+  recovery cases.
+- Verified the exact rule families against the current WHATWG tree-construction sections.
+  Active formatting elements/adoption agency and table/foster-parenting remain separate
+  follow-up milestones.
+- Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace
+  test suite, native startup smoke and optimized workspace release build.

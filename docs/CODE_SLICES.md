@@ -54,8 +54,14 @@ declaration-free source. Tree construction now advances through initial/before-h
 before-head/in-head/after-head/text/in-body states, synthesizes omitted html/head/body,
 keeps title/style/script/noframes text under head, reparents permitted head-only tokens
 seen after head, merges duplicate html/body attributes without overwriting existing ones,
-and treats a slash on ordinary non-void HTML start tags as non-closing. Mode-specific
-layout quirks, processing instructions, table/template/frameset/after-body modes and
+and treats a slash on ordinary non-void HTML start tags as non-closing. In-body recovery
+now has normal/list-item/button scope boundaries plus implied end tags: block starts close
+open paragraphs, repeated li/dd/dt items close predecessors, heading starts/ends recover
+across mismatched heading names, nested buttons close the prior button, generic end tags
+cannot cross special elements, </br> becomes br and legacy <image> becomes img. Head-only
+metadata/raw-text tokens encountered while in body are attached back to the stored head
+without losing the body stack. Active formatting/adoption agency, mode-specific layout
+quirks, processing instructions, table/template/frameset/after-body modes and
 foreign-content context remain later.
 
 ## S2 - Navigation to static page

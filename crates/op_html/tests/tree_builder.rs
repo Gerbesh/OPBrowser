@@ -292,3 +292,182 @@ fn self_closing_syntax_does_not_close_normal_html_elements() {
         NodeKind::Text(text) if text == "tail"
     ));
 }
+
+#[test]
+fn block_starts_close_open_paragraphs_and_stray_p_end_tags_create_empty_paragraphs() {
+    let document = parse_document("<p>one<div>two</div>three<p>four<p>five");
+    let body_node = body(&document);
+    let children = document.children(body_node);
+
+    assert_eq!(document.element(children[0]).unwrap().tag_name, "p");
+    assert!(matches!(
+        &document.node(document.children(children[0])[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "one"
+    ));
+    assert_eq!(document.element(children[1]).unwrap().tag_name, "div");
+    assert!(matches!(
+        &document.node(children[2]).unwrap().kind,
+        NodeKind::Text(text) if text == "three"
+    ));
+    assert_eq!(document.element(children[3]).unwrap().tag_name, "p");
+    assert_eq!(document.element(children[4]).unwrap().tag_name, "p");
+
+    let document = parse_document("<div>a</p>b</div>");
+    let div = child_element(&document, body(&document), "div");
+    let children = document.children(div);
+    assert!(matches!(
+        &document.node(children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "a"
+    ));
+    assert_eq!(document.element(children[1]).unwrap().tag_name, "p");
+    assert!(document.children(children[1]).is_empty());
+    assert!(matches!(
+        &document.node(children[2]).unwrap().kind,
+        NodeKind::Text(text) if text == "b"
+    ));
+}
+
+#[test]
+fn list_and_description_items_generate_implied_end_tags() {
+    let document = parse_document("<ul><li>one<li>two<li><span>three</ul><dl><dt>A<dd>B<dt>C</dl>");
+    let body = body(&document);
+    let ul = document.children(body)[0];
+    let list_items = document.children(ul);
+    assert_eq!(list_items.len(), 3);
+    assert!(
+        list_items
+            .iter()
+            .all(|node| document.element(*node).unwrap().tag_name == "li")
+    );
+    assert!(matches!(
+        &document.node(document.children(list_items[0])[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "one"
+    ));
+    assert!(matches!(
+        &document.node(document.children(list_items[1])[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "two"
+    ));
+    assert_eq!(
+        document
+            .element(document.children(list_items[2])[0])
+            .unwrap()
+            .tag_name,
+        "span"
+    );
+
+    let dl = document.children(body)[1];
+    let description_items = document.children(dl);
+    assert_eq!(description_items.len(), 3);
+    assert_eq!(
+        document.element(description_items[0]).unwrap().tag_name,
+        "dt"
+    );
+    assert_eq!(
+        document.element(description_items[1]).unwrap().tag_name,
+        "dd"
+    );
+    assert_eq!(
+        document.element(description_items[2]).unwrap().tag_name,
+        "dt"
+    );
+}
+
+#[test]
+fn heading_start_and_end_rules_close_the_heading_in_scope() {
+    let document = parse_document("<h1>one<h2>two</h3>tail");
+    let body = body(&document);
+    let children = document.children(body);
+
+    assert_eq!(document.element(children[0]).unwrap().tag_name, "h1");
+    assert_eq!(document.element(children[1]).unwrap().tag_name, "h2");
+    assert!(matches!(
+        &document.node(children[2]).unwrap().kind,
+        NodeKind::Text(text) if text == "tail"
+    ));
+}
+
+#[test]
+fn nested_button_start_closes_the_button_already_in_scope() {
+    let document = parse_document("<button>one<button>two</button>tail");
+    let body = body(&document);
+    let children = document.children(body);
+
+    assert_eq!(document.element(children[0]).unwrap().tag_name, "button");
+    assert_eq!(document.element(children[1]).unwrap().tag_name, "button");
+    assert!(matches!(
+        &document.node(children[2]).unwrap().kind,
+        NodeKind::Text(text) if text == "tail"
+    ));
+}
+
+#[test]
+fn generic_end_tags_stop_at_special_elements_instead_of_crossing_scope_boundaries() {
+    let document = parse_document("<div><span>a</unknown>b</span></div><span>c</span>");
+    let body = body(&document);
+    let div = document.children(body)[0];
+    let span = document.children(div)[0];
+    let span_children = document.children(span);
+
+    assert!(matches!(
+        &document.node(span_children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "a"
+    ));
+    assert!(matches!(
+        &document.node(span_children[1]).unwrap().kind,
+        NodeKind::Text(text) if text == "b"
+    ));
+    assert_eq!(
+        document
+            .element(document.children(body)[1])
+            .unwrap()
+            .tag_name,
+        "span"
+    );
+}
+
+#[test]
+fn head_tokens_seen_inside_body_return_to_head_without_breaking_body_stack() {
+    let document = parse_document(
+        "<body><div>before<style>.x{color:red}</style>after</div><meta name=x></body>",
+    );
+    let head = head(&document);
+    let head_children = document.children(head);
+    assert_eq!(
+        document.element(head_children[0]).unwrap().tag_name,
+        "style"
+    );
+    assert_eq!(document.element(head_children[1]).unwrap().tag_name, "meta");
+    assert!(matches!(
+        &document.node(document.children(head_children[0])[0]).unwrap().kind,
+        NodeKind::Text(text) if text == ".x{color:red}"
+    ));
+
+    let div = child_element(&document, body(&document), "div");
+    let div_children = document.children(div);
+    assert!(matches!(
+        &document.node(div_children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "before"
+    ));
+    assert!(matches!(
+        &document.node(div_children[1]).unwrap().kind,
+        NodeKind::Text(text) if text == "after"
+    ));
+}
+
+#[test]
+fn legacy_image_alias_and_br_end_tag_follow_in_body_recovery() {
+    let document = parse_document("<image src=x>one</br>two");
+    let body = body(&document);
+    let children = document.children(body);
+
+    assert_eq!(document.element(children[0]).unwrap().tag_name, "img");
+    assert!(matches!(
+        &document.node(children[1]).unwrap().kind,
+        NodeKind::Text(text) if text == "one"
+    ));
+    assert_eq!(document.element(children[2]).unwrap().tag_name, "br");
+    assert!(matches!(
+        &document.node(children[3]).unwrap().kind,
+        NodeKind::Text(text) if text == "two"
+    ));
+}
