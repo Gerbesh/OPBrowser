@@ -10,9 +10,9 @@ mod tokenizer;
 
 pub use computed::{
     BorderEdges, BorderStyle, BoxSizing, ComputedBorder, ComputedFontWeight, ComputedLineHeight,
-    ComputedPseudoStyle, ComputedStyle, ComputedStyleMap, CssColor, Display, FontStyle,
-    LengthPercentage, MarginEdges, MarginValue, PaddingEdges, TextAlign, TextDecorationLine,
-    TextTransform, WhiteSpace, compute_styles,
+    ComputedPseudoStyle, ComputedStyle, ComputedStyleMap, CssColor, CustomPropertyMap, Display,
+    FontStyle, LengthPercentage, MarginEdges, MarginValue, PaddingEdges, TextAlign,
+    TextDecorationLine, TextTransform, WhiteSpace, compute_styles,
 };
 pub use parser::{parse_declaration_list, parse_stylesheet};
 pub use style::{

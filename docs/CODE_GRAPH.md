@@ -232,8 +232,15 @@ classDiagram
     class ComputedStyleMap {
         NodeId -> ComputedStyle
         (NodeId, PseudoElement) -> ComputedPseudoStyle
+        NodeId -> CustomPropertyMap
+        (NodeId, PseudoElement) -> CustomPropertyMap
         +style_for(node)
         +pseudo_style_for(node,pseudo)
+        +custom_properties_for(node)
+        +pseudo_custom_properties_for(node,pseudo)
+    }
+    class CustomPropertyMap {
+        case_sensitive_name -> resolved TokenKind[]
     }
     class ComputedPseudoStyle {
         style
@@ -342,7 +349,10 @@ classDiagram
     MatchedDeclaration --> Declaration
     MatchedDeclaration --> Specificity
     StyleCollection --> StyleMap
-    StyleMap --> ComputedStyleMap : host + pseudo cascade / inheritance / value parsing
+    StyleMap --> CustomPropertyMap : custom-property cascade / inheritance
+    CustomPropertyMap --> CustomPropertyMap : recursive var() substitution / fallback resolution
+    CustomPropertyMap --> ComputedStyleMap : retained host + pseudo snapshots
+    StyleMap --> ComputedStyleMap : host + pseudo cascade / substituted value parsing
     ComputedStyleMap --> ComputedStyle
     ComputedStyleMap --> ComputedPseudoStyle
     ComputedPseudoStyle --> PseudoElement : keyed generated target

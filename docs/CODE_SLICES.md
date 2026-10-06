@@ -216,6 +216,9 @@ HTML
   -> right-to-left selector matching against op_dom
   -> StyleMap host buckets + (NodeId, PseudoElement) author buckets
   -> cascade: !important -> inline source -> specificity -> source order
+  -> inherited CustomPropertyMap per element/pseudo target
+       case-sensitive --name winners -> recursive var() resolution/fallbacks
+  -> substitute var() tokens before supported normal-property value parsing
   -> inheritance + initial/inherit/unset
   -> ComputedStyleMap { display, color, font-size, font-weight/font-style,
                         line-height, text-align, white-space, text-decoration-line,
@@ -223,6 +226,7 @@ HTML
                         background-color, margin/padding edges, border edges,
                         width/height min/max, box-sizing }
      + ComputedPseudoStyle { inherited host style + pseudo declarations + generated content }
+     + CustomPropertyMap snapshots for host/pseudo diagnostics and inheritance
   -> retained in PreparedDocument
   -> op_layout injects ::before before DOM children and ::after after DOM children
   -> op_layout display/block/inline decisions + mixed inline style runs
@@ -247,6 +251,13 @@ percentage saturation/lightness and alpha. Channels clamp to the CSS output rang
 global keywords inherit/initial/unset remain shared. color/font-size/font-weight/font-style/line-height/text-align/white-space/letter-spacing/word-spacing/text-transform inherit; display
 does not unless explicitly set to inherit. Unsupported/invalid values are discarded
 before cascade winner selection so a lower-priority valid declaration may still win.
+Custom property names remain case-sensitive and inherit by default. Their selected token values
+are resolved on the element where they are computed, so an inherited `--frozen:var(--accent)`
+does not rebind when a child later overrides `--accent`. `var()` supports nested fallbacks and
+simple dependency-cycle invalidation, and substitution works inside shorthands, functional
+colors, dimensions and generated `content`. In this initial slice an unresolved `var()` causes
+that declaration candidate to be discarded before the existing normal-property winner parser,
+so full CSS invalid-at-computed-value-time behavior remains later work.
 UA defaults preserve M1 block/hidden behavior and heading typography. Former semantic
 heading/paragraph/list spacing now lives in computed margins and goes through the same
 block geometry path as author margins. Inline text runs may differ in size, weight/style,
@@ -315,8 +326,8 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> CSS custom properties + var() substitution
-  -> generated content functions / full pseudo block geometry
+  -> generated content functions / fuller pseudo block geometry
+  -> full invalid-at-computed-value-time var() / custom-property cycle semantics
   -> nested/replaced inline decoration stacks
   -> additional computed properties
 ```

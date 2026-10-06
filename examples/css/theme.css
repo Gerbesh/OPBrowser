@@ -1,4 +1,4 @@
-body { color: #20232a; font-size: 18px; }
+body { --demo-accent:#b42318; --demo-surface:#eef2ff; --demo-edge:#4338ca; --demo-gap:5px 10px; color: #20232a; font-size: 18px; }
 h1 { color: #6d28d9; font-size: 42px; }
 .lead { color: #0369a1; font-size: 22px; font-weight: bold; }
 .accent { color: #b42318; font-weight: bold; }
@@ -29,3 +29,5 @@ h1 { color: #6d28d9; font-size: 42px; }
 .functional-pseudos > span:where(#functional-third) { font-weight: bold; }
 .generated-demo::before { content: "[generated before] "; padding: 3px 7px; background:#eef2ff; border:2px solid #4338ca; color:#b42318; font-weight:bold; }
 .generated-demo::after { content: " ✓ generated after"; color:#087a35; font-weight:bold; }
+.custom-props { width:68%; margin:12px auto; padding:var(--demo-gap); color:var(--demo-accent); background:var(--demo-surface); border:2px solid var(--demo-edge); font-weight:var(--missing-weight, bold); box-sizing:border-box; }
+.custom-props::before { --label:"[custom property] "; content:var(--label); color:var(--demo-edge); }

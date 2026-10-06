@@ -95,11 +95,21 @@ block/hidden tag rules and heading font sizes/weights, avoiding an unrelated vis
 regression when layout begins consuming computed styles. The CSS hash tokenizer also
 accepts digit-leading hash values required by hexadecimal colors.
 
+CSS custom properties now have their own computed token environment. Case-sensitive `--name`
+declarations use the same author importance/specificity/source-order cascade, inherit by
+default, and resolve nested `var(--name, fallback)` references on the element where the custom
+property is computed. The resolved map is then used to substitute `var()` into ordinary
+property declarations before the existing value parsers run. Missing/cyclic references can use
+nested fallbacks; simple cycles without a usable fallback become unavailable. `initial` removes
+a custom property while `inherit`/`unset` reuse the parent's computed value.
+
 Pseudo buckets cascade independently from their host. A generated pseudo starts from the
-host's inherited text properties, applies its own declarations, and becomes a
+host's inherited text and custom properties, applies its own declarations, and becomes a
 `ComputedPseudoStyle { style, content }` only when a supported `content` value generates text.
 The current `content` subset concatenates quoted strings; `none` and `normal` suppress
-creation. PreparedDocument retains both the author StyleCollection and ComputedStyleMap.
+creation. Because `var()` substitution happens first, generated content may come from inherited
+or pseudo-local custom properties. PreparedDocument retains both the author StyleCollection and
+ComputedStyleMap, including host/pseudo CustomPropertyMap snapshots.
 Resize reflow therefore does not reparse, rematch or recascade CSS.
 
 ## Rendering integration
@@ -140,8 +150,11 @@ Initial text alignment, line-height, font-style, underline/line-through, white-s
 letter/word spacing, text-transform and inline background/padding/solid-border fragments now
 reach layout/native paint. Functional `:is()`/`:where()`/`:not()` and `:nth-child(An+B)` now
 participate in selector matching with their initial specificity rules. Terminal
-`::before`/`::after` and quoted-string generated `content` now reach native layout/paint too.
-Next S3 work moves into CSS custom properties and `var()` substitution. Generated
-`attr()`/counters/quotes/images, full pseudo block-box geometry, forgiving selector-list
+`::before`/`::after`, quoted-string generated `content`, inherited custom properties and
+`var()` fallbacks now reach native layout/paint too. The initial `var()` slice deliberately
+reuses OPBrowser's current invalid-value filtering, so a declaration whose substitution fails
+can expose a lower valid candidate instead of full CSS invalid-at-computed-value-time behavior;
+full dependency-graph cycle semantics are also later. Next S3 work moves into generated
+`attr()`/counters/quotes/images and fuller pseudo block-box geometry, then forgiving selector-list
 recovery, nth-child `of`, advanced color spaces, at-rules, media queries and full CSS
 conformance remain later.

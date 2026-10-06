@@ -1,6 +1,8 @@
 use crate::{MatchedDeclaration, PseudoElement, Specificity, StyleMap, StyleSource, TokenKind};
 use op_dom::{Document, NodeId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+pub type CustomPropertyMap = HashMap<String, Vec<TokenKind>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Display {
@@ -281,6 +283,8 @@ impl ComputedStyle {
 pub struct ComputedStyleMap {
     entries: HashMap<NodeId, ComputedStyle>,
     pseudo_entries: HashMap<(NodeId, PseudoElement), ComputedPseudoStyle>,
+    custom_properties: HashMap<NodeId, CustomPropertyMap>,
+    pseudo_custom_properties: HashMap<(NodeId, PseudoElement), CustomPropertyMap>,
 }
 
 impl ComputedStyleMap {
@@ -296,6 +300,18 @@ impl ComputedStyleMap {
         self.pseudo_entries.get(&(node, pseudo))
     }
 
+    pub fn custom_properties_for(&self, node: NodeId) -> Option<&CustomPropertyMap> {
+        self.custom_properties.get(&node)
+    }
+
+    pub fn pseudo_custom_properties_for(
+        &self,
+        node: NodeId,
+        pseudo: PseudoElement,
+    ) -> Option<&CustomPropertyMap> {
+        self.pseudo_custom_properties.get(&(node, pseudo))
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len().saturating_add(self.pseudo_entries.len())
     }
@@ -308,7 +324,7 @@ impl ComputedStyleMap {
 pub fn compute_styles(document: &Document, author_styles: &StyleMap) -> ComputedStyleMap {
     let mut computed = ComputedStyleMap::default();
     for child in document.children(document.root()) {
-        compute_subtree(document, *child, None, author_styles, &mut computed);
+        compute_subtree(document, *child, None, None, author_styles, &mut computed);
     }
     computed
 }
@@ -317,48 +333,259 @@ fn compute_subtree(
     document: &Document,
     node: NodeId,
     parent_style: Option<ComputedStyle>,
+    parent_custom: Option<CustomPropertyMap>,
     author_styles: &StyleMap,
     computed: &mut ComputedStyleMap,
 ) {
     let current = document.element(node).map(|element| {
+        let declarations = author_styles.declarations_for(node);
+        let custom = compute_custom_properties(parent_custom.as_ref(), declarations);
+        let resolved = substitute_declarations(declarations, &custom);
         let mut style = inherited_base(parent_style);
         apply_ua_defaults(&mut style, element.tag_name.as_str());
-        apply_author_declarations(
-            &mut style,
-            parent_style,
-            author_styles.declarations_for(node),
-        );
+        apply_author_declarations(&mut style, parent_style, &resolved);
         computed.entries.insert(node, style);
-        compute_pseudo_styles(node, style, author_styles, computed);
-        style
+        computed.custom_properties.insert(node, custom.clone());
+        compute_pseudo_styles(node, style, &custom, author_styles, computed);
+        (style, custom)
     });
 
-    let inherited_parent = current.or(parent_style);
+    let inherited_style = current.as_ref().map(|(style, _)| *style).or(parent_style);
+    let inherited_custom = current
+        .as_ref()
+        .map(|(_, custom)| custom.clone())
+        .or(parent_custom);
     for child in document.children(node) {
-        compute_subtree(document, *child, inherited_parent, author_styles, computed);
+        compute_subtree(
+            document,
+            *child,
+            inherited_style,
+            inherited_custom.clone(),
+            author_styles,
+            computed,
+        );
     }
 }
 
 fn compute_pseudo_styles(
     node: NodeId,
     host_style: ComputedStyle,
+    host_custom: &CustomPropertyMap,
     author_styles: &StyleMap,
     computed: &mut ComputedStyleMap,
 ) {
     for pseudo in [PseudoElement::Before, PseudoElement::After] {
         let declarations = author_styles.declarations_for_pseudo(node, pseudo);
-        let Some(content) = winning_generated_content(declarations) else {
+        let custom = compute_custom_properties(Some(host_custom), declarations);
+        let resolved = substitute_declarations(declarations, &custom);
+        let Some(content) = winning_generated_content(&resolved) else {
             continue;
         };
         let Some(content) = content else {
             continue;
         };
         let mut style = inherited_base(Some(host_style));
-        apply_author_declarations(&mut style, Some(host_style), declarations);
+        apply_author_declarations(&mut style, Some(host_style), &resolved);
         computed
             .pseudo_entries
             .insert((node, pseudo), ComputedPseudoStyle { style, content });
+        computed
+            .pseudo_custom_properties
+            .insert((node, pseudo), custom);
     }
+}
+
+fn compute_custom_properties(
+    parent: Option<&CustomPropertyMap>,
+    declarations: &[MatchedDeclaration],
+) -> CustomPropertyMap {
+    let mut raw = parent.cloned().unwrap_or_default();
+    let mut winners: HashMap<&str, &MatchedDeclaration> = HashMap::new();
+    for matched in declarations
+        .iter()
+        .filter(|matched| matched.declaration.name.starts_with("--"))
+    {
+        winners
+            .entry(matched.declaration.name.as_str())
+            .and_modify(|winner| {
+                if cascade_key(matched) > cascade_key(winner) {
+                    *winner = matched;
+                }
+            })
+            .or_insert(matched);
+    }
+
+    for (name, winner) in winners {
+        match custom_property_keyword(&winner.declaration.value) {
+            Some(CustomPropertyKeyword::Initial) => {
+                raw.remove(name);
+            }
+            Some(CustomPropertyKeyword::Inherit) => {
+                if let Some(value) = parent.and_then(|parent| parent.get(name)) {
+                    raw.insert(name.to_owned(), value.clone());
+                } else {
+                    raw.remove(name);
+                }
+            }
+            None => {
+                raw.insert(name.to_owned(), winner.declaration.value.clone());
+            }
+        }
+    }
+
+    CustomResolver::new(&raw).resolve_all()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CustomPropertyKeyword {
+    Initial,
+    Inherit,
+}
+
+fn custom_property_keyword(tokens: &[TokenKind]) -> Option<CustomPropertyKeyword> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "initial" => Some(CustomPropertyKeyword::Initial),
+        "inherit" | "unset" => Some(CustomPropertyKeyword::Inherit),
+        _ => None,
+    }
+}
+
+struct CustomResolver<'a> {
+    raw: &'a CustomPropertyMap,
+    memo: HashMap<String, Option<Vec<TokenKind>>>,
+    visiting: HashSet<String>,
+}
+
+impl<'a> CustomResolver<'a> {
+    fn new(raw: &'a CustomPropertyMap) -> Self {
+        Self {
+            raw,
+            memo: HashMap::new(),
+            visiting: HashSet::new(),
+        }
+    }
+
+    fn resolve_all(mut self) -> CustomPropertyMap {
+        let names: Vec<String> = self.raw.keys().cloned().collect();
+        let mut resolved = HashMap::new();
+        for name in names {
+            if let Some(value) = self.resolve(&name) {
+                resolved.insert(name, value);
+            }
+        }
+        resolved
+    }
+
+    fn resolve(&mut self, name: &str) -> Option<Vec<TokenKind>> {
+        if let Some(value) = self.memo.get(name) {
+            return value.clone();
+        }
+        let raw = self.raw.get(name)?.clone();
+        if !self.visiting.insert(name.to_owned()) {
+            self.memo.insert(name.to_owned(), None);
+            return None;
+        }
+        let value = self.substitute(&raw);
+        self.visiting.remove(name);
+        self.memo.insert(name.to_owned(), value.clone());
+        value
+    }
+
+    fn substitute(&mut self, tokens: &[TokenKind]) -> Option<Vec<TokenKind>> {
+        substitute_vars(tokens, |name| self.resolve(name))
+    }
+}
+
+fn substitute_declarations(
+    declarations: &[MatchedDeclaration],
+    custom: &CustomPropertyMap,
+) -> Vec<MatchedDeclaration> {
+    declarations
+        .iter()
+        .filter(|matched| !matched.declaration.name.starts_with("--"))
+        .filter_map(|matched| {
+            let value =
+                substitute_vars(&matched.declaration.value, |name| custom.get(name).cloned())?;
+            let mut resolved = matched.clone();
+            resolved.declaration.value = value;
+            Some(resolved)
+        })
+        .collect()
+}
+
+fn substitute_vars<F>(tokens: &[TokenKind], mut lookup: F) -> Option<Vec<TokenKind>>
+where
+    F: FnMut(&str) -> Option<Vec<TokenKind>>,
+{
+    substitute_vars_inner(tokens, &mut lookup)
+}
+
+fn substitute_vars_inner<F>(tokens: &[TokenKind], lookup: &mut F) -> Option<Vec<TokenKind>>
+where
+    F: FnMut(&str) -> Option<Vec<TokenKind>>,
+{
+    let mut output = Vec::new();
+    let mut index = 0;
+    while index < tokens.len() {
+        if matches!(&tokens[index], TokenKind::Function(name) if name.eq_ignore_ascii_case("var")) {
+            let (end, name, fallback) = parse_var_function(tokens, index)?;
+            if let Some(value) = lookup(name) {
+                output.extend(value);
+            } else {
+                let fallback = fallback?;
+                output.extend(substitute_vars_inner(fallback, lookup)?);
+            }
+            index = end + 1;
+        } else {
+            output.push(tokens[index].clone());
+            index += 1;
+        }
+    }
+    Some(output)
+}
+
+fn parse_var_function(
+    tokens: &[TokenKind],
+    start: usize,
+) -> Option<(usize, &str, Option<&[TokenKind]>)> {
+    let mut depth = 1_u32;
+    let mut comma = None;
+    let mut end = None;
+    for (index, token) in tokens.iter().enumerate().skip(start + 1) {
+        match token {
+            TokenKind::Function(_) | TokenKind::OpenParen => depth += 1,
+            TokenKind::CloseParen => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    end = Some(index);
+                    break;
+                }
+            }
+            TokenKind::Comma if depth == 1 && comma.is_none() => comma = Some(index),
+            _ => {}
+        }
+    }
+    let end = end?;
+    let name_end = comma.unwrap_or(end);
+    let name_tokens = trim_token_whitespace(&tokens[start + 1..name_end]);
+    let [TokenKind::Ident(name)] = name_tokens else {
+        return None;
+    };
+    if !name.starts_with("--") {
+        return None;
+    }
+    let fallback = comma.map(|comma| &tokens[comma + 1..end]);
+    Some((end, name.as_str(), fallback))
+}
+
+fn trim_token_whitespace(mut tokens: &[TokenKind]) -> &[TokenKind] {
+    while matches!(tokens.first(), Some(TokenKind::Whitespace)) {
+        tokens = &tokens[1..];
+    }
+    while matches!(tokens.last(), Some(TokenKind::Whitespace)) {
+        tokens = &tokens[..tokens.len() - 1];
+    }
+    tokens
 }
 
 fn winning_generated_content(declarations: &[MatchedDeclaration]) -> Option<Option<String>> {
@@ -2095,6 +2322,142 @@ mod tests {
                 alpha: 255,
             }
         );
+    }
+
+    #[test]
+    fn custom_properties_cascade_inherit_and_substitute_before_value_parsing() {
+        let document = parse_document(
+            "<style>
+               #scope { --accent:#123456; --gap:3px 7px; --frozen:var(--accent); --weight:400 }
+               .card { --priority:red !important }
+               #parent { --accent:blue; --weight:700; color:var(--frozen); padding:var(--gap); font-weight:var(--weight) }
+               #child { --accent:green; --priority:blue; color:var(--frozen); background:var(--accent); margin-left:var(--missing, 12px); width:var(--w, 50%) }
+             </style>
+             <div id='scope'><div id='parent'><span id='child' class='card'>x</span></div></div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let parent_id = find_by_id(&document, "parent");
+        let child_id = find_by_id(&document, "child");
+        let parent = computed.style_for(parent_id).unwrap();
+        let child = computed.style_for(child_id).unwrap();
+
+        let frozen = CssColor {
+            red: 0x12,
+            green: 0x34,
+            blue: 0x56,
+            alpha: 255,
+        };
+        assert_eq!(parent.color, frozen);
+        assert_eq!(child.color, frozen);
+        assert_eq!(parent.font_weight, ComputedFontWeight::Bold);
+        assert_eq!(parent.padding.top, LengthPercentage::Px(3.0));
+        assert_eq!(parent.padding.right, LengthPercentage::Px(7.0));
+        assert_eq!(child.background_color, CssColor::GREEN);
+        assert_eq!(
+            child.margin.left,
+            MarginValue::Length(LengthPercentage::Px(12.0))
+        );
+        assert_eq!(child.width, Some(LengthPercentage::Percent(0.5)));
+
+        let custom = computed.custom_properties_for(child_id).unwrap();
+        assert!(custom.contains_key("--frozen"));
+        assert_eq!(
+            custom.get("--priority"),
+            Some(&vec![TokenKind::Ident("red".into())])
+        );
+    }
+
+    #[test]
+    fn custom_property_cycles_become_invalid_and_nested_var_fallbacks_apply() {
+        let document = parse_document(
+            "<style>
+               #cycle {
+                 --a:var(--b);
+                 --b:var(--a);
+                 --fallback:#123456;
+                 color:var(--a, var(--fallback, blue));
+                 background:var(--missing-bg, rgb(238 242 255));
+                 border:var(--missing-border, 2px solid #4338ca);
+               }
+             </style><div id='cycle'>x</div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let id = find_by_id(&document, "cycle");
+        let style = computed.style_for(id).unwrap();
+        let custom = computed.custom_properties_for(id).unwrap();
+
+        assert!(!custom.contains_key("--a"));
+        assert!(!custom.contains_key("--b"));
+        assert_eq!(
+            style.color,
+            CssColor {
+                red: 0x12,
+                green: 0x34,
+                blue: 0x56,
+                alpha: 255,
+            }
+        );
+        assert_eq!(
+            style.background_color,
+            CssColor {
+                red: 238,
+                green: 242,
+                blue: 255,
+                alpha: 255,
+            }
+        );
+        assert_eq!(style.border.left.width_px, 2.0);
+        assert_eq!(
+            style.border.left.color,
+            CssColor {
+                red: 0x43,
+                green: 0x38,
+                blue: 0xca,
+                alpha: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn pseudo_elements_inherit_custom_properties_and_can_override_them() {
+        let document = parse_document(
+            "<style>
+               #note { --label:'[VAR] '; --tone:#b42318; }
+               #note::before {
+                 --pad:2px 4px;
+                 content:var(--label);
+                 color:var(--tone);
+                 padding:var(--pad);
+               }
+             </style><p id='note'>Body</p>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let note = find_by_id(&document, "note");
+        let before = computed
+            .pseudo_style_for(note, PseudoElement::Before)
+            .expect("before should be generated");
+        let custom = computed
+            .pseudo_custom_properties_for(note, PseudoElement::Before)
+            .expect("pseudo custom properties should be retained");
+
+        assert_eq!(before.content, "[VAR] ");
+        assert_eq!(
+            before.style.color,
+            CssColor {
+                red: 180,
+                green: 35,
+                blue: 24,
+                alpha: 255,
+            }
+        );
+        assert_eq!(before.style.padding.top, LengthPercentage::Px(2.0));
+        assert_eq!(before.style.padding.right, LengthPercentage::Px(4.0));
+        assert!(custom.contains_key("--label"));
+        assert!(custom.contains_key("--tone"));
+        assert!(custom.contains_key("--pad"));
     }
 
     #[test]

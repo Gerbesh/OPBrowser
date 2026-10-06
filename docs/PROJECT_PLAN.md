@@ -151,8 +151,11 @@ Status: IN PROGRESS.
 - DONE terminal `::before`/`::after` pseudo-elements with type specificity, separate author
   cascade buckets and computed pseudo styles; quoted-string `content` enters the normal inline
   formatter with inherited typography plus its own color/background/padding/solid borders.
-- NEXT CSS custom properties and initial `var()` substitution.
-- LATER generated `content:attr()/counter()/url()` and full pseudo block-box geometry,
+- DONE inherited case-sensitive CSS custom properties with author cascade/`!important`,
+  computed per-element token values, recursive `var(--name, fallback)` substitution, simple cycle
+  invalidation and pseudo-element inheritance/overrides before normal property value parsing.
+- NEXT generated `content:attr()/counter()/url()` and fuller pseudo block-box geometry.
+- LATER complete invalid-at-computed-value-time `var()` semantics/custom-property cycle graph,
   forgiving functional-selector recovery, `:nth-child(... of ...)`, nested decorated-inline
   stacks/replaced inline decorations and fuller
   parent/child margin collapsing / definite percentage-height propagation.

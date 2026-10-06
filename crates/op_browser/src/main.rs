@@ -5,7 +5,7 @@ use op_platform_win::{NativeBrowserWindow, NavigationEvent};
 
 const START_PAGE: &str = r#"
 <html><head><title>OPBrowser</title><style>
-body { color: #20232a; font-size: 18px; }
+body { --op-accent:#b42318; --op-surface:#eef2ff; --op-edge:#4338ca; --op-gap:4px 8px; color: #20232a; font-size: 18px; }
 h1 { color: #6d28d9; font-size: 42px; }
 .status { color: #087a35; font-size: 21px; font-weight: bold; }
 .accent { color: #b42318; font-weight: bold; }
@@ -19,6 +19,8 @@ h1 { color: #6d28d9; font-size: 42px; }
 .functional-demo > span:where(#functional-third) { font-weight: bold; }
 .generated-demo::before { content: "[CSS before] "; padding: 2px 6px; background: #eef2ff; border: 1px solid #4338ca; color: #b42318; font-weight: bold; }
 .generated-demo::after { content: " ✓ after"; color: #087a35; font-weight: bold; }
+.var-demo { width:70%; margin:12px auto; padding:var(--op-gap); color:var(--op-accent); background:var(--op-surface); border:2px solid var(--op-edge); font-weight:bold; }
+.var-demo::before { --var-label:"[var() inherited] "; content:var(--var-label); color:var(--op-edge); }
 .hidden-proof { display: none; }
 a { font-weight: bold; }
 </style></head><body>
@@ -37,6 +39,7 @@ white-space:pre-wrap preserves this newline and  double spaces.</div>
 <p>Inline fragments: normal text <span class="inline-box-chip">padded <b>bold</b> span with background + border that can wrap across lines</span> and normal text again.</p>
 <p class="functional-demo"><span class="hot">:is + odd</span> <span class="hot skip">:not blocks this</span> <span id="functional-third" class="warm">third + :where bold</span></p>
 <p class="generated-demo">Real DOM text between generated pseudo-elements.</p>
+<div class="var-demo">Custom properties feed color, background, padding, border and generated content; missing values can use var() fallbacks.</div>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>

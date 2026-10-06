@@ -92,9 +92,11 @@ After HTML parsing, [stylesheet loading](Stylesheet-Loading.md) fetches eligible
 CSS on the navigation worker. Loaded link CSS and embedded style rules are collected in
 DOM source order, inline declarations join the author cascade, functional selectors
 `:is/:where/:not/:nth-child` resolve through the same matcher/specificity path. Terminal
-`::before`/`::after` declarations are collected in separate `(NodeId, PseudoElement)` buckets;
-the computed map retains generated pseudo styles alongside host styles. Inheritance produces
-per-node styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
+`::before`/`::after` declarations are collected in separate `(NodeId, PseudoElement)` buckets.
+Before normal value parsing, custom-property winners build inherited per-target token maps and
+recursive `var()` substitution resolves references/fallbacks; the computed map retains those
+custom maps plus generated pseudo styles alongside host styles. Inheritance produces per-node
+styles for display, text properties and the initial block box-model properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 
 op_layout consumes that map for display:none/block/inline, mixed inline text runs,

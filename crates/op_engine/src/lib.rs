@@ -932,6 +932,54 @@ mod tests {
     }
 
     #[test]
+    fn custom_properties_and_var_reach_native_display_list() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               #card {
+                 --accent:#b42318;
+                 --surface:#eef2ff;
+                 --edge:#4338ca;
+                 --pad:4px 8px;
+                 color:var(--accent);
+                 background:var(--surface);
+                 padding:var(--pad);
+                 border:2px solid var(--edge);
+               }
+               #card::before {
+                 --label:'[VAR] ';
+                 content:var(--label);
+                 color:var(--accent);
+               }
+             </style><p id='card'>Body</p>",
+            800,
+            600,
+        );
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, color, .. }
+                if text.contains("Body")
+                    && *color == op_paint::Color { r: 180, g: 35, b: 24 }
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, color, .. }
+                if text.contains("[VAR]")
+                    && *color == op_paint::Color { r: 180, g: 35, b: 24 }
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::FillRect { color, .. }
+                if *color == op_paint::Color { r: 238, g: 242, b: 255 }
+        )));
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::FillRect { color, .. }
+                if *color == op_paint::Color { r: 67, g: 56, b: 202 }
+        )));
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,

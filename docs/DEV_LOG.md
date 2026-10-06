@@ -676,3 +676,36 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 150 workspace tests,
   normal startup smoke, the 141-command CSS demo smoke and optimized release build.
 - Rebuilt `target/release/op_browser.exe`; this build is 626,688 bytes.
+
+## 2026-10-06 - CSS custom properties and var()
+
+- Added inherited, case-sensitive CSS custom properties using the existing author cascade,
+  including `!important`, specificity and source-order winner selection for `--name` values.
+- Added per-element and per-pseudo `CustomPropertyMap` snapshots in `ComputedStyleMap` so
+  computed custom values remain available for inheritance, diagnostics and resize reflow.
+- Custom property values are resolved on the element where they are computed. An inherited
+  value such as `--frozen:var(--accent)` therefore keeps the parent's resolved token value even
+  when a descendant overrides `--accent`.
+- Added recursive `var(--name, fallback)` substitution with nested fallbacks, arbitrary token
+  payloads and simple dependency-cycle invalidation before supported normal-property parsing.
+- `initial` removes a custom property; `inherit` and `unset` reuse the parent's computed custom
+  value in this initial subset.
+- `var()` now feeds the existing parsers for colors, lengths, shorthands, borders, padding,
+  sizing, font properties and generated `content` instead of requiring property-specific hooks.
+- Pseudo-elements inherit the host custom-property environment and may add/override their own
+  custom properties before resolving `content` and normal pseudo styles.
+- Added regressions for custom-property cascade/`!important`, resolved-value inheritance,
+  nested fallbacks, simple cycles, pseudo inheritance/overrides and full Engine display-list
+  propagation through text/background/border paint.
+- Updated the built-in start page and `examples/css` with visible inherited-variable examples;
+  the CSS demo smoke now emits 149 paint commands.
+- Updated README, project plan, code graph/slices and CSS/rendering wiki documentation.
+- Deliberate limits remain: unresolved `var()` declarations currently reuse OPBrowser's existing
+  invalid-value filtering and may expose a lower valid candidate instead of full CSS
+  invalid-at-computed-value-time behavior; complete dependency-graph cycle semantics are also
+  deferred.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 154 workspace tests,
+  normal startup smoke, the 149-command CSS demo smoke and optimized release build. The first
+  release attempt was blocked only because an older `target/release/op_browser.exe` process was
+  still running; that workspace process was stopped and the rebuild then passed.
+- Rebuilt `target/release/op_browser.exe`; this build is 655,360 bytes.

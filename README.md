@@ -93,15 +93,18 @@ real line-height geometry, italic/oblique font style, underline/line-through dec
 white-space normal/nowrap/pre/pre-wrap/pre-line, letter/word spacing and text-transform
 none/uppercase/lowercase/capitalize. Inline non-replaced elements also form real
 background/padding/solid-border fragments that participate in wrapping and alignment.
-`background` also supports the initial color-only shorthand subset. `::before`/`::after`
+`background` also supports the initial color-only shorthand subset. Inherited, case-sensitive
+CSS custom properties (`--name`) now participate in the author cascade and `var(--name, fallback)`
+substitution before supported value parsing, including generated `content`. `::before`/`::after`
 generate quoted-string `content` with inherited text styling and their own inline
 background/padding/solid-border fragments. The block box model includes margin/padding shorthands and side longhands,
 auto/negative/percentage margins, background color, independent solid/none border sides,
 width/height with min/max, `box-sizing`, percentages, em/rem and CSS absolute length units.
 Adjacent sibling vertical margins collapse. External CSS is merged with embedded rules in
 DOM source order and retained across resize reflow. Parent/child margin collapse, definite
-percentage-height propagation, `content:attr()/counter()/url()` and full generated block-box
-geometry, forgiving-selector-list recovery/full `:nth-child(... of ...)`, nested decorated
+percentage-height propagation, full invalid-at-computed-value-time `var()` semantics and
+complete custom-property dependency-cycle behavior, `content:attr()/counter()/url()` and full
+generated block-box geometry, forgiving-selector-list recovery/full `:nth-child(... of ...)`, nested decorated
 inline box stacks/replaced-element inline decorations, advanced Color 4 spaces/functions,
 `@import`, general media queries, CSS `url(...)` resources
 and JavaScript
