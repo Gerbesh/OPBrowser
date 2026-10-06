@@ -84,8 +84,8 @@ parser feeds text, background and borders. Font-size accepts percentages, px/em/
 absolute CSS length units and the current keyword set. Global inherit/initial/unset handling
 is shared by the supported properties.
 
-color, font-size and font-weight inherit through the element tree. display uses its
-initial value unless explicitly inherited. Temporary UA defaults mirror the existing M1
+color, font-size, font-weight, line-height and text-align inherit through the element tree.
+display uses its initial value unless explicitly inherited. Temporary UA defaults mirror the existing M1
 block/hidden tag rules and heading font sizes/weights, avoiding an unrelated visual
 regression when layout begins consuming computed styles. The CSS hash tokenizer also
 accepts digit-leading hash values required by hexadecimal colors.
@@ -97,9 +97,10 @@ reflow therefore does not reparse, rematch or recascade CSS.
 
 ComputedStyleMap is now consumed by op_layout. display:none removes the subtree from
 layout, display:block creates a flow boundary, and display:inline stays in the current
-inline flow. font-size, font-weight and color are carried on inline character runs, so a
-span can change typography/color without forcing a new line. Runs with different font
-metrics share the same baseline.
+inline flow. font-size, font-weight, line-height and color are carried on inline character
+runs, so a span can change typography without forcing a new line. text-align is inherited
+into the block formatter and offsets completed lines inside the content box. Runs with
+different metrics still share the same baseline.
 
 Text color reaches op_paint and the Win32 painter through TextBox/paint commands. Block
 background, margin/padding, sizing/box-sizing and independent solid border sides also flow
@@ -119,6 +120,7 @@ The local demonstration page is `examples/css/index.html`; it now links a real
 The built-in start page also describes the supported subset in a normal release launch.
 
 The expanded block-level box model is documented in [CSS Block Box Model](CSS-Box-Model.md).
-Next S3 work moves into inline box fragments/decorations and richer typography values.
+Initial text alignment and line-height now reach layout geometry. Next S3 work moves into
+inline box fragments/decorations, font-style/text-decoration and white-space controls.
 Functional pseudos, pseudo-elements, advanced color spaces, at-rules, media queries and full
 CSS conformance remain later.

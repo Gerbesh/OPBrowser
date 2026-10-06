@@ -26,8 +26,9 @@ emits this sequence instead of painting all text before all images.
 - Text, nested inline labels, images and failed-image alt labels share lines.
 - Images wrap as atomic boxes and align their bottom edge to the common baseline.
   Tall images expand the line ascent so subsequent lines do not overlap them.
-- Font ascent/descent and the initial normal line spacing establish a line strut;
-  larger styled runs increase ascent/descent while smaller runs share the same baseline.
+- Font ascent/descent plus computed `line-height` establish each run's line strut.
+  `normal`, unitless multipliers, percentages and lengths reach real ascent/descent geometry;
+  larger styled runs increase the shared line box while smaller runs share its baseline.
 - ASCII HTML spaces, tabs, LF, CR and form feed collapse to one space; leading and
   trailing collapsed spaces disappear. NBSP and other Unicode spaces stay intact.
 - `br` forces a line; repeated breaks produce empty lines with normal line height.
@@ -38,8 +39,9 @@ emits this sequence instead of painting all text before all images.
   rectangles retain inherited hrefs and use existing scroll-aware hit testing.
 - Computed display:none/block/inline participates in flow. Heading/paragraph/list spacing
   is now represented as temporary UA computed margins in the block box-model path.
-- Computed font-size, font-weight and text color can change inside one inline line.
-  Consecutive inline nodes around blocks form anonymous line groups.
+- Computed font-size, font-weight, line-height and text color can change inside one inline
+  line. `text-align: start/end/left/right/center` offsets each completed line inside the
+  content box after wrapping. Consecutive inline nodes around blocks form anonymous groups.
 
 Image source policy, dimensions, viewport fitting and pixel budgets are described
 in [Image Loading](Image-Loading.md).
@@ -62,8 +64,8 @@ a click through to the linked destination.
 This is still an initial left-to-right subset. Mixed computed inline size/weight/color
 is supported, but inline padding/background/border fragments are not. Block-level box-model
 support, including adjacent sibling margin collapse, is described in
-[CSS Block Box Model](CSS-Box-Model.md). Parent/child margin collapse, CSS line-height,
-font families/styles, advanced
+[CSS Block Box Model](CSS-Box-Model.md). Parent/child margin collapse, font-style/families,
+text decoration, white-space modes, advanced
 shaping/font fallback, bidi, grapheme-aware/full Unicode line breaking, preformatted
 whitespace modes, floats/tables/flex/grid remain future work. Hyperlink glyph color is
 still the native default blue. These tests do not claim complete CSS conformance.

@@ -216,6 +216,7 @@ HTML
   -> cascade: !important -> inline source -> specificity -> source order
   -> inheritance + initial/inherit/unset
   -> ComputedStyleMap { display, color, font-size, font-weight,
+                        line-height, text-align,
                         background-color, margin/padding edges, border edges,
                         width/height min/max, box-sizing }
   -> retained in PreparedDocument
@@ -229,17 +230,20 @@ HTML
 ```
 
 The value subset accepts display inline/block/none, font-size keywords/percent/lengths,
-font-weight normal/bold/400/700, #RGB(A)/#RRGGBB(AA), CSS basic named colors plus
+font-weight normal/bold/bolder/lighter and numeric 1-1000 (currently mapped to the native
+normal/bold backend), text-align start/end/left/right/center, line-height normal/unitless/
+percent/length, #RGB(A)/#RRGGBB(AA), CSS basic named colors plus
 rebeccapurple, and legacy/modern rgb()/rgba()/hsl()/hsla(). Functional RGB accepts numeric
 or percentage channels plus number/percentage alpha; HSL accepts deg/grad/rad/turn hue,
 percentage saturation/lightness and alpha. Channels clamp to the CSS output range. The
-global keywords inherit/initial/unset remain shared. color/font-size/font-weight inherit; display
+global keywords inherit/initial/unset remain shared. color/font-size/font-weight/line-height/text-align inherit; display
 does not unless explicitly set to inherit. Unsupported/invalid values are discarded
 before cascade winner selection so a lower-priority valid declaration may still win.
 UA defaults preserve M1 block/hidden behavior and heading typography. Former semantic
 heading/paragraph/list spacing now lives in computed margins and goes through the same
-block geometry path as author margins. Inline text runs may differ in size, weight and
-color while sharing a line and baseline. RGBA text and box colors are currently composited
+block geometry path as author margins. Inline text runs may differ in size, weight,
+line-height and color while sharing a baseline. text-align offsets each completed line
+inside its actual content box, including wrapped and explicit-br lines. RGBA text and box colors are currently composited
 over the white page background before native painting. Existing hyperlink glyphs/underlines
 still use the native default link blue;
 author link color is deferred until link styling is represented without breaking the
@@ -286,7 +290,7 @@ Planned next path:
 ```text
 Rendering/property expansion
   -> inline box fragments/decorations
-  -> richer typography values
+  -> font-style / text-decoration / white-space controls
   -> additional computed properties
 ```
 

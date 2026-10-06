@@ -445,6 +445,51 @@ mod tests {
     }
 
     #[test]
+    fn text_align_and_line_height_change_real_line_geometry() {
+        let document = op_html::parse_document(
+            "<p style='text-align:center'>center</p>
+             <p style='text-align:right'>right</p>
+             <p style='line-height:40px'>first<br>second</p>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            400,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let center = layout
+            .text_boxes
+            .iter()
+            .find(|line| line.text == "center")
+            .unwrap();
+        let right = layout
+            .text_boxes
+            .iter()
+            .find(|line| line.text == "right")
+            .unwrap();
+        let first = layout
+            .text_boxes
+            .iter()
+            .find(|line| line.text == "first")
+            .unwrap();
+        let second = layout
+            .text_boxes
+            .iter()
+            .find(|line| line.text == "second")
+            .unwrap();
+        let content_x = 32;
+        let content_width = 336;
+
+        assert_eq!(center.x, content_x + (content_width - center.width) / 2);
+        assert_eq!(right.x, content_x + content_width - right.width);
+        assert_eq!(second.y - first.y, 40);
+    }
+
+    #[test]
     fn wraps_link_spans_without_losing_unicode_or_nested_labels() {
         let mut document = Document::new();
         let p = document.create_element("p");

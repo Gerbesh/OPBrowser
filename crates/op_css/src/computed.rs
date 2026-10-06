@@ -16,6 +16,22 @@ pub enum ComputedFontWeight {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextAlign {
+    Start,
+    End,
+    Left,
+    Right,
+    Center,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ComputedLineHeight {
+    Normal,
+    Number(f32),
+    Px(f32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CssColor {
     pub red: u8,
     pub green: u8,
@@ -167,6 +183,8 @@ pub struct ComputedStyle {
     pub color: CssColor,
     pub font_size_px: f32,
     pub font_weight: ComputedFontWeight,
+    pub line_height: ComputedLineHeight,
+    pub text_align: TextAlign,
     pub background_color: CssColor,
     pub margin: MarginEdges,
     pub padding: PaddingEdges,
@@ -187,6 +205,8 @@ impl ComputedStyle {
             color: CssColor::BLACK,
             font_size_px: 18.0,
             font_weight: ComputedFontWeight::Normal,
+            line_height: ComputedLineHeight::Normal,
+            text_align: TextAlign::Start,
             background_color: CssColor::TRANSPARENT,
             margin: MarginEdges::ZERO,
             padding: PaddingEdges::ZERO,
@@ -262,6 +282,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             color: parent.color,
             font_size_px: parent.font_size_px,
             font_weight: parent.font_weight,
+            line_height: parent.line_height,
+            text_align: parent.text_align,
             background_color: initial.background_color,
             margin: initial.margin,
             padding: initial.padding,
@@ -393,6 +415,22 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.font_weight),
             ComputedFontWeight::Normal,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "line-height", |tokens| {
+        parse_line_height(tokens, style.font_size_px)
+    }) {
+        style.line_height = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.line_height),
+            ComputedLineHeight::Normal,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "text-align", parse_text_align) {
+        style.text_align = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.text_align),
+            TextAlign::Start,
         );
     }
     if let Some((_, value)) = winning_value(declarations, "background-color", parse_color) {
@@ -536,6 +574,8 @@ fn parse_font_weight(tokens: &[TokenKind]) -> Option<Specified<ComputedFontWeigh
         return match ident.to_ascii_lowercase().as_str() {
             "normal" => Some(Specified::Value(ComputedFontWeight::Normal)),
             "bold" => Some(Specified::Value(ComputedFontWeight::Bold)),
+            "bolder" => Some(Specified::Value(ComputedFontWeight::Bold)),
+            "lighter" => Some(Specified::Value(ComputedFontWeight::Normal)),
             "inherit" => Some(Specified::Inherit),
             "initial" => Some(Specified::Initial),
             "unset" => Some(Specified::Unset),
@@ -546,11 +586,65 @@ fn parse_font_weight(tokens: &[TokenKind]) -> Option<Specified<ComputedFontWeigh
     let TokenKind::Number(number) = single_significant_token(tokens)? else {
         return None;
     };
-    match number.as_str() {
-        "400" => Some(Specified::Value(ComputedFontWeight::Normal)),
-        "700" => Some(Specified::Value(ComputedFontWeight::Bold)),
+    let value = parse_number(number)?;
+    if value.fract() != 0.0 || !(1.0..=1000.0).contains(&value) {
+        return None;
+    }
+    let weight = if value < 550.0 {
+        ComputedFontWeight::Normal
+    } else {
+        ComputedFontWeight::Bold
+    };
+    Some(Specified::Value(weight))
+}
+
+fn parse_text_align(tokens: &[TokenKind]) -> Option<Specified<TextAlign>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "start" => Some(Specified::Value(TextAlign::Start)),
+        "end" => Some(Specified::Value(TextAlign::End)),
+        "left" => Some(Specified::Value(TextAlign::Left)),
+        "right" => Some(Specified::Value(TextAlign::Right)),
+        "center" => Some(Specified::Value(TextAlign::Center)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
         _ => None,
     }
+}
+
+fn parse_line_height(tokens: &[TokenKind], font_px: f32) -> Option<Specified<ComputedLineHeight>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| ComputedLineHeight::Normal));
+    }
+    if single_ident(tokens).is_some_and(|ident| ident.eq_ignore_ascii_case("normal")) {
+        return Some(Specified::Value(ComputedLineHeight::Normal));
+    }
+
+    let value = match single_significant_token(tokens)? {
+        TokenKind::Number(number) => {
+            let value = parse_number(number)?;
+            if !(0.0..=100.0).contains(&value) {
+                return None;
+            }
+            ComputedLineHeight::Number(value)
+        }
+        TokenKind::Percentage(number) => {
+            let value = font_px * parse_number(number)? / 100.0;
+            if !value.is_finite() || !(0.0..=100_000.0).contains(&value) {
+                return None;
+            }
+            ComputedLineHeight::Px(value)
+        }
+        TokenKind::Dimension { number, unit } => {
+            let value = absolute_or_font_relative_px(parse_number(number)?, unit, font_px)?;
+            if !value.is_finite() || !(0.0..=100_000.0).contains(&value) {
+                return None;
+            }
+            ComputedLineHeight::Px(value)
+        }
+        _ => return None,
+    };
+    Some(Specified::Value(value))
 }
 
 fn parse_font_size(tokens: &[TokenKind], parent_px: f32) -> Option<Specified<f32>> {
@@ -1994,6 +2088,38 @@ mod tests {
                 alpha: 255,
             }
         );
+    }
+
+    #[test]
+    fn computes_text_alignment_line_height_and_extended_font_weight() {
+        let document = parse_document(
+            "<div id='parent' style='font-size:20px; line-height:1.5; text-align:center; font-weight:650'>
+                <span id='inherited'>x</span>
+                <span id='percent' style='font-size:10px; line-height:180%; text-align:end; font-weight:lighter'>y</span>
+                <span id='length' style='line-height:2em; font-weight:500'>z</span>
+             </div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let parent = computed.style_for(find_by_id(&document, "parent")).unwrap();
+        let inherited = computed
+            .style_for(find_by_id(&document, "inherited"))
+            .unwrap();
+        let percent = computed
+            .style_for(find_by_id(&document, "percent"))
+            .unwrap();
+        let length = computed.style_for(find_by_id(&document, "length")).unwrap();
+
+        assert_eq!(parent.text_align, TextAlign::Center);
+        assert_eq!(parent.line_height, ComputedLineHeight::Number(1.5));
+        assert_eq!(parent.font_weight, ComputedFontWeight::Bold);
+        assert_eq!(inherited.text_align, TextAlign::Center);
+        assert_eq!(inherited.line_height, ComputedLineHeight::Number(1.5));
+        assert_eq!(percent.text_align, TextAlign::End);
+        assert_eq!(percent.line_height, ComputedLineHeight::Px(18.0));
+        assert_eq!(percent.font_weight, ComputedFontWeight::Normal);
+        assert_eq!(length.line_height, ComputedLineHeight::Px(40.0));
+        assert_eq!(length.font_weight, ComputedFontWeight::Normal);
     }
 
     #[test]

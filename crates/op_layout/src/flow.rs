@@ -1,8 +1,8 @@
 use super::inline::{InlineChar, InlineStyle, Item, Lines};
 use super::*;
 use op_css::{
-    BorderEdges, BorderStyle, BoxSizing, ComputedFontWeight, ComputedStyle, ComputedStyleMap,
-    Display, LengthPercentage, MarginEdges, MarginValue, PaddingEdges,
+    BorderEdges, BorderStyle, BoxSizing, ComputedFontWeight, ComputedLineHeight, ComputedStyle,
+    ComputedStyleMap, Display, LengthPercentage, MarginEdges, MarginValue, PaddingEdges, TextAlign,
 };
 
 pub(super) fn layout(
@@ -107,6 +107,7 @@ struct UsedBlockHorizontal {
 #[derive(Clone, Copy)]
 struct Style {
     inline: InlineStyle,
+    text_align: TextAlign,
     margin: MarginEdges,
     padding: PaddingEdges,
     background: TextColor,
@@ -132,8 +133,15 @@ impl<'a> Context<'a, '_> {
             return;
         }
         self.flush_pending_margin();
-        let lines = Lines::new(self.measurer, style.inline, x, self.y, width.max(1))
-            .layout(std::mem::take(items));
+        let lines = Lines::new(
+            self.measurer,
+            style.inline,
+            style.text_align,
+            x,
+            self.y,
+            width.max(1),
+        )
+        .layout(std::mem::take(items));
         self.y = lines.bottom();
         self.order
             .extend(lines.order.into_iter().map(|item| match item {
@@ -583,15 +591,18 @@ fn resolve_block_content_height(
 }
 
 fn computed_style(style: ComputedStyle) -> Style {
+    let font_size = style.font_size_px.round().clamp(1.0, 4096.0) as i32;
     Style {
         inline: InlineStyle {
-            font_size: style.font_size_px.round().clamp(1.0, 4096.0) as i32,
+            font_size,
+            line_height: used_line_height(style.line_height, font_size),
             weight: match style.font_weight {
                 ComputedFontWeight::Normal => FontWeight::Normal,
                 ComputedFontWeight::Bold => FontWeight::Bold,
             },
             color: style.color.into(),
         },
+        text_align: style.text_align,
         margin: style.margin,
         padding: style.padding,
         background: style.background_color.into(),
@@ -604,6 +615,15 @@ fn computed_style(style: ComputedStyle) -> Style {
         max_height: style.max_height,
         box_sizing: style.box_sizing,
     }
+}
+
+fn used_line_height(value: ComputedLineHeight, font_size: i32) -> i32 {
+    let value = match value {
+        ComputedLineHeight::Normal => font_size as f32 * 1.35,
+        ComputedLineHeight::Number(multiplier) => font_size as f32 * multiplier,
+        ComputedLineHeight::Px(value) => value,
+    };
+    value.round().clamp(0.0, 100_000.0) as i32
 }
 
 fn fallback_inline_style(tag: &str, inherited: InlineStyle) -> InlineStyle {
@@ -646,6 +666,7 @@ fn default_style() -> Style {
     Style {
         inline: InlineStyle {
             font_size: 18,
+            line_height: 24,
             weight: FontWeight::Normal,
             color: TextColor {
                 red: 0,
@@ -654,6 +675,7 @@ fn default_style() -> Style {
                 alpha: 255,
             },
         },
+        text_align: TextAlign::Start,
         margin: MarginEdges::ZERO,
         padding: PaddingEdges::ZERO,
         background: TextColor {
@@ -684,6 +706,7 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
     };
     Style {
         inline: fallback_inline_style(tag, inherited.inline),
+        text_align: inherited.text_align,
         margin: MarginEdges {
             top: MarginValue::Length(LengthPercentage::Px(top as f32)),
             right: MarginValue::ZERO,

@@ -133,7 +133,10 @@ Status: IN PROGRESS.
 - DONE expand color values with legacy/modern `rgb()`/`rgba()` and `hsl()`/`hsla()`,
   percentage/alpha channels, hue angle units, clamping, CSS basic named colors plus
   `rebeccapurple`, and functional colors in border shorthand/longhands.
-- NEXT add inline box fragments/decorations and richer typography values.
+- DONE richer initial typography: inherited `text-align` start/end/left/right/center,
+  `line-height` normal/number/percent/length with real line-box geometry, and numeric
+  `font-weight` 1-1000 plus bolder/lighter mapped onto the current normal/bold backend.
+- NEXT add inline box fragments/decorations plus `font-style`, `text-decoration` and white-space controls.
 - LATER functional pseudo-classes (:is/:where/:not/:nth-child), pseudo-elements and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.

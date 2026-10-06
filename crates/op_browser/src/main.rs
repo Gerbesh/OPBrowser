@@ -11,6 +11,7 @@ h1 { color: #6d28d9; font-size: 42px; }
 .accent { color: #b42318; font-weight: bold; }
 .demo-block { display: block; color: #075985; font-size: 20px; }
 .box-demo { width: 70%; max-width: 620px; margin: 14px auto; padding: 3% 1.25em; box-sizing: border-box; background-color: #eef2ff; border-top: 2px solid #4338ca; border-right: 6px solid #7c3aed; border-bottom: 3px solid #4338ca; border-left: 6px solid #2563eb; color: #312e81; font-weight: bold; }
+.type-demo { width: 70%; margin: 12px auto; padding: 10px; text-align: center; line-height: 1.7; font-weight: 650; background-color: #f8fafc; border: 2px solid #0369a1; }
 .hidden-proof { display: none; }
 a { font-weight: bold; }
 </style></head><body>
@@ -22,6 +23,7 @@ a { font-weight: bold; }
 <div class="box-demo">Box model: width/max-width + margin:auto + %/em padding + box-sizing + independent borders.</div>
 <p>Selectors: attributes, + / ~ siblings and :root/:first-child/:last-child/:only-child/:empty/:link now match in the author cascade.</p>
 <p style="color:rgb(180 35 24); background-color:hsl(245 100% 97%); border:2px solid rgb(67 56 202); padding:8px">Colors: legacy/modern rgb()/rgba() and hsl()/hsla() now feed text, background and borders.</p>
+<div class="type-demo">Typography: text-align:center, inherited line-height:1.7 and numeric font-weight:650 now affect real line geometry.<br>Second centered line proves line-height reaches layout.</div>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>

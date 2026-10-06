@@ -514,3 +514,24 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 129 workspace tests,
   normal startup smoke, the 52-command functional-color demo smoke and optimized release build.
 - Rebuilt `target/release/op_browser.exe`; this build is 571,904 bytes.
+
+## 2026-10-06 - Text alignment and line-height geometry
+
+- Added inherited `text-align` values start/end/left/right/center to ComputedStyle and
+  carried alignment into the inline formatter instead of treating it as paint-only metadata.
+- Each completed wrapped/explicit-break line now computes its remaining content-box width and
+  applies the requested horizontal alignment before TextBox/ImageBox placement.
+- Added inherited `line-height` support for normal, unitless multipliers, percentages and
+  CSS length units. Unitless values remain multipliers across inheritance; percentages and
+  lengths compute to px and now drive the actual line strut/ascent/descent geometry.
+- Expanded font-weight parsing to numeric 1-1000 plus bolder/lighter. The current GDI text
+  backend still exposes only normal/bold faces, so weights are deliberately mapped onto those
+  two available rendering buckets until variable/multiweight font selection is implemented.
+- Added deterministic computed-style and layout regressions plus an Engine display-list test
+  proving center/right x coordinates and an exact 40px line-height survive to native paint.
+- Updated the built-in start page and CSS demo with centered/right-aligned multi-line panels,
+  unitless/fixed line-height and numeric font weights; the demo smoke now emits 66 commands.
+- Updated project plan, code graph/slices, README and CSS/rendering/inline-layout wiki pages.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 132 workspace tests,
+  normal startup smoke, the 66-command CSS demo smoke and optimized release build.
+- Rebuilt `target/release/op_browser.exe`; this build is 576,000 bytes.

@@ -1,10 +1,12 @@
 use super::{
     FontWeight, ImageBox, LayoutItem, LinkSpan, TextBox, TextColor, TextMeasurer, TextMetrics,
 };
+use op_css::TextAlign;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct InlineStyle {
     pub font_size: i32,
+    pub line_height: i32,
     pub weight: FontWeight,
     pub color: TextColor,
 }
@@ -48,6 +50,7 @@ enum PreparedBox {
 pub(super) struct Lines<'a, 'm> {
     measurer: &'m mut dyn TextMeasurer,
     default_style: InlineStyle,
+    text_align: TextAlign,
     x: i32,
     y: i32,
     width: i32,
@@ -63,6 +66,7 @@ impl<'a, 'm> Lines<'a, 'm> {
     pub fn new(
         measurer: &'m mut dyn TextMeasurer,
         default_style: InlineStyle,
+        text_align: TextAlign,
         x: i32,
         y: i32,
         width: i32,
@@ -70,6 +74,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         Self {
             measurer,
             default_style,
+            text_align,
             x,
             y,
             width,
@@ -249,11 +254,10 @@ impl<'a, 'm> Lines<'a, 'm> {
 
     fn metrics_for(&mut self, style: InlineStyle) -> (TextMetrics, i32, i32) {
         let metrics = self.measurer.measure("", style.font_size, style.weight);
-        let leading =
-            (((style.font_size as f32) * 1.35).round() as i32 - metrics.ascent - metrics.descent)
-                .max(0);
-        let ascent = metrics.ascent + leading / 2;
-        let descent = metrics.descent + leading - leading / 2;
+        let line_height = style.line_height.max(0);
+        let leading = line_height - metrics.ascent - metrics.descent;
+        let ascent = (metrics.ascent + leading / 2).max(0);
+        let descent = (line_height - ascent).max(0);
         (metrics, ascent, descent)
     }
 
@@ -340,7 +344,13 @@ impl<'a, 'm> Lines<'a, 'm> {
             .max(default_descent);
 
         let baseline = self.y + ascent;
-        let mut x = self.x;
+        let remaining = self.width.saturating_sub(self.line_width).max(0);
+        let offset = match self.text_align {
+            TextAlign::Start | TextAlign::Left => 0,
+            TextAlign::End | TextAlign::Right => remaining,
+            TextAlign::Center => remaining / 2,
+        };
+        let mut x = self.x.saturating_add(offset);
         for item in prepared {
             match item {
                 PreparedBox::Image(mut image) => {

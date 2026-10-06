@@ -683,6 +683,45 @@ mod tests {
     }
 
     #[test]
+    fn text_alignment_and_line_height_reach_display_list_geometry() {
+        let display_list = Engine::new().render_html(
+            "<p style='width:300px;text-align:center'>align</p><p style='width:300px;text-align:right'>align</p><p style='line-height:40px'>first<br>second</p>",
+            800,
+            600,
+        );
+
+        let aligned: Vec<i32> = display_list
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::Text { text, x, .. } if text == "align" => Some(*x),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(aligned.len(), 2);
+        assert!(aligned[1] > aligned[0]);
+
+        let first_y = display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Text { text, y, .. } if text == "first" => Some(*y),
+                _ => None,
+            });
+        let second_y = display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Text { text, y, .. } if text == "second" => Some(*y),
+                _ => None,
+            });
+        assert_eq!(
+            second_y.zip(first_y).map(|(second, first)| second - first),
+            Some(40)
+        );
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,

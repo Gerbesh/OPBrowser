@@ -95,8 +95,8 @@ per-node ComputedStyleMap for display, text properties and the initial block box
 properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 
-op_layout consumes that map for display:none/block/inline, mixed inline text runs and the
-expanded [block box model](CSS-Box-Model.md). It resolves used widths/min/max/auto margins,
+op_layout consumes that map for display:none/block/inline, mixed inline text runs,
+line-height/text-align line geometry and the expanded [block box model](CSS-Box-Model.md). It resolves used widths/min/max/auto margins,
 box-sizing, padding, independent border edges, fixed height constraints and sibling margin
 collapse, then emits BoxDecoration records. op_paint expands those into side-specific
 FillRect commands before text/images; Win32 remains only the native drawing backend.
