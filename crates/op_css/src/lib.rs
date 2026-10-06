@@ -92,6 +92,12 @@ pub enum PseudoClass {
     Link,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NthExpression {
+    pub a: i32,
+    pub b: i32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimpleSelector {
     Type(String),
@@ -100,6 +106,10 @@ pub enum SimpleSelector {
     Id(String),
     Attribute(AttributeSelector),
     PseudoClass(PseudoClass),
+    Is(Vec<Selector>),
+    Where(Vec<Selector>),
+    Not(Vec<Selector>),
+    NthChild(NthExpression),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,12 +133,29 @@ impl Specificity {
             SimpleSelector::Id(_) => self.ids = self.ids.saturating_add(1),
             SimpleSelector::Class(_)
             | SimpleSelector::Attribute(_)
-            | SimpleSelector::PseudoClass(_) => {
+            | SimpleSelector::PseudoClass(_)
+            | SimpleSelector::NthChild(_) => {
                 self.classes = self.classes.saturating_add(1);
             }
+            SimpleSelector::Is(selectors) | SimpleSelector::Not(selectors) => {
+                self.add_specificity(
+                    selectors
+                        .iter()
+                        .map(|selector| selector.specificity)
+                        .max()
+                        .unwrap_or_default(),
+                );
+            }
+            SimpleSelector::Where(_) => {}
             SimpleSelector::Type(_) => self.types = self.types.saturating_add(1),
             SimpleSelector::Universal => {}
         }
+    }
+
+    fn add_specificity(&mut self, other: Specificity) {
+        self.ids = self.ids.saturating_add(other.ids);
+        self.classes = self.classes.saturating_add(other.classes);
+        self.types = self.types.saturating_add(other.types);
     }
 }
 

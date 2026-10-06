@@ -48,7 +48,9 @@ selectors and at-rules remain explicit unsupported syntax rather than silently s
 
 The engine now collects CSS from embedded style elements and from style attributes.
 The supported selectors are matched right-to-left against op_dom. Each matching element
-gets StyleMap candidates rather than a prematurely resolved winner.
+gets StyleMap candidates rather than a prematurely resolved winner. Functional
+`:is()`/`:where()`/`:not()` recursively reuse the same Selector matcher, while
+`:nth-child(An+B)` indexes element siblings only.
 
 ```text
 DOM
@@ -77,7 +79,8 @@ specificity, then source order. Invalid values for a supported property are filt
 before choosing the winner, allowing a lower-priority valid declaration to apply.
 
 The current computed subset includes display, text color/font sizing/weight, block
-backgrounds, margin/padding/border edges, width/height min/max and box-sizing. Color accepts
+backgrounds, margin/padding/border edges, width/height min/max and box-sizing. A color-only
+`background` shorthand shares cascade winner selection with `background-color`. Color accepts
 #RGB(A)/#RRGGBB(AA), CSS basic named colors plus rebeccapurple, legacy comma and modern
 space/slash rgb()/rgba(), and hsl()/hsla() with hue angle units and alpha. The same color
 parser feeds text, background and borders. Font-size accepts percentages, px/em/rem,
@@ -126,7 +129,8 @@ The built-in start page also describes the supported subset in a normal release 
 The expanded block-level box model is documented in [CSS Block Box Model](CSS-Box-Model.md).
 Initial text alignment, line-height, font-style, underline/line-through, white-space,
 letter/word spacing, text-transform and inline background/padding/solid-border fragments now
-reach layout/native paint. Next S3 work moves into functional pseudo-classes, background
-shorthand, then deeper nested/replaced inline decoration handling.
-Functional pseudos, pseudo-elements, advanced color spaces, at-rules, media queries and full
-CSS conformance remain later.
+reach layout/native paint. Functional `:is()`/`:where()`/`:not()` and `:nth-child(An+B)` now
+participate in selector matching with their initial specificity rules. Next S3 work moves into
+`::before`/`::after` and generated text content, then deeper nested/replaced inline decoration
+handling. Forgiving selector-list recovery, nth-child `of`, advanced color spaces, at-rules,
+media queries and full CSS conformance remain later.

@@ -15,6 +15,8 @@ h1 { color: #6d28d9; font-size: 42px; }
 .inline-css-demo { width: 70%; margin: 12px auto; padding: 10px; font-style: italic; text-decoration: underline line-through; white-space: pre-wrap; background-color: #fff7ed; border: 2px solid #ea580c; }
 .spacing-demo { width: 70%; margin: 12px auto; padding: 10px; text-transform: uppercase; letter-spacing: 3px; word-spacing: 8px; background-color: #f0fdf4; border: 2px solid #16a34a; }
 .inline-box-chip { padding: 3px 8px; background-color: #ede9fe; border: 2px solid #7c3aed; color: #4c1d95; font-weight: bold; }
+.functional-demo > span:is(.hot,.warm):not(.skip):nth-child(odd) { padding: 2px 6px; background: #eef2ff; border: 2px solid #4338ca; color: #b42318; }
+.functional-demo > span:where(#functional-third) { font-weight: bold; }
 .hidden-proof { display: none; }
 a { font-weight: bold; }
 </style></head><body>
@@ -24,13 +26,14 @@ a { font-weight: bold; }
 <p><a href="https://example.com">Открыть Example Domain</a></p>
 <p>Работают <span class="accent">color, font-size, font-weight</span> и <span class="demo-block">display: block / inline / none.</span></p>
 <div class="box-demo">Box model: width/max-width + margin:auto + %/em padding + box-sizing + independent borders.</div>
-<p>Selectors: attributes, + / ~ siblings and :root/:first-child/:last-child/:only-child/:empty/:link now match in the author cascade.</p>
+<p>Selectors: attributes, + / ~ siblings, structural pseudos and :is()/:where()/:not()/:nth-child() now match in the author cascade.</p>
 <p style="color:rgb(180 35 24); background-color:hsl(245 100% 97%); border:2px solid rgb(67 56 202); padding:8px">Colors: legacy/modern rgb()/rgba() and hsl()/hsla() now feed text, background and borders.</p>
 <div class="type-demo">Typography: text-align:center, inherited line-height:1.7 and numeric font-weight:650 now affect real line geometry.<br>Second centered line proves line-height reaches layout.</div>
 <div class="inline-css-demo">font-style:italic + underline + line-through
 white-space:pre-wrap preserves this newline and  double spaces.</div>
 <div class="spacing-demo">text-transform uppercase + letter-spacing + word-spacing now change layout and native paint.</div>
 <p>Inline fragments: normal text <span class="inline-box-chip">padded <b>bold</b> span with background + border that can wrap across lines</span> and normal text again.</p>
+<p class="functional-demo"><span class="hot">:is + odd</span> <span class="hot skip">:not blocks this</span> <span id="functional-third" class="warm">third + :where bold</span></p>
 <p class="hidden-proof">Если вы видите эту строку, display:none сломан.</p>
 <p>Введите https://example.com в адресной строке и нажмите Enter или Go.</p>
 <p>Ctrl+L — выделить адрес. F5 — обновить. Back / Forward — история.</p>

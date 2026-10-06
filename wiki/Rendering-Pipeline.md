@@ -90,8 +90,9 @@ only results matching the current viewport reach present_reflow and native paint
 The [CSS foundation](CSS-Syntax-Foundation.md) now participates in page preparation.
 After HTML parsing, [stylesheet loading](Stylesheet-Loading.md) fetches eligible external
 CSS on the navigation worker. Loaded link CSS and embedded style rules are collected in
-DOM source order, inline declarations join the author cascade, and inheritance produces a
-per-node ComputedStyleMap for display, text properties and the initial block box-model
+DOM source order, inline declarations join the author cascade, functional selectors
+`:is/:where/:not/:nth-child` resolve through the same matcher/specificity path, and inheritance
+produces a per-node ComputedStyleMap for display, text properties and the initial block box-model
 properties. PreparedDocument retains author/computed style data beside DOM/images; resize
 reflow neither refetches nor reparses external CSS.
 

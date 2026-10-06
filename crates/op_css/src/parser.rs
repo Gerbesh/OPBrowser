@@ -1,7 +1,7 @@
 use crate::{
     AttributeMatcher, AttributeSelector, Combinator, CompoundSelector, CssError, Declaration,
-    ParseResult, PseudoClass, Selector, SimpleSelector, Specificity, StyleRule, Stylesheet, Token,
-    TokenKind, tokenize,
+    NthExpression, ParseResult, PseudoClass, Selector, SimpleSelector, Specificity, StyleRule,
+    Stylesheet, Token, TokenKind, tokenize,
 };
 
 pub fn parse_stylesheet(input: &str) -> ParseResult<Stylesheet> {
@@ -217,8 +217,34 @@ fn parse_selector_list(tokens: &[Token]) -> Result<Vec<Selector>, CssError> {
     }
     let mut selectors = Vec::new();
     let mut start = 0;
+    let mut parens = 0_u32;
+    let mut squares = 0_u32;
     for index in 0..=tokens.len() {
-        if index == tokens.len() || matches!(tokens[index].kind, TokenKind::Comma) {
+        let at_separator = if index == tokens.len() {
+            true
+        } else {
+            match tokens[index].kind {
+                TokenKind::Function(_) | TokenKind::OpenParen => {
+                    parens += 1;
+                    false
+                }
+                TokenKind::CloseParen => {
+                    parens = parens.saturating_sub(1);
+                    false
+                }
+                TokenKind::OpenSquare => {
+                    squares += 1;
+                    false
+                }
+                TokenKind::CloseSquare => {
+                    squares = squares.saturating_sub(1);
+                    false
+                }
+                TokenKind::Comma if parens == 0 && squares == 0 => true,
+                _ => false,
+            }
+        };
+        if at_separator {
             let group = trim_whitespace(&tokens[start..index]);
             if group.is_empty() {
                 let offset = tokens
@@ -533,27 +559,136 @@ fn parse_pseudo_class(tokens: &[Token], start: usize) -> Result<(SimpleSelector,
             "pseudo-class is missing a name",
         ));
     };
-    let TokenKind::Ident(name) = &token.kind else {
-        return Err(CssError {
+    match &token.kind {
+        TokenKind::Ident(name) => {
+            let pseudo = match name.to_ascii_lowercase().as_str() {
+                "root" => PseudoClass::Root,
+                "first-child" => PseudoClass::FirstChild,
+                "last-child" => PseudoClass::LastChild,
+                "only-child" => PseudoClass::OnlyChild,
+                "empty" => PseudoClass::Empty,
+                "link" => PseudoClass::Link,
+                _ => {
+                    return Err(CssError {
+                        offset: token.start,
+                        message: format!("unsupported pseudo-class :{name}"),
+                    });
+                }
+            };
+            Ok((SimpleSelector::PseudoClass(pseudo), start + 2))
+        }
+        TokenKind::Function(name) => parse_functional_pseudo(tokens, start + 1, name),
+        _ => Err(CssError {
             offset: token.start,
-            message: "only simple pseudo-classes are supported in this slice".into(),
-        });
+            message: "pseudo-class requires an identifier or supported function".into(),
+        }),
+    }
+}
+
+fn parse_functional_pseudo(
+    tokens: &[Token],
+    function_index: usize,
+    name: &str,
+) -> Result<(SimpleSelector, usize), CssError> {
+    let Some(close) = find_matching_close_paren(tokens, function_index) else {
+        return Err(selector_error(
+            tokens,
+            function_index,
+            "unterminated functional pseudo-class",
+        ));
     };
-    let pseudo = match name.to_ascii_lowercase().as_str() {
-        "root" => PseudoClass::Root,
-        "first-child" => PseudoClass::FirstChild,
-        "last-child" => PseudoClass::LastChild,
-        "only-child" => PseudoClass::OnlyChild,
-        "empty" => PseudoClass::Empty,
-        "link" => PseudoClass::Link,
+    let arguments = trim_whitespace(&tokens[function_index + 1..close]);
+    if arguments.is_empty() {
+        return Err(CssError {
+            offset: tokens[function_index].start,
+            message: format!("functional pseudo-class :{name}() requires an argument"),
+        });
+    }
+
+    let selector = match name.to_ascii_lowercase().as_str() {
+        "is" => SimpleSelector::Is(parse_selector_list(arguments)?),
+        "where" => SimpleSelector::Where(parse_selector_list(arguments)?),
+        "not" => SimpleSelector::Not(parse_selector_list(arguments)?),
+        "nth-child" => {
+            SimpleSelector::NthChild(parse_nth_expression(arguments).ok_or_else(|| CssError {
+                offset: tokens[function_index].start,
+                message: "invalid :nth-child() expression".into(),
+            })?)
+        }
         _ => {
             return Err(CssError {
-                offset: token.start,
-                message: format!("unsupported pseudo-class :{name}"),
+                offset: tokens[function_index].start,
+                message: format!("unsupported functional pseudo-class :{name}()"),
             });
         }
     };
-    Ok((SimpleSelector::PseudoClass(pseudo), start + 2))
+    Ok((selector, close + 1))
+}
+
+fn find_matching_close_paren(tokens: &[Token], function_index: usize) -> Option<usize> {
+    let mut depth = 1_u32;
+    for (index, token) in tokens.iter().enumerate().skip(function_index + 1) {
+        match token.kind {
+            TokenKind::Function(_) | TokenKind::OpenParen => depth += 1,
+            TokenKind::CloseParen => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn parse_nth_expression(tokens: &[Token]) -> Option<NthExpression> {
+    let mut value = String::new();
+    for token in tokens
+        .iter()
+        .filter(|token| !matches!(token.kind, TokenKind::Whitespace))
+    {
+        match &token.kind {
+            TokenKind::Ident(part) | TokenKind::Number(part) => value.push_str(part),
+            TokenKind::Dimension { number, unit } => {
+                value.push_str(number);
+                value.push_str(unit);
+            }
+            TokenKind::Delim('+' | '-') => {
+                if let TokenKind::Delim(ch) = token.kind {
+                    value.push(ch);
+                }
+            }
+            _ => return None,
+        }
+    }
+    let value = value.to_ascii_lowercase();
+    match value.as_str() {
+        "odd" => return Some(NthExpression { a: 2, b: 1 }),
+        "even" => return Some(NthExpression { a: 2, b: 0 }),
+        _ => {}
+    }
+    if let Some(n) = value.find('n') {
+        if value[n + 1..].contains('n') {
+            return None;
+        }
+        let a = match &value[..n] {
+            "" | "+" => 1,
+            "-" => -1,
+            value => value.parse::<i32>().ok()?,
+        };
+        let b = if value[n + 1..].is_empty() {
+            0
+        } else {
+            value[n + 1..].parse::<i32>().ok()?
+        };
+        Some(NthExpression { a, b })
+    } else {
+        Some(NthExpression {
+            a: 0,
+            b: value.parse::<i32>().ok()?,
+        })
+    }
 }
 
 fn skip_selector_whitespace(tokens: &[Token], index: &mut usize) {
@@ -729,6 +864,39 @@ mod tests {
             selector.compounds[1].simple.last(),
             Some(SimpleSelector::PseudoClass(PseudoClass::Link))
         ));
+    }
+
+    #[test]
+    fn parses_functional_pseudo_classes_and_specificity() {
+        let parsed = parse_stylesheet(
+            "section:is(.card, #hero) > p:not(.skip):where(.note, #ignored):nth-child(2n+1) { color:red }",
+        );
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let selector = &parsed.value.rules[0].selectors[0];
+        assert_eq!(
+            selector.specificity,
+            Specificity {
+                ids: 1,
+                classes: 2,
+                types: 2,
+            }
+        );
+        assert!(matches!(
+            selector.compounds[0].simple.last(),
+            Some(SimpleSelector::Is(selectors)) if selectors.len() == 2
+        ));
+        assert!(matches!(
+            selector.compounds[1].simple[1],
+            SimpleSelector::Not(_)
+        ));
+        assert!(matches!(
+            selector.compounds[1].simple[2],
+            SimpleSelector::Where(_)
+        ));
+        assert_eq!(
+            selector.compounds[1].simple[3],
+            SimpleSelector::NthChild(NthExpression { a: 2, b: 1 })
+        );
     }
 
     #[test]

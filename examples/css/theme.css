@@ -25,3 +25,5 @@ h1 { color: #6d28d9; font-size: 42px; }
 .capitalize-demo { width: 66%; margin: 12px auto; padding: 10px; text-transform: capitalize; letter-spacing: -1px; background-color: #fdf4ff; border: 2px solid #c026d3; box-sizing: border-box; }
 .inline-chip { padding: 4px 9px; background-color: #ede9fe; border: 2px solid #7c3aed; color: #4c1d95; font-weight: bold; }
 .inline-chip-alt { padding: 2px 6px; background-color: #ffedd5; border: 2px solid #ea580c; color: #9a3412; }
+.functional-pseudos > span:is(.hot,.warm):not(.skip):nth-child(odd) { padding: 3px 7px; background: #eef2ff; border: 2px solid #4338ca; color: #b42318; }
+.functional-pseudos > span:where(#functional-third) { font-weight: bold; }

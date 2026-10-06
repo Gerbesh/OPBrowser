@@ -211,6 +211,7 @@ HTML
        type/universal/class/ID + attribute operators
        descendant/child/adjacent/general-sibling combinators
        root/child/empty/link pseudo-classes
+       is/where/not selector-list functions + nth-child(An+B)
   -> right-to-left selector matching against op_dom
   -> per-NodeId StyleMap<MatchedDeclaration>
   -> cascade: !important -> inline source -> specificity -> source order
@@ -235,7 +236,8 @@ font-weight normal/bold/bolder/lighter and numeric 1-1000 (currently mapped to t
 normal/bold backend), font-style normal/italic/oblique, text-align start/end/left/right/center,
 line-height normal/unitless/percent/length, white-space normal/nowrap/pre/pre-wrap/pre-line,
 text-decoration-line none/underline/line-through combinations, letter/word spacing lengths,
-text-transform none/uppercase/lowercase/capitalize, #RGB(A)/#RRGGBB(AA), CSS basic named colors plus
+text-transform none/uppercase/lowercase/capitalize, color-only `background` shorthand,
+#RGB(A)/#RRGGBB(AA), CSS basic named colors plus
 rebeccapurple, and legacy/modern rgb()/rgba()/hsl()/hsla(). Functional RGB accepts numeric
 or percentage channels plus number/percentage alpha; HSL accepts deg/grad/rad/turn hue,
 percentage saturation/lightness and alpha. Channels clamp to the CSS output range. The
@@ -284,14 +286,18 @@ in this initial implementation, and vertical padding/borders expand safe line ge
 avoid paint overlap. Replaced-element inline decorations and simultaneous nested decorated
 inline stacks remain later work.
 
-Selector matching now also supports attribute existence/equality/token/dash/prefix/suffix/
-substring operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators
-that ignore intervening text nodes, and :root/:first-child/:last-child/:only-child/:empty/:link.
-Attribute and pseudo-class selectors contribute class-level specificity. Functional pseudos,
-pseudo-elements and namespaces remain later work.
+Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
+operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
+intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus
+`:is()`/`:where()`/`:not()` nested selector lists and `:nth-child(An+B)`. `:is()`/`:not()` use
+the maximum argument specificity, `:where()` contributes zero, and `:nth-child()` contributes
+one class-level component. Functional selector arguments are currently parsed strictly rather
+than with forgiving-list recovery; `:nth-child(... of selector)` and pseudo-elements remain later.
 
 Functional colors feed the same computed CssColor path for text, backgrounds, border-color
-longhands/lists and border shorthands. This avoids property-specific color parsers. Alpha
+longhands/lists and border shorthands. A color-only `background` shorthand (including `none`,
+transparent and global keywords) competes with `background-color` through the same cascade
+key instead of fixed application order. Alpha
 still composites against the current white page background in op_paint, so true layered
 translucent backgrounds remain later rendering work.
 
@@ -299,7 +305,7 @@ Planned next path:
 
 ```text
 Rendering/property expansion
-  -> functional pseudo-classes + background shorthand
+  -> ::before / ::after + generated text content foundation
   -> nested/replaced inline decoration stacks
   -> additional computed properties
 ```

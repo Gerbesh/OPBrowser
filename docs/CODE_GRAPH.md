@@ -194,6 +194,10 @@ classDiagram
     class PseudoClass {
         root / first-child / last-child / only-child / empty / link
     }
+    class FunctionalSelector {
+        is / where / not -> Selector[]
+        nth-child -> NthExpression(a,b)
+    }
     class Declaration {
         name
         value
@@ -317,6 +321,7 @@ classDiagram
     StyleRule --> Selector
     StyleRule --> Declaration
     Selector --> Specificity
+    Selector --> FunctionalSelector : recursive functional pseudo arguments
     Document --> StyleMap : DOM-order linked/embedded collection / selector matching
     StyleMap --> MatchedDeclaration
     MatchedDeclaration --> Declaration

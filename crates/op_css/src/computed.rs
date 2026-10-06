@@ -539,7 +539,7 @@ fn apply_author_declarations(
             TextTransform::None,
         );
     }
-    if let Some((_, value)) = winning_value(declarations, "background-color", parse_color) {
+    if let Some((_, value)) = winning_background_color(declarations) {
         style.background_color = resolve_non_inherited(
             value,
             parent_style.map(|parent| parent.background_color),
@@ -1641,6 +1641,32 @@ fn top_level_components(tokens: &[TokenKind]) -> Option<Vec<&[TokenKind]>> {
     Some(components)
 }
 
+fn winning_background_color(
+    declarations: &[MatchedDeclaration],
+) -> Option<(&MatchedDeclaration, Specified<CssColor>)> {
+    declarations
+        .iter()
+        .filter_map(|matched| {
+            let value = match matched.declaration.name.as_str() {
+                "background-color" => parse_color(&matched.declaration.value),
+                "background" => parse_background_color(&matched.declaration.value),
+                _ => None,
+            }?;
+            Some((matched, value))
+        })
+        .max_by(|(left, _), (right, _)| cascade_key(left).cmp(&cascade_key(right)))
+}
+
+fn parse_background_color(tokens: &[TokenKind]) -> Option<Specified<CssColor>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| CssColor::TRANSPARENT));
+    }
+    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("none")) {
+        return Some(Specified::Value(CssColor::TRANSPARENT));
+    }
+    parse_css_color(tokens).map(Specified::Value)
+}
+
 fn parse_color(tokens: &[TokenKind]) -> Option<Specified<CssColor>> {
     if let Some(keyword) = global_keyword(tokens) {
         return Some(keyword.map(|()| CssColor::BLACK));
@@ -2295,6 +2321,59 @@ mod tests {
                 blue: 255,
                 alpha: 255,
             }
+        );
+    }
+
+    #[test]
+    fn background_color_shorthand_competes_with_longhand_in_the_cascade() {
+        let document = parse_document(
+            "<style>
+               #a { background-color:red; background:#00ff00 }
+               #b { background:blue; background-color:rgb(180 35 24) }
+               #c { background:red !important; background-color:blue }
+               #d { background:none }
+             </style>
+             <div id='a'></div><div id='b'></div><div id='c'></div><div id='d'></div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "a"))
+                .unwrap()
+                .background_color,
+            CssColor {
+                red: 0,
+                green: 255,
+                blue: 0,
+                alpha: 255
+            }
+        );
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "b"))
+                .unwrap()
+                .background_color,
+            CssColor {
+                red: 180,
+                green: 35,
+                blue: 24,
+                alpha: 255
+            }
+        );
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "c"))
+                .unwrap()
+                .background_color,
+            CssColor::RED
+        );
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "d"))
+                .unwrap()
+                .background_color,
+            CssColor::TRANSPARENT
         );
     }
 

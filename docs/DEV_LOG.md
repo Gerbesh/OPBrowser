@@ -614,3 +614,30 @@ This file is append-only project history.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 141 workspace tests,
   normal startup smoke, the 119-command CSS demo smoke and optimized release build.
 - Rebuilt `target/release/op_browser.exe`; this build is 607,232 bytes.
+
+## 2026-10-06 - Functional pseudo-classes and background shorthand
+
+- Added recursive functional selector AST/matching for `:is()`/`:where()`/`:not()` using the
+  existing right-to-left Selector engine instead of a separate special-case matcher.
+- Implemented specificity rules for the new functions: `:is()` and `:not()` contribute the
+  maximum specificity of their selector arguments, while `:where()` contributes zero.
+- Added `:nth-child(An+B)` parsing/matching for integers, odd/even, `n`, signed coefficients
+  and offsets such as `2n+1` and `-n+4`; matching counts element siblings only.
+- Fixed selector-list comma splitting so commas nested inside functional pseudos no longer
+  split the outer author selector list.
+- Added a color-only `background` shorthand subset supporting CSS colors, `transparent`,
+  `none` and global keywords. It competes with `background-color` through the normal cascade
+  key instead of declaration-type application order.
+- Added parser, specificity, matcher, computed-cascade and Engine regressions. The Engine test
+  combines `:is + :not + :nth-child + :where` with `background:#eef2ff` and proves selected
+  inline fragments reach native display-list text/background commands.
+- Updated the built-in start page and CSS demo with functional-selector/background shorthand
+  examples; the CSS demo smoke now emits 133 paint commands.
+- Updated README, project plan, code graph/slices and CSS/rendering wiki pages.
+- Deliberate limits remain: functional selector lists are currently strict rather than
+  forgiving, `:nth-child(... of selector)` is not parsed, pseudo-elements are not implemented,
+  and `background` currently accepts only a color/none/global value rather than image/position/
+  repeat/size/layer syntax.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 145 workspace tests,
+  normal startup smoke, the 133-command CSS demo smoke and optimized release build.
+- Rebuilt `target/release/op_browser.exe`; this build is 615,936 bytes.

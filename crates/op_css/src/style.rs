@@ -1,6 +1,7 @@
 use crate::{
-    AttributeMatcher, AttributeSelector, Combinator, CssError, Declaration, PseudoClass, Selector,
-    SimpleSelector, Specificity, StyleRule, parse_declaration_list, parse_stylesheet,
+    AttributeMatcher, AttributeSelector, Combinator, CssError, Declaration, NthExpression,
+    PseudoClass, Selector, SimpleSelector, Specificity, StyleRule, parse_declaration_list,
+    parse_stylesheet,
 };
 use op_dom::{Document, NodeId, NodeKind};
 use std::collections::HashMap;
@@ -294,6 +295,13 @@ fn compound_matches(document: &Document, node: NodeId, compound: &crate::Compoun
         SimpleSelector::Id(name) => attribute_value(element, "id").is_some_and(|id| id == name),
         SimpleSelector::Attribute(attribute) => attribute_matches(element, attribute),
         SimpleSelector::PseudoClass(pseudo) => pseudo_class_matches(document, node, *pseudo),
+        SimpleSelector::Is(selectors) | SimpleSelector::Where(selectors) => selectors
+            .iter()
+            .any(|selector| selector_matches(document, node, selector)),
+        SimpleSelector::Not(selectors) => selectors
+            .iter()
+            .all(|selector| !selector_matches(document, node, selector)),
+        SimpleSelector::NthChild(expression) => nth_child_matches(document, node, *expression),
     })
 }
 
@@ -376,6 +384,23 @@ fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) 
             element.tag_name.eq_ignore_ascii_case("a") && attribute_value(element, "href").is_some()
         }),
     }
+}
+
+fn nth_child_matches(document: &Document, node: NodeId, expression: NthExpression) -> bool {
+    let Some(siblings) = element_siblings(document, node) else {
+        return false;
+    };
+    let Some(position) = siblings.iter().position(|candidate| *candidate == node) else {
+        return false;
+    };
+    let index = position as i64 + 1;
+    let a = i64::from(expression.a);
+    let b = i64::from(expression.b);
+    if a == 0 {
+        return index == b;
+    }
+    let difference = index - b;
+    difference % a == 0 && difference / a >= 0
 }
 
 fn element_siblings(document: &Document, node: NodeId) -> Option<Vec<NodeId>> {
@@ -551,6 +576,30 @@ mod tests {
         assert!(!matches(notempty, "div:empty"));
         assert!(!matches(span, "a + em"));
         assert!(!matches(span, "[data-mode=dark]"));
+    }
+
+    #[test]
+    fn matches_functional_pseudos_and_nth_child_against_element_siblings() {
+        let document = parse_document(
+            "<ul><li id='one' class='hot'></li>text<li id='two' class='hot skip'></li><li id='three' class='warm target'></li><li id='four' class='cold'></li></ul>",
+        );
+        let one = element_by_id(&document, "one");
+        let two = element_by_id(&document, "two");
+        let three = element_by_id(&document, "three");
+        let four = element_by_id(&document, "four");
+        let matches = |node, source: &str| {
+            let parsed = parse_stylesheet(&format!("{source} {{ color:red }}"));
+            assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+            selector_matches(&document, node, &parsed.value.rules[0].selectors[0])
+        };
+
+        assert!(matches(one, "li:is(.hot,.warm):not(.skip):nth-child(odd)"));
+        assert!(!matches(two, "li:is(.hot,.warm):not(.skip)"));
+        assert!(matches(three, "li:where(.target,#never):nth-child(2n+1)"));
+        assert!(!matches(four, "li:is(.hot,.warm)"));
+        assert!(matches(two, "li:nth-child(2)"));
+        assert!(matches(four, "li:nth-child(-n+4)"));
+        assert!(!matches(four, "li:nth-child(2n+1)"));
     }
 
     #[test]

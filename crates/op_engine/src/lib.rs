@@ -830,6 +830,68 @@ mod tests {
     }
 
     #[test]
+    fn functional_pseudos_and_background_shorthand_reach_native_display_list() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               .card:is(.hot,.warm):not(.skip):nth-child(odd) { color:#b42318; background:#eef2ff; padding:2px 4px; }
+               span:where(#three) { font-weight:bold; }
+             </style>
+             <main><span class='card hot'>one</span><span class='card hot skip'>two</span><span id='three' class='card warm'>three</span></main>",
+            800,
+            600,
+        );
+
+        let styled_texts: Vec<_> = display_list
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::Text {
+                    text, color, bold, ..
+                } if text == "one" || text == "two" || text == "three" => {
+                    Some((text.as_str(), *color, *bold))
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(styled_texts.iter().any(|(text, color, _)| {
+            *text == "one"
+                && *color
+                    == op_paint::Color {
+                        r: 180,
+                        g: 35,
+                        b: 24,
+                    }
+        }));
+        assert!(
+            styled_texts
+                .iter()
+                .any(|(text, color, _)| { *text == "two" && *color == op_paint::Color::BLACK })
+        );
+        assert!(styled_texts.iter().any(|(text, color, bold)| {
+            *text == "three"
+                && *color
+                    == op_paint::Color {
+                        r: 180,
+                        g: 35,
+                        b: 24,
+                    }
+                && *bold
+        }));
+        assert_eq!(
+            display_list
+                .commands
+                .iter()
+                .filter(|command| matches!(
+                    command,
+                    PaintCommand::FillRect { color, .. }
+                        if *color == op_paint::Color { r: 238, g: 242, b: 255 }
+                ))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
     fn nested_site_containers_keep_heading_and_paragraph_blocks() {
         let display_list = Engine::new().render_html(
             "<!doctype html><html><head><style>hidden</style></head><body><main><div><h1>Example Domain</h1><p>Visible text</p></div></main></body></html>", 800, 600,

@@ -145,8 +145,12 @@ Status: IN PROGRESS.
 - DONE initial inline box fragments for non-replaced inline elements: background-color,
   padding and solid per-side borders participate in width/wrapping/alignment, expand safe
   line geometry, survive ordinary nested text styling and emit per-line BoxDecoration paint.
-- NEXT functional pseudo-classes (:is/:where/:not/:nth-child) plus background shorthand.
-- LATER pseudo-elements, nested decorated-inline stacks/replaced inline decorations and fuller
+- DONE functional pseudo-classes `:is()`/`:where()`/`:not()` with nested selector lists and
+  correct specificity rules, plus `:nth-child(An+B)` over element siblings and a color-only
+  `background` shorthand sharing cascade priority with `background-color`.
+- NEXT pseudo-elements (`::before`/`::after`) and generated text content foundation.
+- LATER forgiving functional-selector recovery, `:nth-child(... of ...)`, nested decorated-inline
+  stacks/replaced inline decorations and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - LATER broader computed values.
 - LATER normal flow block layout.
