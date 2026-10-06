@@ -83,10 +83,12 @@ tracks. border-spacing is inherited and controls real horizontal/vertical gaps. 
 removes those gaps and resolves shared cell-edge conflicts per grid segment so only one winning
 border reaches paint. Table-cell vertical-align now supports baseline/top/middle/bottom: after
 row/span heights are resolved, text, images and nested decorations move together while the cell
-border box stays fixed; baseline cells align their first line across the row. Mode-specific layout
-quirks, processing instructions, template/frameset modes, foreign-content context, full CSS Tables
-intrinsic/percentage rules, non-cell collapsed border precedence, anonymous table boxes and
-inline-table remain later.
+border box stays fixed; baseline cells align their first line across the row. Child-side CSS table
+fixup also synthesizes layout-only rows/cells for missing children inside a table root or row
+group, while preserving inherited text style through anonymous cells. Mode-specific layout quirks,
+processing instructions, template/frameset modes, foreign-content context, full CSS Tables
+intrinsic/percentage rules, non-cell collapsed border precedence, missing-parent anonymous-table
+fixup and inline-table remain later.
 
 ## S2 - Navigation to static page
 

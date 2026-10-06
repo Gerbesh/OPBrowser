@@ -1608,6 +1608,126 @@ mod tests {
     }
 
     #[test]
+    fn css_table_fixup_generates_missing_rows_for_direct_cells_and_row_groups() {
+        let document = op_html::parse_document(
+            "<style>
+               #table { display:table; width:360px; border-spacing:0 }
+               #group { display:table-row-group }
+               .cell { display:table-cell; padding:0 }
+               #a { background:#ff0000 }
+               #b { background:#0000ff }
+               #c { background:#00ff00 }
+               #d { background:#ffff00 }
+             </style>
+             <div id='table'>
+               <div id='a' class='cell'>A</div>
+               <div id='b' class='cell'>B</div>
+               <div id='group'>
+                 <div id='c' class='cell'>C</div>
+                 <div id='d' class='cell'>D</div>
+               </div>
+             </div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let a = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let b = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+        let c = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+        let d = decoration(TextColor {
+            red: 255,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+
+        assert_eq!(a.y, b.y);
+        assert_eq!(c.y, d.y);
+        assert!(c.y > a.y);
+        assert_eq!(b.x, a.x + a.width);
+        assert_eq!(d.x, c.x + c.width);
+    }
+
+    #[test]
+    fn css_table_fixup_wraps_non_cell_row_children_in_one_anonymous_cell() {
+        let document = op_html::parse_document(
+            "<style>
+               #table { display:table; width:280px; border-spacing:0 }
+               #row { display:table-row }
+               #first, #second { display:block; margin:0; padding:0 }
+               #first { background:#ff0000 }
+               #second { background:#0000ff }
+             </style>
+             <div id='table'>
+               <div id='row'>
+                 <div id='first'>first</div>
+                 <div id='second'>second</div>
+               </div>
+             </div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let first = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let second = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+
+        assert_eq!(first.x, second.x);
+        assert_eq!(first.width, second.width);
+        assert!(second.y >= first.y + first.height);
+    }
+
+    #[test]
     fn table_border_spacing_controls_real_horizontal_and_vertical_gaps() {
         let document = op_html::parse_document(
             "<style>

@@ -148,18 +148,32 @@ struct Style {
     border_spacing: BorderSpacing,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
+enum TableCellSource {
+    Element(NodeId),
+    Anonymous {
+        nodes: Vec<NodeId>,
+        inherited_from: NodeId,
+    },
+}
+
+#[derive(Debug, Clone)]
 struct TableCellPlacement {
-    node: NodeId,
+    source: TableCellSource,
     row: usize,
     column: usize,
     colspan: usize,
     rowspan: usize,
 }
 
+#[derive(Debug)]
+struct TableRowSource {
+    cells: Vec<TableCellSource>,
+}
+
 #[derive(Debug, Default)]
 struct TableGrid {
-    rows: Vec<NodeId>,
+    row_count: usize,
     cells: Vec<TableCellPlacement>,
     columns: usize,
 }
@@ -504,7 +518,7 @@ impl<'a> Context<'a, '_> {
         }
 
         let grid = self.build_table_grid(id);
-        if !grid.rows.is_empty() && grid.columns > 0 {
+        if grid.row_count > 0 && grid.columns > 0 {
             let (horizontal_spacing, vertical_spacing) = used_table_spacing(style);
             let intrinsic =
                 self.table_intrinsic_columns(id, &grid, style, content_width, horizontal_spacing);
@@ -513,8 +527,8 @@ impl<'a> Context<'a, '_> {
                 table_column_offsets(content_x, &column_widths, horizontal_spacing);
             let collapsed_borders = (style.border_collapse == BorderCollapse::Collapse)
                 .then(|| self.collapsed_table_borders(&grid, style));
-            let mut row_heights = vec![0; grid.rows.len()];
-            let mut row_baselines = vec![None; grid.rows.len()];
+            let mut row_heights = vec![0; grid.row_count];
+            let mut row_baselines = vec![None; grid.row_count];
             let mut cell_layouts = Vec::new();
             let mut row_top = self.y.saturating_add(vertical_spacing);
 
@@ -533,9 +547,9 @@ impl<'a> Context<'a, '_> {
                         .unwrap_or(content_x);
                     let collapsed_border = collapsed_borders
                         .as_ref()
-                        .map(|borders| self.collapsed_border_for_cell(*placement, &grid, borders));
+                        .map(|borders| self.collapsed_border_for_cell(placement, &grid, borders));
                     let layout = self.layout_table_cell(
-                        *placement,
+                        placement,
                         x,
                         row_top,
                         slot_width,
@@ -614,28 +628,32 @@ impl<'a> Context<'a, '_> {
     }
 
     fn build_table_grid(&self, table: NodeId) -> TableGrid {
-        let rows = self.table_row_nodes(table);
+        let rows = self.table_row_sources(table);
+        let row_count = rows.len();
         let mut grid = TableGrid {
             columns: self.table_declared_columns(table),
-            rows,
+            row_count,
             cells: Vec::new(),
         };
         let mut occupied_until = Vec::<usize>::new();
 
-        for (row_index, row) in grid.rows.iter().copied().enumerate() {
-            for cell in self.document.children(row) {
-                let Some(element) = self.document.element(*cell) else {
-                    continue;
+        for (row_index, row) in rows.into_iter().enumerate() {
+            for source in row.cells {
+                let (colspan, rowspan) = match &source {
+                    TableCellSource::Element(node) => {
+                        let Some(element) = self.document.element(*node) else {
+                            continue;
+                        };
+                        let colspan = table_span(element, "colspan", 1, 1000).max(1);
+                        let rowspan = match table_span(element, "rowspan", 1, 65534) {
+                            0 => row_count.saturating_sub(row_index).max(1),
+                            value => value,
+                        };
+                        (colspan, rowspan)
+                    }
+                    TableCellSource::Anonymous { .. } => (1, 1),
                 };
-                if self.element_display(*cell, &element.tag_name) != Display::TableCell {
-                    continue;
-                }
 
-                let colspan = table_span(element, "colspan", 1, 1000).max(1);
-                let rowspan = match table_span(element, "rowspan", 1, 65534) {
-                    0 => grid.rows.len().saturating_sub(row_index).max(1),
-                    value => value,
-                };
                 let mut column = 0usize;
                 loop {
                     let end = column.saturating_add(colspan);
@@ -657,7 +675,7 @@ impl<'a> Context<'a, '_> {
                 }
                 grid.columns = grid.columns.max(end);
                 grid.cells.push(TableCellPlacement {
-                    node: *cell,
+                    source,
                     row: row_index,
                     column,
                     colspan,
@@ -669,32 +687,119 @@ impl<'a> Context<'a, '_> {
         grid
     }
 
-    fn table_row_nodes(&self, table: NodeId) -> Vec<NodeId> {
+    fn table_row_sources(&self, table: NodeId) -> Vec<TableRowSource> {
         let mut rows = Vec::new();
-        for child in self.document.children(table) {
-            let Some(element) = self.document.element(*child) else {
+        let mut anonymous_row_children = Vec::new();
+
+        for child in self.document.children(table).iter().copied() {
+            if self.table_fixup_ignorable(child) {
                 continue;
-            };
-            match self.element_display(*child, &element.tag_name) {
-                Display::TableRow => rows.push(*child),
-                Display::TableHeaderGroup | Display::TableRowGroup | Display::TableFooterGroup => {
-                    rows.extend(
-                        self.document
-                            .children(*child)
-                            .iter()
-                            .copied()
-                            .filter(|row| {
-                                self.document.element(*row).is_some_and(|element| {
-                                    self.element_display(*row, &element.tag_name)
-                                        == Display::TableRow
-                                })
-                            }),
-                    );
+            }
+            match self.table_fixup_display(child) {
+                Some(Display::TableRow) => {
+                    self.flush_anonymous_table_row(&mut rows, &mut anonymous_row_children, table);
+                    rows.push(self.table_row_from_node(child));
                 }
-                _ => {}
+                Some(
+                    Display::TableHeaderGroup | Display::TableRowGroup | Display::TableFooterGroup,
+                ) => {
+                    self.flush_anonymous_table_row(&mut rows, &mut anonymous_row_children, table);
+                    self.append_table_row_group(child, &mut rows);
+                }
+                Some(Display::TableColumn | Display::TableColumnGroup | Display::TableCaption) => {
+                    self.flush_anonymous_table_row(&mut rows, &mut anonymous_row_children, table);
+                }
+                _ => anonymous_row_children.push(child),
             }
         }
+        self.flush_anonymous_table_row(&mut rows, &mut anonymous_row_children, table);
         rows
+    }
+
+    fn append_table_row_group(&self, group: NodeId, rows: &mut Vec<TableRowSource>) {
+        let mut anonymous_row_children = Vec::new();
+        for child in self.document.children(group).iter().copied() {
+            if self.table_fixup_ignorable(child) {
+                continue;
+            }
+            if self.table_fixup_display(child) == Some(Display::TableRow) {
+                self.flush_anonymous_table_row(rows, &mut anonymous_row_children, group);
+                rows.push(self.table_row_from_node(child));
+            } else {
+                anonymous_row_children.push(child);
+            }
+        }
+        self.flush_anonymous_table_row(rows, &mut anonymous_row_children, group);
+    }
+
+    fn flush_anonymous_table_row(
+        &self,
+        rows: &mut Vec<TableRowSource>,
+        children: &mut Vec<NodeId>,
+        inherited_from: NodeId,
+    ) {
+        if children.is_empty() {
+            return;
+        }
+        rows.push(self.table_row_from_children(std::mem::take(children), inherited_from));
+    }
+
+    fn table_row_from_node(&self, row: NodeId) -> TableRowSource {
+        self.table_row_from_children(self.document.children(row).to_vec(), row)
+    }
+
+    fn table_row_from_children(
+        &self,
+        children: Vec<NodeId>,
+        inherited_from: NodeId,
+    ) -> TableRowSource {
+        let mut cells = Vec::new();
+        let mut anonymous_cell_children = Vec::new();
+
+        for child in children {
+            if self.table_fixup_ignorable(child) {
+                continue;
+            }
+            if self.table_fixup_display(child) == Some(Display::TableCell) {
+                if !anonymous_cell_children.is_empty() {
+                    cells.push(TableCellSource::Anonymous {
+                        nodes: std::mem::take(&mut anonymous_cell_children),
+                        inherited_from,
+                    });
+                }
+                cells.push(TableCellSource::Element(child));
+            } else {
+                anonymous_cell_children.push(child);
+            }
+        }
+
+        if !anonymous_cell_children.is_empty() {
+            cells.push(TableCellSource::Anonymous {
+                nodes: anonymous_cell_children,
+                inherited_from,
+            });
+        }
+        TableRowSource { cells }
+    }
+
+    fn table_fixup_display(&self, node: NodeId) -> Option<Display> {
+        let element = self.document.element(node)?;
+        Some(self.element_display(node, &element.tag_name))
+    }
+
+    fn table_fixup_ignorable(&self, node: NodeId) -> bool {
+        let Some(node_data) = self.document.node(node) else {
+            return true;
+        };
+        match &node_data.kind {
+            NodeKind::Text(text) => text
+                .chars()
+                .all(|ch| matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{c}')),
+            NodeKind::Element(element) => {
+                self.element_display(node, &element.tag_name) == Display::None
+            }
+            NodeKind::Comment(_) | NodeKind::DocumentType(_) | NodeKind::Document => true,
+        }
     }
 
     fn table_declared_columns(&self, table: NodeId) -> usize {
@@ -744,7 +849,7 @@ impl<'a> Context<'a, '_> {
 
         for placement in grid.cells.iter().filter(|cell| cell.colspan == 1) {
             let (min, max) =
-                self.table_cell_intrinsic_widths(placement.node, inherited, content_width);
+                self.table_cell_intrinsic_widths(&placement.source, inherited, content_width);
             if let Some(column) = columns.get_mut(placement.column) {
                 column.min = column.min.max(min);
                 column.max = column.max.max(max).max(column.min);
@@ -761,7 +866,7 @@ impl<'a> Context<'a, '_> {
             }
 
             let (required_min, required_max) =
-                self.table_cell_intrinsic_widths(placement.node, inherited, content_width);
+                self.table_cell_intrinsic_widths(&placement.source, inherited, content_width);
             let internal_spacing =
                 spacing.saturating_mul(end.saturating_sub(placement.column + 1) as i32);
             grow_intrinsic_span(
@@ -835,14 +940,11 @@ impl<'a> Context<'a, '_> {
 
     fn table_cell_intrinsic_widths(
         &mut self,
-        node: NodeId,
+        source: &TableCellSource,
         inherited: Style,
         width_basis: i32,
     ) -> (i32, i32) {
-        let Some(element) = self.document.element(node) else {
-            return (1, 1);
-        };
-        let style = self.element_style(node, &element.tag_name, inherited);
+        let style = self.table_cell_source_style(source, inherited);
         let padding = Edges {
             top: resolve_length(style.padding.top, width_basis).max(0),
             right: resolve_length(style.padding.right, width_basis).max(0),
@@ -857,11 +959,25 @@ impl<'a> Context<'a, '_> {
             .saturating_add(border.right.width);
 
         let mut text = String::new();
-        for child in self.document.children(node) {
-            self.collect_table_intrinsic_text(*child, &mut text);
-        }
+        let image_width = match source {
+            TableCellSource::Element(node) => {
+                for child in self.document.children(*node) {
+                    self.collect_table_intrinsic_text(*child, &mut text);
+                }
+                self.table_intrinsic_image_width(*node, style, width_basis)
+            }
+            TableCellSource::Anonymous { nodes, .. } => {
+                for node in nodes {
+                    self.collect_table_intrinsic_text(*node, &mut text);
+                }
+                nodes
+                    .iter()
+                    .map(|node| self.table_intrinsic_image_width(*node, style, width_basis))
+                    .max()
+                    .unwrap_or(0)
+            }
+        };
         let (text_min, text_max) = self.measure_table_intrinsic_text(&text, style.inline);
-        let image_width = self.table_intrinsic_image_width(node, style, width_basis);
         let mut min = text_min.max(image_width).saturating_add(extras).max(1);
         let mut max = text_max
             .max(text_min)
@@ -893,6 +1009,26 @@ impl<'a> Context<'a, '_> {
         }
 
         (min, max)
+    }
+
+    fn table_cell_source_style(&self, source: &TableCellSource, inherited: Style) -> Style {
+        match source {
+            TableCellSource::Element(node) => self
+                .document
+                .element(*node)
+                .map_or_else(default_style, |element| {
+                    self.element_style(*node, &element.tag_name, inherited)
+                }),
+            TableCellSource::Anonymous { inherited_from, .. } => {
+                let parent = self
+                    .document
+                    .element(*inherited_from)
+                    .map_or(inherited, |element| {
+                        self.element_style(*inherited_from, &element.tag_name, inherited)
+                    });
+                anonymous_table_cell_style(parent)
+            }
+        }
     }
 
     fn collect_table_intrinsic_text(&self, node: NodeId, output: &mut String) {
@@ -1004,13 +1140,16 @@ impl<'a> Context<'a, '_> {
     }
 
     fn collapsed_table_borders(&self, grid: &TableGrid, inherited: Style) -> TableCollapsedBorders {
-        let mut borders = TableCollapsedBorders::new(grid.rows.len(), grid.columns);
+        let mut borders = TableCollapsedBorders::new(grid.row_count, grid.columns);
 
         for placement in &grid.cells {
-            let Some(element) = self.document.element(placement.node) else {
+            let TableCellSource::Element(node) = &placement.source else {
                 continue;
             };
-            let style = self.element_style(placement.node, &element.tag_name, inherited);
+            let Some(element) = self.document.element(*node) else {
+                continue;
+            };
+            let style = self.element_style(*node, &element.tag_name, inherited);
             let cell = resolve_border_edges(style.border);
             let column_end = placement
                 .column
@@ -1019,7 +1158,7 @@ impl<'a> Context<'a, '_> {
             let row_end = placement
                 .row
                 .saturating_add(placement.rowspan)
-                .min(grid.rows.len());
+                .min(grid.row_count);
 
             for row in placement.row..row_end {
                 if let Some(boundary) = borders.vertical_mut(row, placement.column) {
@@ -1044,7 +1183,7 @@ impl<'a> Context<'a, '_> {
 
     fn collapsed_border_for_cell(
         &self,
-        placement: TableCellPlacement,
+        placement: &TableCellPlacement,
         grid: &TableGrid,
         borders: &TableCollapsedBorders,
     ) -> UsedBorderEdges {
@@ -1055,7 +1194,7 @@ impl<'a> Context<'a, '_> {
         let row_end = placement
             .row
             .saturating_add(placement.rowspan)
-            .min(grid.rows.len());
+            .min(grid.row_count);
 
         UsedBorderEdges {
             top: borders.horizontal_winner(placement.row, placement.column, column_end),
@@ -1064,7 +1203,7 @@ impl<'a> Context<'a, '_> {
             } else {
                 empty_used_border_side()
             },
-            bottom: if row_end == grid.rows.len() {
+            bottom: if row_end == grid.row_count {
                 borders.horizontal_winner(row_end, placement.column, column_end)
             } else {
                 empty_used_border_side()
@@ -1135,32 +1274,14 @@ impl<'a> Context<'a, '_> {
 
     fn layout_table_cell(
         &mut self,
-        placement: TableCellPlacement,
+        placement: &TableCellPlacement,
         x: i32,
         row_top: i32,
         slot_width: i32,
         inherited: Style,
         border_override: Option<UsedBorderEdges>,
     ) -> TableCellLayout {
-        let Some(element) = self.document.element(placement.node) else {
-            return TableCellLayout {
-                decoration: None,
-                row: placement.row,
-                rowspan: placement.rowspan,
-                natural_height: 1,
-                content_height: 0,
-                vertical_extras: 0,
-                vertical_align: VerticalAlign::Baseline,
-                baseline_from_top: None,
-                decoration_start: self.decorations.len(),
-                decoration_end: self.decorations.len(),
-                text_start: self.text.len(),
-                text_end: self.text.len(),
-                image_start: self.images_out.len(),
-                image_end: self.images_out.len(),
-            };
-        };
-        let style = self.element_style(placement.node, &element.tag_name, inherited);
+        let style = self.table_cell_source_style(&placement.source, inherited);
         let padding = Edges {
             top: resolve_length(style.padding.top, slot_width).max(0),
             right: resolve_length(style.padding.right, slot_width).max(0),
@@ -1225,25 +1346,34 @@ impl<'a> Context<'a, '_> {
         self.pending_margin = None;
 
         let mut items = Vec::new();
-        self.collect_generated(
-            placement.node,
-            PseudoElement::Before,
-            None,
-            style,
-            (content_x, content_width),
-            &mut items,
-        );
-        for child in self.document.children(placement.node) {
-            self.collect(*child, None, style, content_x, content_width, &mut items);
+        match &placement.source {
+            TableCellSource::Element(node) => {
+                self.collect_generated(
+                    *node,
+                    PseudoElement::Before,
+                    None,
+                    style,
+                    (content_x, content_width),
+                    &mut items,
+                );
+                for child in self.document.children(*node) {
+                    self.collect(*child, None, style, content_x, content_width, &mut items);
+                }
+                self.collect_generated(
+                    *node,
+                    PseudoElement::After,
+                    None,
+                    style,
+                    (content_x, content_width),
+                    &mut items,
+                );
+            }
+            TableCellSource::Anonymous { nodes, .. } => {
+                for node in nodes {
+                    self.collect(*node, None, style, content_x, content_width, &mut items);
+                }
+            }
         }
-        self.collect_generated(
-            placement.node,
-            PseudoElement::After,
-            None,
-            style,
-            (content_x, content_width),
-            &mut items,
-        );
         self.emit(&mut items, style, content_x, content_width);
         self.flush_pending_margin();
 
@@ -2395,6 +2525,18 @@ fn fallback_display(tag: &str) -> Display {
         _ if is_block(tag) => Display::Block,
         _ => Display::Inline,
     }
+}
+
+fn anonymous_table_cell_style(parent: Style) -> Style {
+    let mut style = default_style();
+    style.inline = InlineStyle {
+        boxes: None,
+        ..parent.inline
+    };
+    style.text_align = parent.text_align;
+    style.border_collapse = parent.border_collapse;
+    style.border_spacing = parent.border_spacing;
+    style
 }
 
 fn default_style() -> Style {

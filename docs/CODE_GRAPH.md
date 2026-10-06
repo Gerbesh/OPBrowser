@@ -587,10 +587,14 @@ classDiagram
   one winning edge, assigning each internal boundary to one adjacent cell so paint does not
   double it. Table cells also retain output ranges for their nested decorations/text/images so
   baseline/top/middle/bottom vertical alignment can reposition the whole cell content after final
-  row/span heights are known. Baseline cells compare first-line baselines across the row. Caption
-  flow, cell backgrounds/borders/padding and span geometry reach ordinary BoxDecoration/text/image
-  output. Whitespace-only text between block siblings is suppressed before it can create
-  anonymous line geometry.
+  row/span heights are known. Baseline cells compare first-line baselines across the row. Before
+  grid placement, child-side table fixup normalizes each table root into layout-only row/cell
+  sources: consecutive improper table children form anonymous rows, row-group children that are
+  not rows form anonymous rows, and consecutive non-cell row children form anonymous cells.
+  Anonymous cells inherit the parent table/row text properties but keep initial non-inherited box
+  properties; no synthetic DOM nodes are created. Caption flow, real cell backgrounds/borders/
+  padding and span geometry reach ordinary BoxDecoration/text/image output. Whitespace-only text
+  between block siblings is suppressed before it can create anonymous line geometry.
   op_layout::replaced resolves raster intrinsic/explicit/auto sizes and min/max ratio conflicts.
   flow converts CSS percentage-width/font-relative/content-vs-border-box sizes and applies
   the existing available-width/4096-height fitting policy after CSS used sizes.

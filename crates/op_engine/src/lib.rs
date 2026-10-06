@@ -861,6 +861,54 @@ mod tests {
     }
 
     #[test]
+    fn anonymous_table_rows_and_cells_reach_display_list() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               #table { display:table; width:360px; border-spacing:0; color:#ff0000 }
+               .cell { display:table-cell; padding:0 }
+               #a { background:#0000ff }
+               #b { background:#00ff00 }
+             </style>
+             <div id='table'>
+               loose
+               <div id='a' class='cell'>A</div>
+               <div id='b' class='cell'>B</div>
+             </div>",
+            800,
+            600,
+        );
+
+        assert!(display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, color, .. }
+                if text.contains("loose")
+                    && *color == op_paint::Color { r: 255, g: 0, b: 0 }
+        )));
+
+        let rect = |expected: op_paint::Color| {
+            display_list
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::FillRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        color,
+                    } if *color == expected => Some((*x, *y, *width, *height)),
+                    _ => None,
+                })
+                .expect("anonymous-table child cell must reach paint")
+        };
+        let a = rect(op_paint::Color { r: 0, g: 0, b: 255 });
+        let b = rect(op_paint::Color { r: 0, g: 255, b: 0 });
+
+        assert_eq!(a.1, b.1);
+        assert!(b.0 >= a.0 + a.2);
+    }
+
+    #[test]
     fn table_cell_vertical_align_reaches_display_list_geometry() {
         let display_list = Engine::new().render_html(
             "<style>

@@ -1385,3 +1385,26 @@ This file is append-only project history.
 - Updated project plan, code graph/slices and CSS/rendering/HTML/box-model wiki documentation.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 316 workspace tests,
   native startup smoke and optimized release build. The release executable is 862,208 bytes.
+
+## 2026-10-06 - Initial anonymous table child fixup
+
+- Reworked the table grid input model so a cell source can be either a real DOM element or a
+  layout-only anonymous cell containing one or more existing DOM nodes. Rows are likewise gathered
+  as layout sources rather than requiring every row to correspond to a DOM tr/table-row node.
+- Added the initial child-side CSS table fixup inside an existing table formatting context:
+  consecutive improper table children become one anonymous row; non-row children of a row group
+  become anonymous rows; consecutive non-cell children of a row become one anonymous cell.
+- Whitespace-only HTML text, comments, doctypes and display:none children are ignored by fixup so
+  normally indented HTML tables do not acquire phantom rows or cells.
+- Anonymous cells inherit the containing table/row inline text presentation while non-inherited
+  box properties start from their initial values. No synthetic nodes are inserted into op_dom.
+- Intrinsic width measurement, images, block/inline content collection, row sizing, baseline/
+  vertical alignment and final paint output now consume real and anonymous cell sources through
+  the same table-grid path. Authored collapsed borders still come only from real cells.
+- Added two layout regressions for missing row/cell wrappers and one Engine regression proving
+  anonymous-cell inheritance plus repaired real-cell geometry reach the display list.
+- Missing-parent fixup for orphan table-row/table-cell boxes outside a table formatting context,
+  remaining anonymous table objects and true inline-table remain later work.
+- Updated project plan, code graph/slices and CSS/rendering/box-model wiki documentation.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 319 workspace tests,
+  native startup smoke and optimized release build. The release executable is 866,304 bytes.

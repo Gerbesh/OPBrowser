@@ -73,10 +73,14 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
   measured text/images/cell constraints, col/colgroup width hints, inherited border-spacing,
   initial collapsed cell-edge conflict resolution and table-cell baseline/top/middle/bottom
   vertical alignment, all through native paint.
+- DONE initial child-side anonymous-table fixup inside table roots: consecutive improper table
+  children become anonymous rows, non-row row-group children become anonymous rows, and
+  consecutive non-cell row children become anonymous cells without synthetic DOM nodes.
 - LATER mode-specific legacy CSS/layout quirks, processing instructions, foreign content/CDATA,
   template/frameset insertion modes, complete script-data escape states and remaining advanced
   table layout: full CSS Tables intrinsic percentage/fixed algorithms, table/row-group/row/column
-  collapsed-border conflict precedence, anonymous table boxes and inline-table.
+  collapsed-border conflict precedence, missing-parent fixup around orphan table-internal boxes,
+  remaining anonymous table objects and inline-table.
 - DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
 - DONE initial HTML tree builder from tokenizer output into op_dom::Document.
 - DONE initial document-to-layout pipeline with basic text flow and wrapping.
