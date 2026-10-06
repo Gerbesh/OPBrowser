@@ -160,7 +160,9 @@ resolution and post-row vertical content placement.
 The formatter performs anonymous row/cell child fixup inside display:table and normal-flow
 collection groups consecutive orphan table-internal siblings under one anonymous block table,
 including initial caption and column-hint repair, so CSS-generated table structures can recover
-missing wrappers without altering the DOM. font-size, font-weight/style, line-height,
+missing wrappers without altering the DOM. Structural `display:contents` wrappers are expanded for
+this fixup only when their exposed non-whitespace descendants are table-internal; ordinary contents
+containers remain in the inline/block collection path and continue to carry inherited styles. font-size, font-weight/style, line-height,
 decoration, spacing, transform and
 color are carried on inline character runs. text-align offsets completed lines, while
 white-space controls collapse/newline preservation/soft wrapping. text-transform is applied

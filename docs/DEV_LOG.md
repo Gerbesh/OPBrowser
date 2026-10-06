@@ -1694,3 +1694,31 @@ This file is append-only project history.
   accepted stream back to blocking mode before applying the finite read timeout, matching the
   already-stable image/navigation fixture pattern.
 
+## 2026-10-07 - Structural display:contents table fixup pass
+
+- Extended the existing anonymous table fixup so structural `display:contents` wrappers can expose
+  table-internal descendants to the table/grid formatter without mutating the DOM. This covers
+  contents wrappers around rows, row groups and cells, including the implicit `tbody` inserted by
+  HTML tree construction.
+- The first implementation recursively flattened every contents wrapper and reduced the complex
+  table reftest from 6,548 differing pixels to 81, but diagnostics showed that direct text inside a
+  non-structural contents node then lost the node's inherited text color. The final implementation
+  expands a contents wrapper only when all exposed non-ignorable descendants are table-internal;
+  ordinary text/inline contents remain transparent style carriers in the normal collection path.
+- Added layout regressions for two `display:contents` row wrappers forming one anonymous row and for
+  nested contents around a real row/cell structure.
+- The two pinned table-contents reftests now pass 2/2. WPT Static v1 improved on the unchanged
+  manifest from 179/200 (89.50%) to 181/200 (90.50%), with 19 failures and zero render errors.
+- Diagnosed the remaining select/option display reftest: its 239 differing pixels are exactly raw
+  text inside `<select>`. OPBrowser does not yet have a real form-control renderer, so the text was
+  deliberately not hidden merely to increase the metric.
+- `::first-letter` was selected as the next focused slice. The selector/style map can be extended,
+  but computed pseudo handling is currently generated-content-specific and layout has no
+  first-letter fragment machinery, so it remains a separate coherent implementation rather than a
+  test-specific patch.
+- Final verification passed rustfmt, generated HTML/CSS table checks, warning-free workspace Clippy,
+  the complete workspace test suite, Win32 startup smoke, optimized release build, `git diff --check`
+  and the repeated external compatibility run. Test262 Parser v1 remained 364/1983 (18.36%).
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 946,688 bytes, SHA-256
+  `A0C9393AE2C0E6BF6FEF352866A7442B53E99BDEB2D5F853057D0EE75FC56A92`.
+

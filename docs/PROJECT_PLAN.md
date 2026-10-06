@@ -281,7 +281,9 @@ Status: IN PROGRESS.
 - DONE Selectors 4 `:has()` with descendant/child/adjacent/general-sibling relative selectors, maximum-argument specificity and nested/pseudo-element rejection; empty-namespace attribute selectors now preserve CSS whitespace rules.
 - DONE background-only empty inline boxes with no padding/border keep zero geometry and no longer create fake lines or interrupt collapsible whitespace.
 - DONE fourth metric-driven pass raised the unchanged WPT Static v1 manifest from 172/200 (86.00%) to 179/200 (89.50%).
-- NEXT continue from the remaining WPT Static v1 failure families; flex/BFC/table/SVG display contexts, first-line/first-letter, ICC/tagged images, gamut mapping, form-control display semantics and fuller relative-color/interpolation semantics are now the larger queues.
+- DONE table formatting now treats structural `display:contents` wrappers as transparent during anonymous row/cell fixup while preserving non-table contents nodes as inherited-style carriers.
+- DONE fifth metric-driven pass raised the unchanged WPT Static v1 manifest from 179/200 (89.50%) to 181/200 (90.50%).
+- NEXT add `::first-letter` as a real fragment-pseudo/layout slice; after that the larger queues are flex/BFC, SVG display contexts, ICC/tagged images, gamut mapping, form-control rendering, `::first-line` and fuller relative-color/interpolation semantics.
 
 ## M3 - Original JavaScript engine
 

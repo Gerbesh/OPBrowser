@@ -772,8 +772,11 @@ standalone language slice, and op_browser_core has tab -> lifecycle/protection -
 candidate -> restore-state flow ready for later UI/renderer integration.
 The block-box path includes used width/min/max/auto-margin geometry, per-side borders and
 adjacent sibling margin collapse before BoxDecoration/background-border FillRects. `Display::Contents`
-uses the existing child/generated-content collection path without creating a principal box; flex,
-table-internal and SVG-specific contents behavior remains separate work. Selector matching now adds
+uses the existing child/generated-content collection path without creating a principal box. Table
+formatting additionally pre-expands contents wrappers only when their exposed non-ignorable
+descendants are table-internal, so anonymous row/cell fixup sees the correct structure while ordinary
+text/inline contents nodes remain present to carry inherited style. Flex and SVG-specific contents
+behavior remains separate work. Selector matching now adds
 attributes, +/~ and structural pseudos before the same cascade, including filtered nth selectors
 whose `of` list may begin immediately after the `of` token. `:has()` parses a strict relative-selector
 list and matches forward from its anchor through descendant/child/following-sibling relations while

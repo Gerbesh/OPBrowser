@@ -1833,6 +1833,109 @@ mod tests {
     }
 
     #[test]
+    fn display_contents_rows_flatten_into_one_anonymous_table_row() {
+        let document = op_html::parse_document(
+            "<style>
+               #table { display:table; width:320px; border-spacing:0 }
+               .row { display:contents }
+               .cell { display:table-cell; padding:0 }
+               #a { background:#ff0000 }
+               #b { background:#0000ff }
+             </style>
+             <div id='table'>
+               <div class='row'><div id='a' class='cell'>PA</div></div>
+               <div class='row'><div id='b' class='cell'>SS</div></div>
+             </div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let a = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let b = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+
+        assert_eq!(a.y, b.y);
+        assert_eq!(b.x, a.x + a.width);
+    }
+
+    #[test]
+    fn nested_display_contents_are_transparent_to_table_row_fixup() {
+        let document = op_html::parse_document(
+            "<style>
+               #table { display:table; width:320px; border-spacing:0 }
+               #outer, #inner { display:contents }
+               #row { display:table-row }
+               .cell { display:table-cell; padding:0 }
+               #a { background:#00ff00 }
+               #b { background:#ffff00 }
+             </style>
+             <div id='table'>
+               <div id='outer'>
+                 <div id='row'>
+                   <div id='inner'>
+                     <div id='a' class='cell'>A</div>
+                     <div id='b' class='cell'>B</div>
+                   </div>
+                 </div>
+               </div>
+             </div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let a = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+        let b = decoration(TextColor {
+            red: 255,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+
+        assert_eq!(a.y, b.y);
+        assert_eq!(b.x, a.x + a.width);
+    }
+
+    #[test]
     fn css_table_fixup_generates_missing_rows_for_direct_cells_and_row_groups() {
         let document = op_html::parse_document(
             "<style>

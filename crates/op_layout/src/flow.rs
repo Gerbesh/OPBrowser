@@ -637,6 +637,7 @@ impl<'a> Context<'a, '_> {
         containing_width: i32,
     ) -> TableBoxMetrics {
         self.block_epoch = self.block_epoch.saturating_add(1);
+        let children = self.table_fixup_expand_structural_contents(children);
         let used = resolve_block_horizontal(style, containing_width);
         let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
         let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
@@ -645,7 +646,7 @@ impl<'a> Context<'a, '_> {
         let wrapper_y = self.y;
         let border_x = containing_x.saturating_add(used.margin_left);
         self.layout_table_captions(
-            children,
+            &children,
             style,
             CaptionSide::Top,
             border_x,
@@ -696,14 +697,14 @@ impl<'a> Context<'a, '_> {
             .saturating_add(used.border.top.width)
             .saturating_add(used.padding.top);
 
-        let grid = self.build_table_grid(children, inherited_from);
+        let grid = self.build_table_grid(&children, inherited_from);
         let mut first_row_baseline = None;
         if grid.row_count > 0 && grid.columns > 0 {
             let (horizontal_spacing, vertical_spacing) = used_table_spacing(style);
             let column_widths = if style.table_layout == TableLayout::Fixed && style.width.is_some()
             {
                 self.fixed_table_column_widths(
-                    children,
+                    &children,
                     &grid,
                     style,
                     content_width,
@@ -711,7 +712,7 @@ impl<'a> Context<'a, '_> {
                 )
             } else {
                 let intrinsic = self.table_intrinsic_columns(
-                    children,
+                    &children,
                     &grid,
                     style,
                     content_width,
@@ -831,7 +832,7 @@ impl<'a> Context<'a, '_> {
         }
 
         self.layout_table_captions(
-            children,
+            &children,
             style,
             CaptionSide::Bottom,
             border_x,
@@ -910,6 +911,57 @@ impl<'a> Context<'a, '_> {
         grid
     }
 
+    fn table_fixup_flatten_contents(&self, children: &[NodeId]) -> Vec<NodeId> {
+        let mut flattened = Vec::new();
+        let mut stack = children.iter().rev().copied().collect::<Vec<_>>();
+
+        while let Some(node) = stack.pop() {
+            let is_contents = self.document.element(node).is_some_and(|element| {
+                self.element_display(node, &element.tag_name) == Display::Contents
+            });
+            if is_contents {
+                stack.extend(self.document.children(node).iter().rev().copied());
+            } else {
+                flattened.push(node);
+            }
+        }
+
+        flattened
+    }
+
+    fn table_fixup_expand_structural_contents(&self, children: &[NodeId]) -> Vec<NodeId> {
+        let mut expanded = Vec::new();
+
+        for child in children.iter().copied() {
+            let is_contents = self.document.element(child).is_some_and(|element| {
+                self.element_display(child, &element.tag_name) == Display::Contents
+            });
+            if !is_contents {
+                expanded.push(child);
+                continue;
+            }
+
+            let flattened = self.table_fixup_flatten_contents(self.document.children(child));
+            let structural = flattened
+                .iter()
+                .copied()
+                .filter(|node| !self.table_fixup_ignorable(*node))
+                .collect::<Vec<_>>();
+            if !structural.is_empty()
+                && structural
+                    .iter()
+                    .copied()
+                    .all(|node| self.table_internal_node(node))
+            {
+                expanded.extend(flattened);
+            } else {
+                expanded.push(child);
+            }
+        }
+
+        expanded
+    }
+
     fn table_row_sources(
         &self,
         children: &[NodeId],
@@ -957,7 +1009,8 @@ impl<'a> Context<'a, '_> {
 
     fn append_table_row_group(&self, group: NodeId, rows: &mut Vec<TableRowSource>) {
         let mut anonymous_row_children = Vec::new();
-        for child in self.document.children(group).iter().copied() {
+        let children = self.table_fixup_expand_structural_contents(self.document.children(group));
+        for child in children {
             if self.table_fixup_ignorable(child) {
                 continue;
             }
@@ -994,6 +1047,7 @@ impl<'a> Context<'a, '_> {
     ) -> TableRowSource {
         let mut cells = Vec::new();
         let mut anonymous_cell_children = Vec::new();
+        let children = self.table_fixup_expand_structural_contents(&children);
 
         for child in children {
             if self.table_fixup_ignorable(child) {

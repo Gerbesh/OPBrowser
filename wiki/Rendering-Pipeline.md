@@ -129,7 +129,9 @@ repositions each cell's nested output for baseline/top/middle/bottom vertical-al
 row heights are known. Anonymous table fixup works in both core directions without mutating the
 DOM: improper table/row-group children gain layout-only rows, non-cell row children gain
 layout-only cells, and consecutive orphan table-internal siblings found in normal flow are grouped
-under one anonymous block table. Orphan captions stay with that repaired wrapper and orphan
+under one anonymous block table. Before grid construction, structural `display:contents` wrappers
+that expose only table-internal boxes are expanded into that fixup stream; non-structural contents
+wrappers remain in the collection path so their inherited text style is not lost. Orphan captions stay with that repaired wrapper and orphan
 columns still feed track width hints. Real and anonymous table roots share the same table_box/grid
 implementation. Auto track sizing now records percentage constraints from col/colgroup/cell widths
 alongside measured content preferences. Explicit-width table-layout:fixed skips late intrinsic
