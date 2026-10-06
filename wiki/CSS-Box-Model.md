@@ -94,10 +94,14 @@ background propagation and general alpha composition remain later rendering work
   colspan/rowspan, border-spacing, cell-edge collapse and table-cell baseline/top/middle/bottom
   alignment; core anonymous-table fixup handles both missing child row/cell wrappers and orphan
   table-internal sibling runs in normal flow without mutating the DOM, including initial orphan
-  caption and column-hint behavior. display:inline-table is an atomic inline formatting context
-  using the same table formatter, with shrink-to-fit auto width, first-row baseline, margins,
-  padding and borders. Full CSS Tables percentage algorithms, non-cell collapsed-border precedence,
-  deeper colgroup/caption-side fixup and non-baseline atomic vertical alignment remain later;
+  caption and column-hint behavior. Auto tracks retain percentage column/cell constraints and
+  table-layout:fixed on an explicit-width table uses column hints, first-row widths and remaining
+  space without letting later-row content resize tracks. caption-side:top/bottom participates in
+  wrapper flow outside the table border/background. display:inline-table is an atomic inline
+  formatting context using the same table formatter, with shrink-to-fit auto width, first-row
+  baseline, margins, padding and borders. Complete CSS Tables overconstraint/min-width/percentage
+  edge algorithms, non-cell collapsed-border precedence, deeper colgroup repair and non-baseline
+  atomic vertical alignment remain later;
 - no floats, positioning, flexbox or CSS Grid yet;
 - no complete stacking-context/background-propagation model.
 

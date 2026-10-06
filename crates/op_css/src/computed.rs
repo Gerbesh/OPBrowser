@@ -247,6 +247,18 @@ pub enum BorderCollapse {
     Collapse,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableLayout {
+    Auto,
+    Fixed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptionSide {
+    Top,
+    Bottom,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BorderSpacing {
     pub horizontal_px: f32,
@@ -288,6 +300,8 @@ pub struct ComputedStyle {
     pub box_sizing: BoxSizing,
     pub border_collapse: BorderCollapse,
     pub border_spacing: BorderSpacing,
+    pub table_layout: TableLayout,
+    pub caption_side: CaptionSide,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -369,6 +383,8 @@ impl ComputedStyle {
             box_sizing: BoxSizing::ContentBox,
             border_collapse: BorderCollapse::Separate,
             border_spacing: BorderSpacing::ZERO,
+            table_layout: TableLayout::Auto,
+            caption_side: CaptionSide::Top,
         }
     }
 }
@@ -1283,6 +1299,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             box_sizing: initial.box_sizing,
             border_collapse: parent.border_collapse,
             border_spacing: parent.border_spacing,
+            table_layout: initial.table_layout,
+            caption_side: parent.caption_side,
         },
         None => initial,
     }
@@ -1563,6 +1581,20 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.border_spacing),
             BorderSpacing::ZERO,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "table-layout", parse_table_layout) {
+        style.table_layout = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.table_layout),
+            TableLayout::Auto,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "caption-side", parse_caption_side) {
+        style.caption_side = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.caption_side),
+            CaptionSide::Top,
         );
     }
 
@@ -1946,6 +1978,28 @@ fn parse_border_collapse(tokens: &[TokenKind]) -> Option<Specified<BorderCollaps
     match single_ident(tokens)?.to_ascii_lowercase().as_str() {
         "separate" => Some(Specified::Value(BorderCollapse::Separate)),
         "collapse" => Some(Specified::Value(BorderCollapse::Collapse)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_table_layout(tokens: &[TokenKind]) -> Option<Specified<TableLayout>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "auto" => Some(Specified::Value(TableLayout::Auto)),
+        "fixed" => Some(Specified::Value(TableLayout::Fixed)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_caption_side(tokens: &[TokenKind]) -> Option<Specified<CaptionSide>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "top" => Some(Specified::Value(CaptionSide::Top)),
+        "bottom" => Some(Specified::Value(CaptionSide::Bottom)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
         "unset" => Some(Specified::Unset),
@@ -3578,6 +3632,8 @@ mod tests {
             ("box-sizing", "border-box"),
             ("border-collapse", "collapse"),
             ("border-spacing", "5px 7px"),
+            ("table-layout", "fixed"),
+            ("caption-side", "bottom"),
             ("width", "100px"),
             ("min-width", "40px"),
             ("max-width", "90px"),
@@ -4859,6 +4915,41 @@ mod tests {
             .unwrap();
         assert_eq!(inherited.border_collapse, BorderCollapse::Collapse);
         assert_eq!(inherited.border_spacing, custom.border_spacing);
+    }
+
+    #[test]
+    fn table_layout_and_caption_side_parse_and_follow_inheritance_rules() {
+        let document = parse_document(
+            "<style>
+               #table { table-layout:fixed; caption-side:bottom }
+               #caption { table-layout:inherit }
+               #child { table-layout:inherit; caption-side:inherit }
+               #unset { table-layout:unset; caption-side:unset }
+             </style>
+             <table id='table'>
+               <caption id='caption'>cap</caption>
+               <tr id='child'><td id='unset'>x</td></tr>
+             </table>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+
+        let table = computed.style_for(find_by_id(&document, "table")).unwrap();
+        assert_eq!(table.table_layout, TableLayout::Fixed);
+        assert_eq!(table.caption_side, CaptionSide::Bottom);
+
+        let caption = computed
+            .style_for(find_by_id(&document, "caption"))
+            .unwrap();
+        assert_eq!(caption.table_layout, TableLayout::Fixed);
+        assert_eq!(caption.caption_side, CaptionSide::Bottom);
+
+        let child = computed.style_for(find_by_id(&document, "child")).unwrap();
+        assert_eq!(child.table_layout, TableLayout::Auto);
+        assert_eq!(child.caption_side, CaptionSide::Bottom);
+
+        let unset = computed.style_for(find_by_id(&document, "unset")).unwrap();
+        assert_eq!(unset.table_layout, TableLayout::Auto);
+        assert_eq!(unset.caption_side, CaptionSide::Bottom);
     }
 
     #[test]

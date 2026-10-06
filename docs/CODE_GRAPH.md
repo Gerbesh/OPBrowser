@@ -596,7 +596,13 @@ classDiagram
   table-internal siblings, ignoring only repair-transparent whitespace/comments/display:none
   separators between them, and sends that run through an anonymous block table using the exact
   same table_box/grid path as a real display:table. Captions participate in that repaired wrapper
-  and orphan table-column boxes still feed declared-column width hints.
+  and orphan table-column boxes still feed declared-column width hints. Table auto sizing carries
+  percentage constraints alongside content min/max preferences so percentage tracks reserve their
+  share before remaining width is expanded into auto tracks. Explicit-width table-layout:fixed uses
+  col/colgroup hints first, then explicit first-row cell widths, then divides remaining track space;
+  later-row content does not renegotiate those fixed tracks. caption-side is inherited and the
+  table wrapper now lays top captions before the table border box and bottom captions after it, so
+  the table background/border no longer incorrectly contains caption geometry.
   display:inline-table uses flow::inline_table_atomic: it computes an initial shrink-to-fit width,
   runs the same table_box in a local layout Context, then packages its nested decorations/text/
   images/order into inline::InlineAtomic. Lines treats that object as one wrapping unit, aligns its

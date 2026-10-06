@@ -1538,6 +1538,231 @@ mod tests {
     }
 
     #[test]
+    fn caption_side_bottom_places_caption_after_table_box() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:220px; border-spacing:0; background:#0000ff }
+               caption { caption-side:bottom; background:#ff0000; margin:0 }
+               td { background:#00ff00; padding:0 }
+             </style>
+             <table>
+               <caption>Bottom caption</caption>
+               <tr><td>cell</td></tr>
+             </table>
+             <p>after</p>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let table = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+        let caption = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let cell = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+        let after = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("after"))
+            .unwrap();
+
+        assert!(cell.y >= table.y);
+        assert!(cell.y < table.y + table.height);
+        assert!(caption.y >= table.y + table.height);
+        assert!(after.y >= caption.y + caption.height);
+    }
+
+    #[test]
+    fn auto_table_percentage_column_reserves_its_share_before_auto_tracks_expand() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:400px; border-spacing:0 }
+               #quarter { width:25% }
+               td { padding:0 }
+               #left { background:#ff0000 }
+               #right { background:#0000ff }
+             </style>
+             <table>
+               <colgroup><col id='quarter'><col></colgroup>
+               <tr><td id='left'>a</td><td id='right'>b</td></tr>
+             </table>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let left = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let right = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+
+        assert!((left.width - 100).abs() <= 2, "{left:?}");
+        assert!((right.width - 300).abs() <= 2, "{right:?}");
+        assert_eq!(right.x, left.x + left.width);
+    }
+
+    #[test]
+    fn fixed_table_uses_column_and_first_row_widths_not_late_content() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:400px; table-layout:fixed; border-spacing:0 }
+               #first-col { width:100px }
+               td { padding:0 }
+               #a { background:#ff0000 }
+               #b { background:#0000ff }
+               #late-a { background:#00ff00 }
+               #late-b { background:#ffff00 }
+             </style>
+             <table>
+               <colgroup><col id='first-col'><col></colgroup>
+               <tr><td id='a'>a</td><td id='b'>b</td></tr>
+               <tr>
+                 <td id='late-a'>this late cell contains an absurdly long unbrokenwordunbrokenwordunbrokenword</td>
+                 <td id='late-b'>z</td>
+               </tr>
+             </table>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let a = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let b = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+        let late_a = decoration(TextColor {
+            red: 0,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+        let late_b = decoration(TextColor {
+            red: 255,
+            green: 255,
+            blue: 0,
+            alpha: 255,
+        });
+
+        assert!((a.width - 100).abs() <= 2, "{a:?}");
+        assert!((b.width - 300).abs() <= 2, "{b:?}");
+        assert_eq!(late_a.width, a.width);
+        assert_eq!(late_b.width, b.width);
+        assert_eq!(b.x, a.x + a.width);
+    }
+
+    #[test]
+    fn fixed_table_first_row_percentage_width_drives_unspecified_tracks() {
+        let document = op_html::parse_document(
+            "<style>
+               table { width:400px; table-layout:fixed; border-spacing:0 }
+               td { padding:0 }
+               #first { width:30%; background:#ff0000 }
+               #second { background:#0000ff }
+             </style>
+             <table>
+               <tr><td id='first'>a</td><td id='second'>b</td></tr>
+               <tr><td>tiny</td><td>later content is intentionally much much much longer</td></tr>
+             </table>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let decoration = |color: TextColor| {
+            layout
+                .box_decorations
+                .iter()
+                .find(|decoration| decoration.background == color)
+                .unwrap()
+        };
+        let first = decoration(TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        });
+        let second = decoration(TextColor {
+            red: 0,
+            green: 0,
+            blue: 255,
+            alpha: 255,
+        });
+
+        assert!((first.width - 120).abs() <= 2, "{first:?}");
+        assert!((second.width - 280).abs() <= 2, "{second:?}");
+    }
+
+    #[test]
     fn table_intrinsic_content_and_col_hints_drive_track_widths() {
         let document = op_html::parse_document(
             "<style>

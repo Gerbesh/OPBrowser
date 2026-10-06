@@ -139,10 +139,14 @@ flow, and inline-table/table/table-caption/table-column-group/table-column/table
 table-row-group/table-footer-group/table-row/table-cell feed the table formatting machinery.
 display:inline-table is parsed separately from display:table and enters inline flow as one atomic
 object rather than forcing a block break. border-spacing accepts one/two nonnegative lengths and
-inherits; border-collapse accepts separate/collapse and inherits. vertical-align currently
-recognizes the table-relevant baseline/top/middle/bottom keywords as a non-inherited property.
-Table UA style starts separate at 2px/2px. These table properties reach the grid formatter,
-including zero spacing, shared-cell border resolution and post-row vertical content placement.
+inherits; border-collapse accepts separate/collapse and inherits. table-layout accepts auto/fixed
+and is non-inherited; caption-side accepts top/bottom and inherits. Explicit-width fixed tables use
+column hints and first-row widths without late-row intrinsic resizing, while auto tables retain
+percentage constraints alongside content preferences. Captions are placed above or below the table
+border box according to caption-side. vertical-align currently recognizes the table-relevant
+baseline/top/middle/bottom keywords as a non-inherited property. Table UA style starts separate at
+2px/2px. These table properties reach the grid formatter, including zero spacing, shared-cell
+border resolution and post-row vertical content placement.
 The formatter performs anonymous row/cell child fixup inside display:table and normal-flow
 collection groups consecutive orphan table-internal siblings under one anonymous block table,
 including initial caption and column-hint repair, so CSS-generated table structures can recover

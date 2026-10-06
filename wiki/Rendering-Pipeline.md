@@ -131,12 +131,17 @@ DOM: improper table/row-group children gain layout-only rows, non-cell row child
 layout-only cells, and consecutive orphan table-internal siblings found in normal flow are grouped
 under one anonymous block table. Orphan captions stay with that repaired wrapper and orphan
 columns still feed track width hints. Real and anonymous table roots share the same table_box/grid
-implementation. display:inline-table now runs that same formatter in a local Context, packages the
-result as one InlineAtomic object, shrink-fits auto width against intrinsic tracks and aligns the
-first row baseline with surrounding inline content. Its nested decorations/text/images/order are
-translated into the parent line at placement time, including inherited outer link identity.
-Full CSS Tables percentage/intrinsic algorithms, deeper colgroup/caption-side fixup and non-cell
-collapsed-border precedence remain later. Inline vertical-align values such as
+implementation. Auto track sizing now records percentage constraints from col/colgroup/cell widths
+alongside measured content preferences. Explicit-width table-layout:fixed skips late intrinsic
+content negotiation: col/colgroup widths win first, first-row explicit cell widths fill unresolved
+tracks next, and remaining track space is distributed afterward. caption-side:top/bottom is
+computed through the cascade and captions are wrapper siblings of the table border box rather than
+being painted inside its background. display:inline-table runs the same formatter in a local
+Context, packages the result as one InlineAtomic object, shrink-fits auto width against intrinsic
+tracks and aligns the first row baseline with surrounding inline content. Its nested decorations/
+text/images/order are translated into the parent line at placement time, including inherited outer
+link identity. Complete CSS Tables overconstraint/min-width/percentage edge algorithms, deeper
+colgroup repair and non-cell collapsed-border precedence remain later. Inline vertical-align values such as
 sub/super/text-top/text-bottom/length/% and non-baseline atomic alignment are also still
 unsupported. Transformed text is
 measured before line placement; op_paint carries italic/decoration/spacing metadata and Win32

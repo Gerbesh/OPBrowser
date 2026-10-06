@@ -81,11 +81,14 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE initial true inline-table formatting: display:inline-table creates one atomic inline object
   backed by the normal table_box/grid formatter, uses first-row baseline alignment, shrink-to-fit
   auto width, authored box model/margins and transfers nested text/images/link identity into paint.
+- DONE initial advanced table width/caption pass: auto layout retains percentage constraints from
+  col/colgroup/cell widths, table-layout:fixed uses column hints then first-row widths before sharing
+  remaining space, and caption-side:top/bottom places captions outside the table border/background.
 - LATER mode-specific legacy CSS/layout quirks, processing instructions, foreign content/CDATA,
   template/frameset insertion modes, complete script-data escape states and remaining advanced
-  table layout: full CSS Tables intrinsic percentage/fixed algorithms, table/row-group/row/column
-  collapsed-border conflict precedence, deeper anonymous colgroup/caption-side edge cases and
-  non-baseline inline vertical-align behavior.
+  table layout: complete CSS Tables overconstraint/min-width/percentage edge algorithms,
+  table/row-group/row/column collapsed-border conflict precedence, deeper anonymous colgroup repair
+  and non-baseline inline vertical-align behavior.
 - DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
 - DONE initial HTML tree builder from tokenizer output into op_dom::Document.
 - DONE initial document-to-layout pipeline with basic text flow and wrapping.

@@ -861,6 +861,57 @@ mod tests {
     }
 
     #[test]
+    fn fixed_table_percent_tracks_and_bottom_caption_reach_paint() {
+        let display_list = Engine::new().render_html(
+            "<style>
+               table { width:400px; table-layout:fixed; border-spacing:0; background:#eeeeee }
+               caption { caption-side:bottom; background:#00ff00 }
+               #first { width:25% }
+               #left { background:#ff0000 }
+               #right { background:#0000ff }
+             </style>
+             <table>
+               <caption>bottom</caption>
+               <colgroup><col id='first'><col></colgroup>
+               <tr><td id='left'>a</td><td id='right'>b</td></tr>
+               <tr><td>very very very very long late content</td><td>z</td></tr>
+             </table>",
+            800,
+            600,
+        );
+
+        let rect = |expected: op_paint::Color| {
+            display_list
+                .commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::FillRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        color,
+                    } if *color == expected => Some((*x, *y, *width, *height)),
+                    _ => None,
+                })
+                .expect("advanced table rectangle must reach paint")
+        };
+        let table = rect(op_paint::Color {
+            r: 238,
+            g: 238,
+            b: 238,
+        });
+        let caption = rect(op_paint::Color { r: 0, g: 255, b: 0 });
+        let left = rect(op_paint::Color { r: 255, g: 0, b: 0 });
+        let right = rect(op_paint::Color { r: 0, g: 0, b: 255 });
+
+        assert!((left.2 - 100).abs() <= 2);
+        assert!((right.2 - 300).abs() <= 2);
+        assert_eq!(right.0, left.0 + left.2);
+        assert!(caption.1 >= table.1 + table.3);
+    }
+
+    #[test]
     fn inline_table_reaches_paint_as_an_atomic_inline_context() {
         let display_list = Engine::new().render_html(
             "<style>

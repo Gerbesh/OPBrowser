@@ -1467,3 +1467,26 @@ This file is append-only project history.
   passed alone and the full workspace suite passed on retry.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 331 workspace tests,
   native startup smoke and optimized release build. The release executable is 880,128 bytes.
+
+## 2026-10-06 - Fixed/percentage table sizing and caption-side
+
+- Added computed CSS support for table-layout:auto/fixed and inherited caption-side:top/bottom,
+  including global-keyword behavior, public exports and invalid-value cascade coverage.
+- Refactored table captions into wrapper flow: top captions are laid out before the table border box
+  and bottom captions after it, so table backgrounds/borders no longer incorrectly contain caption
+  geometry. Inline-table baseline metrics account for a preceding top caption.
+- Extended auto table intrinsic tracks with percentage constraints sourced from col/colgroup and
+  cell widths. Percentage tracks reserve their used-width share before remaining width is expanded
+  into auto tracks, while measured content min/max constraints still participate.
+- Added initial table-layout:fixed for explicit-width tables. Track widths are selected from
+  col/colgroup hints first, then explicit first-row cell widths (including percentage widths and
+  colspan distribution), then unresolved tracks share the remaining width. Later-row content does
+  not renegotiate fixed track geometry.
+- Kept fixed sizing bounded to the existing table content box and added deterministic overconstraint
+  squeezing; full CSS Tables min-width/overflow/overconstraint edge behavior remains later work.
+- Added four layout regressions for bottom captions, auto percentage columns, fixed col hints/late
+  content independence and first-row percentage widths, plus one Engine display-list regression
+  proving the new CSS properties survive cascade -> layout -> paint.
+- Updated project plan, code graph/slices and CSS/rendering/box-model wiki documentation.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 337 workspace tests,
+  native startup smoke and optimized release build. The release executable is 890,880 bytes.

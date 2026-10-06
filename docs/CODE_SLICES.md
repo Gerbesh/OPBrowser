@@ -88,13 +88,17 @@ covers both directions for the core row/cell structure: missing children inside 
 groups become layout-only rows/cells, while consecutive orphan table-internal siblings in normal
 flow are grouped under one anonymous block table and then use the same grid formatter. Orphan
 captions remain in that wrapper and orphan columns still contribute width hints. Inherited text
-style survives these layout-only wrappers. display:inline-table now creates a real atomic inline
-formatting object: auto width shrink-fits against intrinsic tracks, first-row baseline aligns with
-surrounding text, authored margins/padding/borders survive, and nested text/images/order/link
-identity are moved into final line output as a unit. Mode-specific layout quirks, processing
-instructions, template/frameset modes, foreign-content context, full CSS Tables intrinsic/
-percentage rules, non-cell collapsed border precedence, deeper colgroup/caption-side fixup and
-non-baseline inline vertical-align remain later.
+style survives these layout-only wrappers. Auto table sizing now retains percentage constraints
+from columns and cells while content still supplies min/max preferences. table-layout:fixed is
+implemented for explicit-width tables using col/colgroup hints, then first-row widths, then equal
+remaining space; later rows cannot resize the tracks. caption-side:top/bottom is computed and
+captions now sit outside the table border/background in wrapper flow. display:inline-table creates
+a real atomic inline formatting object: auto width shrink-fits against intrinsic tracks, first-row
+baseline aligns with surrounding text, authored margins/padding/borders survive, and nested
+text/images/order/link identity are moved into final line output as a unit. Mode-specific layout
+quirks, processing instructions, template/frameset modes, foreign-content context, complete CSS
+Tables overconstraint/min-width/percentage edge rules, non-cell collapsed border precedence,
+deeper colgroup repair and non-baseline inline vertical-align remain later.
 
 ## S2 - Navigation to static page
 

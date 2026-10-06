@@ -3,10 +3,10 @@ use super::inline::{
 };
 use super::*;
 use op_css::{
-    BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, ComputedFontWeight,
-    ComputedLineHeight, ComputedStyle, ComputedStyleMap, Display, FontStyle as CssFontStyle,
-    LengthPercentage, MarginEdges, MarginValue, PaddingEdges, PseudoElement, TextAlign,
-    TextTransform, VerticalAlign, WhiteSpace,
+    BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide,
+    ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Display,
+    FontStyle as CssFontStyle, LengthPercentage, MarginEdges, MarginValue, PaddingEdges,
+    PseudoElement, TableLayout, TextAlign, TextTransform, VerticalAlign, WhiteSpace,
 };
 
 pub(super) fn layout(
@@ -146,6 +146,8 @@ struct Style {
     box_sizing: BoxSizing,
     border_collapse: BorderCollapse,
     border_spacing: BorderSpacing,
+    table_layout: TableLayout,
+    caption_side: CaptionSide,
 }
 
 #[derive(Debug, Clone)]
@@ -207,11 +209,16 @@ struct TableCellLayout {
 struct TableColumnIntrinsic {
     min: i32,
     max: i32,
+    percent: f32,
 }
 
 impl Default for TableColumnIntrinsic {
     fn default() -> Self {
-        Self { min: 1, max: 1 }
+        Self {
+            min: 1,
+            max: 1,
+            percent: 0.0,
+        }
     }
 }
 
@@ -591,6 +598,36 @@ impl<'a> Context<'a, '_> {
         );
     }
 
+    fn layout_table_captions(
+        &mut self,
+        children: &[NodeId],
+        inherited: Style,
+        side: CaptionSide,
+        containing_x: i32,
+        containing_width: i32,
+    ) {
+        for child in children {
+            let Some(element) = self.document.element(*child) else {
+                continue;
+            };
+            if self.element_display(*child, &element.tag_name) != Display::TableCaption {
+                continue;
+            }
+            let caption_style = self.element_style(*child, &element.tag_name, inherited);
+            if caption_style.caption_side != side {
+                continue;
+            }
+            self.block(
+                BlockContent::Element(*child),
+                None,
+                caption_style,
+                containing_x,
+                containing_width,
+            );
+            self.flush_pending_margin();
+        }
+    }
+
     fn table_box(
         &mut self,
         children: &[NodeId],
@@ -605,7 +642,15 @@ impl<'a> Context<'a, '_> {
         let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
 
         self.apply_collapsed_margin(margin_top);
+        let wrapper_y = self.y;
         let border_x = containing_x.saturating_add(used.margin_left);
+        self.layout_table_captions(
+            children,
+            style,
+            CaptionSide::Top,
+            border_x,
+            used.border_width.max(1),
+        );
         let border_y = self.y;
         let content_x = border_x
             .saturating_add(used.border.left.width)
@@ -651,35 +696,29 @@ impl<'a> Context<'a, '_> {
             .saturating_add(used.border.top.width)
             .saturating_add(used.padding.top);
 
-        for child in children {
-            let Some(element) = self.document.element(*child) else {
-                continue;
-            };
-            if self.element_display(*child, &element.tag_name) == Display::TableCaption {
-                let caption_style = self.element_style(*child, &element.tag_name, style);
-                self.block(
-                    BlockContent::Element(*child),
-                    None,
-                    caption_style,
-                    content_x,
-                    content_width,
-                );
-                self.flush_pending_margin();
-            }
-        }
-
         let grid = self.build_table_grid(children, inherited_from);
         let mut first_row_baseline = None;
         if grid.row_count > 0 && grid.columns > 0 {
             let (horizontal_spacing, vertical_spacing) = used_table_spacing(style);
-            let intrinsic = self.table_intrinsic_columns(
-                children,
-                &grid,
-                style,
-                content_width,
-                horizontal_spacing,
-            );
-            let column_widths = table_column_widths(content_width, &intrinsic, horizontal_spacing);
+            let column_widths = if style.table_layout == TableLayout::Fixed && style.width.is_some()
+            {
+                self.fixed_table_column_widths(
+                    children,
+                    &grid,
+                    style,
+                    content_width,
+                    horizontal_spacing,
+                )
+            } else {
+                let intrinsic = self.table_intrinsic_columns(
+                    children,
+                    &grid,
+                    style,
+                    content_width,
+                    horizontal_spacing,
+                );
+                table_column_widths(content_width, &intrinsic, horizontal_spacing)
+            };
             let column_offsets =
                 table_column_offsets(content_x, &column_widths, horizontal_spacing);
             let collapsed_borders = (style.border_collapse == BorderCollapse::Collapse)
@@ -786,15 +825,28 @@ impl<'a> Context<'a, '_> {
             .saturating_add(used.padding.bottom)
             .saturating_add(used.border.bottom.width);
 
-        let height = self.y.saturating_sub(border_y).max(0);
+        let table_height = self.y.saturating_sub(border_y).max(0);
         if let Some(index) = table_decoration {
-            self.decorations[index].height = height;
+            self.decorations[index].height = table_height;
         }
+
+        self.layout_table_captions(
+            children,
+            style,
+            CaptionSide::Bottom,
+            border_x,
+            used.border_width.max(1),
+        );
+
+        let height = self.y.saturating_sub(wrapper_y).max(0);
+        let table_offset = border_y.saturating_sub(wrapper_y).max(0);
         self.pending_margin = Some(margin_bottom);
         TableBoxMetrics {
             width: used.border_width,
             height,
-            baseline: first_row_baseline.unwrap_or(height),
+            baseline: table_offset
+                .saturating_add(first_row_baseline.unwrap_or(table_height))
+                .min(height),
         }
     }
 
@@ -1023,6 +1075,105 @@ impl<'a> Context<'a, '_> {
         columns
     }
 
+    fn fixed_table_column_widths(
+        &self,
+        children: &[NodeId],
+        grid: &TableGrid,
+        inherited: Style,
+        content_width: i32,
+        spacing: i32,
+    ) -> Vec<i32> {
+        if grid.columns == 0 {
+            return Vec::new();
+        }
+
+        let columns = grid.columns;
+        let total_spacing = spacing.saturating_mul(columns.saturating_add(1) as i32);
+        let usable = content_width
+            .saturating_sub(total_spacing)
+            .max(columns as i32);
+        let mut widths = vec![None; columns];
+
+        self.apply_fixed_column_hints(children, inherited, usable, &mut widths);
+
+        for placement in grid.cells.iter().filter(|cell| cell.row == 0) {
+            let style = self.table_cell_source_style(&placement.source, inherited);
+            let Some(width) = style.width else {
+                continue;
+            };
+            let border_box = fixed_cell_border_box_width(style, width, usable);
+            apply_fixed_span_width(
+                &mut widths,
+                placement.column,
+                placement.colspan,
+                border_box,
+                spacing,
+            );
+        }
+
+        resolve_fixed_track_widths(widths, usable)
+    }
+
+    fn apply_fixed_column_hints(
+        &self,
+        children: &[NodeId],
+        inherited: Style,
+        basis: i32,
+        widths: &mut [Option<i32>],
+    ) {
+        let mut cursor = 0usize;
+        for child in children {
+            let Some(element) = self.document.element(*child) else {
+                continue;
+            };
+            match self.element_display(*child, &element.tag_name) {
+                Display::TableColumn => {
+                    let style = self.element_style(*child, &element.tag_name, inherited);
+                    let span = table_span(element, "span", 1, 1000).max(1);
+                    apply_fixed_column_length(widths, &mut cursor, span, style.width, basis, false);
+                }
+                Display::TableColumnGroup => {
+                    let group_style = self.element_style(*child, &element.tag_name, inherited);
+                    let mut child_columns = 0usize;
+                    for column in self.document.children(*child) {
+                        let Some(column_element) = self.document.element(*column) else {
+                            continue;
+                        };
+                        if self.element_display(*column, &column_element.tag_name)
+                            != Display::TableColumn
+                        {
+                            continue;
+                        }
+                        let style =
+                            self.element_style(*column, &column_element.tag_name, group_style);
+                        let span = table_span(column_element, "span", 1, 1000).max(1);
+                        apply_fixed_column_length(
+                            widths,
+                            &mut cursor,
+                            span,
+                            style.width.or(group_style.width),
+                            basis,
+                            false,
+                        );
+                        child_columns = child_columns.saturating_add(span);
+                    }
+                    if child_columns == 0 {
+                        let span = table_span(element, "span", 1, 1000).max(1);
+                        apply_fixed_column_length(
+                            widths,
+                            &mut cursor,
+                            span,
+                            group_style.width,
+                            basis,
+                            true,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn table_intrinsic_columns(
         &mut self,
         children: &[NodeId],
@@ -1035,11 +1186,15 @@ impl<'a> Context<'a, '_> {
         self.apply_table_column_width_hints(children, inherited, content_width, &mut columns);
 
         for placement in grid.cells.iter().filter(|cell| cell.colspan == 1) {
+            let cell_style = self.table_cell_source_style(&placement.source, inherited);
             let (min, max) =
                 self.table_cell_intrinsic_widths(&placement.source, inherited, content_width);
             if let Some(column) = columns.get_mut(placement.column) {
                 column.min = column.min.max(min);
                 column.max = column.max.max(max).max(column.min);
+                if let Some(LengthPercentage::Percent(percent)) = cell_style.width {
+                    column.percent = column.percent.max(percent.max(0.0));
+                }
             }
         }
 
@@ -1052,6 +1207,7 @@ impl<'a> Context<'a, '_> {
                 continue;
             }
 
+            let cell_style = self.table_cell_source_style(&placement.source, inherited);
             let (required_min, required_max) =
                 self.table_cell_intrinsic_widths(&placement.source, inherited, content_width);
             let internal_spacing =
@@ -1061,6 +1217,9 @@ impl<'a> Context<'a, '_> {
                 required_min.saturating_sub(internal_spacing).max(1),
                 required_max.saturating_sub(internal_spacing).max(1),
             );
+            if let Some(LengthPercentage::Percent(percent)) = cell_style.width {
+                grow_percent_span(&mut columns[placement.column..end], percent.max(0.0));
+            }
         }
 
         columns
@@ -1081,17 +1240,19 @@ impl<'a> Context<'a, '_> {
             match self.element_display(*child, &element.tag_name) {
                 Display::TableColumn => {
                     let style = self.element_style(*child, &element.tag_name, inherited);
-                    let hint = style
-                        .width
-                        .map(|value| resolve_length(value, content_width).max(1));
                     let span = table_span(element, "span", 1, 1000).max(1);
-                    apply_column_hint(columns, &mut cursor, span, hint);
+                    apply_column_length_hint(
+                        columns,
+                        &mut cursor,
+                        span,
+                        style.width,
+                        content_width,
+                        false,
+                    );
                 }
                 Display::TableColumnGroup => {
                     let group_style = self.element_style(*child, &element.tag_name, inherited);
-                    let group_hint = group_style
-                        .width
-                        .map(|value| resolve_length(value, content_width).max(1));
+                    let group_hint = group_style.width;
                     let mut child_columns = 0usize;
                     for column in self.document.children(*child) {
                         let Some(column_element) = self.document.element(*column) else {
@@ -1104,20 +1265,28 @@ impl<'a> Context<'a, '_> {
                         }
                         let style =
                             self.element_style(*column, &column_element.tag_name, group_style);
-                        let hint = style
-                            .width
-                            .map(|value| resolve_length(value, content_width).max(1))
-                            .or(group_hint);
                         let span = table_span(column_element, "span", 1, 1000).max(1);
-                        apply_column_hint(columns, &mut cursor, span, hint);
+                        apply_column_length_hint(
+                            columns,
+                            &mut cursor,
+                            span,
+                            style.width.or(group_hint),
+                            content_width,
+                            false,
+                        );
                         child_columns = child_columns.saturating_add(span);
                     }
 
                     if child_columns == 0 {
                         let span = table_span(element, "span", 1, 1000).max(1);
-                        let per_column = group_hint
-                            .map(|hint| (hint / i32::try_from(span).unwrap_or(i32::MAX)).max(1));
-                        apply_column_hint(columns, &mut cursor, span, per_column);
+                        apply_column_length_hint(
+                            columns,
+                            &mut cursor,
+                            span,
+                            group_hint,
+                            content_width,
+                            true,
+                        );
                     }
                 }
                 _ => {}
@@ -2236,20 +2405,191 @@ fn table_span(element: &op_dom::ElementData, name: &str, default: usize, maximum
         .unwrap_or(default)
 }
 
-fn apply_column_hint(
+fn apply_fixed_column_length(
+    widths: &mut [Option<i32>],
+    cursor: &mut usize,
+    span: usize,
+    hint: Option<LengthPercentage>,
+    basis: i32,
+    divide_across_span: bool,
+) {
+    let divisor = if divide_across_span {
+        i32::try_from(span).unwrap_or(i32::MAX).max(1)
+    } else {
+        1
+    };
+    let resolved = hint.map(|value| resolve_length(value, basis).max(1) / divisor);
+    for _ in 0..span {
+        if let Some(slot) = widths.get_mut(*cursor)
+            && slot.is_none()
+            && let Some(value) = resolved
+        {
+            *slot = Some(value.max(1));
+        }
+        *cursor = cursor.saturating_add(1);
+    }
+}
+
+fn fixed_cell_border_box_width(style: Style, width: LengthPercentage, basis: i32) -> i32 {
+    let padding_left = resolve_length(style.padding.left, basis).max(0);
+    let padding_right = resolve_length(style.padding.right, basis).max(0);
+    let border = resolve_border_edges(style.border);
+    let extras = padding_left
+        .saturating_add(padding_right)
+        .saturating_add(border.left.width)
+        .saturating_add(border.right.width);
+    let resolved = resolve_length(width, basis).max(0);
+    match style.box_sizing {
+        BoxSizing::ContentBox => resolved.saturating_add(extras),
+        BoxSizing::BorderBox => resolved.max(extras),
+    }
+    .max(1)
+}
+
+fn apply_fixed_span_width(
+    widths: &mut [Option<i32>],
+    start: usize,
+    span: usize,
+    required_width: i32,
+    spacing: i32,
+) {
+    let end = start.saturating_add(span).min(widths.len());
+    if start >= end {
+        return;
+    }
+
+    let range = &mut widths[start..end];
+    let known = range
+        .iter()
+        .filter_map(|width| *width)
+        .fold(0i32, i32::saturating_add);
+    let unresolved = range.iter().filter(|width| width.is_none()).count();
+    if unresolved == 0 {
+        return;
+    }
+
+    let internal_spacing = spacing.saturating_mul(range.len().saturating_sub(1) as i32);
+    let remaining = required_width
+        .saturating_sub(internal_spacing)
+        .saturating_sub(known)
+        .max(unresolved as i32);
+    let each = remaining / unresolved as i32;
+    let mut remainder = remaining % unresolved as i32;
+    for width in range {
+        if width.is_some() {
+            continue;
+        }
+        let extra = i32::from(remainder > 0);
+        remainder = remainder.saturating_sub(extra);
+        *width = Some(each.saturating_add(extra).max(1));
+    }
+}
+
+fn resolve_fixed_track_widths(widths: Vec<Option<i32>>, usable: i32) -> Vec<i32> {
+    if widths.is_empty() {
+        return Vec::new();
+    }
+
+    let columns = widths.len();
+    let minimum_usable = usable.max(columns as i32);
+    let known_sum = widths
+        .iter()
+        .filter_map(|width| *width)
+        .fold(0i32, i32::saturating_add);
+    let unresolved = widths.iter().filter(|width| width.is_none()).count();
+
+    if unresolved > 0 && known_sum < minimum_usable {
+        let remaining = minimum_usable.saturating_sub(known_sum);
+        let each = remaining / unresolved as i32;
+        let mut remainder = remaining % unresolved as i32;
+        return widths
+            .into_iter()
+            .map(|width| {
+                width.unwrap_or_else(|| {
+                    let extra = i32::from(remainder > 0);
+                    remainder = remainder.saturating_sub(extra);
+                    each.saturating_add(extra).max(1)
+                })
+            })
+            .collect();
+    }
+
+    let mut resolved: Vec<i32> = widths
+        .into_iter()
+        .map(|width| width.unwrap_or(1).max(1))
+        .collect();
+    let current = resolved.iter().copied().fold(0i32, i32::saturating_add);
+    if current < minimum_usable {
+        let weights = resolved.clone();
+        distribute_table_width(
+            &mut resolved,
+            &weights,
+            minimum_usable.saturating_sub(current),
+        );
+    } else if current > minimum_usable {
+        let mut squeezed = vec![1; columns];
+        let weights: Vec<i32> = resolved
+            .iter()
+            .map(|width| width.saturating_sub(1).max(0))
+            .collect();
+        distribute_table_width(
+            &mut squeezed,
+            &weights,
+            minimum_usable.saturating_sub(columns as i32),
+        );
+        resolved = squeezed;
+    }
+    resolved
+}
+
+fn apply_column_length_hint(
     columns: &mut [TableColumnIntrinsic],
     cursor: &mut usize,
     span: usize,
-    hint: Option<i32>,
+    hint: Option<LengthPercentage>,
+    basis: i32,
+    divide_across_span: bool,
 ) {
+    let divisor = if divide_across_span {
+        i32::try_from(span).unwrap_or(i32::MAX).max(1) as f32
+    } else {
+        1.0
+    };
+
     for _ in 0..span {
         if let Some(column) = columns.get_mut(*cursor)
             && let Some(hint) = hint
         {
-            column.min = column.min.max(hint);
-            column.max = column.max.max(hint).max(column.min);
+            match hint {
+                LengthPercentage::Px(value) => {
+                    let hint = bounded_round(value / divisor).max(1);
+                    column.min = column.min.max(hint);
+                    column.max = column.max.max(hint).max(column.min);
+                }
+                LengthPercentage::Percent(value) => {
+                    let percent = (value / divisor).max(0.0);
+                    column.percent = column.percent.max(percent);
+                    let resolved = bounded_round(percent * basis.max(0) as f32).max(1);
+                    column.max = column.max.max(resolved).max(column.min);
+                }
+            }
         }
         *cursor = cursor.saturating_add(1);
+    }
+}
+
+fn grow_percent_span(columns: &mut [TableColumnIntrinsic], required: f32) {
+    if columns.is_empty() || required <= 0.0 {
+        return;
+    }
+    let current: f32 = columns.iter().map(|column| column.percent.max(0.0)).sum();
+    let deficit = (required - current).max(0.0);
+    if deficit <= f32::EPSILON {
+        return;
+    }
+    let each = deficit / columns.len() as f32;
+    for column in columns {
+        column.percent = (column.percent + each).max(0.0);
     }
 }
 
@@ -2415,41 +2755,57 @@ fn table_column_widths(
         .saturating_sub(total_spacing)
         .max(columns as i32);
 
-    let min_sum = intrinsic
+    let minimums: Vec<i32> = intrinsic
         .iter()
-        .map(|column| column.min.max(1))
-        .fold(0i32, i32::saturating_add);
-    let max_sum = intrinsic
-        .iter()
-        .map(|column| column.max.max(column.min).max(1))
-        .fold(0i32, i32::saturating_add);
+        .map(|column| {
+            let percentage = bounded_round(column.percent.max(0.0) * usable as f32).max(0);
+            column.min.max(percentage).max(1)
+        })
+        .collect();
+    let min_sum = minimums.iter().copied().fold(0i32, i32::saturating_add);
 
     if usable <= min_sum {
         let mut widths = vec![1; columns];
-        let weights: Vec<i32> = intrinsic
+        let weights: Vec<i32> = minimums
             .iter()
-            .map(|column| column.min.saturating_sub(1).max(0))
+            .map(|width| width.saturating_sub(1).max(0))
             .collect();
         distribute_table_width(&mut widths, &weights, usable.saturating_sub(columns as i32));
         return widths;
     }
 
-    if usable < max_sum {
-        let mut widths: Vec<i32> = intrinsic.iter().map(|column| column.min.max(1)).collect();
-        let weights: Vec<i32> = intrinsic
+    let preferred: Vec<i32> = intrinsic
+        .iter()
+        .zip(&minimums)
+        .map(|(column, minimum)| column.max.max(*minimum).max(1))
+        .collect();
+    let preferred_sum = preferred.iter().copied().fold(0i32, i32::saturating_add);
+
+    if usable < preferred_sum {
+        let mut widths = minimums;
+        let weights: Vec<i32> = preferred
             .iter()
-            .map(|column| column.max.saturating_sub(column.min).max(0))
+            .zip(&widths)
+            .map(|(preferred, minimum)| preferred.saturating_sub(*minimum).max(0))
             .collect();
         distribute_table_width(&mut widths, &weights, usable.saturating_sub(min_sum));
         return widths;
     }
 
-    let mut widths: Vec<i32> = intrinsic
+    let mut widths = preferred;
+    let has_auto_columns = intrinsic.iter().any(|column| column.percent <= 0.0);
+    let weights: Vec<i32> = widths
         .iter()
-        .map(|column| column.max.max(column.min).max(1))
+        .zip(intrinsic)
+        .map(|(width, column)| {
+            if has_auto_columns && column.percent > 0.0 {
+                0
+            } else {
+                (*width).max(1)
+            }
+        })
         .collect();
-    let weights: Vec<i32> = widths.clone();
-    distribute_table_width(&mut widths, &weights, usable.saturating_sub(max_sum));
+    distribute_table_width(&mut widths, &weights, usable.saturating_sub(preferred_sum));
     widths
 }
 
@@ -2750,6 +3106,8 @@ fn computed_style(style: ComputedStyle) -> Style {
         box_sizing: style.box_sizing,
         border_collapse: style.border_collapse,
         border_spacing: style.border_spacing,
+        table_layout: style.table_layout,
+        caption_side: style.caption_side,
     }
 }
 
@@ -2886,6 +3244,8 @@ fn default_style() -> Style {
         box_sizing: BoxSizing::ContentBox,
         border_collapse: BorderCollapse::Separate,
         border_spacing: BorderSpacing::ZERO,
+        table_layout: TableLayout::Auto,
+        caption_side: CaptionSide::Top,
     }
 }
 
@@ -2919,6 +3279,8 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         max_height: None,
         box_sizing: BoxSizing::ContentBox,
         border_collapse: inherited.border_collapse,
+        table_layout: TableLayout::Auto,
+        caption_side: inherited.caption_side,
         border_spacing: if tag == "table" {
             BorderSpacing {
                 horizontal_px: 2.0,
