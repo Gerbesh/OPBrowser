@@ -67,7 +67,8 @@ GitHub Actions is enabled again with a Windows workflow for pushes to `main`, pu
 targeting `main`, and manual dispatch. It runs rustfmt, generated-data checks, warning-free
 Clippy, the workspace test suite, the project compatibility baseline, the native smoke suite
 and an optimized release build. Concurrency cancellation prevents superseded commits from
-continuing to consume runner time.
+continuing to consume runner time. Restored run `37527054337` completed successfully on the
+hosted Windows runner, so the former billing lock is no longer blocking job execution.
 
 CI supplements rather than replaces local verification: every coherent update still requires
 the relevant local checks before commit/push so the public repository is not used as a rather

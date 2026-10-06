@@ -1571,6 +1571,7 @@ This file is append-only project history.
   CSS, layout, engine and JavaScript compatibility guardrail is visible in public runs. This is
   explicitly not a WPT or runtime Test262 percentage.
 - Local verification passed rustfmt, warning-free workspace Clippy, all workspace tests, the
-  compatibility baseline, native startup smoke and the optimized release build. Live GitHub
-  runner/account verification remains pending until this restoration commit is pushed.
+  compatibility baseline, native startup smoke and the optimized release build.
+- GitHub Actions run `37527054337` then completed successfully on `windows-latest`; every restored
+  CI step passed, confirming the previous account billing lock no longer blocks hosted runners.
 

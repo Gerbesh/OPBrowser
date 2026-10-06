@@ -1,5 +1,7 @@
 # OPBrowser
 
+[![CI](https://github.com/Gerbesh/OPBrowser/actions/workflows/ci.yml/badge.svg)](https://github.com/Gerbesh/OPBrowser/actions/workflows/ci.yml)
+
 Public repository: https://github.com/Gerbesh/OPBrowser
 
 Status: early engine development. OPBrowser opens external HTTP/HTTPS HTML pages,
