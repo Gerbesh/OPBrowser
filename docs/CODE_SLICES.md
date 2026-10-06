@@ -42,7 +42,13 @@ discard, so their text/markup cannot enter layout, image loading or painting. Co
 inside otherwise empty elements preserve CSS :empty and empty inline frames. Normal,
 abrupt and EOF closing recovery has tokenizer coverage; Engine compares exact display
 lists against comment-free source before/after reflow. Raw-text/RCDATA comment markers
-remain literal text. DOM comment storage, doctype modes and other declarations remain later.
+remain literal text. Doctype declarations follow Tokenizer::consume_doctype ->
+Token::Doctype -> tree-builder discard, preventing visible <!doctype html> text.
+Typed tokens retain lowercase names, missing/empty PUBLIC/SYSTEM identifiers and
+force-quirks recovery for future document modes. Unknown <! declarations and HTML
+CDATA-like declarations become bogus comments; token tests verify recovery and Engine
+tests compare exact rendering/reflow against declaration-free source. DOM comment/doctype
+storage, document modes, processing instructions and foreign-content context remain later.
 
 ## S2 - Navigation to static page
 

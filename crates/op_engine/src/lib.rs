@@ -1361,6 +1361,27 @@ mod tests {
     }
 
     #[test]
+    fn doctypes_and_bogus_declarations_do_not_paint_or_change_reflow() {
+        let mut reference = Engine::new();
+        let expected = reference.set_html_page("<p>ab</p>", 800, 600);
+        for declaration in [
+            "<!doctype html>",
+            "<!doctype html PUBLIC 'legacy' 'system'>",
+            "<!doctype html SYSTEM 'broken>",
+            "<!bogus>",
+            "<![CDATA[hidden]]>",
+        ] {
+            let mut engine = Engine::new();
+            let source = format!("{declaration}<p>a{declaration}b</p>");
+            assert_eq!(engine.set_html_page(&source, 800, 600), expected);
+            assert_eq!(
+                engine.reflow(240, 600).unwrap().display_list,
+                reference.reflow(240, 600).unwrap().display_list
+            );
+        }
+    }
+
+    #[test]
     fn html_comments_do_not_paint_or_change_empty_selector_geometry() {
         let style = "<style>span:empty{padding:2px;border:1px solid red;background:blue}</style>";
         let mut engine = Engine::new();

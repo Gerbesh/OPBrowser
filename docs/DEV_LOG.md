@@ -1135,3 +1135,16 @@ This file is append-only project history.
   doctype/document modes and other declarations are explicit remaining parser work.
 - Final verification passed rustfmt, warning-free workspace Clippy, all 257 workspace tests,
   native startup/CSS demo smoke (268 commands) and optimized workspace release build.
+
+## 2026-10-06 - Typed doctype and bogus markup declarations
+
+- Added an owned iterative doctype tokenizer carrying lowercase name, optional PUBLIC/
+  SYSTEM identifiers and force_quirks. Missing/empty values remain distinct; malformed
+  identifiers, trailing junk and EOF recover by the specified token-data states.
+- Tree construction discards doctype tokens, removing previously visible doctype text.
+  Unknown <! declarations/HTML CDATA-like declarations now produce invisible bogus
+  comments with NUL replacement. Raw-text/RCDATA and attribute markers remain literal.
+- Added token-value/recovery/context tests and Engine exact declaration-free rendering/
+  retained-reflow comparisons. Updated plan, graph/slices and HTML wiki. Document-mode
+  selection, doctype DOM nodes, processing instructions and foreign-content context remain
+  later work; token force_quirks does not yet change layout.

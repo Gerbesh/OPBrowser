@@ -1,4 +1,5 @@
 mod comments;
+mod declarations;
 mod references;
 mod tree_builder;
 pub use tree_builder::parse_document;
@@ -7,6 +8,14 @@ pub use tree_builder::parse_document;
 pub struct Attribute {
     pub name: String,
     pub value: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Doctype {
+    pub name: Option<String>,
+    pub public_identifier: Option<String>,
+    pub system_identifier: Option<String>,
+    pub force_quirks: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +30,7 @@ pub enum Token {
     },
     Character(char),
     Comment(String),
+    Doctype(Doctype),
     Eof,
 }
 
@@ -122,6 +132,15 @@ impl Tokenizer {
                     Some('!') if self.input[self.cursor..].starts_with(&['-', '-']) => {
                         self.cursor += 2;
                         output.push(Token::Comment(self.consume_comment()));
+                        self.state = State::Data;
+                    }
+                    Some('!') => {
+                        let token = if self.consume_keyword("DOCTYPE") {
+                            Token::Doctype(self.consume_doctype())
+                        } else {
+                            Token::Comment(self.consume_bogus_comment())
+                        };
+                        output.push(token);
                         self.state = State::Data;
                     }
                     Some('/') => self.state = State::EndTagOpen,

@@ -47,8 +47,10 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE initial HTML tokenizer state machine.
 - DONE owned comment tokenizer states, malformed closing/EOF recovery and invisible
   comment handling through tree construction, CSS :empty and retained painting.
-- LATER DOM comment nodes, doctype tokens/document modes, other markup declarations
-  and complete HTML insertion modes/script-data escape states.
+- DONE typed doctype tokens with name/PUBLIC/SYSTEM/force-quirks recovery and bogus
+  HTML declarations as invisible comments, preserving raw-text/RCDATA and reflow.
+- LATER DOM comment/doctype nodes, document modes, processing instructions, foreign
+  content/CDATA and complete HTML insertion modes/script-data escape states.
 - DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
 - DONE initial HTML tree builder from tokenizer output into op_dom::Document.
 - DONE initial document-to-layout pipeline with basic text flow and wrapping.

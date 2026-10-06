@@ -532,6 +532,10 @@ classDiagram
   emits Token::Comment(String). The initial tree builder discards these tokens, leaving
   text buffering/open elements unchanged; DOM comment nodes and doctype modes remain later.
   Comment detection occurs only in normal tag-open context, preserving raw-text/RCDATA.
+  The private declarations module emits Token::Doctype(Doctype), preserving missing/empty
+  name/public/system identifiers and force_quirks with iterative recovery. Unknown <!...
+  declarations use bogus comment tokens. Initial tree construction discards doctypes;
+  document modes and foreign-content/CDATA context remain later work.
   Its private
   references module consumes the full named-reference table and numeric references
   before text/attribute tokens enter the DOM. Characters carries one or two Unicode

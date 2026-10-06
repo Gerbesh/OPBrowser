@@ -12,6 +12,8 @@ pub fn parse_document(input: &str) -> Document {
             Token::Character(character) => text_buffer.push(character),
             // Comment nodes are not exposed by the initial DOM arena yet.
             Token::Comment(_) => {}
+            // Document modes and doctype DOM nodes are a later tree-builder stage.
+            Token::Doctype(_) => {}
             Token::StartTag {
                 name,
                 attributes,

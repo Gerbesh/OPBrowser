@@ -106,5 +106,16 @@ nested markers and EOF recovery according to the
 [WHATWG comment states](https://html.spec.whatwg.org/multipage/parsing.html#comment-start-state).
 Comments do not affect CSS :empty, text coalescing, open elements or retained reflow.
 Markers in script/style/title/textarea and quoted attributes stay literal; RCDATA still
-decodes references. Comment DOM nodes, doctype/document modes, other declarations and
-the full script-data escape state machine remain future parser work.
+decodes references. Comment DOM nodes and the full script-data escape state machine
+remain future parser work.
+
+Doctype declarations are now separate tokens, preserving lowercase names, PUBLIC and
+SYSTEM identifiers (including empty versus missing) and the force-quirks flag. Their
+owned state machine handles malformed quotes, missing identifiers, bogus trailing data
+and EOF using the [WHATWG doctype states](https://html.spec.whatwg.org/multipage/parsing.html#doctype-state).
+The tree builder currently discards these tokens, so <!doctype html> is invisible.
+Unknown <! declarations and CDATA-like declarations in the current HTML-only context
+produce bogus comment tokens and are invisible as well. Raw-text/RCDATA and attributes
+still keep declaration markers literal. Doctype DOM nodes, document-mode selection,
+processing instructions and foreign-content/CDATA support remain later work; the
+force-quirks token flag does not yet switch CSS/layout behavior.
