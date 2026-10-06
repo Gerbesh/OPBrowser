@@ -1327,6 +1327,18 @@ mod tests {
     }
 
     #[test]
+    fn predefined_srgb_spaces_reach_text_box_and_generated_paint() {
+        let mut engine = Engine::new();
+        let original = engine.set_html_page("<style>p { --half:50%;color:color(srgb .25 .5 .75);background:color(srgb-linear var(--half) 25% 12.5%);border:2px solid color(srgb 1 0 0) } p::before { content:'[linear] ';color:color(srgb-linear .5 .25 .125 / .5) }</style><p>Body</p>",800,600);
+        assert!(original.commands.iter().any(|command| matches!(command,PaintCommand::Text { text,color,.. } if text=="Body" && *color==(op_paint::Color { r:64,g:128,b:191 }))));
+        assert!(original.commands.iter().any(|command| matches!(command,PaintCommand::Text { text,color,.. } if text.contains("[linear]") && *color==(op_paint::Color { r:221,g:196,b:177 }))));
+        assert!(original.commands.iter().any(|command| matches!(command,PaintCommand::FillRect { color,.. } if *color==(op_paint::Color { r:188,g:137,b:99 }))));
+        assert!(original.commands.iter().any(|command| matches!(command,PaintCommand::FillRect { color,.. } if *color==(op_paint::Color { r:255,g:0,b:0 }))));
+        engine.reflow(240, 600).unwrap();
+        assert_eq!(engine.reflow(800, 600).unwrap().display_list, original);
+    }
+
+    #[test]
     fn nested_inline_backgrounds_paint_outer_first_and_survive_reflow() {
         let html = "<p><a href=next style='padding:2px 3px;background:red'>A<span style='padding:4px 5px;background:blue'><b>nested label wraps across lines</b></span>Z</a></p>";
         let mut engine = Engine::new();

@@ -1076,3 +1076,20 @@ This file is append-only project history.
 - Final verification passed rustfmt, offline generated-table check, warning-free workspace
   Clippy, all 243 workspace tests, native startup/CSS demo smoke (250 commands) and optimized
   workspace release build.
+
+## 2026-10-06 - Predefined sRGB and linear-light color functions
+
+- Added color(srgb ...) and color(srgb-linear ...) with number/percentage channels, slash
+  alpha and used-value none components. Extracted shared modern component/alpha parsing
+  from HWB; malformed argument counts, commas and unsupported spaces are rejected.
+- Linear-light channels use the sRGB transfer curve with wider intermediates before final
+  8-bit CssColor encoding. Initial channel clipping, white-page alpha painting and lack of
+  retained color-space/missing-component metadata remain explicit limitations.
+- Added independent reference/transfer-boundary colors, finite extreme/clipped channels,
+  invalid-value cascade recovery, var() substitution and native text/background/border/
+  generated paint plus retained reflow tests. Updated CSS demo, README, plan, graph/slices/wiki.
+- Wide-gamut spaces, perceptual gamut mapping, higher-precision interpolation/serialization,
+  calc() and relative colors remain later work; no runtime dependency or raster change added.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 246 workspace tests,
+  named-color generator check, native startup/CSS demo smoke (256 commands) and optimized
+  workspace release build.

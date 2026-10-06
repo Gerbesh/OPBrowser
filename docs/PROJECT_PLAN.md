@@ -137,6 +137,8 @@ Status: IN PROGRESS.
   hue units, alpha and used-value none components through text/background/border/pseudo paint.
 - DONE all 148 opaque CSS named colors and aliases from pinned W3C data, allocation-free
   case-insensitive lookup, 2,210-byte static table and reproducible offline generation/CI check.
+- DONE `color(srgb ...)` and `color(srgb-linear ...)` with percentage/number channels,
+  optional alpha/none, linear-to-encoded transfer and initial 8-bit channel clipping.
 - DONE richer initial typography: inherited `text-align` start/end/left/right/center,
   `line-height` normal/number/percent/length with real line-box geometry, and numeric
   `font-weight` 1-1000 plus bolder/lighter mapped onto the current normal/bold backend.

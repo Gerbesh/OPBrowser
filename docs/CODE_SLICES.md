@@ -353,6 +353,14 @@ all 148 spellings and uppercase variants are exhaustively checked against source
 Transparent/currentcolor remain special keywords outside the opaque table. Engine coverage
 verifies expanded text/background/border names and stable retained reflow.
 
+Predefined color(srgb ...)/color(srgb-linear ...) accepts number/percentage channels,
+optional slash alpha and none; the modern component parser is shared with HWB. Linear-light
+values use the sRGB transfer curve before final 8-bit CssColor encoding and existing text/
+background/border/pseudo paint. Initial channel clipping is explicit; wide-gamut spaces,
+perceptual gamut mapping and color-space/missing-component preservation remain later work.
+Reference/transfer-boundary, malformed syntax/cascade, var() and Engine reflow tests cover
+the two supported spaces without adding dependencies or touching raster decoding.
+
 Planned next path:
 
 ```text

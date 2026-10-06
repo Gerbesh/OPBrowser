@@ -267,3 +267,13 @@ in crates/op_css/data/named-colors.tsv; the offline generator verifies 148 names
 RGB values, aliases and import-time hexadecimal/decimal agreement. Normal builds use the
 checked-in Rust data. Transparent/currentcolor remain separate special keywords.
 Reference: [pinned CSS Color named colors](https://www.w3.org/TR/2026/CRD-css-color-4-20260930/#named-colors).
+
+color(srgb ...)/color(srgb-linear ...) now accept three number/percentage channels on the
+0..1 reference range, optional slash alpha and none components. Linear-light channels use
+the sRGB transfer curve, so linear .5 encodes near 188/255 whereas srgb .5 encodes near
+128/255. Shared modern argument parsing rejects commas, unsupported spaces and malformed
+argument counts. The current used-color model clips channels and rounds to 8-bit RGBA;
+wide-gamut spaces, perceptual gamut mapping, interpolation/serialization precision, calc()
+and relative syntax remain later work. The same values feed text/background/border/pseudo
+cascade, var() substitution, painting and retained reflow.
+Reference: [CSS Color predefined spaces](https://www.w3.org/TR/css-color-4/#predefined).

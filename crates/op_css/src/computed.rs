@@ -2619,6 +2619,7 @@ fn parse_css_color(tokens: &[TokenKind]) -> Option<CssColor> {
         "rgb" | "rgba" => parse_rgb_function(arguments),
         "hsl" | "hsla" => parse_hsl_function(arguments),
         "hwb" => parse_hwb_function(arguments),
+        "color" => parse_predefined_color_function(arguments),
         _ => None,
     }
 }
@@ -2761,18 +2762,7 @@ fn hsl_channels(hue: f32, saturation: f32, lightness: f32) -> [f32; 3] {
 }
 
 fn parse_hwb_function(tokens: &[&TokenKind]) -> Option<CssColor> {
-    let (components, alpha) = match tokens {
-        [hue, white, black] => ([*hue, *white, *black], 255),
-        [hue, white, black, TokenKind::Delim('/'), alpha] => (
-            [*hue, *white, *black],
-            if missing_color_component(alpha) {
-                0
-            } else {
-                parse_alpha(alpha)?
-            },
-        ),
-        _ => return None,
-    };
+    let (components, alpha) = modern_color_components(tokens)?;
     let hue = if missing_color_component(components[0]) {
         0.0
     } else {
@@ -2796,6 +2786,59 @@ fn parse_hwb_function(tokens: &[&TokenKind]) -> Option<CssColor> {
         red: fraction_byte(channels[0]),
         green: fraction_byte(channels[1]),
         blue: fraction_byte(channels[2]),
+        alpha,
+    })
+}
+
+fn modern_color_components<'a>(tokens: &[&'a TokenKind]) -> Option<([&'a TokenKind; 3], u8)> {
+    match tokens {
+        [first, second, third] => Some(([*first, *second, *third], 255)),
+        [first, second, third, TokenKind::Delim('/'), alpha] => Some((
+            [*first, *second, *third],
+            if missing_color_component(alpha) {
+                0
+            } else {
+                parse_alpha(alpha)?
+            },
+        )),
+        _ => None,
+    }
+}
+
+fn parse_predefined_color_function(tokens: &[&TokenKind]) -> Option<CssColor> {
+    let (space, arguments) = tokens.split_first()?;
+    let TokenKind::Ident(space) = space else {
+        return None;
+    };
+    let linear = if space.eq_ignore_ascii_case("srgb") {
+        false
+    } else if space.eq_ignore_ascii_case("srgb-linear") {
+        true
+    } else {
+        return None;
+    };
+    let (components, alpha) = modern_color_components(arguments)?;
+    let channel = |token: &TokenKind| {
+        let value = match token {
+            TokenKind::Number(number) => f64::from(parse_number(number)?),
+            TokenKind::Percentage(number) => f64::from(parse_number(number)?) / 100.0,
+            _ if missing_color_component(token) => 0.0,
+            _ => return None,
+        }
+        .clamp(0.0, 1.0);
+        let encoded = if !linear {
+            value
+        } else if value <= 0.003_130_8 {
+            value * 12.92
+        } else {
+            1.055 * value.powf(1.0 / 2.4) - 0.055
+        };
+        Some(fraction_byte(encoded as f32))
+    };
+    Some(CssColor {
+        red: channel(components[0])?,
+        green: channel(components[1])?,
+        blue: channel(components[2])?,
         alpha,
     })
 }
@@ -3745,6 +3788,92 @@ mod tests {
                 "{source}"
             );
         }
+    }
+
+    #[test]
+    fn predefined_srgb_colors_resolve_reference_channels_and_linear_transfer() {
+        for (source, expected) in [
+            ("color(srgb 1 .5 .25)", (255, 128, 64, 255)),
+            ("COLOR(sRGB 100% 50% 25% / .5)", (255, 128, 64, 128)),
+            ("color(srgb -1 1e38 none / none)", (0, 255, 0, 0)),
+            ("color(srgb-linear .5 .25 .125)", (188, 137, 99, 255)),
+            (
+                "color(srgb-linear 50% 25% 12.5% / 50%)",
+                (188, 137, 99, 128),
+            ),
+            ("color(srgb-linear .0031308 .003 .002)", (10, 10, 7, 255)),
+            ("color(srgb-linear 1 0 none / 200%)", (255, 0, 0, 255)),
+            ("color(srgb-linear -2 1e38 0 / -1)", (0, 255, 0, 0)),
+            ("color(srgb .691 .139 .259)", (176, 35, 66, 255)),
+            ("color(srgb-linear .435 .017 .055)", (176, 35, 66, 255)),
+        ] {
+            let tokens = crate::tokenize(source)
+                .tokens
+                .into_iter()
+                .map(|token| token.kind)
+                .collect::<Vec<_>>();
+            let color = parse_css_color(&tokens).unwrap_or_else(|| panic!("{source}"));
+            assert_eq!(
+                (color.red, color.green, color.blue, color.alpha),
+                expected,
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn predefined_colors_use_normal_cascade_and_reject_unsupported_spaces_and_syntax() {
+        for invalid in [
+            "color(1 0 0)",
+            "color(srgb 1 0)",
+            "color(srgb,1,0,0)",
+            "color(srgb 1 0 0 1)",
+            "color(srgb 1 0 0 /)",
+            "color(srgb 1px 0 0)",
+            "color(srgb 1 0 0 / 1deg)",
+            "color(srgb 1 0 0 / .5 / .5)",
+            "color(display-p3 1 0 0)",
+            "color(--profile 1 0 0)",
+            "color(from red srgb r g b)",
+            "color(srgb calc(.5) 0 0)",
+        ] {
+            let document = parse_document(&format!(
+                "<p id=p style='color:red;color:{invalid};background:blue;background:{invalid};border:2px solid green;border-color:{invalid}'>X</p>"
+            ));
+            let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+            let style = computed.style_for(find_by_id(&document, "p")).unwrap();
+            assert_eq!(style.color, CssColor::RED, "{invalid}");
+            assert_eq!(style.background_color, CssColor::BLUE, "{invalid}");
+            assert_eq!(
+                style.border.top.color,
+                named_color("green").unwrap(),
+                "{invalid}"
+            );
+        }
+        let document = parse_document(
+            "<style>#p { --red:1;color:color(srgb var(--red) 0 0);background:color(srgb-linear .5 .5 .5);border:2px solid color(srgb 0 0 1) } #p::before { content:'P';color:var(--missing,color(srgb 0 1 0)) }</style><p id=p>X</p>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let node = find_by_id(&document, "p");
+        let style = computed.style_for(node).unwrap();
+        assert_eq!(style.color, CssColor::RED);
+        assert_eq!(
+            (
+                style.background_color.red,
+                style.background_color.green,
+                style.background_color.blue
+            ),
+            (188, 188, 188)
+        );
+        assert_eq!(style.border.top.color, CssColor::BLUE);
+        assert_eq!(
+            computed
+                .pseudo_style_for(node, PseudoElement::Before)
+                .unwrap()
+                .style
+                .color,
+            named_color("lime").unwrap()
+        );
     }
 
     #[test]

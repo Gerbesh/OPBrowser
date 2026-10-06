@@ -576,6 +576,9 @@ classDiagram
   handles hex/all 148 opaque named colors plus RGB/HSL/HWB for text/background/borders.
   Unquantized HSL channels feed HWB white/black mixing before final CssColor byte conversion.
   Hue units normalize in wider arithmetic before scaling, avoiding overflow for large angles.
+  color(srgb)/color(srgb-linear) share modern three-channel/alpha parsing with HWB. Linear
+  channels use the sRGB transfer curve before final 8-bit CssColor encoding; initial channel
+  clipping/used-value none resolution do not preserve color-space metadata for interpolation.
   op_css::named owns allocation-free ASCII case-insensitive binary search through packed
   names and six-byte records (2,210 static bytes). Its generated named::data comes from pinned
   crates/op_css/data/named-colors.tsv; tools/generate_css_named_colors.py regenerates/checks
