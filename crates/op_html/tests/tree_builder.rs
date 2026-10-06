@@ -471,3 +471,78 @@ fn legacy_image_alias_and_br_end_tag_follow_in_body_recovery() {
         NodeKind::Text(text) if text == "two"
     ));
 }
+
+#[test]
+fn body_and_html_end_tags_use_after_body_modes_and_preserve_recovery_stack() {
+    let document = parse_document(
+        "<html><body><p>inside</p></body><!--after-body--><div>recovered</div></html><!--after-html-->",
+    );
+
+    let root = document.root();
+    let root_children = document.children(root);
+    assert_eq!(root_children.len(), 2);
+    assert!(matches!(
+        &document.node(root_children[1]).unwrap().kind,
+        NodeKind::Comment(data) if data == "after-html"
+    ));
+
+    let html = html(&document);
+    let html_children = document.children(html);
+    assert!(matches!(
+        &document.node(*html_children.last().unwrap()).unwrap().kind,
+        NodeKind::Comment(data) if data == "after-body"
+    ));
+
+    let body = body(&document);
+    let body_children = document.children(body);
+    assert_eq!(document.element(body_children[0]).unwrap().tag_name, "p");
+    assert_eq!(document.element(body_children[1]).unwrap().tag_name, "div");
+    assert!(matches!(
+        &document.node(document.children(body_children[1])[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "recovered"
+    ));
+}
+
+#[test]
+fn after_body_and_after_after_body_delegate_their_in_body_tokens() {
+    let document = parse_document(
+        "<html data-a=1><body>x</body> \n<html data-b=2></html> \t<!--document-tail-->",
+    );
+
+    let html_node = html(&document);
+    let html_element = document.element(html_node).unwrap();
+    assert!(
+        html_element
+            .attributes
+            .iter()
+            .any(|attribute| attribute.name == "data-a" && attribute.value == "1")
+    );
+    assert!(
+        html_element
+            .attributes
+            .iter()
+            .any(|attribute| attribute.name == "data-b" && attribute.value == "2")
+    );
+
+    let body_node = body(&document);
+    let body_children = document.children(body_node);
+    assert_eq!(body_children.len(), 3);
+    assert!(matches!(
+        &document.node(body_children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "x"
+    ));
+    assert!(matches!(
+        &document.node(body_children[1]).unwrap().kind,
+        NodeKind::Text(text) if text == " \n"
+    ));
+    assert!(matches!(
+        &document.node(body_children[2]).unwrap().kind,
+        NodeKind::Text(text) if text == " \t"
+    ));
+
+    let root_children = document.children(document.root());
+    assert!(matches!(
+        &document.node(*root_children.last().unwrap()).unwrap().kind,
+        NodeKind::Comment(data) if data == "document-tail"
+    ));
+}

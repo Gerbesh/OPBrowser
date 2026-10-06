@@ -538,15 +538,18 @@ classDiagram
   doctype to a DOM DocumentType node and ignores later/in-element doctypes. Its private
   document_mode module applies the WHATWG compatibility matrix and stores NoQuirks,
   LimitedQuirks or Quirks on op_dom::Document; missing/late doctypes select Quirks.
-  TreeBuilder now owns initial, before-html, before-head, in-head, after-head, text and
-  in-body insertion modes, automatically creates missing html/head/body elements, routes
-  metadata/text-only head tokens back to the head pointer, merges duplicate html/body
-  attributes and ignores the self-closing flag for ordinary non-void HTML elements.
-  InBody now owns normal/list-item/button scope checks, implied-end-tag generation,
-  p/block/list/description/heading/button recovery and special-element boundaries for
-  generic end tags; head-only tokens encountered in body are routed back through the
-  stored head pointer. Active formatting/adoption-agency logic, foreign-content/CDATA and
-  the remaining insertion modes remain later work.
+  TreeBuilder now owns initial, before-html, before-head, in-head, after-head, text,
+  in-body, after-body and after-after-body insertion modes, automatically creates missing
+  html/head/body elements, routes metadata/text-only head tokens back to the head pointer,
+  merges duplicate html/body attributes and ignores the self-closing flag for ordinary
+  non-void HTML elements. InBody owns normal/list-item/button scope checks, implied-end-tag
+  generation, p/block/list/description/heading/button recovery and special-element boundaries
+  for generic end tags; head-only tokens encountered in body are routed back through the
+  stored head pointer. Body/html end tags now switch insertion modes without popping the
+  recovery stack; after-body comments attach to html, after-after-body comments attach to
+  Document, and delegated/trailing tokens follow the specified in-body recovery path.
+  Active formatting/adoption-agency logic, foreign-content/CDATA and table/template/frameset
+  insertion modes remain later work.
   Its private
   references module consumes the full named-reference table and numeric references
   before text/attribute tokens enter the DOM. Characters carries one or two Unicode

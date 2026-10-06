@@ -59,9 +59,12 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE in-body structural recovery slice: normal/list-item/button scope checks, implied
   end tags, paragraph/block autoclosing, li/dd/dt and heading recovery, nested-button
   recovery, generic end-tag special-boundary handling, </br> and legacy <image> recovery.
+- DONE after-body/after-after-body insertion modes: </body>/</html> switch parser state
+  without destroying the recovery stack, comments land on html/document as specified,
+  whitespace/html tokens delegate to in-body and stray trailing content re-enters in-body.
 - LATER active formatting elements/adoption agency, mode-specific legacy CSS/layout quirks,
-  processing instructions, foreign content/CDATA, remaining insertion modes and complete
-  script-data escape states.
+  processing instructions, foreign content/CDATA, table/template/frameset insertion modes
+  and complete script-data escape states.
 - DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
 - DONE initial HTML tree builder from tokenizer output into op_dom::Document.
 - DONE initial document-to-layout pipeline with basic text flow and wrapping.

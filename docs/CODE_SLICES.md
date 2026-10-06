@@ -51,18 +51,21 @@ malformed or late doctypes select Quirks, and leading initial ASCII whitespace i
 Unknown <! declarations and HTML CDATA-like declarations become Comment nodes; token/tree
 tests verify recovery and Engine tests compare exact rendering/reflow against
 declaration-free source. Tree construction now advances through initial/before-html/
-before-head/in-head/after-head/text/in-body states, synthesizes omitted html/head/body,
-keeps title/style/script/noframes text under head, reparents permitted head-only tokens
-seen after head, merges duplicate html/body attributes without overwriting existing ones,
-and treats a slash on ordinary non-void HTML start tags as non-closing. In-body recovery
-now has normal/list-item/button scope boundaries plus implied end tags: block starts close
-open paragraphs, repeated li/dd/dt items close predecessors, heading starts/ends recover
-across mismatched heading names, nested buttons close the prior button, generic end tags
-cannot cross special elements, </br> becomes br and legacy <image> becomes img. Head-only
-metadata/raw-text tokens encountered while in body are attached back to the stored head
-without losing the body stack. Active formatting/adoption agency, mode-specific layout
-quirks, processing instructions, table/template/frameset/after-body modes and
-foreign-content context remain later.
+before-head/in-head/after-head/text/in-body/after-body/after-after-body states, synthesizes
+omitted html/head/body, keeps title/style/script/noframes text under head, reparents permitted
+head-only tokens seen after head, merges duplicate html/body attributes without overwriting
+existing ones, and treats a slash on ordinary non-void HTML start tags as non-closing.
+In-body recovery now has normal/list-item/button scope boundaries plus implied end tags:
+block starts close open paragraphs, repeated li/dd/dt items close predecessors, heading
+starts/ends recover across mismatched heading names, nested buttons close the prior button,
+generic end tags cannot cross special elements, </br> becomes br and legacy <image> becomes
+img. Head-only metadata/raw-text tokens encountered while in body are attached back to the
+stored head without losing the body stack. </body>/</html> now switch parser state without
+popping that stack; after-body comments attach to html, after-after-body comments attach to
+Document, whitespace/html tokens delegate through in-body, and unexpected trailing content
+re-enters in-body for recovery. Active formatting/adoption agency, mode-specific layout
+quirks, processing instructions, table/template/frameset modes and foreign-content context
+remain later.
 
 ## S2 - Navigation to static page
 

@@ -1229,3 +1229,22 @@ This file is append-only project history.
   follow-up milestones.
 - Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace
   test suite, native startup smoke and optimized workspace release build.
+
+## 2026-10-06 - After-body HTML insertion modes
+
+- Added explicit AfterBody and AfterAfterBody tree-construction modes so document endings no
+  longer fall through the generic end-tag path.
+- Corrected </body> and </html> handling to switch insertion mode without popping the body/html
+  recovery stack; </html> is reprocessed through after-body as required by tree construction.
+- After-body comments now attach to the html element and after-after-body comments attach to
+  Document. ASCII whitespace and html start tags delegate through in-body rules, while
+  unexpected trailing content switches back to in-body and is reprocessed for recovery.
+- Added two focused tree-builder regressions covering comment placement, duplicate html
+  attribute merging, whitespace after body/html and trailing-content recovery. The
+  tree-builder integration suite now has 19 tests.
+- Updated the project plan, code graph, code slices and HTML parsing wiki. Active formatting
+  elements/adoption agency and table/template/frameset/foster-parenting remain separate work.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 287 workspace tests,
+  native startup smoke and optimized release build. The release executable is 802,304 bytes.
+  One pre-existing generated-image loopback test transiently hit WSAEWOULDBLOCK on the first
+  full run; it passed standalone immediately afterward and the complete workspace retry passed.

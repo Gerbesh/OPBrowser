@@ -123,13 +123,13 @@ ASCII whitespace in the initial insertion phase is ignored while comments remain
 nodes.
 
 Tree construction now uses explicit initial, before-html, before-head, in-head, after-head,
-text and in-body insertion modes. Missing html/head/body elements are synthesized in their
-standard locations; comments are inserted according to the active mode; title/style/script/
-noframes content uses a dedicated text mode and returns to its previous insertion mode;
-permitted metadata tokens encountered after head are inserted back under the stored head
-element. Repeated html/body start tags merge only previously missing attributes, and the
-self-closing slash is ignored for ordinary non-void HTML elements rather than incorrectly
-closing them.
+text, in-body, after-body and after-after-body insertion modes. Missing html/head/body
+elements are synthesized in their standard locations; comments are inserted according to
+the active mode; title/style/script/noframes content uses a dedicated text mode and returns
+to its previous insertion mode; permitted metadata tokens encountered after head are
+inserted back under the stored head element. Repeated html/body start tags merge only
+previously missing attributes, and the self-closing slash is ignored for ordinary non-void
+HTML elements rather than incorrectly closing them.
 
 The in-body mode now implements the first scope-sensitive recovery layer from WHATWG:
 normal, list-item and button scope checks; implied end-tag generation; automatic paragraph
@@ -137,9 +137,12 @@ closure before block starts; li/dd/dt predecessor closure; heading recovery; nes
 recovery; special-element boundaries for generic end tags; </br> recovery; and the legacy
 <image> alias to img. Supported head-only tokens found after body parsing has started are
 processed against the stored head element without discarding the current body stack.
-Active formatting elements and the adoption agency algorithm are intentionally the next
-separate parser layer rather than being approximated by ordinary stack popping. Remaining
-table/template/frameset/after-body modes are still future work.
+Body/html end tags now move through after-body/after-after-body states without popping that
+stack. Comments after body attach to html, comments after html attach to Document, specified
+whitespace/html tokens delegate to in-body, and unexpected trailing content re-enters
+in-body for recovery. Active formatting elements and the adoption agency algorithm are
+intentionally the next separate parser layer rather than being approximated by ordinary
+stack popping. Table/template/frameset modes are still future work.
 
 Unknown <! declarations and CDATA-like declarations in the current HTML-only context become
 Comment nodes and remain non-rendering. Raw-text/RCDATA and attributes still keep declaration

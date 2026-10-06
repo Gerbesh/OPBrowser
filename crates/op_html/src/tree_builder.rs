@@ -10,6 +10,8 @@ enum InsertionMode {
     InHead,
     AfterHead,
     InBody,
+    AfterBody,
+    AfterAfterBody,
     Text,
 }
 
@@ -78,6 +80,8 @@ impl TreeBuilder {
                 InsertionMode::InHead => self.handle_in_head(&token),
                 InsertionMode::AfterHead => self.handle_after_head(&token),
                 InsertionMode::InBody => self.handle_in_body(&token),
+                InsertionMode::AfterBody => self.handle_after_body(&token),
+                InsertionMode::AfterAfterBody => self.handle_after_after_body(&token),
                 InsertionMode::Text => self.handle_text(&token),
             };
 
@@ -432,6 +436,22 @@ impl TreeBuilder {
                 self.insert_element(name, attributes, None, false);
                 TokenAction::Consumed
             }
+            Token::EndTag { name } if name == "body" => {
+                self.flush_text();
+                if self.has_in_scope("body", ScopeKind::Normal) {
+                    self.mode = InsertionMode::AfterBody;
+                }
+                TokenAction::Consumed
+            }
+            Token::EndTag { name } if name == "html" => {
+                self.flush_text();
+                if self.has_in_scope("body", ScopeKind::Normal) {
+                    self.mode = InsertionMode::AfterBody;
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
             Token::EndTag { name } if is_scoped_block_end(name) => {
                 self.flush_text();
                 if self.has_in_scope(name, ScopeKind::Normal) {
@@ -485,6 +505,60 @@ impl TreeBuilder {
             Token::Eof => {
                 self.flush_text();
                 TokenAction::Stop
+            }
+        }
+    }
+
+    fn handle_after_body(&mut self, token: &Token) -> TokenAction {
+        match token {
+            Token::Character(character) if is_ascii_whitespace(*character) => {
+                self.handle_in_body(token)
+            }
+            Token::Comment(data) => {
+                self.flush_text();
+                if let Some(html) = self.html_element {
+                    self.append_comment(html, data.clone());
+                }
+                TokenAction::Consumed
+            }
+            Token::Doctype(_) => TokenAction::Consumed,
+            Token::StartTag { name, .. } if name == "html" => self.handle_in_body(token),
+            Token::EndTag { name } if name == "html" => {
+                self.flush_text();
+                self.mode = InsertionMode::AfterAfterBody;
+                TokenAction::Consumed
+            }
+            Token::Eof => {
+                self.flush_text();
+                TokenAction::Stop
+            }
+            _ => {
+                self.mode = InsertionMode::InBody;
+                TokenAction::Reprocess
+            }
+        }
+    }
+
+    fn handle_after_after_body(&mut self, token: &Token) -> TokenAction {
+        match token {
+            Token::Comment(data) => {
+                self.flush_text();
+                let root = self.document.root();
+                self.append_comment(root, data.clone());
+                TokenAction::Consumed
+            }
+            Token::Doctype(_) => self.handle_in_body(token),
+            Token::Character(character) if is_ascii_whitespace(*character) => {
+                self.handle_in_body(token)
+            }
+            Token::StartTag { name, .. } if name == "html" => self.handle_in_body(token),
+            Token::Eof => {
+                self.flush_text();
+                TokenAction::Stop
+            }
+            _ => {
+                self.mode = InsertionMode::InBody;
+                TokenAction::Reprocess
             }
         }
     }
