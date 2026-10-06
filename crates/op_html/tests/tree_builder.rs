@@ -674,3 +674,179 @@ fn formatting_markers_prevent_inner_formatting_from_leaking_past_object() {
         NodeKind::Text(text) if text == "3"
     ));
 }
+
+#[test]
+fn table_modes_create_implicit_tbody_and_close_cells_rows_and_sections() {
+    let document = parse_document("<table><tr><td>A<td>B</table>tail");
+    let body = body(&document);
+    let body_children = document.children(body);
+
+    assert_eq!(body_children.len(), 2);
+    let table = body_children[0];
+    assert_eq!(document.element(table).unwrap().tag_name, "table");
+
+    let tbody = document.children(table)[0];
+    assert_eq!(document.element(tbody).unwrap().tag_name, "tbody");
+    let row = document.children(tbody)[0];
+    assert_eq!(document.element(row).unwrap().tag_name, "tr");
+
+    let cells = document.children(row);
+    assert_eq!(cells.len(), 2);
+    assert_eq!(document.element(cells[0]).unwrap().tag_name, "td");
+    assert_eq!(document.element(cells[1]).unwrap().tag_name, "td");
+    assert!(matches!(
+        &document.node(document.children(cells[0])[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "A"
+    ));
+    assert!(matches!(
+        &document.node(document.children(cells[1])[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "B"
+    ));
+    assert!(matches!(
+        &document.node(body_children[1]).unwrap().kind,
+        NodeKind::Text(text) if text == "tail"
+    ));
+}
+
+#[test]
+fn non_whitespace_table_text_is_foster_parented_before_the_table() {
+    let document =
+        parse_document("<p>before</p><table>alpha<tr><td>cell</td></tr>omega</table><p>after</p>");
+    let body = body(&document);
+    let children = document.children(body);
+
+    assert_eq!(children.len(), 5);
+    assert_eq!(document.element(children[0]).unwrap().tag_name, "p");
+    assert!(matches!(
+        &document.node(children[1]).unwrap().kind,
+        NodeKind::Text(text) if text == "alpha"
+    ));
+    assert!(matches!(
+        &document.node(children[2]).unwrap().kind,
+        NodeKind::Text(text) if text == "omega"
+    ));
+    assert_eq!(document.element(children[3]).unwrap().tag_name, "table");
+    assert_eq!(document.element(children[4]).unwrap().tag_name, "p");
+
+    let row = document.children(document.children(children[3])[0])[0];
+    let cell = document.children(row)[0];
+    assert!(matches!(
+        &document.node(document.children(cell)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "cell"
+    ));
+}
+
+#[test]
+fn whitespace_table_text_stays_inside_the_table() {
+    let document = parse_document("<table> \n<tr><td>x</td></tr></table>");
+    let table = child_element(&document, body(&document), "table");
+    let children = document.children(table);
+
+    assert_eq!(children.len(), 2);
+    assert!(matches!(
+        &document.node(children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == " \n"
+    ));
+    assert_eq!(document.element(children[1]).unwrap().tag_name, "tbody");
+}
+
+#[test]
+fn table_caption_colgroup_and_header_cells_follow_table_modes() {
+    let document =
+        parse_document("<table><caption>Cap</caption><col span=2><tr><th>H<td>D</table>");
+    let table = child_element(&document, body(&document), "table");
+    let children = document.children(table);
+
+    assert_eq!(children.len(), 3);
+    let caption = children[0];
+    assert_eq!(document.element(caption).unwrap().tag_name, "caption");
+    assert!(matches!(
+        &document.node(document.children(caption)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "Cap"
+    ));
+
+    let colgroup = children[1];
+    assert_eq!(document.element(colgroup).unwrap().tag_name, "colgroup");
+    let col = document.children(colgroup)[0];
+    assert_eq!(document.element(col).unwrap().tag_name, "col");
+    assert_eq!(document.element(col).unwrap().attributes[0].value, "2");
+
+    let tbody = children[2];
+    assert_eq!(document.element(tbody).unwrap().tag_name, "tbody");
+    let row = document.children(tbody)[0];
+    let cells = document.children(row);
+    assert_eq!(document.element(cells[0]).unwrap().tag_name, "th");
+    assert_eq!(document.element(cells[1]).unwrap().tag_name, "td");
+}
+
+#[test]
+fn elements_misnested_directly_in_table_are_foster_parented_before_it() {
+    let document = parse_document(
+        "<div>before<table><span>outside</span><tr><td>cell</td></tr></table>after</div>",
+    );
+    let div = child_element(&document, body(&document), "div");
+    let children = document.children(div);
+
+    assert_eq!(children.len(), 4);
+    assert!(matches!(
+        &document.node(children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "before"
+    ));
+    let span = children[1];
+    assert_eq!(document.element(span).unwrap().tag_name, "span");
+    assert!(matches!(
+        &document.node(document.children(span)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "outside"
+    ));
+    assert_eq!(document.element(children[2]).unwrap().tag_name, "table");
+    assert!(matches!(
+        &document.node(children[3]).unwrap().kind,
+        NodeKind::Text(text) if text == "after"
+    ));
+}
+
+#[test]
+fn head_text_tokens_inside_table_return_to_table_mode() {
+    let document = parse_document("<table><style>td{color:red}</style><tr><td>x</td></tr></table>");
+
+    let head = head(&document);
+    let style = child_element(&document, head, "style");
+    assert!(matches!(
+        &document.node(document.children(style)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "td{color:red}"
+    ));
+
+    let table = child_element(&document, body(&document), "table");
+    let tbody = child_element(&document, table, "tbody");
+    let row = child_element(&document, tbody, "tr");
+    let cell = child_element(&document, row, "td");
+    assert!(matches!(
+        &document.node(document.children(cell)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "x"
+    ));
+}
+
+#[test]
+fn closing_a_table_cell_clears_its_formatting_marker_before_fostered_row_text() {
+    let document = parse_document("<table><tr><td><b>x</td>y</tr></table>");
+    let body = body(&document);
+    let children = document.children(body);
+
+    assert_eq!(children.len(), 2);
+    assert!(matches!(
+        &document.node(children[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "y"
+    ));
+
+    let table = children[1];
+    assert_eq!(document.element(table).unwrap().tag_name, "table");
+    let tbody = document.children(table)[0];
+    let row = document.children(tbody)[0];
+    let cell = document.children(row)[0];
+    let bold = document.children(cell)[0];
+    assert_eq!(document.element(bold).unwrap().tag_name, "b");
+    assert!(matches!(
+        &document.node(document.children(bold)[0]).unwrap().kind,
+        NodeKind::Text(text) if text == "x"
+    ));
+}

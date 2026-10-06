@@ -553,8 +553,12 @@ classDiagram
   recreates stale formatting entries on the open-element stack; formatting end tags use the
   bounded adoption-agency algorithm, including furthest-block DOM reparenting and cloned
   formatting nodes. Repeated anchors/nobr recover through the same path, while applet/marquee/
-  object add and clear formatting markers. Foreign-content/CDATA and table/template/frameset/
-  foster-parenting insertion modes remain later work.
+  object add and clear formatting markers. Table construction adds InTable/InTableText/
+  InCaption/InColumnGroup/InTableBody/InRow/InCell, table-scope cleanup, implicit tbody/tr
+  insertion, cell markers and pending table-character buffering. Foster parenting uses the
+  last open table to insert misnested nodes before that table; op_dom::Document::insert_before
+  supplies the required sibling insertion/reparent primitive. Foreign-content/CDATA,
+  template/frameset modes and CSS table layout remain later work.
   Its private
   references module consumes the full named-reference table and numeric references
   before text/attribute tokens enter the DOM. Characters carries one or two Unicode
@@ -567,7 +571,8 @@ classDiagram
   references and markup from being incorrectly parsed inside script/style/title.
 - op_dom owns document/node storage, mutable element attributes used by tree-construction
   merge rules, Comment nodes, DocumentTypeData (name/public/system/force-quirks),
-  DocumentMode (NoQuirks/LimitedQuirks/Quirks), and DOM parent/child invariants.
+  DocumentMode (NoQuirks/LimitedQuirks/Quirks), DOM parent/child invariants, append_child
+  reparenting and insert_before for parser-required sibling placement such as foster parenting.
 - op_layout owns text-flow and block-box used-value geometry, structural-container traversal
   and UTF-8 LinkSpan ranges preserved across whitespace normalization and line wrapping.
   It resolves percent/auto/min/max/content-vs-border-box widths, independent border sides,

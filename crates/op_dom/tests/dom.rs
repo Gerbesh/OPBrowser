@@ -24,6 +24,27 @@ fn builds_and_moves_dom_nodes() {
 }
 
 #[test]
+fn insert_before_moves_nodes_and_preserves_sibling_order() {
+    let mut document = Document::new();
+    let root = document.root();
+    let body = document.create_element("body");
+    let table = document.create_element("table");
+    let tail = document.create_text("tail");
+    let fostered = document.create_text("fostered");
+
+    document.append_child(root, body).unwrap();
+    document.append_child(body, table).unwrap();
+    document.append_child(body, tail).unwrap();
+    document.insert_before(body, fostered, Some(table)).unwrap();
+
+    assert_eq!(document.children(body), &[fostered, table, tail]);
+    assert_eq!(document.node(fostered).unwrap().parent, Some(body));
+
+    document.insert_before(body, tail, Some(table)).unwrap();
+    assert_eq!(document.children(body), &[fostered, tail, table]);
+}
+
+#[test]
 fn stores_comment_and_document_type_nodes_without_special_child_behavior() {
     let mut document = Document::new();
     let root = document.root();

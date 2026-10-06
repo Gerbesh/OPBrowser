@@ -65,8 +65,12 @@ Goal: own bytes -> own HTML parser -> own DOM -> own layout -> own paint -> pixe
 - DONE active formatting elements/adoption-agency slice: reconstruction for the HTML formatting
   tag set, Noah's Ark three-entry cap, repeated-anchor/nobr recovery, applet/marquee/object
   marker boundaries and furthest-block DOM reparenting for misnested formatting.
+- DONE table tree-construction slice: in-table/text/caption/column-group/table-body/row/cell
+  insertion modes, implicit tbody/tr recovery, table-scope cleanup, cell formatting markers,
+  pending table-text buffering and foster parenting before the last table.
 - LATER mode-specific legacy CSS/layout quirks, processing instructions, foreign content/CDATA,
-  table/template/frameset/foster-parenting insertion modes and complete script-data escape states.
+  template/frameset insertion modes, complete script-data escape states and a real CSS table
+  formatting/layout context.
 - DONE initial DOM arena with stable NodeId values, attributes, and parent/child relationships.
 - DONE initial HTML tree builder from tokenizer output into op_dom::Document.
 - DONE initial document-to-layout pipeline with basic text flow and wrapping.

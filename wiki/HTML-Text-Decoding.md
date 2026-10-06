@@ -149,7 +149,16 @@ and formatting end tags run the bounded adoption agency algorithm instead of gen
 popping. That path handles the no-furthest-block case and the furthest-block case that
 clones/reparents DOM nodes. Repeated a/nobr starts use formatting recovery, while
 applet/marquee/object create marker boundaries that are cleared on their matching end tags.
-Table/template/frameset/foster-parenting modes are still future work.
+
+Table tree construction now includes in-table, in-table-text, in-caption, in-column-group,
+in-table-body, in-row and in-cell modes. Missing tbody/tr wrappers are synthesized where the
+tree-construction rules require them, cells close on conflicting table tokens, and each cell
+uses an active-formatting marker boundary. Pending table character tokens keep all-whitespace
+runs in the table, while non-whitespace runs and other misnested table content are foster
+parented before the last open table. The DOM layer exposes insert_before so foster parenting
+can place nodes at the required sibling position. Head text tokens such as style/script routed
+from table mode return to that table mode after text parsing. Template/frameset modes,
+foreign-content parsing and a real CSS table formatting/layout context remain future work.
 
 Unknown <! declarations and CDATA-like declarations in the current HTML-only context become
 Comment nodes and remain non-rendering. Raw-text/RCDATA and attributes still keep declaration

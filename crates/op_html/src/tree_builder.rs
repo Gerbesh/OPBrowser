@@ -10,6 +10,13 @@ enum InsertionMode {
     InHead,
     AfterHead,
     InBody,
+    InTable,
+    InTableText,
+    InCaption,
+    InColumnGroup,
+    InTableBody,
+    InRow,
+    InCell,
     AfterBody,
     AfterAfterBody,
     Text,
@@ -27,6 +34,7 @@ enum ScopeKind {
     Normal,
     ListItem,
     Button,
+    Table,
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +72,8 @@ struct TreeBuilder {
     body_element: Option<NodeId>,
     original_mode: InsertionMode,
     text_buffer: String,
+    pending_table_text: String,
+    foster_parenting: bool,
 }
 
 impl TreeBuilder {
@@ -78,6 +88,8 @@ impl TreeBuilder {
             body_element: None,
             original_mode: InsertionMode::InBody,
             text_buffer: String::new(),
+            pending_table_text: String::new(),
+            foster_parenting: false,
         }
     }
 
@@ -95,6 +107,13 @@ impl TreeBuilder {
                 InsertionMode::InHead => self.handle_in_head(&token),
                 InsertionMode::AfterHead => self.handle_after_head(&token),
                 InsertionMode::InBody => self.handle_in_body(&token),
+                InsertionMode::InTable => self.handle_in_table(&token),
+                InsertionMode::InTableText => self.handle_in_table_text(&token),
+                InsertionMode::InCaption => self.handle_in_caption(&token),
+                InsertionMode::InColumnGroup => self.handle_in_column_group(&token),
+                InsertionMode::InTableBody => self.handle_in_table_body(&token),
+                InsertionMode::InRow => self.handle_in_row(&token),
+                InsertionMode::InCell => self.handle_in_cell(&token),
                 InsertionMode::AfterBody => self.handle_after_body(&token),
                 InsertionMode::AfterAfterBody => self.handle_after_after_body(&token),
                 InsertionMode::Text => self.handle_text(&token),
@@ -372,7 +391,7 @@ impl TreeBuilder {
                 name, attributes, ..
             } if is_head_token(name) => {
                 self.flush_text();
-                self.process_head_token_from_body(name, attributes);
+                self.process_head_token(name, attributes, InsertionMode::InBody);
                 TokenAction::Consumed
             }
             Token::StartTag { name, .. } if name == "head" => TokenAction::Consumed,
@@ -383,6 +402,31 @@ impl TreeBuilder {
                 if let Some(body) = self.body_element {
                     self.merge_attributes(body, attributes);
                 }
+                TokenAction::Consumed
+            }
+            Token::StartTag {
+                name, attributes, ..
+            } if name == "table" => {
+                self.flush_text();
+                self.close_p_if_in_button_scope();
+                self.insert_element(name, attributes, None, false);
+                self.mode = InsertionMode::InTable;
+                TokenAction::Consumed
+            }
+            Token::StartTag { name, .. }
+                if matches!(
+                    name.as_str(),
+                    "caption"
+                        | "col"
+                        | "colgroup"
+                        | "tbody"
+                        | "td"
+                        | "tfoot"
+                        | "th"
+                        | "thead"
+                        | "tr"
+                ) =>
+            {
                 TokenAction::Consumed
             }
             Token::StartTag {
@@ -588,6 +632,397 @@ impl TreeBuilder {
         }
     }
 
+    fn handle_in_table(&mut self, token: &Token) -> TokenAction {
+        if !matches!(token, Token::Character(_)) {
+            self.flush_text();
+        }
+
+        match token {
+            Token::Character(_) if self.current_tag_name().is_some_and(is_table_text_context) => {
+                self.pending_table_text.clear();
+                self.original_mode = self.mode;
+                self.mode = InsertionMode::InTableText;
+                TokenAction::Reprocess
+            }
+            Token::Character(_) => self.process_in_body_with_foster_parenting(token),
+            Token::Comment(data) => {
+                let parent = self.current_parent();
+                self.append_comment(parent, data.clone());
+                TokenAction::Consumed
+            }
+            Token::Doctype(_) => TokenAction::Consumed,
+            Token::StartTag {
+                name, attributes, ..
+            } if name == "caption" => {
+                self.clear_stack_back_to_table_context();
+                self.active_formatting.push(ActiveFormattingEntry::Marker);
+                self.insert_element(name, attributes, None, false);
+                self.mode = InsertionMode::InCaption;
+                TokenAction::Consumed
+            }
+            Token::StartTag {
+                name, attributes, ..
+            } if name == "colgroup" => {
+                self.clear_stack_back_to_table_context();
+                self.insert_element(name, attributes, None, false);
+                self.mode = InsertionMode::InColumnGroup;
+                TokenAction::Consumed
+            }
+            Token::StartTag { name, .. } if name == "col" => {
+                self.clear_stack_back_to_table_context();
+                self.insert_element("colgroup", &[], None, false);
+                self.mode = InsertionMode::InColumnGroup;
+                TokenAction::Reprocess
+            }
+            Token::StartTag {
+                name, attributes, ..
+            } if matches!(name.as_str(), "tbody" | "tfoot" | "thead") => {
+                self.clear_stack_back_to_table_context();
+                self.insert_element(name, attributes, None, false);
+                self.mode = InsertionMode::InTableBody;
+                TokenAction::Consumed
+            }
+            Token::StartTag { name, .. } if matches!(name.as_str(), "td" | "th" | "tr") => {
+                self.clear_stack_back_to_table_context();
+                self.insert_element("tbody", &[], None, false);
+                self.mode = InsertionMode::InTableBody;
+                TokenAction::Reprocess
+            }
+            Token::StartTag { name, .. } if name == "table" => {
+                if self.has_in_scope("table", ScopeKind::Table) {
+                    self.pop_until("table");
+                    self.reset_insertion_mode_appropriately();
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+            Token::EndTag { name } if name == "table" => {
+                if self.has_in_scope("table", ScopeKind::Table) {
+                    self.pop_until("table");
+                    self.reset_insertion_mode_appropriately();
+                }
+                TokenAction::Consumed
+            }
+            Token::EndTag { name }
+                if matches!(
+                    name.as_str(),
+                    "body"
+                        | "caption"
+                        | "col"
+                        | "colgroup"
+                        | "html"
+                        | "tbody"
+                        | "td"
+                        | "tfoot"
+                        | "th"
+                        | "thead"
+                        | "tr"
+                ) =>
+            {
+                TokenAction::Consumed
+            }
+            Token::StartTag {
+                name, attributes, ..
+            } if is_head_token(name) => {
+                let return_mode = self.mode;
+                self.process_head_token(name, attributes, return_mode);
+                TokenAction::Consumed
+            }
+            Token::Eof => self.handle_in_body(token),
+            _ => self.process_in_body_with_foster_parenting(token),
+        }
+    }
+
+    fn handle_in_table_text(&mut self, token: &Token) -> TokenAction {
+        match token {
+            Token::Character('\0') => TokenAction::Consumed,
+            Token::Character(character) => {
+                self.pending_table_text.push(*character);
+                TokenAction::Consumed
+            }
+            _ => {
+                self.flush_pending_table_text();
+                self.mode = self.original_mode;
+                TokenAction::Reprocess
+            }
+        }
+    }
+
+    fn handle_in_caption(&mut self, token: &Token) -> TokenAction {
+        match token {
+            Token::EndTag { name } if name == "caption" => {
+                self.flush_text();
+                if self.has_in_scope("caption", ScopeKind::Table) {
+                    self.generate_implied_end_tags(None);
+                    self.pop_until("caption");
+                    self.clear_active_formatting_to_marker();
+                    self.mode = InsertionMode::InTable;
+                }
+                TokenAction::Consumed
+            }
+            Token::StartTag { name, .. }
+                if matches!(
+                    name.as_str(),
+                    "caption"
+                        | "col"
+                        | "colgroup"
+                        | "tbody"
+                        | "td"
+                        | "tfoot"
+                        | "th"
+                        | "thead"
+                        | "tr"
+                ) =>
+            {
+                if self.close_caption_if_in_scope() {
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+            Token::EndTag { name } if name == "table" => {
+                if self.close_caption_if_in_scope() {
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+            Token::EndTag { name }
+                if matches!(
+                    name.as_str(),
+                    "body"
+                        | "col"
+                        | "colgroup"
+                        | "html"
+                        | "tbody"
+                        | "td"
+                        | "tfoot"
+                        | "th"
+                        | "thead"
+                        | "tr"
+                ) =>
+            {
+                TokenAction::Consumed
+            }
+            _ => self.handle_in_body(token),
+        }
+    }
+
+    fn handle_in_column_group(&mut self, token: &Token) -> TokenAction {
+        match token {
+            Token::Character(character) if is_ascii_whitespace(*character) => {
+                self.text_buffer.push(*character);
+                TokenAction::Consumed
+            }
+            Token::Comment(data) => {
+                self.flush_text();
+                let parent = self.current_parent();
+                self.append_comment(parent, data.clone());
+                TokenAction::Consumed
+            }
+            Token::Doctype(_) => TokenAction::Consumed,
+            Token::StartTag { name, .. } if name == "html" => self.handle_in_body(token),
+            Token::StartTag {
+                name, attributes, ..
+            } if name == "col" => {
+                self.flush_text();
+                self.insert_element(name, attributes, None, true);
+                TokenAction::Consumed
+            }
+            Token::EndTag { name } if name == "colgroup" => {
+                self.flush_text();
+                if self.current_tag_name() == Some("colgroup") {
+                    self.open_elements.pop();
+                    self.mode = InsertionMode::InTable;
+                }
+                TokenAction::Consumed
+            }
+            Token::EndTag { name } if name == "col" => TokenAction::Consumed,
+            Token::Eof => self.handle_in_body(token),
+            _ => {
+                self.flush_text();
+                if self.current_tag_name() == Some("colgroup") {
+                    self.open_elements.pop();
+                    self.mode = InsertionMode::InTable;
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+        }
+    }
+
+    fn handle_in_table_body(&mut self, token: &Token) -> TokenAction {
+        match token {
+            Token::StartTag {
+                name, attributes, ..
+            } if name == "tr" => {
+                self.flush_text();
+                self.clear_stack_back_to_table_body_context();
+                self.insert_element(name, attributes, None, false);
+                self.mode = InsertionMode::InRow;
+                TokenAction::Consumed
+            }
+            Token::StartTag { name, .. } if matches!(name.as_str(), "td" | "th") => {
+                self.flush_text();
+                self.clear_stack_back_to_table_body_context();
+                self.insert_element("tr", &[], None, false);
+                self.mode = InsertionMode::InRow;
+                TokenAction::Reprocess
+            }
+            Token::EndTag { name } if matches!(name.as_str(), "tbody" | "tfoot" | "thead") => {
+                self.flush_text();
+                if self.has_in_scope(name, ScopeKind::Table) {
+                    self.clear_stack_back_to_table_body_context();
+                    self.open_elements.pop();
+                    self.mode = InsertionMode::InTable;
+                }
+                TokenAction::Consumed
+            }
+            Token::StartTag { name, .. }
+                if matches!(
+                    name.as_str(),
+                    "caption" | "col" | "colgroup" | "tbody" | "tfoot" | "thead"
+                ) =>
+            {
+                if self.close_table_body_if_in_scope() {
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+            Token::EndTag { name } if name == "table" => {
+                if self.close_table_body_if_in_scope() {
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+            Token::EndTag { name }
+                if matches!(
+                    name.as_str(),
+                    "body" | "caption" | "col" | "colgroup" | "html" | "td" | "th" | "tr"
+                ) =>
+            {
+                TokenAction::Consumed
+            }
+            _ => self.handle_in_table(token),
+        }
+    }
+
+    fn handle_in_row(&mut self, token: &Token) -> TokenAction {
+        match token {
+            Token::StartTag {
+                name, attributes, ..
+            } if matches!(name.as_str(), "td" | "th") => {
+                self.flush_text();
+                self.clear_stack_back_to_table_row_context();
+                self.insert_element(name, attributes, None, false);
+                self.mode = InsertionMode::InCell;
+                self.active_formatting.push(ActiveFormattingEntry::Marker);
+                TokenAction::Consumed
+            }
+            Token::EndTag { name } if name == "tr" => {
+                self.flush_text();
+                if self.has_in_scope("tr", ScopeKind::Table) {
+                    self.clear_stack_back_to_table_row_context();
+                    self.open_elements.pop();
+                    self.mode = InsertionMode::InTableBody;
+                }
+                TokenAction::Consumed
+            }
+            Token::StartTag { name, .. }
+                if matches!(
+                    name.as_str(),
+                    "caption" | "col" | "colgroup" | "tbody" | "tfoot" | "thead" | "tr"
+                ) =>
+            {
+                if self.close_row_if_in_scope() {
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+            Token::EndTag { name } if name == "table" => {
+                if self.close_row_if_in_scope() {
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+            Token::EndTag { name } if matches!(name.as_str(), "tbody" | "tfoot" | "thead") => {
+                if self.has_in_scope(name, ScopeKind::Table) && self.close_row_if_in_scope() {
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+            Token::EndTag { name }
+                if matches!(
+                    name.as_str(),
+                    "body" | "caption" | "col" | "colgroup" | "html" | "td" | "th"
+                ) =>
+            {
+                TokenAction::Consumed
+            }
+            _ => self.handle_in_table(token),
+        }
+    }
+
+    fn handle_in_cell(&mut self, token: &Token) -> TokenAction {
+        match token {
+            Token::EndTag { name } if matches!(name.as_str(), "td" | "th") => {
+                self.flush_text();
+                if self.has_in_scope(name, ScopeKind::Table) {
+                    self.generate_implied_end_tags(None);
+                    self.pop_until(name);
+                    self.clear_active_formatting_to_marker();
+                    self.mode = InsertionMode::InRow;
+                }
+                TokenAction::Consumed
+            }
+            Token::StartTag { name, .. }
+                if matches!(
+                    name.as_str(),
+                    "caption"
+                        | "col"
+                        | "colgroup"
+                        | "tbody"
+                        | "td"
+                        | "tfoot"
+                        | "th"
+                        | "thead"
+                        | "tr"
+                ) =>
+            {
+                if self.close_cell_if_in_scope() {
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+            Token::EndTag { name }
+                if matches!(name.as_str(), "table" | "tbody" | "tfoot" | "thead" | "tr") =>
+            {
+                if self.has_in_scope(name, ScopeKind::Table) && self.close_cell_if_in_scope() {
+                    TokenAction::Reprocess
+                } else {
+                    TokenAction::Consumed
+                }
+            }
+            Token::EndTag { name }
+                if matches!(
+                    name.as_str(),
+                    "body" | "caption" | "col" | "colgroup" | "html"
+                ) =>
+            {
+                TokenAction::Consumed
+            }
+            _ => self.handle_in_body(token),
+        }
+    }
+
     fn handle_after_body(&mut self, token: &Token) -> TokenAction {
         match token {
             Token::Character(character) if is_ascii_whitespace(*character) => {
@@ -640,6 +1075,159 @@ impl TreeBuilder {
                 TokenAction::Reprocess
             }
         }
+    }
+
+    fn current_tag_name(&self) -> Option<&str> {
+        self.open_elements
+            .last()
+            .and_then(|node| self.document.element(*node))
+            .map(|element| element.tag_name.as_str())
+    }
+
+    fn process_in_body_with_foster_parenting(&mut self, token: &Token) -> TokenAction {
+        let previous = self.foster_parenting;
+        self.foster_parenting = true;
+        let action = self.handle_in_body(token);
+        self.foster_parenting = previous;
+        action
+    }
+
+    fn flush_pending_table_text(&mut self) {
+        if self.pending_table_text.is_empty() {
+            return;
+        }
+
+        let pending = std::mem::take(&mut self.pending_table_text);
+        if pending.chars().all(is_ascii_whitespace) {
+            let node = self.document.create_text(pending);
+            let parent = self.current_parent();
+            self.document
+                .append_child(parent, node)
+                .expect("tree builder created an invalid table-whitespace parent");
+            return;
+        }
+
+        let previous = self.foster_parenting;
+        self.foster_parenting = true;
+        for character in pending.chars() {
+            let token = Token::Character(character);
+            let _ = self.handle_in_body(&token);
+        }
+        self.flush_text();
+        self.foster_parenting = previous;
+    }
+
+    fn close_caption_if_in_scope(&mut self) -> bool {
+        self.flush_text();
+        if !self.has_in_scope("caption", ScopeKind::Table) {
+            return false;
+        }
+        self.generate_implied_end_tags(None);
+        self.pop_until("caption");
+        self.clear_active_formatting_to_marker();
+        self.mode = InsertionMode::InTable;
+        true
+    }
+
+    fn close_table_body_if_in_scope(&mut self) -> bool {
+        self.flush_text();
+        let Some(target) = self.find_in_table_scope(&["tbody", "tfoot", "thead"]) else {
+            return false;
+        };
+        self.clear_stack_back_to_table_body_context();
+        if self.current_tag_name() == Some(target.as_str()) {
+            self.open_elements.pop();
+        } else {
+            self.pop_until(&target);
+        }
+        self.mode = InsertionMode::InTable;
+        true
+    }
+
+    fn close_row_if_in_scope(&mut self) -> bool {
+        self.flush_text();
+        if !self.has_in_scope("tr", ScopeKind::Table) {
+            return false;
+        }
+        self.clear_stack_back_to_table_row_context();
+        self.open_elements.pop();
+        self.mode = InsertionMode::InTableBody;
+        true
+    }
+
+    fn close_cell_if_in_scope(&mut self) -> bool {
+        self.flush_text();
+        let Some(target) = self.find_in_table_scope(&["td", "th"]) else {
+            return false;
+        };
+        self.generate_implied_end_tags(None);
+        self.pop_until(&target);
+        self.clear_active_formatting_to_marker();
+        self.mode = InsertionMode::InRow;
+        true
+    }
+
+    fn find_in_table_scope(&self, targets: &[&str]) -> Option<String> {
+        for node in self.open_elements.iter().rev() {
+            let Some(element) = self.document.element(*node) else {
+                continue;
+            };
+            if targets.contains(&element.tag_name.as_str()) {
+                return Some(element.tag_name.clone());
+            }
+            if is_scope_boundary(&element.tag_name, ScopeKind::Table) {
+                return None;
+            }
+        }
+        None
+    }
+
+    fn clear_stack_back_to_table_context(&mut self) {
+        while self
+            .current_tag_name()
+            .is_some_and(|name| !matches!(name, "table" | "template" | "html"))
+        {
+            self.open_elements.pop();
+        }
+    }
+
+    fn clear_stack_back_to_table_body_context(&mut self) {
+        while self
+            .current_tag_name()
+            .is_some_and(|name| !matches!(name, "tbody" | "tfoot" | "thead" | "template" | "html"))
+        {
+            self.open_elements.pop();
+        }
+    }
+
+    fn clear_stack_back_to_table_row_context(&mut self) {
+        while self
+            .current_tag_name()
+            .is_some_and(|name| !matches!(name, "tr" | "template" | "html"))
+        {
+            self.open_elements.pop();
+        }
+    }
+
+    fn reset_insertion_mode_appropriately(&mut self) {
+        for node in self.open_elements.iter().rev() {
+            let Some(element) = self.document.element(*node) else {
+                continue;
+            };
+            self.mode = match element.tag_name.as_str() {
+                "td" | "th" => InsertionMode::InCell,
+                "tr" => InsertionMode::InRow,
+                "tbody" | "tfoot" | "thead" => InsertionMode::InTableBody,
+                "caption" => InsertionMode::InCaption,
+                "colgroup" => InsertionMode::InColumnGroup,
+                "table" => InsertionMode::InTable,
+                "body" => InsertionMode::InBody,
+                "html" => InsertionMode::AfterHead,
+                _ => continue,
+            };
+            return;
+        }
+        self.mode = InsertionMode::InBody;
     }
 
     fn push_active_formatting(&mut self, node: NodeId, tag_name: &str, attributes: &[Attribute]) {
@@ -947,7 +1535,12 @@ impl TreeBuilder {
         }
     }
 
-    fn process_head_token_from_body(&mut self, name: &str, attributes: &[Attribute]) {
+    fn process_head_token(
+        &mut self,
+        name: &str,
+        attributes: &[Attribute],
+        return_mode: InsertionMode,
+    ) {
         let Some(head) = self.head_element else {
             return;
         };
@@ -956,7 +1549,7 @@ impl TreeBuilder {
             self.insert_element(name, attributes, Some(head), true);
         } else if is_head_text_element(name) {
             self.insert_element(name, attributes, Some(head), false);
-            self.original_mode = InsertionMode::InBody;
+            self.original_mode = return_mode;
             self.mode = InsertionMode::Text;
         }
     }
@@ -1153,10 +1746,7 @@ impl TreeBuilder {
         force_no_push: bool,
     ) -> NodeId {
         let node = self.create_element_node(name, attributes);
-        let parent = parent.unwrap_or_else(|| self.current_parent());
-        self.document
-            .append_child(parent, node)
-            .expect("tree builder created an invalid parent/child relation");
+        self.insert_node_at_appropriate_location(node, parent);
 
         if !force_no_push && !is_void_element(name) {
             self.open_elements.push(node);
@@ -1192,6 +1782,63 @@ impl TreeBuilder {
             .unwrap_or_else(|| self.document.root())
     }
 
+    fn appropriate_insertion_location(
+        &self,
+        override_parent: Option<NodeId>,
+    ) -> (NodeId, Option<NodeId>) {
+        let target = override_parent.unwrap_or_else(|| self.current_parent());
+        if !self.foster_parenting
+            || !self
+                .document
+                .element(target)
+                .is_some_and(|element| is_foster_parenting_target(&element.tag_name))
+        {
+            return (target, None);
+        }
+
+        let Some((table_index, table)) =
+            self.open_elements
+                .iter()
+                .enumerate()
+                .rev()
+                .find_map(|(index, node)| {
+                    self.document
+                        .element(*node)
+                        .is_some_and(|element| element.tag_name == "table")
+                        .then_some((index, *node))
+                })
+        else {
+            return (
+                self.open_elements
+                    .first()
+                    .copied()
+                    .unwrap_or_else(|| self.document.root()),
+                None,
+            );
+        };
+
+        if let Some(parent) = self.document.node(table).and_then(|node| node.parent) {
+            return (parent, Some(table));
+        }
+
+        if table_index > 0 {
+            return (self.open_elements[table_index - 1], None);
+        }
+
+        (target, None)
+    }
+
+    fn insert_node_at_appropriate_location(
+        &mut self,
+        node: NodeId,
+        override_parent: Option<NodeId>,
+    ) {
+        let (parent, reference) = self.appropriate_insertion_location(override_parent);
+        self.document
+            .insert_before(parent, node, reference)
+            .expect("tree builder created an invalid parent/child relation");
+    }
+
     fn flush_text(&mut self) {
         if self.text_buffer.is_empty() {
             return;
@@ -1199,10 +1846,7 @@ impl TreeBuilder {
 
         let text = std::mem::take(&mut self.text_buffer);
         let node = self.document.create_text(text);
-        let parent = self.current_parent();
-        self.document
-            .append_child(parent, node)
-            .expect("tree builder created an invalid text parent");
+        self.insert_node_at_appropriate_location(node, None);
     }
 
     fn close_matching(&mut self, tag_name: &str) -> Option<NodeId> {
@@ -1272,6 +1916,14 @@ fn is_formatting_element(tag_name: &str) -> bool {
 
 fn is_formatting_marker_container(tag_name: &str) -> bool {
     matches!(tag_name, "applet" | "marquee" | "object")
+}
+
+fn is_table_text_context(tag_name: &str) -> bool {
+    matches!(tag_name, "table" | "tbody" | "tfoot" | "thead" | "tr")
+}
+
+fn is_foster_parenting_target(tag_name: &str) -> bool {
+    matches!(tag_name, "table" | "tbody" | "tfoot" | "thead" | "tr")
 }
 
 fn is_ascii_whitespace(character: char) -> bool {
@@ -1367,6 +2019,10 @@ fn is_implied_end_tag(tag_name: &str) -> bool {
 }
 
 fn is_scope_boundary(tag_name: &str, kind: ScopeKind) -> bool {
+    if matches!(kind, ScopeKind::Table) {
+        return matches!(tag_name, "html" | "table" | "template");
+    }
+
     let normal = matches!(
         tag_name,
         "applet"

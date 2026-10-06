@@ -776,6 +776,34 @@ mod tests {
     }
 
     #[test]
+    fn table_foster_parenting_and_cell_text_reach_display_list() {
+        let display_list =
+            Engine::new().render_html("<table>outside<tr><td>cell</td></tr></table>tail", 800, 600);
+
+        let painted_text: String = display_list
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        let outside = painted_text
+            .find("outside")
+            .expect("foster-parented table text must paint");
+        let cell = painted_text
+            .find("cell")
+            .expect("table cell text must paint");
+        let tail = painted_text
+            .find("tail")
+            .expect("text after the table must paint");
+
+        assert!(outside < cell);
+        assert!(cell < tail);
+    }
+
+    #[test]
     fn misnested_html_formatting_recovery_reaches_display_list() {
         let display_list = Engine::new().render_html("<p>1<b>2<i>3</b>4</i>5</p>", 800, 600);
 

@@ -68,9 +68,14 @@ entries for a/b/big/code/em/font/i/nobr/s/small/strike/strong/tt/u, reconstructs
 that have fallen off the open-element stack, caps identical entries with the Noah's Ark rule
 and runs bounded adoption-agency recovery for formatting end tags. Misnested formatting can
 clone/reparent nodes around a furthest special block; repeated anchors/nobr are recovered and
-applet/marquee/object markers prevent inner formatting from leaking outward. Mode-specific
-layout quirks, processing instructions, table/template/frameset/foster-parenting modes and
-foreign-content context remain later.
+applet/marquee/object markers prevent inner formatting from leaking outward. Table parsing now
+covers in-table/text/caption/column-group/table-body/row/cell states, implicit tbody/tr
+creation, table-scope closure and cell formatting markers. Non-whitespace character runs and
+misnested elements in table contexts use foster parenting before the last open table through
+op_dom sibling insertion, while whitespace table text stays in table context. Head text tokens
+encountered in tables return to the original table mode after text parsing. Mode-specific
+layout quirks, processing instructions, template/frameset modes, foreign-content context and
+the CSS table formatting/layout algorithm remain later.
 
 ## S2 - Navigation to static page
 

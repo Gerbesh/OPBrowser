@@ -1270,3 +1270,27 @@ This file is append-only project history.
   native startup smoke and optimized release build. The release executable is 813,056 bytes.
   The pre-existing generated-image loopback test again transiently hit WSAEWOULDBLOCK on the
   first full run; it passed standalone and the complete workspace retry passed.
+
+## 2026-10-06 - HTML table tree construction and foster parenting
+
+- Added explicit InTable, InTableText, InCaption, InColumnGroup, InTableBody, InRow and
+  InCell insertion modes with table-scope stack cleanup and insertion-mode reset.
+- Added implicit tbody and tr recovery so rows/cells in malformed table markup are placed in
+  the DOM structure required by HTML tree construction; conflicting table tokens close rows,
+  cells and sections through the corresponding table-scope rules.
+- Added pending table-character buffering: all-whitespace runs remain in table context while
+  non-whitespace runs are reprocessed with foster parenting.
+- Added foster-parent insertion before the last open table for misnested table text/elements.
+  op_dom::Document now exposes insert_before, preserving sibling order while reparenting nodes.
+- Cell entry creates an active-formatting marker and cell closure clears back to that marker,
+  preventing formatting from leaking into following row/table content.
+- Generalized head-token routing so style/script-like text tokens encountered from table mode
+  return to their original table insertion mode rather than incorrectly falling back to InBody.
+- Added seven table tree-builder regressions, one DOM sibling-insertion regression and one
+  Engine regression proving fostered text/cell text reach the display-list text stream in DOM
+  order. The tree-builder integration suite now has 30 tests.
+- Updated project plan, code graph/slices and the HTML parsing wiki. A real CSS table
+  formatting/layout context, template/frameset modes and foreign-content parsing remain later.
+- Final verification passed rustfmt, warning-free workspace Clippy, all 302 workspace tests,
+  native startup smoke and optimized release build. The release executable is 824,832 bytes.
+  The full verification passed without the pre-existing generated-image socket flake.

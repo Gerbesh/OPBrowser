@@ -118,10 +118,24 @@ impl Document {
     }
 
     pub fn append_child(&mut self, parent: NodeId, child: NodeId) -> Result<(), DocumentError> {
+        self.insert_before(parent, child, None)
+    }
+
+    pub fn insert_before(
+        &mut self,
+        parent: NodeId,
+        child: NodeId,
+        reference: Option<NodeId>,
+    ) -> Result<(), DocumentError> {
         if parent.index() >= self.nodes.len() {
             return Err(DocumentError::UnknownParent);
         }
         if child.index() >= self.nodes.len() {
+            return Err(DocumentError::UnknownChild);
+        }
+        if let Some(reference) = reference
+            && reference.index() >= self.nodes.len()
+        {
             return Err(DocumentError::UnknownChild);
         }
         if parent == child {
@@ -134,8 +148,18 @@ impl Document {
                 .retain(|existing| *existing != child);
         }
 
+        let insertion_index = reference.and_then(|reference| {
+            self.nodes[parent.index()]
+                .children
+                .iter()
+                .position(|existing| *existing == reference)
+        });
+
         self.nodes[child.index()].parent = Some(parent);
-        self.nodes[parent.index()].children.push(child);
+        match insertion_index {
+            Some(index) => self.nodes[parent.index()].children.insert(index, child),
+            None => self.nodes[parent.index()].children.push(child),
+        }
         Ok(())
     }
 
