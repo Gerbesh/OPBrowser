@@ -49,7 +49,11 @@ pub(crate) enum Instruction {
     CreateFunction(Arc<FunctionTemplate>),
     GetProperty,
     SetProperty,
-    Call(usize),
+    Call {
+        argument_count: usize,
+        has_receiver: bool,
+    },
+    Construct(usize),
     Unary(UnaryOp),
     Binary(BinaryOp),
     Dup,
@@ -521,6 +525,7 @@ impl Compiler {
         match expression {
             Expression::Literal(value) => self.code.push(Instruction::Push(value.clone())),
             Expression::Identifier(name) => self.code.push(Instruction::Load(name.clone())),
+            Expression::This => self.code.push(Instruction::Load("this".into())),
             Expression::ObjectLiteral(properties) => {
                 let mut prototype_setters = Vec::with_capacity(properties.len());
                 for property in properties {
@@ -550,11 +555,31 @@ impl Compiler {
                 self.code.push(Instruction::GetProperty);
             }
             Expression::Call { callee, arguments } => {
+                let has_receiver = if let Expression::Member { object, property } = callee.as_ref()
+                {
+                    self.expression(object);
+                    self.code.push(Instruction::Dup);
+                    self.expression(property);
+                    self.code.push(Instruction::GetProperty);
+                    true
+                } else {
+                    self.expression(callee);
+                    false
+                };
+                for argument in arguments {
+                    self.expression(argument);
+                }
+                self.code.push(Instruction::Call {
+                    argument_count: arguments.len(),
+                    has_receiver,
+                });
+            }
+            Expression::New { callee, arguments } => {
                 self.expression(callee);
                 for argument in arguments {
                     self.expression(argument);
                 }
-                self.code.push(Instruction::Call(arguments.len()));
+                self.code.push(Instruction::Construct(arguments.len()));
             }
             Expression::Function { name, params, body } => {
                 let template = compile_function_template(name.clone(), params, body);
@@ -779,12 +804,13 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::CreateFunction(_)))
         );
-        assert!(
-            script
-                .code
-                .iter()
-                .any(|instruction| matches!(instruction, Instruction::Call(1)))
-        );
+        assert!(script.code.iter().any(|instruction| matches!(
+            instruction,
+            Instruction::Call {
+                argument_count: 1,
+                ..
+            }
+        )));
         let function = script
             .code
             .iter()

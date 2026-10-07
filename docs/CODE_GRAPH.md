@@ -139,6 +139,10 @@ classDiagram
         -global_env EnvironmentId
         -object_prototype ObjectId
         -array_prototype ObjectId
+        -error_prototype ObjectId
+        -type_error_prototype ObjectId
+        -reference_error_prototype ObjectId
+        -global_object ObjectId
         -instruction_budget
         -object_budget
         -environment_budget
@@ -156,8 +160,11 @@ classDiagram
         bindings
     }
     class FunctionObject {
-        template FunctionTemplate
-        closure EnvironmentId
+        implementation User / Builtin
+    }
+    class FunctionImplementation {
+        User FunctionTemplate + EnvironmentId
+        Builtin Error / TypeError / ReferenceError
     }
     class JsObject {
         properties
@@ -190,7 +197,7 @@ classDiagram
         Push / Load / Declare / Assign
         UpdateBinding / UpdateProperty
         CreateObject / CreateArray / CreateFunction
-        GetProperty / SetProperty / Call
+        GetProperty / SetProperty / Call / Construct
         Unary / Binary / Dup / Pop
         EnterScope / ExitScope / UnwindScopes
         Jump / JumpIfFalse / JumpIfTrue
@@ -502,8 +509,9 @@ classDiagram
     JsRuntime --> JsObject : owns bounded heap
     JsObject --> ObjectId : prototype reference
     JsObject --> FunctionObject : optional callable payload
-    FunctionObject --> FunctionTemplate : owned bytecode template
-    FunctionObject --> Environment : captured closure
+    FunctionObject --> FunctionImplementation : user bytecode or builtin
+    FunctionImplementation --> FunctionTemplate : owned user bytecode template
+    FunctionImplementation --> Environment : captured user closure
     CompiledScript --> Instruction : ordered bytecode with patched jump/control targets
     Instruction --> TryTemplate : nested try/catch/finally bytecode
     JsRuntime --> RunOutcome : normal and abrupt completion propagation

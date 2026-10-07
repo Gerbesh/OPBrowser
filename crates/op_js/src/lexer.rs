@@ -27,6 +27,8 @@ pub enum TokenKind {
     Continue,
     Function,
     Return,
+    This,
+    New,
     Throw,
     Try,
     Catch,
@@ -298,6 +300,8 @@ impl<'a> Lexer<'a> {
             "continue" => TokenKind::Continue,
             "function" => TokenKind::Function,
             "return" => TokenKind::Return,
+            "this" => TokenKind::This,
+            "new" => TokenKind::New,
             "throw" => TokenKind::Throw,
             "try" => TokenKind::Try,
             "catch" => TokenKind::Catch,
@@ -402,8 +406,18 @@ mod tests {
                 .iter()
                 .any(|token| matches!(token.kind, TokenKind::If))
         );
-        let function_tokens = tokenize("function add(a) { return a }").unwrap();
+        let function_tokens = tokenize("function add(a) { return this; } new add()").unwrap();
         assert!(matches!(function_tokens[0].kind, TokenKind::Function));
+        assert!(
+            function_tokens
+                .iter()
+                .any(|token| matches!(token.kind, TokenKind::This))
+        );
+        assert!(
+            function_tokens
+                .iter()
+                .any(|token| matches!(token.kind, TokenKind::New))
+        );
         assert!(
             function_tokens
                 .iter()

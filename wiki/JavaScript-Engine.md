@@ -39,13 +39,22 @@ finalizer completion, including break/continue that leave the try region and res
 loop/switch. Runtime-generated Reference/Type failures are still engine errors rather than
 catchable JavaScript Error objects.
 
-This is still not page scripting. `this`, `new`, `arguments`, arrow/default/rest/destructuring
-forms, labels, for-in/of, property descriptors/accessors, full array-length mutation rules,
-primitive boxing/ToPrimitive, garbage collection, built-ins, promises/modules and DOM bindings are
-still absent. C-style `for(let ...)` has one loop lexical environment rather than fresh
-per-iteration bindings, and ASI/line-terminator restrictions around throw/postfix updates are still
-incomplete. Function calls currently recurse through the native stack; the temporary depth limit is
-64 until calls move to explicit VM frames.
+Method calls now preserve their receiver, bare non-strict calls receive the runtime global object
+as `this`, and every user function receives an array-like `arguments` object. User functions own
+a prototype object with a constructor backlink; `new` allocates from `constructor.prototype`,
+binds the new receiver as `this`, and honors object-return versus primitive-return constructor
+rules. `Error`, `TypeError` and `ReferenceError` are initial built-in constructors with
+prototype chains, name/message properties and catchable objects. Runtime Type/Reference failures
+inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
+remain engine-level guards.
+
+This is still not page scripting. Arrow/default/rest/destructuring forms, labels, for-in/of,
+property descriptors/accessors, full array-length mutation rules, primitive boxing/ToPrimitive,
+garbage collection, broad standard built-ins, promises/modules and DOM bindings are still absent.
+C-style `for(let ...)` has one loop lexical environment rather than fresh per-iteration bindings,
+and ASI/line-terminator restrictions around throw/postfix updates are still incomplete. Function
+calls currently recurse through the native stack; the temporary depth limit is 64 until calls move
+to explicit VM frames.
 
 ## Test262 measurement
 
@@ -67,11 +76,12 @@ For the combined local subsystem check use:
 
 The unchanged Test262 Parser v1 subset moved from **364/1983 (18.36%)** to
 **391/1983 (19.72%)**, then **408/1983 (20.57%)**, **504/1983 (25.42%)** after functions/closures,
-and **508/1983 (25.62%)** after broader control flow, updates and exceptions. This remains a
-parse-expectation metric, not runtime conformance.
+**508/1983 (25.62%)** after broader control flow, updates and exceptions, and
+**523/1983 (26.37%)** after this/new constructor parsing. This remains a parse-expectation metric,
+not runtime conformance.
 
-The next JS work is the remaining call/object boundary needed by ordinary page code: `this`,
-`new`, `arguments`, JavaScript Error objects/catchable runtime failures and modern
-function/parameter forms. Labels, for-in/of and explicit VM call frames remain language/runtime
-work before page `<script>` execution can be connected without pretending compatibility that does
-not exist.
+The next JS work is modern function/parameter syntax, labels/for-in/of, per-iteration lexical
+bindings, broader built-ins/property semantics and explicit VM call frames. In parallel, M4 can now
+start consuming the VM through a narrow DOM binding boundary because ordinary receiver calls,
+constructors, arguments and catchable runtime errors exist; page scripting still must not be
+advertised as compatible until that binding/event-loop work lands.

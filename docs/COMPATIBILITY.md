@@ -56,9 +56,10 @@ Measured progress on the unchanged v1 manifest:
 - object/array/member parser pass: 408/1983, **20.57%**;
 - function/call/return parser pass: 504/1983, **25.42%**;
 - broader control/update/exception parser pass: 508/1983, **25.62%**;
-- current result: 508 passed, 1,475 failed expectations, 17 module tests skipped.
+- this/new constructor parser pass: 523/1983, **26.37%**;
+- current result: 523 passed, 1,460 failed expectations, 17 module tests skipped.
 
-This must never be described as "25.62% JavaScript support" or full ECMAScript conformance.
+This must never be described as "26.37% JavaScript support" or full ECMAScript conformance.
 
 ### WPT static v1
 

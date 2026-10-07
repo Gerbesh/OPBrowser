@@ -1,5 +1,6 @@
 use crate::{
-    BinaryOp, CompiledScript, JsError, JsValue, ObjectId, UnaryOp, UpdateOp, VariableKind,
+    BinaryOp, CompiledScript, JsError, JsErrorKind, JsValue, ObjectId, UnaryOp, UpdateOp,
+    VariableKind,
     bytecode::{FunctionTemplate, Instruction, TryTemplate},
     compile_script,
 };
@@ -41,10 +42,25 @@ enum ObjectKind {
     Function,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuiltinFunction {
+    Error,
+    TypeError,
+    ReferenceError,
+}
+
+#[derive(Debug, Clone)]
+enum FunctionImplementation {
+    User {
+        template: Arc<FunctionTemplate>,
+        closure: EnvironmentId,
+    },
+    Builtin(BuiltinFunction),
+}
+
 #[derive(Debug, Clone)]
 struct FunctionObject {
-    template: Arc<FunctionTemplate>,
-    closure: EnvironmentId,
+    implementation: FunctionImplementation,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +92,10 @@ pub struct JsRuntime {
     global_env: EnvironmentId,
     object_prototype: ObjectId,
     array_prototype: ObjectId,
+    error_prototype: ObjectId,
+    type_error_prototype: ObjectId,
+    reference_error_prototype: ObjectId,
+    global_object: ObjectId,
     instruction_budget: usize,
     object_budget: usize,
     environment_budget: usize,
@@ -86,20 +106,39 @@ impl Default for JsRuntime {
     fn default() -> Self {
         let object_prototype = ObjectId(0);
         let array_prototype = ObjectId(1);
+        let error_prototype = ObjectId(2);
+        let type_error_prototype = ObjectId(3);
+        let reference_error_prototype = ObjectId(4);
+        let global_object = ObjectId(5);
+
+        let ordinary = |prototype, properties| JsObject {
+            properties,
+            prototype,
+            kind: ObjectKind::Ordinary,
+            function: None,
+        };
+
+        let mut error_properties = HashMap::new();
+        error_properties.insert("name".into(), JsValue::String("Error".into()));
+        error_properties.insert("message".into(), JsValue::String(String::new()));
+
+        let mut type_error_properties = HashMap::new();
+        type_error_properties.insert("name".into(), JsValue::String("TypeError".into()));
+        type_error_properties.insert("message".into(), JsValue::String(String::new()));
+
+        let mut reference_error_properties = HashMap::new();
+        reference_error_properties.insert("name".into(), JsValue::String("ReferenceError".into()));
+        reference_error_properties.insert("message".into(), JsValue::String(String::new()));
+
         let heap = vec![
-            JsObject {
-                properties: HashMap::new(),
-                prototype: None,
-                kind: ObjectKind::Ordinary,
-                function: None,
-            },
-            JsObject {
-                properties: HashMap::new(),
-                prototype: Some(object_prototype),
-                kind: ObjectKind::Ordinary,
-                function: None,
-            },
+            ordinary(None, HashMap::new()),
+            ordinary(Some(object_prototype), HashMap::new()),
+            ordinary(Some(object_prototype), error_properties),
+            ordinary(Some(error_prototype), type_error_properties),
+            ordinary(Some(error_prototype), reference_error_properties),
+            ordinary(Some(object_prototype), HashMap::new()),
         ];
+
         let global_env = EnvironmentId(0);
         let environments = vec![Environment {
             parent: None,
@@ -107,17 +146,47 @@ impl Default for JsRuntime {
             bindings: HashMap::new(),
         }];
 
-        Self {
+        let mut runtime = Self {
             heap,
             environments,
             global_env,
             object_prototype,
             array_prototype,
+            error_prototype,
+            type_error_prototype,
+            reference_error_prototype,
+            global_object,
             instruction_budget: DEFAULT_INSTRUCTION_BUDGET,
             object_budget: DEFAULT_OBJECT_BUDGET,
             environment_budget: DEFAULT_ENVIRONMENT_BUDGET,
             call_depth_budget: DEFAULT_CALL_DEPTH_BUDGET,
-        }
+        };
+
+        runtime.install_global_binding(
+            "this",
+            JsValue::Object(global_object),
+            false,
+            VariableKind::Const,
+        );
+        runtime
+            .install_error_constructor("Error", BuiltinFunction::Error, error_prototype)
+            .expect("built-in Error constructor must fit initial runtime budgets");
+        runtime
+            .install_error_constructor(
+                "TypeError",
+                BuiltinFunction::TypeError,
+                type_error_prototype,
+            )
+            .expect("built-in TypeError constructor must fit initial runtime budgets");
+        runtime
+            .install_error_constructor(
+                "ReferenceError",
+                BuiltinFunction::ReferenceError,
+                reference_error_prototype,
+            )
+            .expect("built-in ReferenceError constructor must fit initial runtime budgets");
+
+        runtime
     }
 }
 
@@ -142,13 +211,13 @@ impl JsRuntime {
         let mut steps = 0usize;
         match self.run_code(&script.code, self.global_env, &mut steps, 0)? {
             RunOutcome::Complete(value) | RunOutcome::Returned(value) => Ok(value),
-            RunOutcome::Thrown(value) => Err(JsError::exception(value.to_js_string())),
-            RunOutcome::Break => Err(JsError::type_error(
-                "break across a try boundary is not implemented",
-            )),
-            RunOutcome::Continue => Err(JsError::type_error(
-                "continue across a try boundary is not implemented",
-            )),
+            RunOutcome::Thrown(value) => {
+                Err(JsError::exception(self.describe_thrown_value(&value)))
+            }
+            RunOutcome::Break => Err(JsError::type_error("break escaped script control flow")),
+            RunOutcome::Continue => {
+                Err(JsError::type_error("continue escaped script control flow"))
+            }
         }
     }
 
@@ -293,7 +362,10 @@ impl JsRuntime {
                     self.set_property(&target, &key, value.clone())?;
                     stack.push(value);
                 }
-                Instruction::Call(argument_count) => {
+                Instruction::Call {
+                    argument_count,
+                    has_receiver,
+                } => {
                     let mut arguments = Vec::with_capacity(*argument_count);
                     for _ in 0..*argument_count {
                         arguments.push(
@@ -304,7 +376,30 @@ impl JsRuntime {
                     }
                     arguments.reverse();
                     let callee = stack.pop().expect("compiler must push function callee");
-                    match self.call_value(callee, arguments, steps, call_depth + 1)? {
+                    let this_value = if *has_receiver {
+                        stack
+                            .pop()
+                            .expect("compiler must preserve method receiver before callee")
+                    } else {
+                        JsValue::Object(self.global_object)
+                    };
+                    match self.call_value(callee, this_value, arguments, steps, call_depth + 1)? {
+                        CallOutcome::Value(value) => stack.push(value),
+                        CallOutcome::Thrown(value) => return Ok(RunOutcome::Thrown(value)),
+                    }
+                }
+                Instruction::Construct(argument_count) => {
+                    let mut arguments = Vec::with_capacity(*argument_count);
+                    for _ in 0..*argument_count {
+                        arguments.push(
+                            stack
+                                .pop()
+                                .expect("compiler must push every constructor argument"),
+                        );
+                    }
+                    arguments.reverse();
+                    let callee = stack.pop().expect("compiler must push constructor callee");
+                    match self.construct_value(callee, arguments, steps, call_depth + 1)? {
                         CallOutcome::Value(value) => stack.push(value),
                         CallOutcome::Thrown(value) => return Ok(RunOutcome::Thrown(value)),
                     }
@@ -428,7 +523,8 @@ impl JsRuntime {
         steps: &mut usize,
         call_depth: usize,
     ) -> Result<RunOutcome, JsError> {
-        let mut outcome = self.run_code(&template.try_code, env, steps, call_depth)?;
+        let mut outcome =
+            self.run_code_catching_runtime_errors(&template.try_code, env, steps, call_depth)?;
 
         if let RunOutcome::Thrown(value) = outcome.clone()
             && let Some(catch_code) = &template.catch_code
@@ -444,11 +540,13 @@ impl JsRuntime {
                     },
                 );
             }
-            outcome = self.run_code(catch_code, catch_env, steps, call_depth)?;
+            outcome =
+                self.run_code_catching_runtime_errors(catch_code, catch_env, steps, call_depth)?;
         }
 
         if let Some(finally_code) = &template.finally_code {
-            let finally_outcome = self.run_code(finally_code, env, steps, call_depth)?;
+            let finally_outcome =
+                self.run_code_catching_runtime_errors(finally_code, env, steps, call_depth)?;
             if !matches!(finally_outcome, RunOutcome::Complete(_)) {
                 outcome = finally_outcome;
             }
@@ -457,9 +555,29 @@ impl JsRuntime {
         Ok(outcome)
     }
 
+    fn run_code_catching_runtime_errors(
+        &mut self,
+        code: &[Instruction],
+        env: EnvironmentId,
+        steps: &mut usize,
+        call_depth: usize,
+    ) -> Result<RunOutcome, JsError> {
+        match self.run_code(code, env, steps, call_depth) {
+            Ok(outcome) => Ok(outcome),
+            Err(error) => {
+                if let Some(value) = self.error_object_from_runtime_error(&error)? {
+                    Ok(RunOutcome::Thrown(value))
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
     fn call_value(
         &mut self,
         callee: JsValue,
+        this_value: JsValue,
         arguments: Vec<JsValue>,
         steps: &mut usize,
         call_depth: usize,
@@ -480,21 +598,58 @@ impl JsRuntime {
             .clone()
             .ok_or_else(|| JsError::type_error("value is not callable"))?;
 
-        let function_env =
-            self.allocate_environment(Some(function.closure), EnvironmentKind::Function)?;
+        match function.implementation {
+            FunctionImplementation::Builtin(builtin) => self.call_builtin(builtin, arguments),
+            FunctionImplementation::User { template, closure } => self.call_user_function(
+                id, template, closure, this_value, arguments, steps, call_depth,
+            ),
+        }
+    }
 
-        if let Some(name) = &function.template.name {
+    #[allow(clippy::too_many_arguments)]
+    fn call_user_function(
+        &mut self,
+        function_id: ObjectId,
+        template: Arc<FunctionTemplate>,
+        closure: EnvironmentId,
+        this_value: JsValue,
+        arguments: Vec<JsValue>,
+        steps: &mut usize,
+        call_depth: usize,
+    ) -> Result<CallOutcome, JsError> {
+        let function_env = self.allocate_environment(Some(closure), EnvironmentKind::Function)?;
+
+        self.environments[function_env.0].bindings.insert(
+            "this".into(),
+            Binding {
+                value: this_value,
+                mutable: false,
+                declaration_kind: VariableKind::Const,
+            },
+        );
+
+        let arguments_object = self.allocate_arguments_object(&arguments)?;
+        self.environments[function_env.0].bindings.insert(
+            "arguments".into(),
+            Binding {
+                value: JsValue::Object(arguments_object),
+                mutable: true,
+                declaration_kind: VariableKind::Var,
+            },
+        );
+
+        if let Some(name) = &template.name {
             self.environments[function_env.0].bindings.insert(
                 name.clone(),
                 Binding {
-                    value: JsValue::Object(id),
+                    value: JsValue::Object(function_id),
                     mutable: false,
                     declaration_kind: VariableKind::Const,
                 },
             );
         }
 
-        for (index, parameter) in function.template.params.iter().enumerate() {
+        for (index, parameter) in template.params.iter().enumerate() {
             let value = arguments.get(index).cloned().unwrap_or(JsValue::Undefined);
             self.environments[function_env.0].bindings.insert(
                 parameter.clone(),
@@ -506,16 +661,69 @@ impl JsRuntime {
             );
         }
 
-        match self.run_code(&function.template.code, function_env, steps, call_depth)? {
+        match self.run_code(&template.code, function_env, steps, call_depth)? {
             RunOutcome::Returned(value) => Ok(CallOutcome::Value(value)),
             RunOutcome::Complete(_) => Ok(CallOutcome::Value(JsValue::Undefined)),
             RunOutcome::Thrown(value) => Ok(CallOutcome::Thrown(value)),
-            RunOutcome::Break => Err(JsError::type_error(
-                "break across a try boundary is not implemented",
-            )),
-            RunOutcome::Continue => Err(JsError::type_error(
-                "continue across a try boundary is not implemented",
-            )),
+            RunOutcome::Break => Err(JsError::type_error("break escaped a function body")),
+            RunOutcome::Continue => Err(JsError::type_error("continue escaped a function body")),
+        }
+    }
+
+    fn call_builtin(
+        &mut self,
+        builtin: BuiltinFunction,
+        arguments: Vec<JsValue>,
+    ) -> Result<CallOutcome, JsError> {
+        let message = arguments
+            .first()
+            .filter(|value| !matches!(value, JsValue::Undefined))
+            .map(JsValue::to_js_string)
+            .unwrap_or_default();
+        let (name, prototype) = match builtin {
+            BuiltinFunction::Error => ("Error", self.error_prototype),
+            BuiltinFunction::TypeError => ("TypeError", self.type_error_prototype),
+            BuiltinFunction::ReferenceError => ("ReferenceError", self.reference_error_prototype),
+        };
+        let error = self.allocate_error_object(name, &message, prototype)?;
+        Ok(CallOutcome::Value(JsValue::Object(error)))
+    }
+
+    fn construct_value(
+        &mut self,
+        callee: JsValue,
+        arguments: Vec<JsValue>,
+        steps: &mut usize,
+        call_depth: usize,
+    ) -> Result<CallOutcome, JsError> {
+        let JsValue::Object(function_id) = callee.clone() else {
+            return Err(JsError::type_error("value is not a constructor"));
+        };
+        let function = self
+            .object(function_id)?
+            .function
+            .clone()
+            .ok_or_else(|| JsError::type_error("value is not a constructor"))?;
+
+        if matches!(function.implementation, FunctionImplementation::Builtin(_)) {
+            return self.call_value(callee, JsValue::Undefined, arguments, steps, call_depth);
+        }
+
+        let prototype = match self.get_object_property(function_id, "prototype")? {
+            JsValue::Object(id) => Some(id),
+            _ => Some(self.object_prototype),
+        };
+        let receiver = self.allocate_object(ObjectKind::Ordinary, prototype, HashMap::new())?;
+        match self.call_value(
+            callee,
+            JsValue::Object(receiver),
+            arguments,
+            steps,
+            call_depth,
+        )? {
+            CallOutcome::Value(JsValue::Object(id)) => Ok(CallOutcome::Value(JsValue::Object(id))),
+            CallOutcome::Value(_) => Ok(CallOutcome::Value(JsValue::Object(receiver))),
+            CallOutcome::Thrown(value) => Ok(CallOutcome::Thrown(value)),
         }
     }
 
@@ -802,12 +1010,135 @@ impl JsRuntime {
             "name".into(),
             JsValue::String(template.name.clone().unwrap_or_default()),
         );
-        self.allocate_object_with_function(
+        let function_id = self.allocate_object_with_function(
             ObjectKind::Function,
             Some(self.object_prototype),
             properties,
-            Some(FunctionObject { template, closure }),
+            Some(FunctionObject {
+                implementation: FunctionImplementation::User { template, closure },
+            }),
+        )?;
+
+        let mut prototype_properties = HashMap::new();
+        prototype_properties.insert("constructor".into(), JsValue::Object(function_id));
+        let prototype = self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            prototype_properties,
+        )?;
+        self.object_mut(function_id)?
+            .properties
+            .insert("prototype".into(), JsValue::Object(prototype));
+        Ok(function_id)
+    }
+
+    fn allocate_arguments_object(&mut self, arguments: &[JsValue]) -> Result<ObjectId, JsError> {
+        let mut properties = HashMap::new();
+        for (index, value) in arguments.iter().enumerate() {
+            properties.insert(index.to_string(), value.clone());
+        }
+        properties.insert("length".into(), JsValue::Number(arguments.len() as f64));
+        self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            properties,
         )
+    }
+
+    fn install_global_binding(
+        &mut self,
+        name: &str,
+        value: JsValue,
+        mutable: bool,
+        declaration_kind: VariableKind,
+    ) {
+        self.environments[self.global_env.0].bindings.insert(
+            name.to_owned(),
+            Binding {
+                value: value.clone(),
+                mutable,
+                declaration_kind,
+            },
+        );
+        self.heap[self.global_object.0]
+            .properties
+            .insert(name.to_owned(), value);
+    }
+
+    fn install_error_constructor(
+        &mut self,
+        name: &str,
+        builtin: BuiltinFunction,
+        prototype: ObjectId,
+    ) -> Result<ObjectId, JsError> {
+        let mut properties = HashMap::new();
+        properties.insert("name".into(), JsValue::String(name.into()));
+        properties.insert("length".into(), JsValue::Number(1.0));
+        properties.insert("prototype".into(), JsValue::Object(prototype));
+        let function = self.allocate_object_with_function(
+            ObjectKind::Function,
+            Some(self.object_prototype),
+            properties,
+            Some(FunctionObject {
+                implementation: FunctionImplementation::Builtin(builtin),
+            }),
+        )?;
+        self.object_mut(prototype)?
+            .properties
+            .insert("constructor".into(), JsValue::Object(function));
+        self.install_global_binding(name, JsValue::Object(function), true, VariableKind::Var);
+        Ok(function)
+    }
+
+    fn allocate_error_object(
+        &mut self,
+        name: &str,
+        message: &str,
+        prototype: ObjectId,
+    ) -> Result<ObjectId, JsError> {
+        let mut properties = HashMap::new();
+        properties.insert("name".into(), JsValue::String(name.into()));
+        properties.insert("message".into(), JsValue::String(message.into()));
+        self.allocate_object(ObjectKind::Ordinary, Some(prototype), properties)
+    }
+
+    fn error_object_from_runtime_error(
+        &mut self,
+        error: &JsError,
+    ) -> Result<Option<JsValue>, JsError> {
+        let (name, prototype) = match error.kind {
+            JsErrorKind::Type => ("TypeError", self.type_error_prototype),
+            JsErrorKind::Reference => ("ReferenceError", self.reference_error_prototype),
+            JsErrorKind::Exception => ("Error", self.error_prototype),
+            JsErrorKind::Syntax | JsErrorKind::ExecutionLimit => return Ok(None),
+        };
+        let id = self.allocate_error_object(name, &error.message, prototype)?;
+        Ok(Some(JsValue::Object(id)))
+    }
+
+    fn describe_thrown_value(&self, value: &JsValue) -> String {
+        let JsValue::Object(id) = value else {
+            return value.to_js_string();
+        };
+        let Ok(object) = self.object(*id) else {
+            return value.to_js_string();
+        };
+        let name = object.properties.get("name").and_then(|value| match value {
+            JsValue::String(value) => Some(value.as_str()),
+            _ => None,
+        });
+        let message = object
+            .properties
+            .get("message")
+            .and_then(|value| match value {
+                JsValue::String(value) => Some(value.as_str()),
+                _ => None,
+            });
+        match (name, message) {
+            (Some(name), Some("")) => name.to_owned(),
+            (Some(name), Some(message)) => format!("{name}: {message}"),
+            _ => value.to_js_string(),
+        }
     }
 
     fn allocate_object(
@@ -1219,6 +1550,99 @@ mod tests {
             runtime.eval_script("add.name").unwrap(),
             JsValue::String("add".into())
         );
+    }
+
+    #[test]
+    fn method_calls_bind_this_and_bare_calls_use_the_global_object() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "function addToValue(extra) { return this.value + extra; }                      let object = {value: 5, addToValue};                      object.addToValue(3)",
+                )
+                .unwrap(),
+            JsValue::Number(8.0)
+        );
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "this.marker = 11; function readGlobal() { return this.marker; } readGlobal()",
+                )
+                .unwrap(),
+            JsValue::Number(11.0)
+        );
+    }
+
+    #[test]
+    fn arguments_is_array_like_and_available_inside_user_functions() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "function inspect(first) { return arguments.length * 100 + arguments[0] * 10 + arguments[2]; } inspect(2, 4, 6)",
+                )
+                .unwrap(),
+            JsValue::Number(326.0)
+        );
+    }
+
+    #[test]
+    fn constructors_use_function_prototypes_and_constructor_return_rules() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "function Point(x, y) { this.x = x; this.y = y; }                      Point.prototype.sum = function() { return this.x + this.y; };                      let point = new Point(4, 5);                      point.sum()",
+                )
+                .unwrap(),
+            JsValue::Number(9.0)
+        );
+        assert_eq!(
+            runtime
+                .eval_script("function Replace() { this.x = 1; return {x: 7}; } (new Replace()).x",)
+                .unwrap(),
+            JsValue::Number(7.0)
+        );
+        assert_eq!(
+            runtime
+                .eval_script("Point.prototype.constructor === Point")
+                .unwrap(),
+            JsValue::Boolean(true)
+        );
+    }
+
+    #[test]
+    fn runtime_type_and_reference_errors_become_catchable_error_objects() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let typeName = ''; try { null.x; } catch (e) { typeName = e.name; } typeName",
+                )
+                .unwrap(),
+            JsValue::String("TypeError".into())
+        );
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let refName = ''; try { missingName; } catch (e) { refName = e.name; } refName",
+                )
+                .unwrap(),
+            JsValue::String("ReferenceError".into())
+        );
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let error = new TypeError('bad input'); error.name + ': ' + error.message",
+                )
+                .unwrap(),
+            JsValue::String("TypeError: bad input".into())
+        );
+        let error = runtime
+            .eval_script("throw new ReferenceError('missing thing')")
+            .unwrap_err();
+        assert_eq!(error.kind, crate::JsErrorKind::Exception);
+        assert_eq!(error.message, "ReferenceError: missing thing");
     }
 
     #[test]

@@ -571,8 +571,10 @@ JavaScript source
   -> stack VM
   -> primitive or ObjectId completion value
   -> runtime-owned lexical environment chain -> global/function/block bindings
-  -> closure capture -> function call/return
-  -> abrupt completion -> return / explicit throw / break / continue -> try/catch/finally
+  -> closure capture -> function call/return + this/arguments
+  -> constructor allocation -> function.prototype -> new instance
+  -> abrupt completion -> return / explicit throw / runtime Error object / break / continue
+  -> try/catch/finally
   -> runtime-owned object heap -> own properties -> prototype chain
 ```
 
@@ -589,15 +591,20 @@ scope exit. Initial function declarations are hoisted within each compiled state
 for, do/while, switch fallthrough, ++/--, explicit throw and try/catch/finally now execute, including
 finally before return/throw/break/continue and control transfer back into an enclosing loop/switch.
 
-The current exception path deliberately distinguishes an explicit JavaScript throw from internal VM
-errors: catch handles explicit thrown values, while runtime Reference/Type errors are not yet
-materialized as catchable JavaScript Error objects. A for(let) loop has lexical loop scope but not
-the spec's fresh per-iteration binding used by closures. Function calls still recurse through the
-native Rust stack, so the temporary call-depth guard is 64 until explicit VM call frames replace
-native recursion. this/new/arguments, arrow/default/rest/destructuring forms, labels and for-in/of
-remain later work. The parse-only Test262 probe progressed 364 -> 391 -> 408 -> 504 -> 508 passed
-expectations, currently 508/1983 (25.62%) on the unchanged manifest; it deliberately does not claim
-runtime conformance.
+Method calls now preserve the base object as the receiver, bare non-strict calls use the runtime
+global object for this, and user functions receive an array-like arguments object. Each user
+function owns a prototype object with a constructor backlink; new allocates an instance using that
+prototype, binds it as this, and implements the object-return/primitive-return constructor rule.
+Error, TypeError and ReferenceError exist as initial built-in constructors/prototypes. Runtime
+Reference/Type failures that occur under try regions are materialized as catchable JavaScript error
+objects, while execution-limit failures stay engine-level and deliberately cannot be caught.
+
+A for(let) loop still has one lexical loop scope rather than the spec's fresh per-iteration binding
+used by closures. Function calls still recurse through the native Rust stack, so the temporary
+call-depth guard is 64 until explicit VM call frames replace native recursion.
+Arrow/default/rest/destructuring forms, labels and for-in/of remain later work. The parse-only
+Test262 probe progressed 364 -> 391 -> 408 -> 504 -> 508 -> 523 passed expectations, currently
+523/1983 (26.37%) on the unchanged manifest; it deliberately does not claim runtime conformance.
 
 Planned continuation:
 

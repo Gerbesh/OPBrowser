@@ -107,6 +107,7 @@ pub enum VariableKind {
 pub enum Expression {
     Literal(JsValue),
     Identifier(String),
+    This,
     ObjectLiteral(Vec<ObjectProperty>),
     ArrayLiteral(Vec<Option<Expression>>),
     Member {
@@ -114,6 +115,10 @@ pub enum Expression {
         property: Box<Expression>,
     },
     Call {
+        callee: Box<Expression>,
+        arguments: Vec<Expression>,
+    },
+    New {
         callee: Box<Expression>,
         arguments: Vec<Expression>,
     },
@@ -886,21 +891,7 @@ impl Parser {
         let mut expression = self.primary()?;
         loop {
             if self.take(&TokenKind::LeftParen) {
-                let mut arguments = Vec::new();
-                if !self.take(&TokenKind::RightParen) {
-                    loop {
-                        arguments.push(self.assignment()?);
-                        if self.take(&TokenKind::RightParen) {
-                            break;
-                        }
-                        if !self.take(&TokenKind::Comma) {
-                            return Err(JsError::syntax(
-                                self.current().start,
-                                "expected ',' or ')' after argument",
-                            ));
-                        }
-                    }
-                }
+                let arguments = self.arguments_after_left_paren()?;
                 expression = Expression::Call {
                     callee: Box::new(expression),
                     arguments,
@@ -967,6 +958,8 @@ impl Parser {
             TokenKind::Null => Ok(Expression::Literal(JsValue::Null)),
             TokenKind::Undefined => Ok(Expression::Literal(JsValue::Undefined)),
             TokenKind::Identifier(name) => Ok(Expression::Identifier(name)),
+            TokenKind::This => Ok(Expression::This),
+            TokenKind::New => self.new_expression(token.start),
             TokenKind::Function => {
                 let name = if let TokenKind::Identifier(name) = &self.current().kind {
                     let name = name.clone();
@@ -992,6 +985,77 @@ impl Parser {
             }
             TokenKind::Eof => Err(JsError::syntax(token.start, "unexpected end of script")),
             _ => Err(JsError::syntax(token.start, "expected expression")),
+        }
+    }
+
+    fn new_expression(&mut self, offset: usize) -> Result<Expression, JsError> {
+        if self.check(&TokenKind::Eof) {
+            return Err(JsError::syntax(offset, "expected constructor after 'new'"));
+        }
+
+        let mut callee = self.primary()?;
+        loop {
+            if self.take(&TokenKind::Dot) {
+                let token = self.advance().clone();
+                let Some(name) = identifier_name(&token.kind) else {
+                    return Err(JsError::syntax(
+                        token.start,
+                        "expected property name after '.'",
+                    ));
+                };
+                callee = Expression::Member {
+                    object: Box::new(callee),
+                    property: Box::new(Expression::Literal(JsValue::String(name))),
+                };
+                continue;
+            }
+
+            if self.take(&TokenKind::LeftBracket) {
+                let property = self.assignment()?;
+                if !self.take(&TokenKind::RightBracket) {
+                    return Err(JsError::syntax(
+                        self.current().start,
+                        "expected ']' after computed constructor property",
+                    ));
+                }
+                callee = Expression::Member {
+                    object: Box::new(callee),
+                    property: Box::new(property),
+                };
+                continue;
+            }
+            break;
+        }
+
+        let arguments = if self.take(&TokenKind::LeftParen) {
+            self.arguments_after_left_paren()?
+        } else {
+            Vec::new()
+        };
+
+        Ok(Expression::New {
+            callee: Box::new(callee),
+            arguments,
+        })
+    }
+
+    fn arguments_after_left_paren(&mut self) -> Result<Vec<Expression>, JsError> {
+        let mut arguments = Vec::new();
+        if self.take(&TokenKind::RightParen) {
+            return Ok(arguments);
+        }
+
+        loop {
+            arguments.push(self.assignment()?);
+            if self.take(&TokenKind::RightParen) {
+                return Ok(arguments);
+            }
+            if !self.take(&TokenKind::Comma) {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "expected ',' or ')' after argument",
+                ));
+            }
         }
     }
 
@@ -1154,6 +1218,8 @@ fn identifier_name(kind: &TokenKind) -> Option<String> {
         TokenKind::Continue => "continue",
         TokenKind::Function => "function",
         TokenKind::Return => "return",
+        TokenKind::This => "this",
+        TokenKind::New => "new",
         TokenKind::Throw => "throw",
         TokenKind::Try => "try",
         TokenKind::Catch => "catch",
@@ -1257,6 +1323,31 @@ mod tests {
             Statement::Expression(Expression::Call { .. })
         ));
         assert!(parse_script("return 1;").is_err());
+    }
+
+    #[test]
+    fn parses_this_and_new_constructor_expressions() {
+        let program =
+            parse_script("function Point(x) { this.x = x; } let point = new Point(7); point.x;")
+                .unwrap();
+        let Statement::FunctionDeclaration { body, .. } = &program.statements[0] else {
+            panic!("expected constructor declaration");
+        };
+        assert!(matches!(
+            body[0],
+            Statement::Expression(Expression::Assignment {
+                target: AssignmentTarget::Member { .. },
+                ..
+            })
+        ));
+        let Statement::Variable { declarations, .. } = &program.statements[1] else {
+            panic!("expected constructed value declaration");
+        };
+        assert!(matches!(
+            declarations[0].initializer,
+            Some(Expression::New { .. })
+        ));
+        assert!(parse_script("new").is_err());
     }
 
     #[test]

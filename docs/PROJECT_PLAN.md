@@ -329,9 +329,17 @@ Status: IN PROGRESS.
   switch break and continue-to-outer-loop use patched control targets with lexical-scope unwind.
 - DONE broader-control/parser pass raised the unchanged Test262 Parser v1 manifest to
   508/1983 (25.62%).
-- NEXT labels and for-in/for-of; fuller call/function semantics including this/new/arguments,
-  arrow/default/rest/destructuring forms; catchable runtime Error objects; per-iteration lexical
-  environments for for(let); and explicit VM call frames instead of native recursive calls.
+- DONE initial call/constructor/error-object semantics: method calls preserve receivers, bare calls
+  use the runtime global object for non-strict this, user functions receive array-like arguments,
+  new allocates from constructor.prototype and follows constructor return rules, function objects
+  own prototype objects with constructor links, and Error/TypeError/ReferenceError are built-in
+  constructors. Runtime Type/Reference failures inside try regions become catchable JavaScript
+  error objects while execution-limit failures remain engine-level guards.
+- DONE this/new/error parser pass raised the unchanged Test262 Parser v1 manifest to
+  523/1983 (26.37%).
+- NEXT labels and for-in/for-of; arrow/default/rest/destructuring forms; per-iteration lexical
+  environments for for(let); fuller built-ins/property descriptors; and explicit VM call frames
+  instead of native recursive calls.
 - LATER promises/microtasks.
 - LATER modules.
 - LATER standard built-ins.

@@ -1979,3 +1979,39 @@ This file is append-only project history.
   JavaScript Error objects and catchable runtime failures, modern function/parameter forms,
   per-iteration loop bindings, labels/for-in/of and explicit VM call frames.
 
+## 2026-10-07 - JavaScript this, constructors, arguments and Error objects
+
+- Added reserved `this` and `new` syntax plus owned AST/bytecode support for constructor calls.
+  Calls now distinguish ordinary invocation from member invocation so `obj.method()` preserves the
+  base object as the receiver instead of discarding it during property lookup.
+- Added a runtime global object used as non-strict `this` for bare calls and script-level `this`.
+  User-function environments receive an immutable this binding plus an array-like arguments object
+  with indexed entries and length.
+- Every user function now owns an ordinary prototype object with a constructor backlink. `new`
+  resolves constructor.prototype, allocates a receiver, calls the function with that receiver and
+  implements the JavaScript constructor return rule: returned objects replace the receiver while
+  primitive returns do not.
+- Added initial built-in Error, TypeError and ReferenceError constructors/prototypes with name,
+  message, prototype and constructor links. They work both as calls and with `new`.
+- Runtime ReferenceError/TypeError failures raised inside a try region are now materialized as
+  catchable JavaScript error objects. Explicit execution-limit failures remain engine-level guards
+  and intentionally cannot be neutralized from script.
+- Uncaught thrown Error-family objects now surface useful `Name: message` text instead of the old
+  generic `[object Object]` rendering.
+- Expanded op_js core coverage from 39 to 44 tests. New regressions cover parser/lexer this/new,
+  method receivers, global-this bare calls, arguments indexing/length, constructor prototype links,
+  constructor object-return semantics, built-in Error constructors and catchable runtime
+  TypeError/ReferenceError objects.
+- The unchanged Test262 Parser v1 manifest improved from 508/1983 (25.62%) to
+  523/1983 (26.37%). This remains a parse-expectation metric, not runtime Test262 conformance.
+- External compatibility refresh reconfirmed WPT Static v1 at 187/200 (93.50%) with the same
+  13 known failures and zero render errors.
+- Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace test
+  suite, native startup smoke, external compatibility refresh and optimized release build.
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 1,009,664 bytes,
+  SHA-256 `A02D5E283F92F303CD0E7EB27CBF0B4D4A0006F8C192475186440624B71B179E`.
+- Explicit VM call frames are still pending; user-function calls currently recurse through the
+  native Rust stack behind the temporary depth-64 guard. The next broad project pass shifts back to
+  static-web readiness: positioning/overflow/media/font/background/radius work and a wider WPT
+  subset, while M4 DOM bindings can begin in parallel once a narrow host boundary is defined.
+
