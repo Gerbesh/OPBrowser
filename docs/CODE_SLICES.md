@@ -569,16 +569,20 @@ JavaScript source
   -> AST parser
   -> bytecode compiler
   -> stack VM
-  -> primitive completion value / persistent global binding
+  -> primitive or ObjectId completion value / persistent global binding
+  -> runtime-owned object heap -> own properties -> prototype chain
 ```
 
 The implemented subset covers scalar literals, comma-separated let/const/var declarations,
 assignment, unary/arithmetic/comparison/equality operators, string concatenation, short-circuit
-logical operators, blocks, if/else, while and break/continue. Control flow is compiled to patched
-jumps and executed by an instruction-pointer VM with a bounded instruction budget. Binding storage
-is still global; full lexical block environments begin with the functions/closures slice.
-The parse-only Test262 probe moved from 364/1983 (18.36%) to 391/1983 (19.72%) on the unchanged
-manifest. It deliberately does not claim runtime conformance.
+logical operators, blocks, if/else, while and break/continue. It now also has reference-identity
+objects, object/array literals, dot/computed property access and writes, array holes/length growth,
+and an initial prototype chain including object-literal/__proto__ behavior and cycle rejection.
+Control flow is compiled to patched jumps and executed by an instruction-pointer VM with bounded
+instruction and object budgets. Binding storage is still global; full lexical block environments
+begin with the functions/closures slice. The parse-only Test262 probe moved from 364/1983 (18.36%)
+to 391/1983 (19.72%) and then 408/1983 (20.57%) on the unchanged manifest. It deliberately does
+not claim runtime conformance.
 
 Planned continuation:
 

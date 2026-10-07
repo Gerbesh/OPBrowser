@@ -1,6 +1,6 @@
 use crate::{
-    BinaryOp, Expression, JsError, JsValue, LogicalOp, Program, Statement, UnaryOp, VariableKind,
-    parse_script,
+    AssignmentTarget, BinaryOp, Expression, JsError, JsValue, LogicalOp, Program, Statement,
+    UnaryOp, VariableKind, parse_script,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,6 +14,10 @@ pub(crate) enum Instruction {
     Load(String),
     Declare { name: String, mutable: bool },
     Assign(String),
+    CreateObject(Vec<bool>),
+    CreateArray(Vec<bool>),
+    GetProperty,
+    SetProperty,
     Unary(UnaryOp),
     Binary(BinaryOp),
     Pop,
@@ -155,6 +159,34 @@ impl Compiler {
         match expression {
             Expression::Literal(value) => self.code.push(Instruction::Push(value.clone())),
             Expression::Identifier(name) => self.code.push(Instruction::Load(name.clone())),
+            Expression::ObjectLiteral(properties) => {
+                let mut prototype_setters = Vec::with_capacity(properties.len());
+                for property in properties {
+                    self.code
+                        .push(Instruction::Push(JsValue::String(property.key.clone())));
+                    self.expression(&property.value);
+                    prototype_setters.push(property.prototype_setter);
+                }
+                self.code.push(Instruction::CreateObject(prototype_setters));
+            }
+            Expression::ArrayLiteral(elements) => {
+                let mut present = Vec::with_capacity(elements.len());
+                for element in elements {
+                    if let Some(element) = element {
+                        self.expression(element);
+                        present.push(true);
+                    } else {
+                        self.code.push(Instruction::Push(JsValue::Undefined));
+                        present.push(false);
+                    }
+                }
+                self.code.push(Instruction::CreateArray(present));
+            }
+            Expression::Member { object, property } => {
+                self.expression(object);
+                self.expression(property);
+                self.code.push(Instruction::GetProperty);
+            }
             Expression::Unary { op, argument } => {
                 self.expression(argument);
                 self.code.push(Instruction::Unary(*op));
@@ -175,10 +207,18 @@ impl Compiler {
                 let end = self.code.len();
                 self.patch_jump(short_circuit, end);
             }
-            Expression::Assignment { name, value } => {
-                self.expression(value);
-                self.code.push(Instruction::Assign(name.clone()));
-            }
+            Expression::Assignment { target, value } => match target {
+                AssignmentTarget::Identifier(name) => {
+                    self.expression(value);
+                    self.code.push(Instruction::Assign(name.clone()));
+                }
+                AssignmentTarget::Member { object, property } => {
+                    self.expression(object);
+                    self.expression(property);
+                    self.expression(value);
+                    self.code.push(Instruction::SetProperty);
+                }
+            },
         }
     }
 
@@ -240,5 +280,32 @@ mod tests {
         assert!(script.code.iter().any(
             |instruction| matches!(instruction, Instruction::Jump(target) if *target != usize::MAX)
         ));
+    }
+
+    #[test]
+    fn compiles_object_array_and_member_operations() {
+        let script =
+            compile_script("let a = {x: 1}; let b = [a.x,, 3]; b[0] = b[2]; b.length").unwrap();
+        assert!(
+            script
+                .code
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CreateObject(flags) if flags == &[false]))
+        );
+        assert!(script.code.iter().any(
+            |instruction| matches!(instruction, Instruction::CreateArray(present) if present == &[true, false, true])
+        ));
+        assert!(
+            script
+                .code
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::GetProperty))
+        );
+        assert!(
+            script
+                .code
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::SetProperty))
+        );
     }
 }

@@ -1,3 +1,6 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ObjectId(pub(crate) usize);
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsValue {
     Undefined,
@@ -5,6 +8,7 @@ pub enum JsValue {
     Boolean(bool),
     Number(f64),
     String(String),
+    Object(ObjectId),
 }
 
 impl JsValue {
@@ -14,6 +18,7 @@ impl JsValue {
             Self::Boolean(value) => *value,
             Self::Number(value) => *value != 0.0 && !value.is_nan(),
             Self::String(value) => !value.is_empty(),
+            Self::Object(_) => true,
         }
     }
 
@@ -32,6 +37,7 @@ impl JsValue {
                     trimmed.parse().unwrap_or(f64::NAN)
                 }
             }
+            Self::Object(_) => f64::NAN,
         }
     }
 
@@ -46,6 +52,7 @@ impl JsValue {
             Self::Number(value) if value.fract() == 0.0 => format!("{value:.0}"),
             Self::Number(value) => value.to_string(),
             Self::String(value) => value.clone(),
+            Self::Object(_) => "[object Object]".into(),
         }
     }
 }

@@ -1870,3 +1870,37 @@ This file is append-only project history.
   work is objects/properties/prototypes, then functions/calls/lexical environments; those are the
   main blockers before DOM scripting can be wired honestly.
 
+## 2026-10-07 - JavaScript object heap, members and prototype-chain pass
+
+- Extended the lexer/parser with object and array literal punctuation, dot/computed member access,
+  member assignment targets, shorthand object properties, numeric/string property names, sparse
+  array elements and trailing commas.
+- Added stable `ObjectId` reference values backed by a runtime-owned heap instead of embedding or
+  copying property maps in `JsValue`. Strict equality now preserves object identity across globals
+  and assignments.
+- Added bytecode instructions for object/array allocation plus property reads/writes. Member
+  assignment preserves JavaScript evaluation order and leaves the assigned value as the expression
+  completion.
+- Added own string-keyed properties, prototype-chain lookup, object-literal `__proto__` prototype
+  setters, later `__proto__` mutation and cycle rejection. Duplicate literal prototype setters are
+  rejected as syntax errors while shorthand `{__proto__}` remains an ordinary shadowing property.
+- Added sparse arrays on the same heap model with numeric property keys, an own `length` property
+  and automatic length growth when a higher array index is assigned. Primitive boxing remains
+  partial; string `.length` is implemented using ECMAScript UTF-16 code-unit length.
+- Kept allocation bounded with a 100,000-object runtime budget while garbage collection remains a
+  later milestone.
+- Expanded op_js core coverage from 14 to 22 tests. New regressions cover object identity,
+  own/computed properties, assignment completion values, inherited lookup, prototype mutation and
+  cycles, sparse arrays, dynamic length growth, UTF-16 string length, nullish property errors and
+  the special-vs-shorthand `__proto__` grammar.
+- The unchanged Test262 Parser v1 manifest improved from 391/1983 (19.72%) to
+  408/1983 (20.57%). This is still a parse-expectation metric, not runtime Test262 conformance.
+- External compatibility refresh reconfirmed WPT Static v1 at 187/200 (93.50%) with 13 known
+  failures and zero render errors.
+- Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace test
+  suite, native startup smoke, external compatibility refresh and optimized release build.
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 1,009,664 bytes,
+  SHA-256 `7F3FA3241F783E8AB8FE3B8F5F24596411AB5603DA1BEB99F7FEA50CCA5766E3`.
+- Page scripting is still not wired. The next JS milestone is functions/calls with lexical
+  environments and closures, followed by exceptions and then honest `<script>` integration.
+

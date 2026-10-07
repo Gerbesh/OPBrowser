@@ -33,6 +33,22 @@ pub struct VariableDeclarator {
     pub initializer: Option<Expression>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectProperty {
+    pub key: String,
+    pub value: Expression,
+    pub prototype_setter: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AssignmentTarget {
+    Identifier(String),
+    Member {
+        object: Box<Expression>,
+        property: Box<Expression>,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VariableKind {
     Let,
@@ -44,6 +60,12 @@ pub enum VariableKind {
 pub enum Expression {
     Literal(JsValue),
     Identifier(String),
+    ObjectLiteral(Vec<ObjectProperty>),
+    ArrayLiteral(Vec<Option<Expression>>),
+    Member {
+        object: Box<Expression>,
+        property: Box<Expression>,
+    },
     Unary {
         op: UnaryOp,
         argument: Box<Expression>,
@@ -59,7 +81,7 @@ pub enum Expression {
         right: Box<Expression>,
     },
     Assignment {
-        name: String,
+        target: AssignmentTarget,
         value: Box<Expression>,
     },
 }
@@ -271,15 +293,21 @@ impl Parser {
             return Ok(left);
         }
 
-        let Expression::Identifier(name) = left else {
-            return Err(JsError::syntax(
-                self.previous().start,
-                "invalid assignment target",
-            ));
+        let target = match left {
+            Expression::Identifier(name) => AssignmentTarget::Identifier(name),
+            Expression::Member { object, property } => {
+                AssignmentTarget::Member { object, property }
+            }
+            _ => {
+                return Err(JsError::syntax(
+                    self.previous().start,
+                    "invalid assignment target",
+                ));
+            }
         };
         let value = self.assignment()?;
         Ok(Expression::Assignment {
-            name,
+            target,
             value: Box::new(value),
         })
     }
@@ -424,7 +452,44 @@ impl Parser {
                 argument: Box::new(self.unary()?),
             });
         }
-        self.primary()
+        self.member()
+    }
+
+    fn member(&mut self) -> Result<Expression, JsError> {
+        let mut expression = self.primary()?;
+        loop {
+            if self.take(&TokenKind::Dot) {
+                let token = self.advance().clone();
+                let Some(name) = identifier_name(&token.kind) else {
+                    return Err(JsError::syntax(
+                        token.start,
+                        "expected property name after '.'",
+                    ));
+                };
+                expression = Expression::Member {
+                    object: Box::new(expression),
+                    property: Box::new(Expression::Literal(JsValue::String(name))),
+                };
+                continue;
+            }
+
+            if self.take(&TokenKind::LeftBracket) {
+                let property = self.assignment()?;
+                if !self.take(&TokenKind::RightBracket) {
+                    return Err(JsError::syntax(
+                        self.current().start,
+                        "expected ']' after computed property",
+                    ));
+                }
+                expression = Expression::Member {
+                    object: Box::new(expression),
+                    property: Box::new(property),
+                };
+                continue;
+            }
+
+            return Ok(expression);
+        }
     }
 
     fn primary(&mut self) -> Result<Expression, JsError> {
@@ -437,6 +502,8 @@ impl Parser {
             TokenKind::Null => Ok(Expression::Literal(JsValue::Null)),
             TokenKind::Undefined => Ok(Expression::Literal(JsValue::Undefined)),
             TokenKind::Identifier(name) => Ok(Expression::Identifier(name)),
+            TokenKind::LeftBrace => self.object_literal(),
+            TokenKind::LeftBracket => self.array_literal(),
             TokenKind::LeftParen => {
                 let expression = self.assignment()?;
                 if !self.take(&TokenKind::RightParen) {
@@ -450,6 +517,99 @@ impl Parser {
             TokenKind::Eof => Err(JsError::syntax(token.start, "unexpected end of script")),
             _ => Err(JsError::syntax(token.start, "expected expression")),
         }
+    }
+
+    fn object_literal(&mut self) -> Result<Expression, JsError> {
+        let mut properties = Vec::new();
+        let mut saw_prototype_setter = false;
+        if self.take(&TokenKind::RightBrace) {
+            return Ok(Expression::ObjectLiteral(properties));
+        }
+
+        loop {
+            let token = self.advance().clone();
+            let (key, shorthand) = match token.kind {
+                TokenKind::Identifier(name) => (name.clone(), Some(name)),
+                TokenKind::String(name) => (name, None),
+                TokenKind::Number(value) => (JsValue::Number(value).to_js_string(), None),
+                kind => {
+                    let Some(name) = identifier_name(&kind) else {
+                        return Err(JsError::syntax(
+                            token.start,
+                            "expected object property name",
+                        ));
+                    };
+                    (name, None)
+                }
+            };
+
+            let has_colon = self.take(&TokenKind::Colon);
+            let value = if has_colon {
+                self.assignment()?
+            } else if let Some(name) = shorthand {
+                Expression::Identifier(name)
+            } else {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "expected ':' after object property name",
+                ));
+            };
+            let prototype_setter = has_colon && key == "__proto__";
+            if prototype_setter {
+                if saw_prototype_setter {
+                    return Err(JsError::syntax(
+                        token.start,
+                        "duplicate __proto__ fields are not allowed in object literals",
+                    ));
+                }
+                saw_prototype_setter = true;
+            }
+            properties.push(ObjectProperty {
+                key,
+                value,
+                prototype_setter,
+            });
+
+            if self.take(&TokenKind::RightBrace) {
+                break;
+            }
+            if !self.take(&TokenKind::Comma) {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "expected ',' or '}' after object property",
+                ));
+            }
+            if self.take(&TokenKind::RightBrace) {
+                break;
+            }
+        }
+
+        Ok(Expression::ObjectLiteral(properties))
+    }
+
+    fn array_literal(&mut self) -> Result<Expression, JsError> {
+        let mut elements = Vec::new();
+        loop {
+            if self.take(&TokenKind::RightBracket) {
+                break;
+            }
+            if self.take(&TokenKind::Comma) {
+                elements.push(None);
+                continue;
+            }
+
+            elements.push(Some(self.assignment()?));
+            if self.take(&TokenKind::RightBracket) {
+                break;
+            }
+            if !self.take(&TokenKind::Comma) {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "expected ',' or ']' after array element",
+                ));
+            }
+        }
+        Ok(Expression::ArrayLiteral(elements))
     }
 
     fn optional_semicolon(&mut self) {
@@ -488,6 +648,26 @@ impl Parser {
 
 fn same_variant(left: &TokenKind, right: &TokenKind) -> bool {
     std::mem::discriminant(left) == std::mem::discriminant(right)
+}
+
+fn identifier_name(kind: &TokenKind) -> Option<String> {
+    let name = match kind {
+        TokenKind::Identifier(name) => return Some(name.clone()),
+        TokenKind::Let => "let",
+        TokenKind::Const => "const",
+        TokenKind::Var => "var",
+        TokenKind::If => "if",
+        TokenKind::Else => "else",
+        TokenKind::While => "while",
+        TokenKind::Break => "break",
+        TokenKind::Continue => "continue",
+        TokenKind::True => "true",
+        TokenKind::False => "false",
+        TokenKind::Null => "null",
+        TokenKind::Undefined => "undefined",
+        _ => return None,
+    };
+    Some(name.to_owned())
 }
 
 #[cfg(test)]
@@ -529,6 +709,39 @@ mod tests {
         };
         assert_eq!(declarations.len(), 2);
         assert!(matches!(program.statements[1], Statement::While { .. }));
+    }
+
+    #[test]
+    fn parses_objects_arrays_members_and_member_assignment() {
+        let program = parse_script(
+            "let key = 'x'; let object = {x: 1, key, 3: 'three'}; let array = [object.x,, object[key]]; object[key] = array[0]; object.x",
+        )
+        .unwrap();
+        assert!(matches!(program.statements[1], Statement::Variable { .. }));
+        let Statement::Variable { declarations, .. } = &program.statements[2] else {
+            panic!("expected array declaration");
+        };
+        assert!(matches!(
+            declarations[0].initializer,
+            Some(Expression::ArrayLiteral(_))
+        ));
+        assert!(matches!(
+            program.statements[3],
+            Statement::Expression(Expression::Assignment {
+                target: AssignmentTarget::Member { .. },
+                ..
+            })
+        ));
+        assert!(matches!(
+            program.statements[4],
+            Statement::Expression(Expression::Member { .. })
+        ));
+    }
+
+    #[test]
+    fn duplicate_proto_setters_are_rejected_but_shorthand_is_ordinary() {
+        assert!(parse_script("let o = {__proto__: null, '__proto__': null};").is_err());
+        assert!(parse_script("let __proto__ = 1; let o = {__proto__};").is_ok());
     }
 
     #[test]

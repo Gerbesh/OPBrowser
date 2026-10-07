@@ -13,10 +13,10 @@ mod value;
 pub use error::{JsError, JsErrorKind};
 pub use lexer::{Token, TokenKind, tokenize};
 pub use parser::{
-    BinaryOp, Expression, LogicalOp, Program, Statement, UnaryOp, VariableDeclarator, VariableKind,
-    parse_script,
+    AssignmentTarget, BinaryOp, Expression, LogicalOp, ObjectProperty, Program, Statement, UnaryOp,
+    VariableDeclarator, VariableKind, parse_script,
 };
 pub use runtime::JsRuntime;
-pub use value::JsValue;
+pub use value::{JsValue, ObjectId};
 
 pub use bytecode::{CompiledScript, compile_script};

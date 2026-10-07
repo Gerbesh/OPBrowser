@@ -135,18 +135,33 @@ classDiagram
 
     class JsRuntime {
         -globals
+        -heap JsObject[]
+        -object_prototype ObjectId
+        -array_prototype ObjectId
         -instruction_budget
+        -object_budget
         +new()
         +with_instruction_budget(limit)
         +eval_script(source) JsValue
         +execute(compiled) JsValue
         +global(name) JsValue
+        +get_property(target, key) JsValue
+    }
+    class JsObject {
+        properties
+        prototype ObjectId?
+        kind Ordinary / Array
+    }
+    class ObjectId {
+        opaque heap index
     }
     class CompiledScript {
         code Instruction[]
     }
     class Instruction {
         Push / Load / Declare / Assign
+        CreateObject / CreateArray
+        GetProperty / SetProperty
         Unary / Binary / Pop
         Jump / JumpIfFalse / JumpIfTrue
         SetCompletion / Halt
@@ -452,6 +467,8 @@ classDiagram
 
     Engine --> NavigationState
     JsRuntime --> CompiledScript : compile / execute
+    JsRuntime --> JsObject : owns bounded heap
+    JsObject --> ObjectId : prototype reference
     CompiledScript --> Instruction : ordered bytecode with patched jump targets
     NavigationState --> NavigationEntry
     Engine --> NetworkContext

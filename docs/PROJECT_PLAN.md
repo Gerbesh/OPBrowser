@@ -310,9 +310,14 @@ Status: IN PROGRESS.
   VM; a bounded instruction budget aborts runaway loops instead of hanging the renderer.
 - DONE second parser-measurement pass raised the unchanged Test262 Parser v1 manifest from
   364/1983 (18.36%) to 391/1983 (19.72%).
-- NEXT values/objects/prototypes beyond the current primitive JsValue set.
-- LATER garbage collector.
-- NEXT functions/closures and lexical environments.
+- DONE initial reference-object heap with stable ObjectId identity, own string-keyed properties,
+  dot/computed member access and assignment, ordinary object/array literals, array holes/length
+  growth and prototype-chain lookup/mutation with cycle rejection.
+- DONE object/prototype parser pass raised the same Test262 Parser v1 manifest again to
+  408/1983 (20.57%).
+- LATER garbage collector; the current bounded object heap intentionally retains allocations for
+  the runtime lifetime.
+- NEXT functions/calls, closures and lexical environments.
 - NEXT exceptions plus broader control flow (for/do/switch/labels).
 - LATER promises/microtasks.
 - LATER modules.

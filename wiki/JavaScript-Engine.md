@@ -8,16 +8,26 @@ interpreter. The current language subset covers scalar literals, `let`/`const`/`
 declarations including comma-separated declarators, identifier load/assignment, unary
 `+`/`-`/`!`, arithmetic, comparisons, loose/strict equality, string concatenation,
 short-circuit `&&`/`||`, blocks, `if/else`, `while`, `break` and `continue`.
+It also supports object and array literals, shorthand data properties, dot/computed member access,
+member assignment, sparse array slots, dynamic index-driven array length growth and reference
+identity through runtime-owned `ObjectId` handles.
 
 Control flow compiles to patched bytecode jumps and the VM now runs with an explicit instruction
 pointer. Every execution has an instruction budget, so a runaway loop is terminated with an
 execution-limit error instead of monopolizing the renderer thread. Globals persist in one
 `JsRuntime`; `const` bindings reject assignment.
 
+Objects live in a bounded runtime heap instead of being copied inside `JsValue`. Ordinary object
+lookups walk an explicit prototype chain; object-literal `__proto__` setters and later
+`__proto__` assignments can change that chain while cycle creation is rejected. Arrays currently
+reuse the same property store with indexed keys and an own `length` property. String `.length`
+uses UTF-16 code units.
+
 This is still not page scripting. Block lexical environments are not implemented yet, so the
-current declaration storage is global rather than full ECMAScript scope semantics. Objects and
-prototypes, functions/closures, exceptions, garbage collection, built-ins, promises/modules and
-DOM bindings are also still absent.
+current declaration storage is global rather than full ECMAScript scope semantics. Property
+descriptors/accessors, full array-length mutation rules, primitive boxing/ToPrimitive, functions,
+closures, exceptions, garbage collection, built-ins, promises/modules and DOM bindings are still
+absent.
 
 ## Test262 measurement
 
@@ -38,9 +48,10 @@ For the combined local subsystem check use:
 ```
 
 The unchanged Test262 Parser v1 subset moved from **364/1983 (18.36%)** to
-**391/1983 (19.72%)** after the initial control-flow pass. This remains a parse-expectation metric,
-not runtime conformance.
+**391/1983 (19.72%)** after the initial control-flow pass and then to
+**408/1983 (20.57%)** after the first object/array/member pass. This remains a parse-expectation
+metric, not runtime conformance.
 
-The next JS work is objects/properties/prototypes followed by functions, lexical environments and
-calls. Those are the main blockers both for useful page scripting and for substantially broader
+The next JS work is functions/calls with real lexical environments and closures, then exceptions.
+Those are now the main blockers both for useful page scripting and for substantially broader
 Test262 parsing/execution.
