@@ -18,10 +18,11 @@ are regression coverage, not WPT or Test262 percentages.
 ## Versioned external subsets
 
 Pinned revisions live in `compat/upstream.env`. The actual test lists are committed in
-`compat/test262-parser-v1.txt` and `compat/wpt-static-v1.tsv`, so two runs of the same commit
-measure the same tests even if upstream repositories later change.
+`compat/test262-parser-v1.txt`, `compat/wpt-static-v1.tsv` and
+`compat/wpt-positioning-v1.tsv`, so two runs of the same commit measure the same tests even if
+upstream repositories later change.
 
-Run both external subsets with local checkouts:
+Run the external subsets with local checkouts:
 
 ```powershell
 .\tools\compatibility.ps1 `
@@ -60,6 +61,31 @@ Measured progress on the unchanged v1 manifest:
 - current result: 523 passed, 1,460 failed expectations, 17 module tests skipped.
 
 This must never be described as "26.37% JavaScript support" or full ECMAScript conformance.
+
+### WPT positioning v1
+
+The positioning v1 manifest adds 100 deterministic static reftests from CSS2 positioning/visual
+formatting and CSS Positioned Layout at the same pinned WPT revision. It intentionally includes
+families OPBrowser does not support yet, including sticky positioning, vertical writing modes and
+multicol interactions, so the score is a useful readiness baseline rather than a flattering subset.
+
+Initial baseline after the first absolute/fixed/relative layout pass:
+
+- 100 reftests checked;
+- 18 passed;
+- 82 failed;
+- 0 render/infrastructure errors;
+- **18.00% WPT Positioning v1**.
+
+The first implementation recognizes `position:absolute|fixed`, removes those boxes from normal
+flow, uses the nearest positioned ancestor or viewport as the initial containing block, preserves
+relative-position visual offsets without moving following flow, and supports px horizontal/vertical
+insets plus percentage horizontal insets. Sticky positioning, percentage vertical insets, complete
+CSS2 abspos overconstraint/auto sizing, inline containing blocks, stacking contexts, vertical
+writing modes and multicol remain open and are deliberately visible in this metric.
+
+This new metric does not replace WPT Static v1. The older 200-test manifest remains frozen so its
+43.00% -> 93.50% history stays directly comparable.
 
 ### WPT static v1
 
@@ -105,8 +131,9 @@ The CI workflow has separate responsibilities:
 
 1. `Windows / Rust` gates formatting, generated data, Clippy, workspace tests, native smoke
    tests and the release build.
-2. `Compatibility / WPT + Test262` fetches only the pinned upstream revisions, runs the two
-   versioned external subsets and uploads the JSON/Markdown results as a workflow artifact.
+2. `Compatibility / WPT + Test262` fetches only the pinned upstream revisions, runs Test262 Parser
+   v1 plus WPT Static v1 and WPT Positioning v1, and uploads the JSON/Markdown results as a workflow
+   artifact.
 3. After a successful push to `main`, `Publish compatibility badges` copies only the badge
    endpoint JSON and summary to the `metrics` branch. Pull-request jobs remain read-only.
 
@@ -128,7 +155,7 @@ See `compat/README.md` for the exact generator command.
 
 The next compatibility stages are:
 
-- expand static WPT categories from measured failures;
+- expand static WPT categories from measured failures, with positioning now tracked separately;
 - add Test262 runtime execution once the ECMAScript runtime/harness surface exists;
 - add WPT testharness.js support after DOM scripting and required Web APIs exist;
 - eventually add a full browser automation adapter instead of presenting a selected static

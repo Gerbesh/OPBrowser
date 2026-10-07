@@ -379,6 +379,28 @@ in this initial implementation, and vertical padding/borders expand safe line ge
 avoid paint overlap. Nested decorated stacks and replaced image own boxes now share this
 formatter; sliced edge treatment and complete CSS inline vertical positioning remain later.
 
+Initial positioned-layout slice:
+
+```text
+computed position + inset edges
+  -> normal-flow block geometry / positioned-ancestor stack
+  -> relative: retain flow slot, translate newly emitted decoration/text/image output
+  -> absolute: remove from normal flow, resolve against nearest positioned ancestor
+  -> fixed: remove from normal flow, resolve against viewport
+  -> existing BoxDecoration/TextBox/ImageBox
+  -> normal display-list / native paint
+```
+
+The first pass supports `position:static|relative|absolute|fixed`. Relative left/right and px
+top/bottom offsets move visual output while preserving the original flow contribution.
+Absolute/fixed blocks do not advance normal flow. Absolute positioning uses the nearest positioned
+ancestor's initial padding-box geometry; fixed positioning uses viewport coordinates. Horizontal
+percentage insets resolve against containing width; px `top` is applied. Bottom-based abs/fixed
+placement and vertical percentage insets still need containing-block heights. Sticky positioning,
+inline containing-block rules, full CSS2 auto/overconstraint equations and stacking contexts remain
+later work. A separate pinned WPT Positioning v1 subset intentionally includes those unsupported
+families and starts at 18/100 (18.00%), so the older 187/200 WPT Static score cannot hide them.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus

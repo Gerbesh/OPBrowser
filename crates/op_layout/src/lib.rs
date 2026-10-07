@@ -236,6 +236,124 @@ mod tests {
     use super::*;
 
     #[test]
+    fn absolute_blocks_use_nearest_positioned_padding_box_and_leave_flow_unchanged() {
+        let document = op_html::parse_document(
+            "<style>
+               body { margin:0 }
+               #parent { position:relative; width:200px; height:100px; padding:10px; margin:0; background:red }
+               #absolute { position:absolute; left:30px; top:20px; width:40px; height:30px; margin:0; background:blue }
+               #flow { width:50px; height:20px; margin:0; background:green }
+             </style>
+             <div id=parent><div id=absolute></div><div id=flow></div></div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let page = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let parent = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::RED.into())
+            .unwrap();
+        let absolute = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::BLUE.into())
+            .unwrap();
+        let flow = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::GREEN.into())
+            .unwrap();
+
+        assert_eq!(
+            (parent.x, parent.y, parent.width, parent.height),
+            (32, 28, 220, 120)
+        );
+        assert_eq!(
+            (absolute.x, absolute.y, absolute.width, absolute.height),
+            (62, 48, 40, 30)
+        );
+        assert_eq!((flow.x, flow.y, flow.width, flow.height), (42, 38, 50, 20));
+    }
+
+    #[test]
+    fn fixed_blocks_use_viewport_coordinates_and_do_not_consume_flow_space() {
+        let document = op_html::parse_document(
+            "<style>
+               body { margin:0 }
+               #fixed { position:fixed; left:10px; top:15px; width:40px; height:20px; margin:0; background:blue }
+               #flow { width:50px; height:20px; margin:0; background:green }
+             </style>
+             <div id=fixed></div><div id=flow></div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let page = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let fixed = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::BLUE.into())
+            .unwrap();
+        let flow = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::GREEN.into())
+            .unwrap();
+
+        assert_eq!(
+            (fixed.x, fixed.y, fixed.width, fixed.height),
+            (10, 15, 40, 20)
+        );
+        assert_eq!((flow.x, flow.y, flow.width, flow.height), (32, 28, 50, 20));
+    }
+
+    #[test]
+    fn relative_blocks_shift_visually_without_moving_following_flow() {
+        let document = op_html::parse_document(
+            "<style>
+               body { margin:0 }
+               #relative { position:relative; left:15px; top:7px; width:40px; height:20px; margin:0; background:blue }
+               #after { width:40px; height:20px; margin:0; background:green }
+             </style>
+             <div id=relative></div><div id=after></div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let page = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let relative = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::BLUE.into())
+            .unwrap();
+        let after = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::GREEN.into())
+            .unwrap();
+
+        assert_eq!((relative.x, relative.y), (47, 35));
+        assert_eq!((after.x, after.y), (32, 48));
+    }
+
+    #[test]
     fn block_dom_images_use_intrinsic_width_auto_margins_and_collapsed_vertical_margins() {
         let document = op_html::parse_document(
             "<style>p { width:200px } img { display:block; padding:4px; border:2px solid red; background:blue } #first { margin:0 auto 20px } #second { width:50%; height:40px; box-sizing:border-box; margin:12px 10px 5px auto }</style><p><a href=next.html><img id=first></a><img id=second>Tail</p>",

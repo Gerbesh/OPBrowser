@@ -35,6 +35,8 @@ pub enum Display {
 pub enum Position {
     Static,
     Relative,
+    Absolute,
+    Fixed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2000,6 +2002,8 @@ fn parse_position(tokens: &[TokenKind]) -> Option<Specified<Position>> {
     match single_ident(tokens)?.to_ascii_lowercase().as_str() {
         "static" => Some(Specified::Value(Position::Static)),
         "relative" => Some(Specified::Value(Position::Relative)),
+        "absolute" => Some(Specified::Value(Position::Absolute)),
+        "fixed" => Some(Specified::Value(Position::Fixed)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
         "unset" => Some(Specified::Unset),
@@ -4877,6 +4881,28 @@ mod tests {
         assert_eq!(style.inset.left, Some(LengthPercentage::Percent(0.25)));
         assert_eq!(style.inset.right, Some(LengthPercentage::Px(4.0)));
         assert_eq!(style.inset.bottom, None);
+    }
+
+    #[test]
+    fn computes_absolute_and_fixed_position_keywords() {
+        let document = parse_document(
+            "<div id='absolute' style='position:absolute; top:12px; right:10%'></div>
+             <div id='fixed' style='position:fixed; left:8px; bottom:3px'></div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+
+        let absolute = computed
+            .style_for(find_by_id(&document, "absolute"))
+            .unwrap();
+        assert_eq!(absolute.position, Position::Absolute);
+        assert_eq!(absolute.inset.top, Some(LengthPercentage::Px(12.0)));
+        assert_eq!(absolute.inset.right, Some(LengthPercentage::Percent(0.10)));
+
+        let fixed = computed.style_for(find_by_id(&document, "fixed")).unwrap();
+        assert_eq!(fixed.position, Position::Fixed);
+        assert_eq!(fixed.inset.left, Some(LengthPercentage::Px(8.0)));
+        assert_eq!(fixed.inset.bottom, Some(LengthPercentage::Px(3.0)));
     }
 
     #[test]

@@ -5,8 +5,9 @@ use super::*;
 use op_css::{
     BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide, Clear,
     ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Display, FloatSide,
-    FontStyle as CssFontStyle, LengthPercentage, MarginEdges, MarginValue, PaddingEdges,
-    PseudoElement, TableLayout, TextAlign, TextTransform, VerticalAlign, Visibility, WhiteSpace,
+    FontStyle as CssFontStyle, InsetEdges, LengthPercentage, MarginEdges, MarginValue,
+    PaddingEdges, Position, PseudoElement, TableLayout, TextAlign, TextTransform, VerticalAlign,
+    Visibility, WhiteSpace,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -36,9 +37,11 @@ pub(super) fn layout(
         computed_styles,
         measurer,
         inline_boxes: InlineBoxes::default(),
+        viewport_width,
         width: (viewport_width - 64).max(160),
         y: 28,
         pending_margin: None,
+        positioning_stack: Vec::new(),
         block_epoch: 0,
         floats: Vec::new(),
         decorations: Vec::new(),
@@ -82,9 +85,11 @@ struct Context<'a, 'm> {
     computed_styles: &'a ComputedStyleMap,
     measurer: &'m mut dyn TextMeasurer,
     inline_boxes: InlineBoxes,
+    viewport_width: i32,
     width: i32,
     y: i32,
     pending_margin: Option<i32>,
+    positioning_stack: Vec<PositioningContext>,
     block_epoch: usize,
     floats: Vec<FloatBox>,
     decorations: Vec<BoxDecoration>,
@@ -132,6 +137,20 @@ struct FloatBox {
     side: FloatSide,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct PositioningContext {
+    x: i32,
+    y: i32,
+    width: i32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OutputStart {
+    decorations: usize,
+    text: usize,
+    images: usize,
+}
+
 impl FloatBox {
     fn right(self) -> i32 {
         self.x.saturating_add(self.width)
@@ -160,6 +179,8 @@ struct Style {
     inline: InlineStyle,
     text_align: TextAlign,
     vertical_align: VerticalAlign,
+    position: Position,
+    inset: InsetEdges,
     float_side: FloatSide,
     clear: Clear,
     margin: MarginEdges,
@@ -368,6 +389,149 @@ impl<'a> Context<'a, '_> {
         self.images_out.extend(lines.image_boxes);
     }
 
+    fn output_start(&self) -> OutputStart {
+        OutputStart {
+            decorations: self.decorations.len(),
+            text: self.text.len(),
+            images: self.images_out.len(),
+        }
+    }
+
+    fn translate_outputs_since(&mut self, start: OutputStart, dx: i32, dy: i32) {
+        if dx == 0 && dy == 0 {
+            return;
+        }
+        for decoration in &mut self.decorations[start.decorations..] {
+            decoration.x = decoration.x.saturating_add(dx);
+            decoration.y = decoration.y.saturating_add(dy);
+        }
+        for text in &mut self.text[start.text..] {
+            text.x = text.x.saturating_add(dx);
+            text.y = text.y.saturating_add(dy);
+        }
+        for image in &mut self.images_out[start.images..] {
+            image.x = image.x.saturating_add(dx);
+            image.y = image.y.saturating_add(dy);
+        }
+    }
+
+    fn viewport_positioning_context(&self) -> PositioningContext {
+        PositioningContext {
+            x: 0,
+            y: 0,
+            width: self.viewport_width.max(1),
+        }
+    }
+
+    fn current_positioning_context(&self) -> PositioningContext {
+        self.positioning_stack
+            .last()
+            .copied()
+            .unwrap_or_else(|| self.viewport_positioning_context())
+    }
+
+    fn positioned_element(
+        &mut self,
+        id: NodeId,
+        href: Option<&'a str>,
+        mut style: Style,
+        display: Display,
+        static_x: i32,
+    ) {
+        self.flush_pending_margin();
+        let saved_y = self.y;
+        let saved_margin = self.pending_margin.take();
+        let saved_floats = std::mem::take(&mut self.floats);
+
+        let positioning = if style.position == Position::Fixed {
+            self.viewport_positioning_context()
+        } else {
+            self.current_positioning_context()
+        };
+        let left = style
+            .inset
+            .left
+            .map(|value| resolve_length(value, positioning.width));
+        let right = style
+            .inset
+            .right
+            .map(|value| resolve_length(value, positioning.width));
+        let positioned_width = positioning
+            .width
+            .saturating_sub(left.unwrap_or(0))
+            .saturating_sub(right.unwrap_or(0))
+            .max(1);
+        let used = resolve_block_horizontal(style, positioned_width);
+        let containing_x = if let Some(left) = left {
+            positioning.x.saturating_add(left)
+        } else if let Some(right) = right {
+            positioning
+                .x
+                .saturating_add(positioning.width)
+                .saturating_sub(right)
+                .saturating_sub(used.border_width)
+                .saturating_sub(used.margin_left)
+        } else {
+            static_x
+        };
+
+        let static_y = saved_y;
+        self.y = style
+            .inset
+            .top
+            .and_then(resolve_vertical_position_inset)
+            .map_or(static_y, |top| positioning.y.saturating_add(top));
+        self.pending_margin = None;
+        style.float_side = FloatSide::None;
+        style.clear = Clear::None;
+
+        let tag = self
+            .document
+            .element(id)
+            .map(|element| element.tag_name.as_str())
+            .unwrap_or_default();
+        if matches!(display, Display::Table | Display::InlineTable) {
+            self.table(id, style, containing_x, positioned_width);
+        } else if tag == "img" {
+            let element = self.document.element(id);
+            let image = self.images.get(&id).cloned();
+            if image.is_some()
+                || element
+                    .and_then(|element| attribute(element, "alt"))
+                    .is_none_or(str::is_empty)
+            {
+                self.block_image(
+                    (id, None),
+                    href,
+                    style,
+                    image.as_ref(),
+                    (containing_x, positioned_width),
+                );
+            } else {
+                self.block(
+                    BlockContent::ImageAlt(id),
+                    href,
+                    style,
+                    containing_x,
+                    positioned_width,
+                );
+            }
+        } else {
+            self.block(
+                BlockContent::Element(id),
+                href,
+                style,
+                containing_x,
+                positioned_width,
+            );
+        }
+        self.flush_pending_margin();
+
+        self.y = saved_y;
+        self.pending_margin = saved_margin;
+        self.floats = saved_floats;
+    }
+
     fn block(
         &mut self,
         content: BlockContent,
@@ -392,6 +556,7 @@ impl<'a> Context<'a, '_> {
             return;
         }
 
+        let output_start = self.output_start();
         let establishes_bfc = matches!(
             display,
             Display::FlowRoot | Display::FlowRootListItem | Display::Flex | Display::InlineFlex
@@ -456,6 +621,18 @@ impl<'a> Context<'a, '_> {
             .saturating_add(used.border.top.width)
             .saturating_add(padding_top);
         let content_top = self.y;
+        let establishes_positioning = style.position != Position::Static;
+        if establishes_positioning {
+            self.positioning_stack.push(PositioningContext {
+                x: border_x.saturating_add(used.border.left.width),
+                y: border_y.saturating_add(used.border.top.width),
+                width: used
+                    .border_width
+                    .saturating_sub(used.border.left.width)
+                    .saturating_sub(used.border.right.width)
+                    .max(1),
+            });
+        }
 
         if let BlockContent::Element(id) = content
             && matches!(display, Display::Flex | Display::InlineFlex)
@@ -549,10 +726,18 @@ impl<'a> Context<'a, '_> {
         if let Some(index) = decoration {
             self.decorations[index].height = self.y.saturating_sub(border_y).max(0);
         }
+        if establishes_positioning {
+            self.positioning_stack.pop();
+        }
         if let Some(outer_floats) = outer_floats {
             self.floats = outer_floats;
         }
         self.pending_margin = Some(margin_bottom);
+
+        if style.position == Position::Relative {
+            let (dx, dy) = relative_position_offset(style, containing_width);
+            self.translate_outputs_since(output_start, dx, dy);
+        }
     }
 
     fn table(&mut self, id: NodeId, style: Style, containing_x: i32, containing_width: i32) {
@@ -626,9 +811,11 @@ impl<'a> Context<'a, '_> {
             computed_styles,
             measurer: &mut *self.measurer,
             inline_boxes: InlineBoxes::default(),
+            viewport_width: self.viewport_width,
             width: available,
             y: 0,
             pending_margin: None,
+            positioning_stack: Vec::new(),
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -703,9 +890,11 @@ impl<'a> Context<'a, '_> {
             computed_styles,
             measurer: &mut *self.measurer,
             inline_boxes: InlineBoxes::default(),
+            viewport_width: self.viewport_width,
             width: available,
             y: 0,
             pending_margin: None,
+            positioning_stack: Vec::new(),
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -946,9 +1135,11 @@ impl<'a> Context<'a, '_> {
             computed_styles,
             measurer: &mut *self.measurer,
             inline_boxes: InlineBoxes::default(),
+            viewport_width: self.viewport_width,
             width: containing_width.max(1),
             y: 0,
             pending_margin: None,
+            positioning_stack: Vec::new(),
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -2677,6 +2868,14 @@ impl<'a> Context<'a, '_> {
                     href
                 };
 
+                if matches!(current.position, Position::Absolute | Position::Fixed)
+                    && display != Display::Contents
+                {
+                    self.emit(items, inherited, containing_x, containing_width);
+                    self.positioned_element(id, href, current, display, containing_x);
+                    return;
+                }
+
                 if current.float_side != FloatSide::None
                     && display != Display::Contents
                     && tag != "img"
@@ -3875,6 +4074,31 @@ fn resolve_length(value: LengthPercentage, basis: i32) -> i32 {
     }
 }
 
+fn resolve_vertical_position_inset(value: LengthPercentage) -> Option<i32> {
+    match value {
+        LengthPercentage::Px(value) => Some(bounded_round(value)),
+        LengthPercentage::Percent(_) => None,
+    }
+}
+
+fn relative_position_offset(style: Style, containing_width: i32) -> (i32, i32) {
+    let dx = if let Some(left) = style.inset.left {
+        resolve_length(left, containing_width)
+    } else if let Some(right) = style.inset.right {
+        -resolve_length(right, containing_width)
+    } else {
+        0
+    };
+    let dy = if let Some(top) = style.inset.top.and_then(resolve_vertical_position_inset) {
+        top
+    } else if let Some(bottom) = style.inset.bottom.and_then(resolve_vertical_position_inset) {
+        -bottom
+    } else {
+        0
+    };
+    (dx, dy)
+}
+
 fn bounded_round(value: f32) -> i32 {
     value.round().clamp(-1_000_000.0, 1_000_000.0) as i32
 }
@@ -4014,6 +4238,8 @@ fn computed_style(style: ComputedStyle) -> Style {
         },
         text_align: style.text_align,
         vertical_align: style.vertical_align,
+        position: style.position,
+        inset: style.inset,
         float_side: style.float_side,
         clear: style.clear,
         margin: style.margin,
@@ -4161,6 +4387,8 @@ fn default_style() -> Style {
         },
         text_align: TextAlign::Start,
         vertical_align: VerticalAlign::Baseline,
+        position: Position::Static,
+        inset: InsetEdges::AUTO,
         float_side: FloatSide::None,
         clear: Clear::None,
         margin: MarginEdges::ZERO,
@@ -4199,6 +4427,8 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         inline: fallback_inline_style(tag, inherited.inline),
         text_align: inherited.text_align,
         vertical_align: VerticalAlign::Baseline,
+        position: Position::Static,
+        inset: InsetEdges::AUTO,
         float_side: FloatSide::None,
         clear: Clear::None,
         margin: MarginEdges {

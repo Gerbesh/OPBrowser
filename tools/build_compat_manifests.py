@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 TEST262_COUNT = 2000
 WPT_COUNT = 200
+WPT_POSITIONING_COUNT = 100
 WPT_PREFIXES = (
     "css/CSS2/box-display",
     "css/CSS2/box-model",
@@ -22,6 +23,12 @@ WPT_PREFIXES = (
     "css/css-color",
     "css/css-display",
     "css/selectors",
+)
+WPT_POSITIONING_PREFIXES = (
+    "css/CSS2/positioning",
+    "css/CSS2/visuren",
+    "css/CSS2/visudet",
+    "css/css-position",
 )
 
 
@@ -73,9 +80,13 @@ def find_match_href(source: str) -> str | None:
     return parser.match_href
 
 
-def build_wpt(root: Path) -> list[tuple[str, str]]:
+def build_wpt_subset(
+    root: Path,
+    prefixes: tuple[str, ...],
+    count: int,
+) -> list[tuple[str, str]]:
     candidates: list[tuple[str, str]] = []
-    for prefix in WPT_PREFIXES:
+    for prefix in prefixes:
         directory = root / Path(prefix)
         if not directory.exists():
             continue
@@ -102,7 +113,15 @@ def build_wpt(root: Path) -> list[tuple[str, str]]:
             candidates.append((path.relative_to(root).as_posix(), reference_relative))
 
     candidates.sort()
-    return [candidates[index] for index in evenly_spaced_indices(len(candidates), WPT_COUNT)]
+    return [candidates[index] for index in evenly_spaced_indices(len(candidates), count)]
+
+
+def build_wpt(root: Path) -> list[tuple[str, str]]:
+    return build_wpt_subset(root, WPT_PREFIXES, WPT_COUNT)
+
+
+def build_wpt_positioning(root: Path) -> list[tuple[str, str]]:
+    return build_wpt_subset(root, WPT_POSITIONING_PREFIXES, WPT_POSITIONING_COUNT)
 
 
 def write_lines(path: Path, header: list[str], lines: list[str]) -> None:
@@ -122,15 +141,23 @@ def main() -> int:
 
     test262 = build_test262(args.test262_root.resolve())
     wpt = build_wpt(args.wpt_root.resolve())
+    wpt_positioning = build_wpt_positioning(args.wpt_root.resolve())
     if len(test262) != TEST262_COUNT:
         raise SystemExit(f"expected {TEST262_COUNT} Test262 entries, found {len(test262)}")
     if len(wpt) != WPT_COUNT:
         raise SystemExit(f"expected {WPT_COUNT} WPT entries, found {len(wpt)}")
+    if len(wpt_positioning) != WPT_POSITIONING_COUNT:
+        raise SystemExit(
+            f"expected {WPT_POSITIONING_COUNT} positioning WPT entries, "
+            f"found {len(wpt_positioning)}"
+        )
 
     write_lines(args.output / "test262-parser-v1.txt", ["OPBrowser Test262 parser subset v1", f"upstream={args.test262_revision}", f"entries={len(test262)}", "scope=test/language deterministic even-spaced sample; module tests skipped by runner"], test262)
     write_lines(args.output / "wpt-static-v1.tsv", ["OPBrowser WPT static reftest subset v1", f"upstream={args.wpt_revision}", f"entries={len(wpt)}", "format=test-path<TAB>reference-path", "scope=static HTML reftests without script/testharness/reftest-wait"], [f"{test}\t{reference}" for test, reference in wpt])
+    write_lines(args.output / "wpt-positioning-v1.tsv", ["OPBrowser WPT positioning reftest subset v1", f"upstream={args.wpt_revision}", f"entries={len(wpt_positioning)}", "format=test-path<TAB>reference-path", "scope=static positioning/visual-formatting HTML reftests without script/testharness/reftest-wait"], [f"{test}\t{reference}" for test, reference in wpt_positioning])
     print(f"Test262 parser v1: {len(test262)} entries")
     print(f"WPT static v1: {len(wpt)} entries")
+    print(f"WPT positioning v1: {len(wpt_positioning)} entries")
     return 0
 
 

@@ -260,17 +260,23 @@ Status: IN PROGRESS.
 - LATER broader custom-property grammar/registration/animation-taint behavior,
   relational selectors, sliced inline decoration edges and fuller
   parent/child margin collapsing / definite percentage-height propagation.
-- IN PROGRESS readable-static-web priority: computed `position: static|relative` plus
-  `top/right/bottom/left` insets now exist with cascade/global-keyword tests; applying relative
-  offsets in layout is still NEXT, followed by absolute/fixed/sticky, `overflow`, floats,
-  flexbox, media queries, font faces, background images, border radius and shadows.
-  Grid follows the first usable flex slice; obscure value-space polish must not displace these.
+- IN PROGRESS readable-static-web priority: computed `position: static|relative|absolute|fixed`
+  plus all four inset properties now feed layout. Relative boxes apply left/right and px top/bottom
+  visual offsets without moving following flow; absolute/fixed boxes leave normal flow and currently
+  resolve left/right plus px top against the nearest positioned ancestor or viewport. Sticky,
+  bottom-based abs/fixed placement, complete abspos auto/overconstraint rules, percentage vertical
+  insets and stacking remain NEXT, followed by `overflow`, media queries,
+  font faces, background images, border radius and broader flex/grid work. Obscure value-space
+  polish must not displace these.
 - LATER broader computed values outside the readable-static-web priority.
 - LATER fuller normal flow and CSS inline formatting plus Unicode line breaking.
 - NEXT migrate the text backend toward DirectWrite shaping/fallback behind TextMeasurer per ADR-0003.
 - DONE versioned WPT Static v1 measurement with 200 pinned HTML/CSS reftests and an initial 86/200 (43.00%) baseline.
 - DONE versioned Test262 Parser v1 measurement with 2,000 pinned language paths and an initial 364/1983 (18.36%) executable baseline; module entries are skipped.
 - DONE GitHub Actions publishes compatibility artifacts and README badge data after successful main pushes.
+- DONE WPT Positioning v1 adds 100 pinned positioning/visual-formatting reftests at the existing
+  WPT revision with a deliberately broad initial baseline of 18/100 (18.00%) and zero render errors;
+  WPT Static v1 remains frozen at 187/200 (93.50%) for historical comparability.
 - DONE CSS Color 4 Lab/LCH/OKLab/OKLCH plus display-p3/display-p3-linear, A98 RGB, ProPhoto RGB, Rec.2020 and XYZ predefined-space conversion to the current 8-bit sRGB paint target; `currentColor` now resolves for color/background/borders.
 - DONE first metric-driven WPT pass raised WPT Static v1 from 86/200 (43.00%) to 126/200 (63.00%) without changing the manifest.
 - DONE deterministic CSS system colors/deprecated aliases, simple declaration-form `@supports`, Selectors 4 `:lang()` Extended Filtering, inherited `:dir(ltr|rtl)`, and initial `:open`/`:required`/`:optional`/`:visited` semantics.
@@ -292,7 +298,9 @@ Status: IN PROGRESS.
 - DONE eighth metric-driven pass raised the unchanged WPT Static v1 manifest from 183/200 (91.50%) to 185/200 (92.50%).
 - DONE initial flex formatting context: computed `display:flex`/`inline-flex`, default single-line row item layout, anonymous text flex items, atomic shrink-to-content inline-flex and recursive `display:contents` item flattening.
 - DONE ninth metric-driven pass raised the unchanged WPT Static v1 manifest from 185/200 (92.50%) to 187/200 (93.50%).
-- NEXT continue metric-driven CSS work across the 13 remaining WPT Static v1 failures: SVG display contexts, ICC/tagged images and gamut mapping, form-control rendering, `::first-line`/bidi, compositing and fuller current/relative-color semantics.
+- NEXT use WPT Positioning v1 failures to drive sticky/abspos sizing/inline containing blocks and
+  then `overflow`; keep the 13 WPT Static v1 failures visible but do not let color/SVG edge cases
+  displace readable-static-web priorities.
 
 ## M3 - Original JavaScript engine
 

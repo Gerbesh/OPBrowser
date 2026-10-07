@@ -2015,3 +2015,42 @@ This file is append-only project history.
   static-web readiness: positioning/overflow/media/font/background/radius work and a wider WPT
   subset, while M4 DOM bindings can begin in parallel once a narrow host boundary is defined.
 
+## 2026-10-07 - Initial absolute/fixed positioning and WPT positioning baseline
+
+- Extended computed `position` support from static/relative to
+  `static|relative|absolute|fixed` while retaining the existing four inset longhands and cascade
+  behavior. Added regression coverage for absolute/fixed keywords plus mixed px/percentage insets.
+- Added an initial positioned-layout path in `op_layout`. Relative blocks keep their normal-flow
+  contribution and translate only the decorations/text/images emitted by their subtree. Absolute
+  and fixed blocks leave normal flow; absolute boxes resolve against the nearest positioned
+  ancestor tracked by the layout context, while fixed boxes resolve against the viewport.
+- The positioned ancestor stack stores the initial padding-box x/y/width needed by descendant
+  absolute boxes. The first slice supports left/right horizontal placement, percentage horizontal
+  insets and px top offsets while preserving existing block/table/image layout paths.
+- Bottom-based absolute/fixed placement, vertical percentage insets, inline containing blocks,
+  complete CSS2 absolute auto/overconstraint equations, sticky positioning and stacking/z-index are
+  intentionally still open rather than approximated with invented geometry.
+- Added three deterministic layout regressions covering nearest-positioned-ancestor absolute
+  geometry, viewport-relative fixed geometry and relative visual translation without moving the
+  following normal-flow block.
+- Added a second pinned WPT reftest metric, `WPT Positioning v1`, with 100 deterministic tests from
+  CSS2 positioning/visual formatting/dimensions and CSS Positioned Layout at the same pinned WPT
+  revision. The sample intentionally includes unsupported sticky, vertical-writing and multicol
+  families so it exposes the real layout gap.
+- Initial WPT Positioning v1 baseline: **18/100 (18.00%)**, 82 failures and zero render errors.
+  Existing WPT Static v1 remains frozen at **187/200 (93.50%)** so its history stays comparable.
+- Generalized `wpt_probe` JSON/console suite identification from a hard-coded static-suite name to
+  the manifest filename, allowing multiple versioned WPT metrics without mislabeled artifacts.
+- CI sparse checkout now fetches the positioning/visual-formatting directories, compatibility
+  artifacts include the new JSON/badge, successful main pushes publish that badge to the metrics
+  branch, and README exposes the new WPT Positioning v1 badge beside the existing metrics.
+- Test262 Parser v1 remains **523/1983 (26.37%)** after the preceding this/new/Error pass.
+- Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace test
+  suite, native startup smoke, WPT/Test262 external compatibility and optimized release build.
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 1,013,248 bytes,
+  SHA-256 `096270BB253A940950DD70BC6AB6F611209D3E7CC0DF6E525D6F09FFCA0C52ED`.
+- Next readable-static-web priorities are driven by the new positioning failures: sticky/abspos
+  sizing and containing-block semantics, then overflow, media queries, font faces, background
+  images and border radius. The old 13 WPT Static failures remain visible but no longer monopolize
+  compatibility work.
+

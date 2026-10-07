@@ -456,6 +456,17 @@ classDiagram
         Generated(NodeId,PseudoElement)
         ImageAlt(NodeId)
     }
+    class FlowContext {
+        viewport_width
+        current y / floats
+        positioning_stack PositioningContext[]
+        output vectors
+    }
+    class PositioningContext {
+        x
+        y
+        width
+    }
     class BoxDecoration {
         bounds
         background
@@ -578,6 +589,8 @@ classDiagram
     ComputedPseudoStyle --> BlockContent : display block retained text
     Document --> BlockContent : ordinary element child traversal
     BlockContent --> BoxDecoration : shared normal-flow block geometry / empty boxes
+    FlowContext --> PositioningContext : nearest positioned ancestor / viewport fallback
+    PositioningContext --> BoxDecoration : relative translation and abs/fixed containing geometry
     InlineAtomic --> LayoutTree : inline-table and inline-flex atomic placement
     InlineAtomic --> BoxDecoration : nested flex/table decorations rebased into parent flow
     InlineImage --> ImageBox : only available raster payloads produce paint items

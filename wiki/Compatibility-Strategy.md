@@ -15,15 +15,19 @@ when its observable behavior exists.
 
 ## Current measurement
 
-The project now has two reproducible external metrics rather than milestone guesses:
+The project now has three reproducible external metrics rather than milestone guesses:
 
 - **WPT Static v1**: 200 pinned static HTML/CSS reftests rendered at 800 x 600 through the
   ordinary OPBrowser engine/display-list/GDI path. Initial baseline: **86/200, 43.00%**; current
   result after the initial flex formatting/display-contents pass: **187/200, 93.50%**.
+- **WPT Positioning v1**: 100 pinned static reftests from CSS2 positioning/visual formatting and
+  CSS Positioned Layout. Initial baseline after the first absolute/fixed/relative pass:
+  **18/100, 18.00%**. Unsupported sticky, multicol and vertical-writing cases remain in the sample.
 - **Test262 Parser v1**: a 2,000-path deterministic Test262 language sample. Module entries are
-  skipped until module parsing is supported. Initial executable baseline: **364/1983, 18.36%**.
+  skipped until module parsing is supported. Initial executable baseline: **364/1983, 18.36%**;
+  current parser result: **523/1983, 26.37%**.
 
-The Test262 number is parse-only. It is not a JavaScript runtime percentage. The WPT number is a
+The Test262 number is parse-only. It is not a JavaScript runtime percentage. Each WPT number is a
 named static subset, not a full-platform WPT percentage.
 
 Pinned upstream commits and manifests live under `compat/`. Run both local external measurements
@@ -51,7 +55,9 @@ families, make an implementation change and show an objective before/after delta
 
 ## Expansion
 
-Static WPT coverage should grow from measured failures. Test262 runtime scoring waits for the
+WPT Static v1 stays frozen for historical comparability while Positioning v1 exposes the broader
+layout gap. Additional static families should get separately versioned manifests rather than
+inflating the old score. Test262 runtime scoring waits for the
 runtime/harness and built-ins needed to execute it honestly. WPT testharness.js coverage waits for
 DOM scripting and the required Web APIs. When a metric changes scope or sampling semantics, create
 a new version instead of silently redefining the old percentage.

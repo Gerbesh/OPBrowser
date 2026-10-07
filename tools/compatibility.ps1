@@ -93,6 +93,18 @@ try {
         $Metric = Get-Content $WptJson -Raw | ConvertFrom-Json
         Write-ShieldsBadge -Path (Join-Path $ResolvedOutput "wpt-static-v1-badge.json") -Label "WPT static v1" -Percent $Metric.percent -Passed $Metric.passed -Total $Metric.total
         $Summary += ("- WPT static v1: **{0:N2}%** ({1}/{2}), upstream {3}" -f $Metric.percent, $Metric.passed, $Metric.total, $Metric.upstream)
+
+        $WptPositioningManifest = Join-Path $RepoRoot "compat\wpt-positioning-v1.tsv"
+        $WptPositioningJson = Join-Path $ResolvedOutput "wpt-positioning-v1.json"
+        Write-Host ""
+        Write-Host "== WPT positioning/visual-formatting subset v1 =="
+        & $Cargo run -p op_browser --quiet --bin wpt_probe -- $ResolvedWpt $WptPositioningManifest --json-out $WptPositioningJson
+        if ($LASTEXITCODE -ne 0) {
+            throw "WPT positioning subset failed with exit code $LASTEXITCODE"
+        }
+        $PositioningMetric = Get-Content $WptPositioningJson -Raw | ConvertFrom-Json
+        Write-ShieldsBadge -Path (Join-Path $ResolvedOutput "wpt-positioning-v1-badge.json") -Label "WPT positioning v1" -Percent $PositioningMetric.percent -Passed $PositioningMetric.passed -Total $PositioningMetric.total
+        $Summary += ("- WPT positioning v1: **{0:N2}%** ({1}/{2}), upstream {3}" -f $PositioningMetric.percent, $PositioningMetric.passed, $PositioningMetric.total, $PositioningMetric.upstream)
     } else {
         Write-Host ""
         Write-Host "WPT static subset skipped. Pass -WptPath <path-to-wpt-checkout>."

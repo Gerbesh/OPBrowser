@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/Gerbesh/OPBrowser/actions/workflows/ci.yml/badge.svg)](https://github.com/Gerbesh/OPBrowser/actions/workflows/ci.yml)
 [![WPT static v1](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FGerbesh%2FOPBrowser%2Fmetrics%2Fwpt-static-v1-badge.json)](docs/COMPATIBILITY.md)
+[![WPT positioning v1](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FGerbesh%2FOPBrowser%2Fmetrics%2Fwpt-positioning-v1-badge.json)](docs/COMPATIBILITY.md)
 [![Test262 parser v1](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FGerbesh%2FOPBrowser%2Fmetrics%2Ftest262-parser-v1-badge.json)](docs/COMPATIBILITY.md)
 
 Public repository: https://github.com/Gerbesh/OPBrowser
@@ -12,7 +13,7 @@ Its own tokenizer, tree builder, DOM, text layout and display list render the pa
 into a Win32 window. Text hyperlinks support current-window navigation, including
 relative HTTP(S) and local-file links. PNG/JPEG/GIF/BMP images load from HTTP(S),
 local files and data URLs, with dimensions, transparency, alt fallback and image links.
-Initial embedded, inline and external author CSS plus a block-level box model now reach native pixels. A first standalone original JavaScript lexer/parser/bytecode/VM slice exists, but page `<script>` execution, DOM bindings and Web APIs are not connected yet.
+Initial embedded, inline and external author CSS plus block/flex/float layout and first relative/absolute/fixed positioning now reach native pixels. A standalone original JavaScript lexer/parser/bytecode/VM with objects, closures, exceptions, `this`, constructors, `arguments` and initial Error objects exists, but page `<script>` execution, DOM bindings and Web APIs are not connected yet.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 

@@ -27,6 +27,18 @@ This is a parser metric, not a JavaScript runtime or full ECMAScript conformance
 
 The initial baseline for the commit that introduced this infrastructure was 86/200 (43.00%).
 
+## WPT positioning v1
+
+- manifest: `wpt-positioning-v1.tsv`;
+- upstream revision: `97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d`;
+- sample: 100 deterministic static HTML reftests;
+- source areas: CSS2 positioning/visual formatting/dimensions plus CSS Positioned Layout;
+- excluded: script/testharness.js tests, reftest-wait tests, mismatch references and non-local references;
+- deliberately includes unsupported sticky, multicol and vertical-writing cases to expose real gaps;
+- viewport and pixel-comparison rules are identical to WPT Static v1.
+
+Initial baseline after the first absolute/fixed/relative pass: 18/100 (18.00%).
+
 ## Refreshing a manifest
 
 Refreshes are deliberate because changing the upstream revision or selection changes the meaning

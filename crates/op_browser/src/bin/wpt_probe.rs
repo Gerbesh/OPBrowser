@@ -44,6 +44,7 @@ fn main() {
         std::process::exit(2);
     });
     let upstream = manifest_value(&manifest, "upstream").unwrap_or("unknown");
+    let suite = manifest_suite_name(&config.manifest);
     let entries = parse_manifest(&manifest).unwrap_or_else(|error| {
         eprintln!("invalid WPT manifest: {error}");
         std::process::exit(2);
@@ -95,16 +96,17 @@ fn main() {
     }
 
     let percent = percent(counts.passed, counts.total);
-    println!("WPT static reftest subset");
+    println!("WPT reftest subset");
+    println!("suite={suite}");
     println!("upstream={upstream}");
     println!("tests_checked={}", counts.total);
     println!("passed={}", counts.passed);
     println!("failed={}", counts.failed);
     println!("render_errors={}", counts.errors);
-    println!("wpt_static_percent={percent:.2}");
+    println!("percent={percent:.2}");
 
     if let Some(path) = config.json_out
-        && let Err(error) = write_json(&path, upstream, &counts, percent)
+        && let Err(error) = write_json(&path, &suite, upstream, &counts, percent)
     {
         eprintln!("failed to write {}: {error}", path.display());
         std::process::exit(2);
@@ -167,6 +169,14 @@ fn parse_args() -> Result<Config, String> {
     }
 
     Ok(config)
+}
+
+fn manifest_suite_name(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("wpt-reftest")
+        .to_owned()
 }
 
 fn parse_positive_i32(value: Option<String>, name: &str) -> Result<i32, String> {
@@ -246,7 +256,13 @@ fn percent(passed: usize, total: usize) -> f64 {
     }
 }
 
-fn write_json(path: &Path, upstream: &str, counts: &Counts, percent: f64) -> std::io::Result<()> {
+fn write_json(
+    path: &Path,
+    suite: &str,
+    upstream: &str,
+    counts: &Counts,
+    percent: f64,
+) -> std::io::Result<()> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -256,7 +272,7 @@ fn write_json(path: &Path, upstream: &str, counts: &Counts, percent: f64) -> std
         concat!(
             "{{\n",
             "  \"schema_version\": 1,\n",
-            "  \"suite\": \"wpt-static-v1\",\n",
+            "  \"suite\": \"{}\",\n",
             "  \"upstream\": \"{}\",\n",
             "  \"total\": {},\n",
             "  \"passed\": {},\n",
@@ -265,7 +281,7 @@ fn write_json(path: &Path, upstream: &str, counts: &Counts, percent: f64) -> std
             "  \"percent\": {:.2}\n",
             "}}\n"
         ),
-        upstream, counts.total, counts.passed, counts.failed, counts.errors, percent
+        suite, upstream, counts.total, counts.passed, counts.failed, counts.errors, percent
     );
     fs::write(path, json)
 }
@@ -281,6 +297,14 @@ mod tests {
         assert_eq!(different_pixels(&left, &right, 0), 2);
         assert_eq!(different_pixels(&left, &right, 1), 1);
         assert_eq!(different_pixels(&left, &right, 2), 0);
+    }
+
+    #[test]
+    fn derives_suite_name_from_manifest_filename() {
+        assert_eq!(
+            manifest_suite_name(Path::new("compat/wpt-positioning-v1.tsv")),
+            "wpt-positioning-v1"
+        );
     }
 
     #[test]

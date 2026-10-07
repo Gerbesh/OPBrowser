@@ -27,7 +27,9 @@ The current block subset includes:
 - `height`, `min-height`, `max-height`;
 - `box-sizing: content-box | border-box`;
 - `border` and `border-top/right/bottom/left`;
-- `border-width`, `border-style`, `border-color` and all side longhands.
+- `border-width`, `border-style`, `border-color` and all side longhands;
+- `position: static | relative | absolute | fixed` plus `top/right/bottom/left` length/percentage
+  insets in the initial positioned-layout path.
 
 Margin accepts `auto`, negative values and percentages. Padding and box sizes reject negative
 used lengths. Supported dimensions include px, em, rem, in, cm, mm, Q, pt and pc; percentage
@@ -91,6 +93,25 @@ This is deliberately not complete CSS2 float layout yet. Text wrapping around fl
 replaced images, complex left/right float packing, list markers and the full clearance/margin rules
 remain future work.
 
+## Initial positioned layout
+
+Relative positioning preserves the box's normal-flow slot and translates only the output emitted
+for that subtree, including decorations, text and images. Horizontal percentage offsets resolve
+against the containing width; vertical percentage offsets are not implemented yet.
+
+Absolute and fixed block-level boxes are removed from normal flow. Absolute boxes resolve against
+the nearest positioned ancestor tracked by the layout context, while fixed boxes resolve against
+the viewport. The first slice supports direct left/px-top placement, right-side horizontal
+placement, normal block width resolution and the existing table/image/block content paths without
+letting the positioned box advance following flow. Bottom-based placement waits for containing
+block height propagation rather than inventing a height.
+
+This is intentionally only the first positioned-layout slice. Sticky positioning, percentage
+vertical insets, inline containing blocks, complete CSS2 absolute-positioned auto/overconstraint
+rules, stacking/z-index and scroll-container interactions remain follow-up work. WPT Positioning v1
+tracks 100 pinned cases across both implemented and deliberately unsupported families; the initial
+baseline is 18/100 (18.00%).
+
 ## Initial flex formatting context
 
 `display:flex` and `display:inline-flex` now create an initial flex formatting context instead of
@@ -141,7 +162,8 @@ background propagation and general alpha composition remain later rendering work
   table box and contributes to line height. Complete CSS Tables overconstraint/min-width/percentage
   edge algorithms, non-cell collapsed-border precedence and deeper colgroup repair remain later;
   general inline sub/super/text-top/text-bottom/length/% alignment is not implemented yet;
-- no floats, positioning, flexbox or CSS Grid yet;
+- floats, flexbox and positioning are initial subsets rather than complete specs; sticky positioning,
+  flex direction/wrap/alignment/flexible sizing and CSS Grid remain unsupported;
 - no complete stacking-context/background-propagation model.
 
 Unsupported or invalid values are ignored before cascade winner selection, so a valid lower

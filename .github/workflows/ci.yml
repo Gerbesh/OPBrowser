@@ -119,7 +119,7 @@ jobs:
 
           git clone --filter=blob:none --no-checkout https://github.com/web-platform-tests/wpt.git $wpt
           git -C $wpt sparse-checkout init --cone
-          git -C $wpt sparse-checkout set css/CSS2/box-display css/CSS2/box-model css/css-box css/css-color css/css-display css/selectors
+          git -C $wpt sparse-checkout set css/CSS2/box-display css/CSS2/box-model css/CSS2/positioning css/CSS2/visuren css/CSS2/visudet css/css-box css/css-color css/css-display css/css-position css/selectors
           git -C $wpt checkout $env:WPT_REVISION
           if ((git -C $wpt rev-parse HEAD) -ne $env:WPT_REVISION) {
             throw "WPT checkout does not match pinned revision"
@@ -183,7 +183,7 @@ jobs:
 
           git rm -rf --ignore-unmatch .
           cp "$publish_dir/"* .
-          git add summary.md test262-parser-v1-badge.json wpt-static-v1-badge.json
+          git add summary.md test262-parser-v1-badge.json wpt-static-v1-badge.json wpt-positioning-v1-badge.json
 
           if git diff --cached --quiet; then
             echo "Compatibility metrics are unchanged."
