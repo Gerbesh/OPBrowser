@@ -20,6 +20,8 @@ pub enum TokenKind {
     While,
     Break,
     Continue,
+    Function,
+    Return,
     True,
     False,
     Null,
@@ -276,6 +278,8 @@ impl<'a> Lexer<'a> {
             "while" => TokenKind::While,
             "break" => TokenKind::Break,
             "continue" => TokenKind::Continue,
+            "function" => TokenKind::Function,
+            "return" => TokenKind::Return,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "null" => TokenKind::Null,
@@ -375,6 +379,13 @@ mod tests {
             tokens
                 .iter()
                 .any(|token| matches!(token.kind, TokenKind::If))
+        );
+        let function_tokens = tokenize("function add(a) { return a }").unwrap();
+        assert!(matches!(function_tokens[0].kind, TokenKind::Function));
+        assert!(
+            function_tokens
+                .iter()
+                .any(|token| matches!(token.kind, TokenKind::Return))
         );
         assert!(
             tokens

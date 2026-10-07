@@ -1904,3 +1904,37 @@ This file is append-only project history.
 - Page scripting is still not wired. The next JS milestone is functions/calls with lexical
   environments and closures, followed by exceptions and then honest `<script>` integration.
 
+## 2026-10-07 - JavaScript functions, lexical environments and closures
+
+- Added `function` declarations/expressions, positional parameter lists, call expressions and
+  `return` statements to the owned ECMAScript parser. Calls can be chained with member/call syntax,
+  named function expressions keep their own recursive name, and top-level `return` is rejected.
+- Extended bytecode with function templates, `CreateFunction`, `Call`, `Return`,
+  `EnterScope`/`ExitScope` and `UnwindScopes`. Break/continue now unwind nested lexical blocks
+  before jumping so control-flow exits do not leave the VM in a stale environment.
+- Replaced flat global-only binding lookup with a runtime-owned lexical-environment arena. Scripts,
+  functions and blocks now have explicit Global/Function/Block environments; let/const bind in the
+  current block while var targets the nearest function/global environment.
+- Function objects capture their creation environment and retain it after scope exit, enabling real
+  closures that both read and mutate captured bindings. Function calls create parameter bindings,
+  support missing arguments as undefined, recursion, anonymous/named function expressions and
+  initial callable `name`/`length` properties.
+- Added a 256-frame call-depth budget and a 100,000-environment allocation budget alongside the
+  existing instruction/object budgets, so runaway recursion and unbounded scope creation fail with
+  execution-limit errors instead of relying on the native stack indefinitely.
+- Expanded op_js core coverage from 22 to 31 tests. New regressions cover block shadowing,
+  function-scoped var, break/continue scope unwind, parameters/returns, recursion, persistent
+  closures, exited-block capture, private named-function recursion and non-callable/call-depth
+  failures.
+- The unchanged Test262 Parser v1 manifest improved from 408/1983 (20.57%) to
+  504/1983 (25.42%). This is still a parse-expectation metric, not runtime Test262 conformance.
+- External compatibility refresh reconfirmed WPT Static v1 at 187/200 (93.50%) with 13 known
+  failures and zero render errors.
+- Full verification passed rustfmt, warning-free workspace Clippy, the complete workspace test
+  suite, native startup smoke, external compatibility refresh and optimized release build.
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 1,009,664 bytes,
+  SHA-256 `635A7C9CD1B66636DA08E114DB73F712FA0CE946DFA584AE9F477DA2CD9D9F41`.
+- Function declaration hoisting, `this`, `new`, `arguments`, arrow/default/rest/destructuring
+  forms, exceptions and fuller ASI are still missing. Page `<script>` execution remains
+  intentionally disconnected until those semantics and the DOM binding boundary are further along.
+

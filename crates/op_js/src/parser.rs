@@ -21,6 +21,12 @@ pub enum Statement {
         test: Expression,
         body: Box<Statement>,
     },
+    FunctionDeclaration {
+        name: String,
+        params: Vec<String>,
+        body: Vec<Statement>,
+    },
+    Return(Option<Expression>),
     Break,
     Continue,
     Expression(Expression),
@@ -65,6 +71,15 @@ pub enum Expression {
     Member {
         object: Box<Expression>,
         property: Box<Expression>,
+    },
+    Call {
+        callee: Box<Expression>,
+        arguments: Vec<Expression>,
+    },
+    Function {
+        name: Option<String>,
+        params: Vec<String>,
+        body: Vec<Statement>,
     },
     Unary {
         op: UnaryOp,
@@ -124,6 +139,7 @@ struct Parser {
     tokens: Vec<Token>,
     index: usize,
     loop_depth: usize,
+    function_depth: usize,
 }
 
 impl Parser {
@@ -132,6 +148,7 @@ impl Parser {
             tokens,
             index: 0,
             loop_depth: 0,
+            function_depth: 0,
         }
     }
 
@@ -155,6 +172,24 @@ impl Parser {
         }
         if self.take(&TokenKind::While) {
             return self.while_statement();
+        }
+        if self.take(&TokenKind::Function) {
+            return self.function_declaration();
+        }
+        if self.take(&TokenKind::Return) {
+            if self.function_depth == 0 {
+                return Err(JsError::syntax(
+                    self.previous().start,
+                    "return is only valid inside a function",
+                ));
+            }
+            let value = if self.check(&TokenKind::Semicolon) || self.check(&TokenKind::RightBrace) {
+                None
+            } else {
+                Some(self.assignment()?)
+            };
+            self.optional_semicolon();
+            return Ok(Statement::Return(value));
         }
         if self.take(&TokenKind::Break) {
             if self.loop_depth == 0 {
@@ -235,6 +270,76 @@ impl Parser {
             test,
             body: Box::new(body?),
         })
+    }
+
+    fn function_declaration(&mut self) -> Result<Statement, JsError> {
+        let token = self.advance().clone();
+        let TokenKind::Identifier(name) = token.kind else {
+            return Err(JsError::syntax(
+                token.start,
+                "expected function name after 'function'",
+            ));
+        };
+        let (params, body) = self.function_tail()?;
+        Ok(Statement::FunctionDeclaration { name, params, body })
+    }
+
+    fn function_tail(&mut self) -> Result<(Vec<String>, Vec<Statement>), JsError> {
+        if !self.take(&TokenKind::LeftParen) {
+            return Err(JsError::syntax(
+                self.current().start,
+                "expected '(' before function parameters",
+            ));
+        }
+
+        let mut params = Vec::new();
+        if !self.take(&TokenKind::RightParen) {
+            loop {
+                let token = self.advance().clone();
+                let TokenKind::Identifier(name) = token.kind else {
+                    return Err(JsError::syntax(token.start, "expected parameter name"));
+                };
+                params.push(name);
+                if self.take(&TokenKind::RightParen) {
+                    break;
+                }
+                if !self.take(&TokenKind::Comma) {
+                    return Err(JsError::syntax(
+                        self.current().start,
+                        "expected ',' or ')' after parameter",
+                    ));
+                }
+            }
+        }
+
+        if !self.take(&TokenKind::LeftBrace) {
+            return Err(JsError::syntax(
+                self.current().start,
+                "expected '{' before function body",
+            ));
+        }
+
+        let saved_loop_depth = self.loop_depth;
+        self.loop_depth = 0;
+        self.function_depth += 1;
+        let mut body = Vec::new();
+        let result = (|| {
+            while !self.check(&TokenKind::RightBrace) {
+                if self.check(&TokenKind::Eof) {
+                    return Err(JsError::syntax(
+                        self.current().start,
+                        "expected '}' after function body",
+                    ));
+                }
+                body.push(self.statement()?);
+            }
+            self.advance();
+            Ok(())
+        })();
+        self.function_depth -= 1;
+        self.loop_depth = saved_loop_depth;
+        result?;
+        Ok((params, body))
     }
 
     fn parenthesized_expression(&mut self, owner: &str) -> Result<Expression, JsError> {
@@ -458,6 +563,28 @@ impl Parser {
     fn member(&mut self) -> Result<Expression, JsError> {
         let mut expression = self.primary()?;
         loop {
+            if self.take(&TokenKind::LeftParen) {
+                let mut arguments = Vec::new();
+                if !self.take(&TokenKind::RightParen) {
+                    loop {
+                        arguments.push(self.assignment()?);
+                        if self.take(&TokenKind::RightParen) {
+                            break;
+                        }
+                        if !self.take(&TokenKind::Comma) {
+                            return Err(JsError::syntax(
+                                self.current().start,
+                                "expected ',' or ')' after argument",
+                            ));
+                        }
+                    }
+                }
+                expression = Expression::Call {
+                    callee: Box::new(expression),
+                    arguments,
+                };
+                continue;
+            }
             if self.take(&TokenKind::Dot) {
                 let token = self.advance().clone();
                 let Some(name) = identifier_name(&token.kind) else {
@@ -502,6 +629,17 @@ impl Parser {
             TokenKind::Null => Ok(Expression::Literal(JsValue::Null)),
             TokenKind::Undefined => Ok(Expression::Literal(JsValue::Undefined)),
             TokenKind::Identifier(name) => Ok(Expression::Identifier(name)),
+            TokenKind::Function => {
+                let name = if let TokenKind::Identifier(name) = &self.current().kind {
+                    let name = name.clone();
+                    self.advance();
+                    Some(name)
+                } else {
+                    None
+                };
+                let (params, body) = self.function_tail()?;
+                Ok(Expression::Function { name, params, body })
+            }
             TokenKind::LeftBrace => self.object_literal(),
             TokenKind::LeftBracket => self.array_literal(),
             TokenKind::LeftParen => {
@@ -661,6 +799,8 @@ fn identifier_name(kind: &TokenKind) -> Option<String> {
         TokenKind::While => "while",
         TokenKind::Break => "break",
         TokenKind::Continue => "continue",
+        TokenKind::Function => "function",
+        TokenKind::Return => "return",
         TokenKind::True => "true",
         TokenKind::False => "false",
         TokenKind::Null => "null",
@@ -736,6 +876,30 @@ mod tests {
             program.statements[4],
             Statement::Expression(Expression::Member { .. })
         ));
+    }
+
+    #[test]
+    fn parses_function_declarations_expressions_calls_and_returns() {
+        let program = parse_script(
+            "function add(a, b) { return a + b; } let fn1 = function inner(x) { return x; }; add(1, fn1(2));",
+        )
+        .unwrap();
+        assert!(matches!(
+            program.statements[0],
+            Statement::FunctionDeclaration { .. }
+        ));
+        let Statement::Variable { declarations, .. } = &program.statements[1] else {
+            panic!("expected function expression declaration");
+        };
+        assert!(matches!(
+            declarations[0].initializer,
+            Some(Expression::Function { .. })
+        ));
+        assert!(matches!(
+            program.statements[2],
+            Statement::Expression(Expression::Call { .. })
+        ));
+        assert!(parse_script("return 1;").is_err());
     }
 
     #[test]

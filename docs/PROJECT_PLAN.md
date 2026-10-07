@@ -315,10 +315,16 @@ Status: IN PROGRESS.
   growth and prototype-chain lookup/mutation with cycle rejection.
 - DONE object/prototype parser pass raised the same Test262 Parser v1 manifest again to
   408/1983 (20.57%).
-- LATER garbage collector; the current bounded object heap intentionally retains allocations for
-  the runtime lifetime.
-- NEXT functions/calls, closures and lexical environments.
-- NEXT exceptions plus broader control flow (for/do/switch/labels).
+- LATER garbage collector; the current bounded object/environment heaps intentionally retain
+  allocations for the runtime lifetime.
+- DONE initial functions/calls/returns, function expressions/declarations, recursion, block lexical
+  environments, function-scoped var, closure capture and scope-unwind for break/continue. Named
+  function expressions keep a private recursive name binding; callable objects expose initial
+  name/length properties and execution is bounded by call depth.
+- DONE function/parser pass raised the same Test262 Parser v1 manifest again to
+  504/1983 (25.42%).
+- NEXT exceptions plus broader control flow (for/do/switch/labels), function hoisting and fuller
+  call semantics including this/new/arguments/arrow/default/rest/destructuring forms.
 - LATER promises/microtasks.
 - LATER modules.
 - LATER standard built-ins.

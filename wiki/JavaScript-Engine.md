@@ -12,10 +12,12 @@ It also supports object and array literals, shorthand data properties, dot/compu
 member assignment, sparse array slots, dynamic index-driven array length growth and reference
 identity through runtime-owned `ObjectId` handles.
 
-Control flow compiles to patched bytecode jumps and the VM now runs with an explicit instruction
-pointer. Every execution has an instruction budget, so a runaway loop is terminated with an
-execution-limit error instead of monopolizing the renderer thread. Globals persist in one
-`JsRuntime`; `const` bindings reject assignment.
+Control flow compiles to patched bytecode jumps and the VM runs with an explicit instruction
+pointer. Every execution has an instruction budget, plus bounded object/environment allocation and
+call depth, so runaway loops/recursion terminate instead of monopolizing the renderer thread.
+Bindings live in an environment arena: scripts use the global environment, calls create function
+environments, blocks create lexical environments, let/const stay block-scoped and var targets the
+nearest function/global environment.
 
 Objects live in a bounded runtime heap instead of being copied inside `JsValue`. Ordinary object
 lookups walk an explicit prototype chain; object-literal `__proto__` setters and later
@@ -23,11 +25,16 @@ lookups walk an explicit prototype chain; object-literal `__proto__` setters and
 reuse the same property store with indexed keys and an own `length` property. String `.length`
 uses UTF-16 code units.
 
-This is still not page scripting. Block lexical environments are not implemented yet, so the
-current declaration storage is global rather than full ECMAScript scope semantics. Property
-descriptors/accessors, full array-length mutation rules, primitive boxing/ToPrimitive, functions,
-closures, exceptions, garbage collection, built-ins, promises/modules and DOM bindings are still
-absent.
+Functions are heap objects backed by owned bytecode templates. Function declarations and
+expressions accept positional parameters, return values, recurse and expose initial `name` and
+`length` properties. Each function captures its creation environment, so closures can read and
+mutate bindings after their defining function or block has exited; named function expressions get
+a private recursive self-binding.
+
+This is still not page scripting. Function declaration hoisting, `this`, `new`, `arguments`,
+arrow/default/rest/destructuring forms, property descriptors/accessors, full array-length mutation
+rules, primitive boxing/ToPrimitive, exceptions, garbage collection, built-ins, promises/modules
+and DOM bindings are still absent. ASI is also still intentionally incomplete.
 
 ## Test262 measurement
 
@@ -48,10 +55,10 @@ For the combined local subsystem check use:
 ```
 
 The unchanged Test262 Parser v1 subset moved from **364/1983 (18.36%)** to
-**391/1983 (19.72%)** after the initial control-flow pass and then to
-**408/1983 (20.57%)** after the first object/array/member pass. This remains a parse-expectation
-metric, not runtime conformance.
+**391/1983 (19.72%)**, then **408/1983 (20.57%)**, and now **504/1983 (25.42%)** after the initial
+function/call/return and lexical-environment pass. This remains a parse-expectation metric, not
+runtime conformance.
 
-The next JS work is functions/calls with real lexical environments and closures, then exceptions.
-Those are now the main blockers both for useful page scripting and for substantially broader
-Test262 parsing/execution.
+The next JS work is exceptions and broader control flow plus the missing call/function semantics
+(hoisting, this/new/arguments and modern parameter/function forms). Those are now the main blockers
+before page `<script>` execution can be connected without pretending compatibility that does not exist.

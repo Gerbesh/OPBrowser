@@ -1,22 +1,50 @@
 use crate::{
-    BinaryOp, CompiledScript, JsError, JsValue, ObjectId, UnaryOp, bytecode::Instruction,
+    BinaryOp, CompiledScript, JsError, JsValue, ObjectId, UnaryOp, VariableKind,
+    bytecode::{FunctionTemplate, Instruction},
     compile_script,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 const DEFAULT_INSTRUCTION_BUDGET: usize = 1_000_000;
 const DEFAULT_OBJECT_BUDGET: usize = 100_000;
+const DEFAULT_ENVIRONMENT_BUDGET: usize = 100_000;
+const DEFAULT_CALL_DEPTH_BUDGET: usize = 256;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct EnvironmentId(usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EnvironmentKind {
+    Global,
+    Function,
+    Block,
+}
 
 #[derive(Debug, Clone)]
 struct Binding {
     value: JsValue,
     mutable: bool,
+    declaration_kind: VariableKind,
+}
+
+#[derive(Debug, Clone)]
+struct Environment {
+    parent: Option<EnvironmentId>,
+    kind: EnvironmentKind,
+    bindings: HashMap<String, Binding>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ObjectKind {
     Ordinary,
     Array,
+    Function,
+}
+
+#[derive(Debug, Clone)]
+struct FunctionObject {
+    template: Arc<FunctionTemplate>,
+    closure: EnvironmentId,
 }
 
 #[derive(Debug, Clone)]
@@ -24,16 +52,26 @@ struct JsObject {
     properties: HashMap<String, JsValue>,
     prototype: Option<ObjectId>,
     kind: ObjectKind,
+    function: Option<FunctionObject>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum RunOutcome {
+    Complete(JsValue),
+    Returned(JsValue),
 }
 
 #[derive(Debug)]
 pub struct JsRuntime {
-    globals: HashMap<String, Binding>,
     heap: Vec<JsObject>,
+    environments: Vec<Environment>,
+    global_env: EnvironmentId,
     object_prototype: ObjectId,
     array_prototype: ObjectId,
     instruction_budget: usize,
     object_budget: usize,
+    environment_budget: usize,
+    call_depth_budget: usize,
 }
 
 impl Default for JsRuntime {
@@ -45,20 +83,32 @@ impl Default for JsRuntime {
                 properties: HashMap::new(),
                 prototype: None,
                 kind: ObjectKind::Ordinary,
+                function: None,
             },
             JsObject {
                 properties: HashMap::new(),
                 prototype: Some(object_prototype),
                 kind: ObjectKind::Ordinary,
+                function: None,
             },
         ];
+        let global_env = EnvironmentId(0);
+        let environments = vec![Environment {
+            parent: None,
+            kind: EnvironmentKind::Global,
+            bindings: HashMap::new(),
+        }];
+
         Self {
-            globals: HashMap::new(),
             heap,
+            environments,
+            global_env,
             object_prototype,
             array_prototype,
             instruction_budget: DEFAULT_INSTRUCTION_BUDGET,
             object_budget: DEFAULT_OBJECT_BUDGET,
+            environment_budget: DEFAULT_ENVIRONMENT_BUDGET,
+            call_depth_budget: DEFAULT_CALL_DEPTH_BUDGET,
         }
     }
 }
@@ -81,14 +131,27 @@ impl JsRuntime {
     }
 
     pub fn execute(&mut self, script: &CompiledScript) -> Result<JsValue, JsError> {
+        let mut steps = 0usize;
+        match self.run_code(&script.code, self.global_env, &mut steps, 0)? {
+            RunOutcome::Complete(value) | RunOutcome::Returned(value) => Ok(value),
+        }
+    }
+
+    fn run_code(
+        &mut self,
+        code: &[Instruction],
+        start_env: EnvironmentId,
+        steps: &mut usize,
+        call_depth: usize,
+    ) -> Result<RunOutcome, JsError> {
         let mut stack = Vec::new();
         let mut completion = JsValue::Undefined;
+        let mut env = start_env;
         let mut ip = 0usize;
-        let mut steps = 0usize;
 
-        while let Some(instruction) = script.code.get(ip) {
-            steps = steps.saturating_add(1);
-            if steps > self.instruction_budget {
+        while let Some(instruction) = code.get(ip) {
+            *steps = steps.saturating_add(1);
+            if *steps > self.instruction_budget {
                 return Err(JsError::execution_limit(format!(
                     "script exceeded instruction budget of {}",
                     self.instruction_budget
@@ -98,47 +161,24 @@ impl JsRuntime {
             match instruction {
                 Instruction::Push(value) => stack.push(value.clone()),
                 Instruction::Load(name) => {
-                    let value = self
-                        .globals
-                        .get(name)
-                        .ok_or_else(|| JsError::reference(format!("{name} is not defined")))?
-                        .value
-                        .clone();
-                    stack.push(value);
+                    stack.push(self.load_binding(env, name)?.clone());
                 }
-                Instruction::Declare { name, mutable } => {
-                    if self.globals.contains_key(name) {
-                        return Err(JsError::syntax(
-                            0,
-                            format!("identifier {name} has already been declared"),
-                        ));
-                    }
+                Instruction::Declare {
+                    name,
+                    kind,
+                    has_initializer,
+                } => {
                     let value = stack
                         .pop()
                         .expect("compiler must push declaration initializer");
-                    self.globals.insert(
-                        name.clone(),
-                        Binding {
-                            value,
-                            mutable: *mutable,
-                        },
-                    );
+                    self.declare_binding(env, name, *kind, *has_initializer, value)?;
                 }
                 Instruction::Assign(name) => {
                     let value = stack
                         .last()
                         .expect("compiler must leave assignment value on stack")
                         .clone();
-                    let binding = self
-                        .globals
-                        .get_mut(name)
-                        .ok_or_else(|| JsError::reference(format!("{name} is not defined")))?;
-                    if !binding.mutable {
-                        return Err(JsError::type_error(format!(
-                            "assignment to constant variable {name}"
-                        )));
-                    }
-                    binding.value = value;
+                    self.assign_binding(env, name, value)?;
                 }
                 Instruction::CreateObject(prototype_setters) => {
                     let mut entries = Vec::with_capacity(prototype_setters.len());
@@ -195,6 +235,10 @@ impl JsRuntime {
                     )?;
                     stack.push(JsValue::Object(id));
                 }
+                Instruction::CreateFunction(template) => {
+                    let id = self.allocate_function(template.clone(), env)?;
+                    stack.push(JsValue::Object(id));
+                }
                 Instruction::GetProperty => {
                     let key = stack
                         .pop()
@@ -217,6 +261,20 @@ impl JsRuntime {
                     self.set_property(&target, &key, value.clone())?;
                     stack.push(value);
                 }
+                Instruction::Call(argument_count) => {
+                    let mut arguments = Vec::with_capacity(*argument_count);
+                    for _ in 0..*argument_count {
+                        arguments.push(
+                            stack
+                                .pop()
+                                .expect("compiler must push every function argument"),
+                        );
+                    }
+                    arguments.reverse();
+                    let callee = stack.pop().expect("compiler must push function callee");
+                    let value = self.call_value(callee, arguments, steps, call_depth + 1)?;
+                    stack.push(value);
+                }
                 Instruction::Unary(op) => {
                     let value = stack.pop().expect("compiler must push unary operand");
                     stack.push(apply_unary(*op, value));
@@ -229,8 +287,19 @@ impl JsRuntime {
                 Instruction::Pop => {
                     stack.pop().expect("compiler must leave a value to pop");
                 }
+                Instruction::EnterScope => {
+                    env = self.allocate_environment(Some(env), EnvironmentKind::Block)?;
+                }
+                Instruction::ExitScope => {
+                    env = self.parent_environment(env)?;
+                }
+                Instruction::UnwindScopes(count) => {
+                    for _ in 0..*count {
+                        env = self.parent_environment(env)?;
+                    }
+                }
                 Instruction::Jump(target) => {
-                    debug_assert!(*target <= script.code.len());
+                    debug_assert!(*target <= code.len());
                     ip = *target;
                     continue;
                 }
@@ -239,7 +308,7 @@ impl JsRuntime {
                         .last()
                         .expect("compiler must leave branch condition on stack");
                     if !value.is_truthy() {
-                        debug_assert!(*target <= script.code.len());
+                        debug_assert!(*target <= code.len());
                         ip = *target;
                         continue;
                     }
@@ -249,10 +318,16 @@ impl JsRuntime {
                         .last()
                         .expect("compiler must leave branch condition on stack");
                     if value.is_truthy() {
-                        debug_assert!(*target <= script.code.len());
+                        debug_assert!(*target <= code.len());
                         ip = *target;
                         continue;
                     }
+                }
+                Instruction::Return => {
+                    let value = stack
+                        .pop()
+                        .expect("compiler must push function return value");
+                    return Ok(RunOutcome::Returned(value));
                 }
                 Instruction::SetCompletion => {
                     completion = stack.pop().expect("compiler must push completion value");
@@ -264,11 +339,210 @@ impl JsRuntime {
         }
 
         debug_assert!(stack.is_empty());
-        Ok(completion)
+        Ok(RunOutcome::Complete(completion))
+    }
+
+    fn call_value(
+        &mut self,
+        callee: JsValue,
+        arguments: Vec<JsValue>,
+        steps: &mut usize,
+        call_depth: usize,
+    ) -> Result<JsValue, JsError> {
+        if call_depth > self.call_depth_budget {
+            return Err(JsError::execution_limit(format!(
+                "script exceeded call depth budget of {}",
+                self.call_depth_budget
+            )));
+        }
+
+        let JsValue::Object(id) = callee else {
+            return Err(JsError::type_error("value is not callable"));
+        };
+        let function = self
+            .object(id)?
+            .function
+            .clone()
+            .ok_or_else(|| JsError::type_error("value is not callable"))?;
+
+        let function_env =
+            self.allocate_environment(Some(function.closure), EnvironmentKind::Function)?;
+
+        if let Some(name) = &function.template.name {
+            self.environments[function_env.0].bindings.insert(
+                name.clone(),
+                Binding {
+                    value: JsValue::Object(id),
+                    mutable: false,
+                    declaration_kind: VariableKind::Const,
+                },
+            );
+        }
+
+        for (index, parameter) in function.template.params.iter().enumerate() {
+            let value = arguments.get(index).cloned().unwrap_or(JsValue::Undefined);
+            self.environments[function_env.0].bindings.insert(
+                parameter.clone(),
+                Binding {
+                    value,
+                    mutable: true,
+                    declaration_kind: VariableKind::Var,
+                },
+            );
+        }
+
+        match self.run_code(&function.template.code, function_env, steps, call_depth)? {
+            RunOutcome::Returned(value) => Ok(value),
+            RunOutcome::Complete(_) => Ok(JsValue::Undefined),
+        }
     }
 
     pub fn global(&self, name: &str) -> Option<&JsValue> {
-        Some(&self.globals.get(name)?.value)
+        Some(
+            &self.environments[self.global_env.0]
+                .bindings
+                .get(name)?
+                .value,
+        )
+    }
+
+    fn load_binding(&self, start: EnvironmentId, name: &str) -> Result<&JsValue, JsError> {
+        let environment = self
+            .find_binding_environment(start, name)
+            .ok_or_else(|| JsError::reference(format!("{name} is not defined")))?;
+        Ok(&self.environments[environment.0].bindings[name].value)
+    }
+
+    fn assign_binding(
+        &mut self,
+        start: EnvironmentId,
+        name: &str,
+        value: JsValue,
+    ) -> Result<(), JsError> {
+        let environment = self
+            .find_binding_environment(start, name)
+            .ok_or_else(|| JsError::reference(format!("{name} is not defined")))?;
+        let binding = self.environments[environment.0]
+            .bindings
+            .get_mut(name)
+            .expect("resolved environment must contain binding");
+        if !binding.mutable {
+            return Err(JsError::type_error(format!(
+                "assignment to constant variable {name}"
+            )));
+        }
+        binding.value = value;
+        Ok(())
+    }
+
+    fn declare_binding(
+        &mut self,
+        current: EnvironmentId,
+        name: &str,
+        kind: VariableKind,
+        has_initializer: bool,
+        value: JsValue,
+    ) -> Result<(), JsError> {
+        let target = if kind == VariableKind::Var {
+            self.nearest_var_environment(current)?
+        } else {
+            current
+        };
+
+        if let Some(existing) = self.environments[target.0].bindings.get_mut(name) {
+            if kind == VariableKind::Var && existing.declaration_kind == VariableKind::Var {
+                if has_initializer {
+                    existing.value = value;
+                }
+                return Ok(());
+            }
+            return Err(JsError::syntax(
+                0,
+                format!("identifier {name} has already been declared"),
+            ));
+        }
+
+        self.environments[target.0].bindings.insert(
+            name.to_owned(),
+            Binding {
+                value,
+                mutable: kind != VariableKind::Const,
+                declaration_kind: kind,
+            },
+        );
+        Ok(())
+    }
+
+    fn find_binding_environment(&self, start: EnvironmentId, name: &str) -> Option<EnvironmentId> {
+        let mut current = Some(start);
+        let mut remaining = self.environments.len().saturating_add(1);
+        while let Some(id) = current {
+            if remaining == 0 {
+                return None;
+            }
+            remaining -= 1;
+            let environment = self.environments.get(id.0)?;
+            if environment.bindings.contains_key(name) {
+                return Some(id);
+            }
+            current = environment.parent;
+        }
+        None
+    }
+
+    fn nearest_var_environment(&self, start: EnvironmentId) -> Result<EnvironmentId, JsError> {
+        let mut current = Some(start);
+        let mut remaining = self.environments.len().saturating_add(1);
+        while let Some(id) = current {
+            if remaining == 0 {
+                break;
+            }
+            remaining -= 1;
+            let environment = self
+                .environments
+                .get(id.0)
+                .ok_or_else(|| JsError::type_error("invalid lexical environment"))?;
+            if matches!(
+                environment.kind,
+                EnvironmentKind::Global | EnvironmentKind::Function
+            ) {
+                return Ok(id);
+            }
+            current = environment.parent;
+        }
+        Err(JsError::type_error("missing function/global environment"))
+    }
+
+    fn allocate_environment(
+        &mut self,
+        parent: Option<EnvironmentId>,
+        kind: EnvironmentKind,
+    ) -> Result<EnvironmentId, JsError> {
+        if self.environments.len() >= self.environment_budget {
+            return Err(JsError::execution_limit(format!(
+                "runtime exceeded lexical environment budget of {}",
+                self.environment_budget
+            )));
+        }
+        if let Some(parent) = parent
+            && self.environments.get(parent.0).is_none()
+        {
+            return Err(JsError::type_error("invalid parent lexical environment"));
+        }
+        let id = EnvironmentId(self.environments.len());
+        self.environments.push(Environment {
+            parent,
+            kind,
+            bindings: HashMap::new(),
+        });
+        Ok(id)
+    }
+
+    fn parent_environment(&self, id: EnvironmentId) -> Result<EnvironmentId, JsError> {
+        self.environments
+            .get(id.0)
+            .and_then(|environment| environment.parent)
+            .ok_or_else(|| JsError::type_error("cannot exit root lexical environment"))
     }
 
     pub fn get_property(&self, target: &JsValue, key: &str) -> Result<JsValue, JsError> {
@@ -389,11 +663,46 @@ impl JsRuntime {
         Ok(false)
     }
 
+    fn allocate_function(
+        &mut self,
+        template: Arc<FunctionTemplate>,
+        closure: EnvironmentId,
+    ) -> Result<ObjectId, JsError> {
+        if self.environments.get(closure.0).is_none() {
+            return Err(JsError::type_error("invalid function closure environment"));
+        }
+        let mut properties = HashMap::new();
+        properties.insert(
+            "length".into(),
+            JsValue::Number(template.params.len() as f64),
+        );
+        properties.insert(
+            "name".into(),
+            JsValue::String(template.name.clone().unwrap_or_default()),
+        );
+        self.allocate_object_with_function(
+            ObjectKind::Function,
+            Some(self.object_prototype),
+            properties,
+            Some(FunctionObject { template, closure }),
+        )
+    }
+
     fn allocate_object(
         &mut self,
         kind: ObjectKind,
         prototype: Option<ObjectId>,
         properties: HashMap<String, JsValue>,
+    ) -> Result<ObjectId, JsError> {
+        self.allocate_object_with_function(kind, prototype, properties, None)
+    }
+
+    fn allocate_object_with_function(
+        &mut self,
+        kind: ObjectKind,
+        prototype: Option<ObjectId>,
+        properties: HashMap<String, JsValue>,
+        function: Option<FunctionObject>,
     ) -> Result<ObjectId, JsError> {
         if self.heap.len() >= self.object_budget {
             return Err(JsError::execution_limit(format!(
@@ -409,6 +718,7 @@ impl JsRuntime {
             properties,
             prototype,
             kind,
+            function,
         });
         Ok(id)
     }
@@ -586,6 +896,124 @@ mod tests {
         );
         assert_eq!(runtime.global("x"), Some(&JsValue::Number(5.0)));
         assert_eq!(runtime.global("total"), Some(&JsValue::Number(8.0)));
+    }
+
+    #[test]
+    fn block_let_const_shadow_while_var_uses_function_scope() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script("let x = 1; { let x = 2; const y = 3; } x",)
+                .unwrap(),
+            JsValue::Number(1.0)
+        );
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "function scoped() { { var inside = 7; let hidden = 9; } return inside; } scoped()",
+                )
+                .unwrap(),
+            JsValue::Number(7.0)
+        );
+        let error = runtime.eval_script("hidden").unwrap_err();
+        assert_eq!(error.kind, crate::JsErrorKind::Reference);
+    }
+
+    #[test]
+    fn break_and_continue_unwind_nested_block_scopes() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let i = 0, total = 0; while (i < 6) { { i = i + 1; let local = i; if (i === 2) continue; if (i === 5) break; total = total + local; } } total",
+                )
+                .unwrap(),
+            JsValue::Number(8.0)
+        );
+    }
+
+    #[test]
+    fn functions_accept_arguments_return_values_and_recurse() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script("function add(a, b) { return a + b; } add(4, 5)",)
+                .unwrap(),
+            JsValue::Number(9.0)
+        );
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "function fact(n) { if (n <= 1) return 1; return n * fact(n - 1); } fact(6)",
+                )
+                .unwrap(),
+            JsValue::Number(720.0)
+        );
+        assert_eq!(
+            runtime.eval_script("add.length").unwrap(),
+            JsValue::Number(2.0)
+        );
+        assert_eq!(
+            runtime.eval_script("add.name").unwrap(),
+            JsValue::String("add".into())
+        );
+    }
+
+    #[test]
+    fn closures_capture_and_mutate_lexical_environments_after_return() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "function makeCounter(start) { let value = start; return function(step) { value = value + step; return value; }; } let counter = makeCounter(10); counter(2); counter(3)",
+                )
+                .unwrap(),
+            JsValue::Number(15.0)
+        );
+        assert_eq!(
+            runtime.eval_script("counter(5)").unwrap(),
+            JsValue::Number(20.0)
+        );
+    }
+
+    #[test]
+    fn closures_keep_exited_block_environments_alive() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let read; { let secret = 42; read = function() { return secret; }; } read()",
+                )
+                .unwrap(),
+            JsValue::Number(42.0)
+        );
+    }
+
+    #[test]
+    fn named_function_expressions_can_recurse_without_leaking_the_name() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let factorial = function inner(n) { if (n <= 1) return 1; return n * inner(n - 1); }; factorial(5)",
+                )
+                .unwrap(),
+            JsValue::Number(120.0)
+        );
+        let error = runtime.eval_script("inner").unwrap_err();
+        assert_eq!(error.kind, crate::JsErrorKind::Reference);
+    }
+
+    #[test]
+    fn calling_non_functions_and_excessive_recursion_fail_cleanly() {
+        let mut runtime = JsRuntime::new();
+        let error = runtime.eval_script("let x = 1; x()").unwrap_err();
+        assert_eq!(error.kind, crate::JsErrorKind::Type);
+
+        let error = runtime
+            .eval_script("function recurse() { return recurse(); } recurse()")
+            .unwrap_err();
+        assert_eq!(error.kind, crate::JsErrorKind::ExecutionLimit);
     }
 
     #[test]

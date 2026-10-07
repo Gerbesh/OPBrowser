@@ -2,6 +2,7 @@ use crate::{
     AssignmentTarget, BinaryOp, Expression, JsError, JsValue, LogicalOp, Program, Statement,
     UnaryOp, VariableKind, parse_script,
 };
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompiledScript {
@@ -9,21 +10,38 @@ pub struct CompiledScript {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct FunctionTemplate {
+    pub(crate) name: Option<String>,
+    pub(crate) params: Vec<String>,
+    pub(crate) code: Vec<Instruction>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Instruction {
     Push(JsValue),
     Load(String),
-    Declare { name: String, mutable: bool },
+    Declare {
+        name: String,
+        kind: VariableKind,
+        has_initializer: bool,
+    },
     Assign(String),
     CreateObject(Vec<bool>),
     CreateArray(Vec<bool>),
+    CreateFunction(Arc<FunctionTemplate>),
     GetProperty,
     SetProperty,
+    Call(usize),
     Unary(UnaryOp),
     Binary(BinaryOp),
     Pop,
+    EnterScope,
+    ExitScope,
+    UnwindScopes(usize),
     Jump(usize),
     JumpIfFalse(usize),
     JumpIfTrue(usize),
+    Return,
     SetCompletion,
     Halt,
 }
@@ -48,11 +66,12 @@ pub(crate) fn compile_program(program: &Program) -> CompiledScript {
 struct Compiler {
     code: Vec<Instruction>,
     loops: Vec<LoopContext>,
+    scope_depth: usize,
 }
 
-#[derive(Default)]
 struct LoopContext {
     continue_target: usize,
+    scope_depth: usize,
     break_jumps: Vec<usize>,
 }
 
@@ -61,6 +80,7 @@ impl Compiler {
         match statement {
             Statement::Variable { kind, declarations } => {
                 for declaration in declarations {
+                    let has_initializer = declaration.initializer.is_some();
                     if let Some(initializer) = &declaration.initializer {
                         self.expression(initializer);
                     } else {
@@ -68,16 +88,21 @@ impl Compiler {
                     }
                     self.code.push(Instruction::Declare {
                         name: declaration.name.clone(),
-                        mutable: !matches!(kind, VariableKind::Const),
+                        kind: *kind,
+                        has_initializer,
                     });
                 }
                 self.code.push(Instruction::Push(JsValue::Undefined));
                 self.code.push(Instruction::SetCompletion);
             }
             Statement::Block(statements) => {
+                self.code.push(Instruction::EnterScope);
+                self.scope_depth += 1;
                 for statement in statements {
                     self.statement(statement);
                 }
+                self.scope_depth -= 1;
+                self.code.push(Instruction::ExitScope);
             }
             Statement::If {
                 test,
@@ -85,20 +110,52 @@ impl Compiler {
                 alternate,
             } => self.if_statement(test, consequent, alternate.as_deref()),
             Statement::While { test, body } => self.while_statement(test, body),
+            Statement::FunctionDeclaration { name, params, body } => {
+                let template = compile_function_template(Some(name.clone()), params, body);
+                self.code.push(Instruction::CreateFunction(template));
+                self.code.push(Instruction::Declare {
+                    name: name.clone(),
+                    kind: VariableKind::Var,
+                    has_initializer: true,
+                });
+                self.code.push(Instruction::Push(JsValue::Undefined));
+                self.code.push(Instruction::SetCompletion);
+            }
+            Statement::Return(value) => {
+                if let Some(value) = value {
+                    self.expression(value);
+                } else {
+                    self.code.push(Instruction::Push(JsValue::Undefined));
+                }
+                self.code.push(Instruction::Return);
+            }
             Statement::Break => {
+                let (loop_scope_depth, _) = self
+                    .loops
+                    .last()
+                    .map(|context| (context.scope_depth, context.continue_target))
+                    .expect("parser only emits break inside loops");
+                let unwind = self.scope_depth.saturating_sub(loop_scope_depth);
+                if unwind != 0 {
+                    self.code.push(Instruction::UnwindScopes(unwind));
+                }
                 let jump = self.emit_jump();
                 self.loops
                     .last_mut()
-                    .expect("parser only emits break inside loops")
+                    .expect("loop context must exist")
                     .break_jumps
                     .push(jump);
             }
             Statement::Continue => {
-                let target = self
+                let context = self
                     .loops
                     .last()
-                    .expect("parser only emits continue inside loops")
-                    .continue_target;
+                    .expect("parser only emits continue inside loops");
+                let unwind = self.scope_depth.saturating_sub(context.scope_depth);
+                let target = context.continue_target;
+                if unwind != 0 {
+                    self.code.push(Instruction::UnwindScopes(unwind));
+                }
                 self.code.push(Instruction::Jump(target));
             }
             Statement::Expression(expression) => {
@@ -140,6 +197,7 @@ impl Compiler {
 
         self.loops.push(LoopContext {
             continue_target: loop_start,
+            scope_depth: self.scope_depth,
             break_jumps: Vec::new(),
         });
         self.statement(body);
@@ -186,6 +244,17 @@ impl Compiler {
                 self.expression(object);
                 self.expression(property);
                 self.code.push(Instruction::GetProperty);
+            }
+            Expression::Call { callee, arguments } => {
+                self.expression(callee);
+                for argument in arguments {
+                    self.expression(argument);
+                }
+                self.code.push(Instruction::Call(arguments.len()));
+            }
+            Expression::Function { name, params, body } => {
+                let template = compile_function_template(name.clone(), params, body);
+                self.code.push(Instruction::CreateFunction(template));
             }
             Expression::Unary { op, argument } => {
                 self.expression(argument);
@@ -252,6 +321,24 @@ impl Compiler {
     }
 }
 
+fn compile_function_template(
+    name: Option<String>,
+    params: &[String],
+    body: &[Statement],
+) -> Arc<FunctionTemplate> {
+    let mut compiler = Compiler::default();
+    for statement in body {
+        compiler.statement(statement);
+    }
+    compiler.code.push(Instruction::Push(JsValue::Undefined));
+    compiler.code.push(Instruction::Return);
+    Arc::new(FunctionTemplate {
+        name,
+        params: params.to_vec(),
+        code: compiler.code,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,6 +367,12 @@ mod tests {
         assert!(script.code.iter().any(
             |instruction| matches!(instruction, Instruction::Jump(target) if *target != usize::MAX)
         ));
+        assert!(
+            script
+                .code
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::EnterScope))
+        );
     }
 
     #[test]
@@ -306,6 +399,46 @@ mod tests {
                 .code
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::SetProperty))
+        );
+    }
+
+    #[test]
+    fn compiles_functions_calls_returns_and_scope_unwind() {
+        let script = compile_script(
+            "function outer(x) { while (x) { { if (x === 2) break; x = x - 1; continue; } } return function inner(y) { return x + y; }; } outer(3)(4)",
+        )
+        .unwrap();
+        assert!(
+            script
+                .code
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::CreateFunction(_)))
+        );
+        assert!(
+            script
+                .code
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::Call(1)))
+        );
+        let function = script
+            .code
+            .iter()
+            .find_map(|instruction| match instruction {
+                Instruction::CreateFunction(template) => Some(template),
+                _ => None,
+            });
+        let function = function.expect("function declaration should compile to a template");
+        assert!(
+            function
+                .code
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::UnwindScopes(_)))
+        );
+        assert!(
+            function
+                .code
+                .iter()
+                .any(|instruction| matches!(instruction, Instruction::Return))
         );
     }
 }

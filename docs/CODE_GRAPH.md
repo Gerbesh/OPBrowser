@@ -134,12 +134,15 @@ classDiagram
     }
 
     class JsRuntime {
-        -globals
         -heap JsObject[]
+        -environments Environment[]
+        -global_env EnvironmentId
         -object_prototype ObjectId
         -array_prototype ObjectId
         -instruction_budget
         -object_budget
+        -environment_budget
+        -call_depth_budget
         +new()
         +with_instruction_budget(limit)
         +eval_script(source) JsValue
@@ -147,10 +150,20 @@ classDiagram
         +global(name) JsValue
         +get_property(target, key) JsValue
     }
+    class Environment {
+        parent EnvironmentId?
+        kind Global / Function / Block
+        bindings
+    }
+    class FunctionObject {
+        template FunctionTemplate
+        closure EnvironmentId
+    }
     class JsObject {
         properties
         prototype ObjectId?
-        kind Ordinary / Array
+        kind Ordinary / Array / Function
+        function FunctionObject?
     }
     class ObjectId {
         opaque heap index
@@ -158,13 +171,19 @@ classDiagram
     class CompiledScript {
         code Instruction[]
     }
+    class FunctionTemplate {
+        name
+        params
+        code Instruction[]
+    }
     class Instruction {
         Push / Load / Declare / Assign
-        CreateObject / CreateArray
-        GetProperty / SetProperty
+        CreateObject / CreateArray / CreateFunction
+        GetProperty / SetProperty / Call
         Unary / Binary / Pop
+        EnterScope / ExitScope / UnwindScopes
         Jump / JumpIfFalse / JumpIfTrue
-        SetCompletion / Halt
+        Return / SetCompletion / Halt
     }
 
     class Encoding {
@@ -467,8 +486,12 @@ classDiagram
 
     Engine --> NavigationState
     JsRuntime --> CompiledScript : compile / execute
+    JsRuntime --> Environment : owns lexical environment arena
     JsRuntime --> JsObject : owns bounded heap
     JsObject --> ObjectId : prototype reference
+    JsObject --> FunctionObject : optional callable payload
+    FunctionObject --> FunctionTemplate : owned bytecode template
+    FunctionObject --> Environment : captured closure
     CompiledScript --> Instruction : ordered bytecode with patched jump targets
     NavigationState --> NavigationEntry
     Engine --> NetworkContext

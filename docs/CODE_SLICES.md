@@ -569,7 +569,9 @@ JavaScript source
   -> AST parser
   -> bytecode compiler
   -> stack VM
-  -> primitive or ObjectId completion value / persistent global binding
+  -> primitive or ObjectId completion value
+  -> runtime-owned lexical environment chain -> global/function/block bindings
+  -> closure capture -> function call/return
   -> runtime-owned object heap -> own properties -> prototype chain
 ```
 
@@ -579,10 +581,14 @@ logical operators, blocks, if/else, while and break/continue. It now also has re
 objects, object/array literals, dot/computed property access and writes, array holes/length growth,
 and an initial prototype chain including object-literal/__proto__ behavior and cycle rejection.
 Control flow is compiled to patched jumps and executed by an instruction-pointer VM with bounded
-instruction and object budgets. Binding storage is still global; full lexical block environments
-begin with the functions/closures slice. The parse-only Test262 probe moved from 364/1983 (18.36%)
-to 391/1983 (19.72%) and then 408/1983 (20.57%) on the unchanged manifest. It deliberately does
-not claim runtime conformance.
+instruction, object, lexical-environment and call-depth budgets. Bindings now resolve through
+global/function/block lexical environments: let/const use the current block, var targets the nearest
+function/global environment, and function objects capture an environment for closures that survive
+scope exit. Initial declarations/expressions, calls, parameters, return, recursion and function
+name/length are executable. Hoisting, this/new/arguments, arrow/default/rest/destructuring syntax
+and exceptions remain later work. The parse-only Test262 probe moved from 364/1983 (18.36%) to
+391/1983 (19.72%), 408/1983 (20.57%) and now 504/1983 (25.42%) on the unchanged manifest. It
+deliberately does not claim runtime conformance.
 
 Planned continuation:
 
