@@ -392,7 +392,10 @@ impl<'a> Context<'a, '_> {
             return;
         }
 
-        let establishes_bfc = matches!(display, Display::FlowRoot | Display::FlowRootListItem);
+        let establishes_bfc = matches!(
+            display,
+            Display::FlowRoot | Display::FlowRootListItem | Display::Flex | Display::InlineFlex
+        );
         let (containing_x, containing_width) = if establishes_bfc {
             self.available_around_floats(containing_x, containing_width, self.y)
         } else {
@@ -454,52 +457,65 @@ impl<'a> Context<'a, '_> {
             .saturating_add(padding_top);
         let content_top = self.y;
 
-        let first_letter_host = match content {
-            BlockContent::Element(id) => Some(id),
-            BlockContent::Generated(_, _) | BlockContent::ImageAlt(_) => None,
-        };
+        if let BlockContent::Element(id) = content
+            && matches!(display, Display::Flex | Display::InlineFlex)
+        {
+            let row = self.flex_row_atomic(id, href, style, content_width);
+            let row_height = row.height;
+            self.append_atomic_output(row, content_x, content_top);
+            self.y = content_top.saturating_add(row_height);
+        } else {
+            let first_letter_host = match content {
+                BlockContent::Element(id) => Some(id),
+                BlockContent::Generated(_, _) | BlockContent::ImageAlt(_) => None,
+            };
 
-        let mut items = Vec::new();
-        match content {
-            BlockContent::Element(id) => {
-                self.collect_generated(
-                    id,
-                    PseudoElement::Before,
+            let mut items = Vec::new();
+            match content {
+                BlockContent::Element(id) => {
+                    self.collect_generated(
+                        id,
+                        PseudoElement::Before,
+                        href,
+                        style,
+                        (content_x, content_width),
+                        &mut items,
+                    );
+                    self.collect_children(
+                        id,
+                        self.document.children(id),
+                        href,
+                        style,
+                        (content_x, content_width),
+                        &mut items,
+                    );
+                    self.collect_generated(
+                        id,
+                        PseudoElement::After,
+                        href,
+                        style,
+                        (content_x, content_width),
+                        &mut items,
+                    );
+                }
+                BlockContent::Generated(id, pseudo) => self.collect_generated_items(
+                    (id, pseudo),
                     href,
                     style,
-                    (content_x, content_width),
+                    content_width,
                     &mut items,
-                );
-                self.collect_children(
-                    id,
-                    self.document.children(id),
-                    href,
-                    style,
-                    (content_x, content_width),
-                    &mut items,
-                );
-                self.collect_generated(
-                    id,
-                    PseudoElement::After,
-                    href,
-                    style,
-                    (content_x, content_width),
-                    &mut items,
-                );
-            }
-            BlockContent::Generated(id, pseudo) => {
-                self.collect_generated_items((id, pseudo), href, style, content_width, &mut items)
-            }
-            BlockContent::ImageAlt(id) => {
-                if let Some(element) = self.document.element(id) {
-                    self.collect_image(id, element, href, style, content_width, &mut items);
+                ),
+                BlockContent::ImageAlt(id) => {
+                    if let Some(element) = self.document.element(id) {
+                        self.collect_image(id, element, href, style, content_width, &mut items);
+                    }
                 }
             }
+            if let Some(host) = first_letter_host {
+                self.apply_first_letter_style(host, &mut items);
+            }
+            self.emit(&mut items, style, content_x, content_width);
         }
-        if let Some(host) = first_letter_host {
-            self.apply_first_letter_style(host, &mut items);
-        }
-        self.emit(&mut items, style, content_x, content_width);
         // Parent/child margin collapse is intentionally deferred; consume the final
         // child margin before this block's padding/border boundary.
         self.flush_pending_margin();
@@ -652,6 +668,341 @@ impl<'a> Context<'a, '_> {
             image_boxes: local.images_out,
             order: local.order,
         }
+    }
+
+    fn inline_flex_atomic(
+        &mut self,
+        id: NodeId,
+        mut style: Style,
+        containing_width: i32,
+    ) -> InlineAtomic {
+        let margin_left = resolve_margin(style.margin.left, containing_width).unwrap_or(0);
+        let margin_right = resolve_margin(style.margin.right, containing_width).unwrap_or(0);
+        let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
+        let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
+        let available = containing_width
+            .saturating_sub(margin_left)
+            .saturating_sub(margin_right)
+            .max(1);
+
+        if style.width.is_none() {
+            let intrinsic = self.flex_row_atomic(id, None, style, available);
+            style.width = Some(LengthPercentage::Px(intrinsic.width.max(1) as f32));
+        }
+
+        style.margin = MarginEdges::ZERO;
+        let used = resolve_block_horizontal(style, available);
+        let document = self.document;
+        let images = self.images;
+        let generated_images = self.generated_images;
+        let computed_styles = self.computed_styles;
+        let mut local = Context {
+            document,
+            images,
+            generated_images,
+            computed_styles,
+            measurer: &mut *self.measurer,
+            inline_boxes: InlineBoxes::default(),
+            width: available,
+            y: 0,
+            pending_margin: None,
+            block_epoch: 0,
+            floats: Vec::new(),
+            decorations: Vec::new(),
+            text: Vec::new(),
+            images_out: Vec::new(),
+            order: Vec::new(),
+        };
+        local.block(BlockContent::Element(id), None, style, 0, available);
+        local.flush_pending_margin();
+
+        for decoration in &mut local.decorations {
+            decoration.x = decoration.x.saturating_add(margin_left);
+            decoration.y = decoration.y.saturating_add(margin_top);
+        }
+        for text in &mut local.text {
+            text.x = text.x.saturating_add(margin_left);
+            text.y = text.y.saturating_add(margin_top);
+        }
+        for image in &mut local.images_out {
+            image.x = image.x.saturating_add(margin_left);
+            image.y = image.y.saturating_add(margin_top);
+        }
+
+        let content_height = local.y.max(0);
+        InlineAtomic {
+            width: margin_left
+                .saturating_add(used.border_width)
+                .saturating_add(margin_right)
+                .max(1),
+            height: margin_top
+                .saturating_add(content_height)
+                .saturating_add(margin_bottom)
+                .max(0),
+            baseline: margin_top.saturating_add(content_height).max(0),
+            decorations: local.decorations,
+            text_boxes: local.text,
+            image_boxes: local.images_out,
+            order: local.order,
+        }
+    }
+
+    fn flex_row_atomic(
+        &mut self,
+        id: NodeId,
+        href: Option<&'a str>,
+        style: Style,
+        containing_width: i32,
+    ) -> InlineAtomic {
+        let children = self.document.children(id).to_vec();
+        let mut pending = Vec::new();
+        let mut children_out = Vec::new();
+        self.collect_flex_nodes(
+            &children,
+            href,
+            style,
+            containing_width,
+            &mut pending,
+            &mut children_out,
+        );
+        self.flush_anonymous_flex_item(&mut pending, style, &mut children_out);
+
+        let mut row = InlineAtomic {
+            width: 0,
+            height: 0,
+            baseline: 0,
+            decorations: Vec::new(),
+            text_boxes: Vec::new(),
+            image_boxes: Vec::new(),
+            order: Vec::new(),
+        };
+        let mut x = 0;
+        for child in children_out {
+            let width = child.width.max(0);
+            row.height = row.height.max(child.height);
+            append_atomic(&mut row, child, x, 0);
+            x = x.saturating_add(width);
+        }
+        row.width = x;
+        row.baseline = row.height;
+        row
+    }
+
+    fn collect_flex_nodes(
+        &mut self,
+        nodes: &[NodeId],
+        href: Option<&'a str>,
+        inherited: Style,
+        containing_width: i32,
+        pending: &mut Vec<Item<'a>>,
+        output: &mut Vec<InlineAtomic>,
+    ) {
+        for id in nodes {
+            let Some(node) = self.document.node(*id) else {
+                continue;
+            };
+            match &node.kind {
+                NodeKind::Text(text) => pending.extend(text.chars().map(|ch| {
+                    Item::Char(InlineChar {
+                        ch,
+                        href,
+                        style: inherited.inline,
+                    })
+                })),
+                NodeKind::Element(element) => {
+                    let display = self.element_display(*id, &element.tag_name);
+                    if display == Display::None {
+                        continue;
+                    }
+                    let current = self.element_style(*id, &element.tag_name, inherited);
+                    let current_href = if element.tag_name == "a" {
+                        attribute(element, "href")
+                    } else {
+                        href
+                    };
+                    if display == Display::Contents {
+                        let children = self.document.children(*id).to_vec();
+                        self.collect_flex_nodes(
+                            &children,
+                            current_href,
+                            current,
+                            containing_width,
+                            pending,
+                            output,
+                        );
+                    } else {
+                        self.flush_anonymous_flex_item(pending, inherited, output);
+                        output.push(self.flex_element_atomic(
+                            *id,
+                            current_href,
+                            current,
+                            containing_width,
+                        ));
+                    }
+                }
+                NodeKind::Document => {
+                    let children = node.children.clone();
+                    self.collect_flex_nodes(
+                        &children,
+                        href,
+                        inherited,
+                        containing_width,
+                        pending,
+                        output,
+                    );
+                }
+                NodeKind::Comment(_) | NodeKind::DocumentType(_) => {}
+            }
+        }
+    }
+
+    fn flush_anonymous_flex_item(
+        &mut self,
+        items: &mut Vec<Item<'a>>,
+        style: Style,
+        output: &mut Vec<InlineAtomic>,
+    ) {
+        if items.is_empty() {
+            return;
+        }
+        let boxes = InlineBoxes::default();
+        let lines = Lines::new(
+            self.measurer,
+            &boxes,
+            style.inline,
+            style.text_align,
+            0,
+            0,
+            1_000_000,
+        )
+        .layout(std::mem::take(items));
+        if lines.text_boxes.is_empty()
+            && lines.image_boxes.is_empty()
+            && lines.decorations.is_empty()
+        {
+            return;
+        }
+        let width = lines
+            .text_boxes
+            .iter()
+            .map(|item| item.x.saturating_add(item.width))
+            .chain(
+                lines
+                    .image_boxes
+                    .iter()
+                    .map(|item| item.x.saturating_add(item.width)),
+            )
+            .chain(
+                lines
+                    .decorations
+                    .iter()
+                    .map(|item| item.x.saturating_add(item.width)),
+            )
+            .max()
+            .unwrap_or(0)
+            .max(0);
+        let height = lines.bottom().max(0);
+        output.push(InlineAtomic {
+            width,
+            height,
+            baseline: height,
+            decorations: lines.decorations,
+            text_boxes: lines.text_boxes,
+            image_boxes: lines.image_boxes,
+            order: lines.order,
+        });
+    }
+
+    fn flex_element_atomic(
+        &mut self,
+        id: NodeId,
+        href: Option<&'a str>,
+        mut style: Style,
+        containing_width: i32,
+    ) -> InlineAtomic {
+        if style.width.is_none() {
+            let mut text = String::new();
+            for child in self.document.children(id) {
+                self.collect_table_intrinsic_text(*child, &mut text);
+            }
+            let preferred_text = self.measure_table_intrinsic_text(&text, style.inline).1;
+            let preferred_image =
+                self.table_intrinsic_image_width(id, style, containing_width.max(1));
+            style.width = Some(LengthPercentage::Px(
+                preferred_text.max(preferred_image).max(1) as f32,
+            ));
+        }
+
+        let used = resolve_block_horizontal(style, containing_width);
+        let margin_right = resolve_margin(style.margin.right, containing_width).unwrap_or(0);
+        let document = self.document;
+        let images = self.images;
+        let generated_images = self.generated_images;
+        let computed_styles = self.computed_styles;
+        let mut local = Context {
+            document,
+            images,
+            generated_images,
+            computed_styles,
+            measurer: &mut *self.measurer,
+            inline_boxes: InlineBoxes::default(),
+            width: containing_width.max(1),
+            y: 0,
+            pending_margin: None,
+            block_epoch: 0,
+            floats: Vec::new(),
+            decorations: Vec::new(),
+            text: Vec::new(),
+            images_out: Vec::new(),
+            order: Vec::new(),
+        };
+
+        let display = local
+            .document
+            .element(id)
+            .map_or(Display::Block, |element| {
+                local.element_display(id, &element.tag_name)
+            });
+        if matches!(display, Display::Table | Display::InlineTable) {
+            local.table(id, style, 0, containing_width.max(1));
+        } else {
+            local.block(
+                BlockContent::Element(id),
+                href,
+                style,
+                0,
+                containing_width.max(1),
+            );
+        }
+        local.flush_pending_margin();
+        let height = local.y.max(0);
+        InlineAtomic {
+            width: used
+                .margin_left
+                .saturating_add(used.border_width)
+                .saturating_add(margin_right)
+                .max(1),
+            height,
+            baseline: height,
+            decorations: local.decorations,
+            text_boxes: local.text,
+            image_boxes: local.images_out,
+            order: local.order,
+        }
+    }
+
+    fn append_atomic_output(&mut self, mut atomic: InlineAtomic, x: i32, y: i32) {
+        shift_atomic(&mut atomic, x, y);
+        let text_offset = self.text.len();
+        let image_offset = self.images_out.len();
+        self.order
+            .extend(atomic.order.into_iter().map(|item| match item {
+                LayoutItem::Text(index) => LayoutItem::Text(index + text_offset),
+                LayoutItem::Image(index) => LayoutItem::Image(index + image_offset),
+            }));
+        self.decorations.extend(atomic.decorations);
+        self.text.extend(atomic.text_boxes);
+        self.images_out.extend(atomic.image_boxes);
     }
 
     fn anonymous_table(
@@ -2336,7 +2687,14 @@ impl<'a> Context<'a, '_> {
                     return;
                 }
 
-                if display == Display::InlineTable {
+                if display == Display::InlineFlex {
+                    current.inline.boxes = inherited.inline.boxes;
+                    let mut atomic = self.inline_flex_atomic(id, current, containing_width);
+                    if let Some(href) = href {
+                        inherit_atomic_href(&mut atomic, href);
+                    }
+                    items.push(Item::Atomic(atomic, current.inline, current.vertical_align));
+                } else if display == Display::InlineTable {
                     current.inline.boxes = inherited.inline.boxes;
                     let mut atomic = self.inline_table_atomic(id, current, containing_width);
                     if let Some(href) = href {
@@ -3214,6 +3572,36 @@ fn measure_intrinsic_text_run(
         .max(0)
 }
 
+fn shift_atomic(atomic: &mut InlineAtomic, x: i32, y: i32) {
+    for decoration in &mut atomic.decorations {
+        decoration.x = decoration.x.saturating_add(x);
+        decoration.y = decoration.y.saturating_add(y);
+    }
+    for text in &mut atomic.text_boxes {
+        text.x = text.x.saturating_add(x);
+        text.y = text.y.saturating_add(y);
+    }
+    for image in &mut atomic.image_boxes {
+        image.x = image.x.saturating_add(x);
+        image.y = image.y.saturating_add(y);
+    }
+}
+
+fn append_atomic(target: &mut InlineAtomic, mut child: InlineAtomic, x: i32, y: i32) {
+    shift_atomic(&mut child, x, y);
+    let text_offset = target.text_boxes.len();
+    let image_offset = target.image_boxes.len();
+    target
+        .order
+        .extend(child.order.into_iter().map(|item| match item {
+            LayoutItem::Text(index) => LayoutItem::Text(index + text_offset),
+            LayoutItem::Image(index) => LayoutItem::Image(index + image_offset),
+        }));
+    target.decorations.extend(child.decorations);
+    target.text_boxes.extend(child.text_boxes);
+    target.image_boxes.extend(child.image_boxes);
+}
+
 fn inherit_atomic_href(atomic: &mut InlineAtomic, href: &str) {
     for text in &mut atomic.text_boxes {
         if text.links.is_empty() && !text.text.is_empty() {
@@ -3684,7 +4072,11 @@ fn fallback_inline_style(tag: &str, inherited: InlineStyle) -> InlineStyle {
 fn is_block_level_display(display: Display) -> bool {
     matches!(
         display,
-        Display::Block | Display::FlowRoot | Display::ListItem | Display::FlowRootListItem
+        Display::Block
+            | Display::FlowRoot
+            | Display::ListItem
+            | Display::FlowRootListItem
+            | Display::Flex
     )
 }
 

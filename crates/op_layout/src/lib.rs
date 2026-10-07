@@ -984,6 +984,73 @@ mod tests {
     }
 
     #[test]
+    fn flex_display_contents_flattens_into_the_flex_item_sequence() {
+        fn render(source: &str) -> LayoutTree {
+            let document = op_html::parse_document(source);
+            let author = op_css::collect_author_styles(&document);
+            let computed = op_css::compute_styles(&document, &author.styles);
+            layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            )
+        }
+
+        let test = render(
+            "<div style='display:flex'>0<div style='display:contents;background:red'>x<span style='background:blue'>1</span>y</div>2</div>",
+        );
+        let reference =
+            render("<div style='display:flex'>0x<span style='background:blue'>1</span>y2</div>");
+
+        assert_eq!(test.box_decorations, reference.box_decorations);
+        assert_eq!(test.text_boxes, reference.text_boxes);
+        assert_eq!(test.image_boxes, reference.image_boxes);
+        assert_eq!(test.order, reference.order);
+    }
+
+    #[test]
+    fn inline_flex_is_atomic_and_display_contents_stays_transparent() {
+        fn render(source: &str) -> LayoutTree {
+            let document = op_html::parse_document(source);
+            let author = op_css::collect_author_styles(&document);
+            let computed = op_css::compute_styles(&document, &author.styles);
+            layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            )
+        }
+
+        let test = render(
+            "<div>before<span style='display:inline-flex'><span style='display:contents;background:red'>0<b>1</b>2</span></span>after</div>",
+        );
+        let reference =
+            render("<div>before<span style='display:inline-flex'>0<b>1</b>2</span>after</div>");
+
+        assert_eq!(test.box_decorations, reference.box_decorations);
+        assert_eq!(test.text_boxes, reference.text_boxes);
+        assert_eq!(test.image_boxes, reference.image_boxes);
+        assert_eq!(test.order, reference.order);
+
+        let before = test
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("before"))
+            .unwrap();
+        let after = test
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("after"))
+            .unwrap();
+        assert_eq!(before.y, after.y);
+        assert!(after.x > before.x);
+    }
+
+    #[test]
     fn visibility_hidden_keeps_text_geometry_but_marks_it_unpainted() {
         let document = op_html::parse_document(
             "<div><span style='visibility:hidden'>hidden</span><span>visible</span></div>",

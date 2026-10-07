@@ -1814,3 +1814,30 @@ This file is append-only project history.
 - The local release browser was rebuilt at `target/release/op_browser.exe`: 998,912 bytes, SHA-256
   `E696273FC943E107001D3424E326B5DA0CF0226511D85868C76B93F48B16B479`.
 
+## 2026-10-07 - Initial flex formatting context WPT pass
+
+- Added computed `display:flex` and `display:inline-flex` values instead of letting those
+  declarations fall through to ordinary flow.
+- Added an initial default single-line row flex formatter. Direct element children become flex
+  items, contiguous text becomes whitespace-aware anonymous flex items, and nested
+  `display:contents` wrappers recursively expose their descendants without manufacturing a
+  principal background/border box.
+- Reused the existing block/inline layout outputs inside flex items, then rebased decorations,
+  text, images and display order horizontally into the flex row. Block flex establishes an isolated
+  formatting context; `inline-flex` uses the same row as a shrink-to-content atomic inline box.
+- Added computed-style coverage for both display keywords and layout regressions comparing
+  `display:contents` flex trees with equivalent flattened references for both block flex and
+  inline-flex.
+- Focused pinned reftests `display-contents-flex-002` and
+  `display-contents-inline-flex-001` moved from 0/2 to 2/2 with exact pixel matches.
+- The unchanged WPT Static v1 manifest improved from 185/200 (92.50%) to 187/200 (93.50%),
+  leaving 13 failures and zero render errors.
+- Updated the project plan, compatibility history, code graph, code slices and wiki to record the
+  new formatting boundary and its deliberate limits. Full Flexbox properties such as direction,
+  wrapping, flexible lengths, ordering, alignment distribution and gaps remain future work.
+- Final verification passed rustfmt, both generated-table checks, warning-free workspace Clippy,
+  the complete workspace test suite, all Win32 CI smoke variants, the repeated 200-test WPT Static
+  v1 probe, optimized release build and `git diff --check`.
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 1,009,664 bytes,
+  SHA-256 `1D948C02A1EA83745BD3655C39E79FB3B21F0A3A30711A051D9B42757B1B7322`.
+

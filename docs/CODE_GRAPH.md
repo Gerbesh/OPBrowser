@@ -1,6 +1,6 @@
 # OPBrowser Code Graph
 
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 
 This document is the maintained human-readable code/dependency graph. It is updated
 whenever crates, important types, or ownership boundaries change.
@@ -321,6 +321,11 @@ classDiagram
         name
         value
     }
+    class Display {
+        Inline / Block / FlowRoot
+        Flex / InlineFlex
+        Table roles / Contents / None
+    }
     class ComputedStyle {
         display
         color
@@ -367,6 +372,10 @@ classDiagram
     class EmptyInline {
         InlineStyle
         no glyph payload
+    }
+    class InlineAtomic {
+        width / height / baseline
+        nested decorations / text / images / order
     }
     class InlineImage {
         used width and height
@@ -476,6 +485,7 @@ classDiagram
     ComputedPseudoStyle --> ComputedQuotes : inherited host or pseudo-local pairs
     Document --> ComputedPseudoStyle : attr() reads originating element attributes
     ComputedStyleMap --> ComputedStyle
+    ComputedStyle --> Display : resolved formatting role
     ComputedStyleMap --> ComputedPseudoStyle
     ComputedPseudoStyle --> PseudoElement : keyed generated target
     Engine --> StyleCollection : retained author style candidates/errors
@@ -484,12 +494,15 @@ classDiagram
     PreparedDocument --> Document : DOM snapshot
     PreparedDocument --> RasterImage : shared Arc image resources
     Document --> LayoutTree : flow grouping / inline lines
+    Display --> LayoutTree : block / table / flex / contents formatting dispatch
     ComputedStyleMap --> LayoutTree : display/text style + line-height/alignment/white-space/decorations/spacing/transform + block/inline box geometry
     ComputedStyle --> InlineBoxStyle : resolved inline padding/background/solid borders
     ComputedPseudoStyle --> LayoutTree : generated before/after inline items
     ComputedPseudoStyle --> BlockContent : display block retained text
     Document --> BlockContent : ordinary element child traversal
     BlockContent --> BoxDecoration : shared normal-flow block geometry / empty boxes
+    InlineAtomic --> LayoutTree : inline-table and inline-flex atomic placement
+    InlineAtomic --> BoxDecoration : nested flex/table decorations rebased into parent flow
     InlineImage --> ImageBox : only available raster payloads produce paint items
     InlineImage --> BoxDecoration : transparent failed replacements preserve CSS geometry
     ComputedPseudoStyle --> InlineBoxStyle : pseudo decoration identity + box style

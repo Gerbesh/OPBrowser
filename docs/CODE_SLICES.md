@@ -653,10 +653,34 @@ CSS Color 4 implementation pass moved the unchanged WPT Static v1 manifest to 12
 (89.50%), structural table `display:contents` moved it to 181/200 (90.50%), and the
 grapheme-aware `::first-letter` fragment-pseudo pass moved it to 182/200 (91.00%),
 self-collapsing block-in-inline margin propagation moved it to 183/200 (91.50%), and the
-initial flow-root/BFC/float/visibility pass moved it to 185/200 (92.50%).
+initial flow-root/BFC/float/visibility pass moved it to 185/200 (92.50%), and the initial
+flex formatting/display-contents pass moved it to 187/200 (93.50%).
 These numbers name their subsets explicitly and are not full browser or ECMAScript conformance
 scores. Future scope changes require a new manifest version so agents
 can compare before/after results without moving the denominator underneath themselves.
+
+## S8 - Initial flex formatting context
+
+Status: COMPLETE for the first default row slice.
+
+```text
+display:flex / inline-flex
+  -> flex formatting dispatch
+  -> element and anonymous text items
+  -> display:contents flattening
+  -> intrinsic item sizing
+  -> single-line horizontal row
+  -> block flex or atomic inline-flex
+  -> LayoutTree / DisplayList / Win32 paint
+```
+
+The first slice implements default single-line row behavior. `display:contents` contributes no
+principal box and recursively exposes its children while preserving inherited text style.
+`inline-flex` uses the same nested row layout as a shrink-to-content atomic inline object.
+Direction variants, wrapping, flexible lengths, ordering, alignment and gaps remain follow-up work.
+
+The two pinned flex/display-contents reftests moved from 0/2 to 2/2, raising WPT Static v1 from
+185/200 (92.50%) to 187/200 (93.50%) on the unchanged manifest.
 
 ## Rule
 

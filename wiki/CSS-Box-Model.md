@@ -91,6 +91,22 @@ This is deliberately not complete CSS2 float layout yet. Text wrapping around fl
 replaced images, complex left/right float packing, list markers and the full clearance/margin rules
 remain future work.
 
+## Initial flex formatting context
+
+`display:flex` and `display:inline-flex` now create an initial flex formatting context instead of
+falling back to ordinary flow. The first slice implements the default single-line row: direct
+in-flow elements become flex items, contiguous text becomes anonymous flex items, and nested
+`display:contents` wrappers are recursively transparent during item generation. Contents wrappers
+still carry inherited typography/color into descendant text but do not paint their own box.
+
+Block flex participates as a block-level formatting context. `inline-flex` uses the same nested row
+layout inside an atomic inline box and shrink-wraps its auto width. The existing block/inline
+machinery lays out item contents, then their decorations, text, images and paint order are rebased
+into the parent row.
+
+This is not full Flexbox yet. Direction variants, wrapping, flexible lengths, ordering, alignment
+distribution and gaps remain follow-up work.
+
 ## Painting
 
 `op_layout` emits `BoxDecoration` records with border-box bounds, background color and four

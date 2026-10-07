@@ -19,7 +19,7 @@ The project now has two reproducible external metrics rather than milestone gues
 
 - **WPT Static v1**: 200 pinned static HTML/CSS reftests rendered at 800 x 600 through the
   ordinary OPBrowser engine/display-list/GDI path. Initial baseline: **86/200, 43.00%**; current
-  result after the initial flow-root/BFC/float/visibility pass: **185/200, 92.50%**.
+  result after the initial flex formatting/display-contents pass: **187/200, 93.50%**.
 - **Test262 Parser v1**: a 2,000-path deterministic Test262 language sample. Module entries are
   skipped until module parsing is supported. Initial executable baseline: **364/1983, 18.36%**.
 

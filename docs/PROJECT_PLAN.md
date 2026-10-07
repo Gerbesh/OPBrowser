@@ -290,7 +290,9 @@ Status: IN PROGRESS.
 - DONE initial BFC/float foundation: `flow-root` and `flow-root list-item` are block-level BFCs, left/right floats have scoped geometry, `clear` advances below matching floats, BFCs contain child floats and avoid active outer floats, and floated tables retain the table formatter.
 - DONE CSS2 compatibility support for single-colon `:before`/`:after`/`:first-letter` plus inherited `visibility:hidden` that keeps layout geometry while suppressing text/image/decorative paint.
 - DONE eighth metric-driven pass raised the unchanged WPT Static v1 manifest from 183/200 (91.50%) to 185/200 (92.50%).
-- NEXT implement the initial flex formatting context needed by the two remaining flex-related `display:contents` reftests; after that the larger queues are SVG display contexts, ICC/tagged images, gamut mapping, form-control rendering, `::first-line`/bidi and fuller relative-color/interpolation semantics.
+- DONE initial flex formatting context: computed `display:flex`/`inline-flex`, default single-line row item layout, anonymous text flex items, atomic shrink-to-content inline-flex and recursive `display:contents` item flattening.
+- DONE ninth metric-driven pass raised the unchanged WPT Static v1 manifest from 185/200 (92.50%) to 187/200 (93.50%).
+- NEXT continue metric-driven CSS work across the 13 remaining WPT Static v1 failures: SVG display contexts, ICC/tagged images and gamut mapping, form-control rendering, `::first-line`/bidi, compositing and fuller current/relative-color semantics.
 
 ## M3 - Original JavaScript engine
 

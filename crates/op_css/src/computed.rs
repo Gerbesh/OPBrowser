@@ -16,6 +16,8 @@ pub enum Display {
     ListItem,
     FlowRootListItem,
     InlineTable,
+    Flex,
+    InlineFlex,
     Table,
     TableCaption,
     TableColumnGroup,
@@ -1974,6 +1976,8 @@ fn parse_display(tokens: &[TokenKind]) -> Option<Specified<Display>> {
         "flow-root" => Some(Specified::Value(Display::FlowRoot)),
         "list-item" => Some(Specified::Value(Display::ListItem)),
         "inline-table" => Some(Specified::Value(Display::InlineTable)),
+        "flex" => Some(Specified::Value(Display::Flex)),
+        "inline-flex" => Some(Specified::Value(Display::InlineFlex)),
         "table" => Some(Specified::Value(Display::Table)),
         "table-caption" => Some(Specified::Value(Display::TableCaption)),
         "table-column-group" => Some(Specified::Value(Display::TableColumnGroup)),
@@ -5821,6 +5825,8 @@ mod tests {
             "<style>
                #custom { display:table-row }
                #inline-table { display:inline-table }
+               #flex { display:flex }
+               #inline-flex { display:inline-flex }
                #flow-root { display:flow-root }
                #list-item { display:list-item }
                #flow-root-list { display:flow-root list-item }
@@ -5833,6 +5839,7 @@ mod tests {
                <tfoot id='tfoot'><tr><td>F</td></tr></tfoot>
              </table>
              <div id='custom'>x</div><div id='inline-table'>i</div>
+             <div id='flex'>f</div><span id='inline-flex'>if</span>
              <span id='flow-root'>f</span><span id='list-item'>l</span>
              <span id='flow-root-list'>fl</span>",
         );
@@ -5853,6 +5860,8 @@ mod tests {
             ("td", Display::TableCell),
             ("custom", Display::TableRow),
             ("inline-table", Display::InlineTable),
+            ("flex", Display::Flex),
+            ("inline-flex", Display::InlineFlex),
             ("flow-root", Display::FlowRoot),
             ("list-item", Display::ListItem),
             ("flow-root-list", Display::FlowRootListItem),
