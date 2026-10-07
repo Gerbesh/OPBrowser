@@ -144,6 +144,7 @@ pub(super) struct InlineStyle {
     pub word_spacing: i32,
     pub text_transform: TextTransform,
     pub color: TextColor,
+    pub visible: bool,
     pub boxes: Option<usize>,
 }
 
@@ -819,7 +820,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             }
 
             match item {
-                PreparedBox::Image(image, _, own_box) => {
+                PreparedBox::Image(image, style, own_box) => {
                     if let Some(box_style) = own_box {
                         let left = box_style.left_extra();
                         let right = box_style.right_extra();
@@ -848,6 +849,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                             width: image.width,
                             height: image.height,
                             image: pixels,
+                            visible: style.visible,
                             href: image.href,
                         });
                     }
@@ -911,6 +913,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                         letter_spacing: text.style.letter_spacing,
                         word_spacing: text.style.word_spacing,
                         color: text.style.color,
+                        visible: text.style.visible,
                         links: text.links,
                     });
                     x += text.width;

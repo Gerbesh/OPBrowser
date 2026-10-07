@@ -1775,3 +1775,42 @@ This file is append-only project history.
 - The local release browser was rebuilt at `target/release/op_browser.exe`: 986,112 bytes, SHA-256
   `BD77BA98537F7EDB20762825E02527D8CC14DBC65B07F1E56E0D869ED7505116`.
 
+## 2026-10-07 - Initial flow-root, BFC and float pass
+
+- Added computed display forms for `flow-root`, `list-item` and the two-keyword
+  `flow-root list-item` form. Layout treats them as block-level while keeping BFC creation
+  separate from ordinary block-level behavior, so yesterday's self-collapse optimization still
+  applies only to normal blocks.
+- Added non-inherited `float:none/left/right` and `clear:none/left/right/both`. The block layout
+  context now tracks active float rectangles independently of the normal-flow cursor. Clear advances
+  below matching floats; flow-root snapshots the outer float set, avoids overlapping outer floats,
+  lays out against a local float set, grows to contain local float bottoms and restores the outer set.
+- Floated tables retain the dedicated table formatter inside float placement. `display:contents`
+  suppresses its principal box before float placement, so a float declaration on a contents-only
+  element does not manufacture a float box.
+- Added CSS2-compatible single-colon `:before`, `:after` and `:first-letter`. This was required
+  by the pinned flow-root reference's traditional clearfix syntax and maps to the same terminal
+  pseudo-element representation as the modern double-colon spellings.
+- Added inherited `visibility:visible/hidden`. Hidden text/images remain in layout with their normal
+  metrics but carry a non-painting flag into the display-list builder; box paint colors are suppressed
+  without changing geometry. This avoids GDI antialias remnants that remained when hidden glyphs were
+  merely sent to the painter with alpha zero.
+- Added regressions for BFC margin isolation, outer-float avoidance, child-float containment,
+  float/clear/visibility inheritance semantics, hidden-text layout retention and hidden paint
+  suppression.
+- The first float attempt intentionally failed the full metric: although the two target tests moved
+  sharply toward their references, it activated regressions in `display-contents-float-001` and
+  `display-contents-table-002`. The final path fixes both by skipping float box creation for
+  `display:contents` and preserving table formatting for floated tables.
+- The four-test BFC/regression slice now passes 4/4. Both pinned flow-root tests are green, the two
+  pre-existing contents tests remain green, and the unchanged WPT Static v1 manifest improves from
+  183/200 (91.50%) to 185/200 (92.50%), with 15 failures and zero render errors.
+- Remaining layout-oriented failures are the two flex-related `display:contents` tests, one SVG
+  contents test, one form-control display test and `::first-line`/bidi. The remaining ten are
+  color/ICC/gamut/compositing families, so initial flex formatting is the next metric-driven slice.
+- Final verification passed rustfmt, generated HTML/CSS table checks, warning-free workspace Clippy,
+  the complete workspace test suite, Win32 startup smoke, optimized release build, repeated external
+  compatibility and `git diff --check`. Test262 Parser v1 remained 364/1983 (18.36%).
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 998,912 bytes, SHA-256
+  `E696273FC943E107001D3424E326B5DA0CF0226511D85868C76B93F48B16B479`.
+

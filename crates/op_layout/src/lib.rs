@@ -15,6 +15,7 @@ pub struct ImageBox {
     pub width: i32,
     pub height: i32,
     pub image: Arc<RasterImage>,
+    pub visible: bool,
     pub href: Option<String>,
 }
 
@@ -95,6 +96,7 @@ pub struct TextBox {
     pub letter_spacing: i32,
     pub word_spacing: i32,
     pub color: TextColor,
+    pub visible: bool,
     pub links: Vec<LinkSpan>,
 }
 
@@ -869,6 +871,149 @@ mod tests {
             }),
             "self-collapsing red block must not paint visible area"
         );
+    }
+
+    #[test]
+    fn flow_root_avoids_left_float_like_explicit_reference_margin() {
+        fn render(source: &str) -> LayoutTree {
+            let document = op_html::parse_document(source);
+            let author = op_css::collect_author_styles(&document);
+            let computed = op_css::compute_styles(&document, &author.styles);
+            layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            )
+        }
+
+        let test = render(
+            "<style>.float{float:left;width:20px;height:40px;background:pink}</style>
+             <div style='border:1px solid'>
+               <div class='float'></div>
+               <span style='display:flow-root;border:1px solid'>x</span>
+             </div>",
+        );
+        let reference = render(
+            "<style>.float{float:left;width:20px;height:40px;background:pink}</style>
+             <div style='border:1px solid'>
+               <div class='float'></div>
+               <div style='display:block;border:1px solid;margin-left:20px'>x</div>
+             </div>",
+        );
+
+        assert_eq!(test.box_decorations, reference.box_decorations);
+        assert_eq!(test.text_boxes, reference.text_boxes);
+    }
+
+    #[test]
+    fn flow_root_contains_child_float_like_clearfix_reference() {
+        fn render(source: &str) -> LayoutTree {
+            let document = op_html::parse_document(source);
+            let author = op_css::collect_author_styles(&document);
+            let computed = op_css::compute_styles(&document, &author.styles);
+            layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            )
+        }
+
+        let test = render(
+            "<style>.float{float:left;width:20px;height:40px;background:pink}</style>
+             <div style='border:1px solid'>
+               <span style='display:flow-root'><div class='float'></div></span>
+             </div>",
+        );
+        let reference = render(
+            "<style>
+               .float{float:left;width:20px;height:40px;background:pink}
+               .clearfix::after{content:'.';display:block;height:0;clear:both}
+             </style>
+             <div style='border:1px solid'>
+               <div class='float'></div><div class='clearfix'></div>
+             </div>",
+        );
+
+        assert_eq!(
+            test.box_decorations
+                .iter()
+                .map(|box_| (box_.x, box_.y, box_.width, box_.height, box_.background))
+                .collect::<Vec<_>>(),
+            reference
+                .box_decorations
+                .iter()
+                .map(|box_| (box_.x, box_.y, box_.width, box_.height, box_.background))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn flow_root_keeps_child_margins_inside_bfc() {
+        fn render(source: &str) -> LayoutTree {
+            let document = op_html::parse_document(source);
+            let author = op_css::collect_author_styles(&document);
+            let computed = op_css::compute_styles(&document, &author.styles);
+            layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            )
+        }
+
+        let test = render(
+            "<div style='border:1px solid'>
+               <span style='display:flow-root;margin:20px 0'>
+                 <div style='margin:20px 0'>x</div>
+               </span>
+             </div>",
+        );
+        let reference = render(
+            "<div style='border:1px solid'>
+               <div style='margin:40px 0'><div>x</div></div>
+             </div>",
+        );
+
+        assert_eq!(test.box_decorations, reference.box_decorations);
+        assert_eq!(test.text_boxes, reference.text_boxes);
+    }
+
+    #[test]
+    fn visibility_hidden_keeps_text_geometry_but_marks_it_unpainted() {
+        let document = op_html::parse_document(
+            "<div><span style='visibility:hidden'>hidden</span><span>visible</span></div>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let hidden = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("hidden"))
+            .expect("hidden text should still participate in layout");
+        assert!(!hidden.visible);
+        assert!(hidden.width > 0);
+        assert!(hidden.height > 0);
+
+        let visible = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("visible"))
+            .expect("visible text should remain laid out");
+        assert!(visible.visible);
+        assert!(visible.x >= hidden.x.saturating_add(hidden.width));
     }
 
     #[test]

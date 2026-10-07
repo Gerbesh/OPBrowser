@@ -287,7 +287,10 @@ Status: IN PROGRESS.
 - DONE sixth metric-driven pass raised the unchanged WPT Static v1 manifest from 181/200 (90.50%) to 182/200 (91.00%).
 - DONE self-collapsing zero-height blocks now keep their adjoining margin set pending through inline-only wrappers and empty parents, so block-in-inline margin collapse can propagate across the parent instead of summing top/bottom margins.
 - DONE seventh metric-driven pass raised the unchanged WPT Static v1 manifest from 182/200 (91.00%) to 183/200 (91.50%).
-- NEXT build the remaining BFC foundation around `display:flow-root`, including real float containment/avoidance; after that the larger queues are flexbox, SVG display contexts, ICC/tagged images, gamut mapping, form-control rendering, `::first-line`/bidi and fuller relative-color/interpolation semantics.
+- DONE initial BFC/float foundation: `flow-root` and `flow-root list-item` are block-level BFCs, left/right floats have scoped geometry, `clear` advances below matching floats, BFCs contain child floats and avoid active outer floats, and floated tables retain the table formatter.
+- DONE CSS2 compatibility support for single-colon `:before`/`:after`/`:first-letter` plus inherited `visibility:hidden` that keeps layout geometry while suppressing text/image/decorative paint.
+- DONE eighth metric-driven pass raised the unchanged WPT Static v1 manifest from 183/200 (91.50%) to 185/200 (92.50%).
+- NEXT implement the initial flex formatting context needed by the two remaining flex-related `display:contents` reftests; after that the larger queues are SVG display contexts, ICC/tagged images, gamut mapping, form-control rendering, `::first-line`/bidi and fuller relative-color/interpolation semantics.
 
 ## M3 - Original JavaScript engine
 

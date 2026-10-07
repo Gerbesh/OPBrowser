@@ -510,6 +510,22 @@ fn parse_compound(
                 index = next;
                 break;
             }
+            TokenKind::Colon
+                if matches!(
+                    tokens.get(index + 1).map(|token| &token.kind),
+                    Some(TokenKind::Ident(name))
+                        if matches!(
+                            name.to_ascii_lowercase().as_str(),
+                            "before" | "after" | "first-letter"
+                        )
+                ) =>
+            {
+                let (pseudo, next) = parse_legacy_pseudo_element(tokens, index)?;
+                specificity.types = specificity.types.saturating_add(1);
+                pseudo_element = Some(pseudo);
+                index = next;
+                break;
+            }
             TokenKind::Colon => {
                 let (selector, next) = parse_pseudo_class(tokens, index)?;
                 specificity.add_simple(&selector);
@@ -563,6 +579,37 @@ fn parse_pseudo_element(
         }
     };
     Ok((pseudo, start + 3))
+}
+
+fn parse_legacy_pseudo_element(
+    tokens: &[Token],
+    start: usize,
+) -> Result<(PseudoElement, usize), CssError> {
+    let Some(name_token) = tokens.get(start + 1) else {
+        return Err(selector_error(
+            tokens,
+            start,
+            "legacy pseudo-element is missing a name",
+        ));
+    };
+    let TokenKind::Ident(name) = &name_token.kind else {
+        return Err(CssError {
+            offset: name_token.start,
+            message: "legacy pseudo-element requires an identifier".into(),
+        });
+    };
+    let pseudo = match name.to_ascii_lowercase().as_str() {
+        "before" => PseudoElement::Before,
+        "after" => PseudoElement::After,
+        "first-letter" => PseudoElement::FirstLetter,
+        _ => {
+            return Err(CssError {
+                offset: name_token.start,
+                message: format!("unsupported legacy pseudo-element :{name}"),
+            });
+        }
+    };
+    Ok((pseudo, start + 2))
 }
 
 fn parse_attribute_selector(
@@ -1461,7 +1508,7 @@ mod tests {
     #[test]
     fn parses_supported_terminal_pseudo_elements_with_type_specificity() {
         let parsed = parse_stylesheet(
-            ".note::before, ::after, .lead::first-letter { content:\"!\"; color:red }",
+            ".note::before, ::after, .lead::first-letter, .legacy:before, :after, .old:first-letter { content:\"!\"; color:red }",
         );
         assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
         let selectors = &parsed.value.rules[0].selectors;
@@ -1469,6 +1516,12 @@ mod tests {
         assert_eq!(selectors[1].pseudo_element, Some(PseudoElement::After));
         assert_eq!(
             selectors[2].pseudo_element,
+            Some(PseudoElement::FirstLetter)
+        );
+        assert_eq!(selectors[3].pseudo_element, Some(PseudoElement::Before));
+        assert_eq!(selectors[4].pseudo_element, Some(PseudoElement::After));
+        assert_eq!(
+            selectors[5].pseudo_element,
             Some(PseudoElement::FirstLetter)
         );
         assert_eq!(

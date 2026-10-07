@@ -77,6 +77,20 @@ whitespace, replaced content, generated before/after content or decorated inline
 back to ordinary layout. General non-empty parent/first-child and parent/last-child margin collapse
 still remains later work.
 
+## Initial floats and block formatting contexts
+
+`float:left/right` now creates an out-of-flow float record without advancing the normal block-flow
+cursor. `clear:left/right/both` advances a following block to the bottom of matching active floats.
+`display:flow-root` and `display:flow-root list-item` establish an initial BFC: they avoid active
+outer floats at their start edge, isolate descendant floats, include those floats in their natural
+height and prevent child margins from collapsing through the BFC boundary. Floated tables keep the
+table formatting algorithm inside float placement, while `display:contents` suppresses the
+principal box and therefore ignores float placement on the contents element itself.
+
+This is deliberately not complete CSS2 float layout yet. Text wrapping around floats, floating
+replaced images, complex left/right float packing, list markers and the full clearance/margin rules
+remain future work.
+
 ## Painting
 
 `op_layout` emits `BoxDecoration` records with border-box bounds, background color and four

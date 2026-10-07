@@ -153,11 +153,17 @@ box-sizing, padding, independent border edges, fixed height constraints and sibl
 collapse. Zero-height self-collapsing block subtrees can keep a collapsed adjoining-margin set
 pending through undecorated inline/`display:contents` wrappers and empty parents, so block-in-inline
 does not turn a 30px/40px collapsed pair into 70px of flow height. The normal path then emits
-BoxDecoration records. The inline formatter injects already-resolved
+BoxDecoration records. The block path also tracks active float rectangles separately from normal
+flow. Flow-root creates a local float scope, expands to contained float bottoms and restores the
+outer scope; clear consults that active set before block placement. Floated tables continue through
+the table formatter instead of generic block layout. The inline formatter injects already-resolved
 generated before/after text (strings, attributes or counters) around real DOM children and emits the same BoxDecoration shape for
 padded/background/bordered host or pseudo text fragments, so block and inline boxes share one
-platform-neutral paint path. op_paint expands them into side-specific FillRect
-commands before text/images; Win32 remains only the native drawing backend.
+platform-neutral paint path. `visibility:hidden` is retained as layout metadata on text/image
+boxes so hidden content still measures and reserves space, while op_paint omits its text/image
+commands and transparent box decoration colors produce no pixels. op_paint expands visible boxes
+into side-specific FillRect commands before text/images; Win32 remains only the native drawing
+backend.
 
 ## Paint smoke verification
 

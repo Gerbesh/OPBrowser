@@ -12,6 +12,9 @@ pub type CustomPropertyMap = HashMap<String, Vec<TokenKind>>;
 pub enum Display {
     Inline,
     Block,
+    FlowRoot,
+    ListItem,
+    FlowRootListItem,
     InlineTable,
     Table,
     TableCaption,
@@ -30,6 +33,21 @@ pub enum Display {
 pub enum Position {
     Static,
     Relative,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FloatSide {
+    None,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Clear {
+    None,
+    Left,
+    Right,
+    Both,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +87,12 @@ pub enum WhiteSpace {
     Pre,
     PreWrap,
     PreLine,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Visibility {
+    Visible,
+    Hidden,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -336,6 +360,8 @@ impl BorderSpacing {
 pub struct ComputedStyle {
     pub display: Display,
     pub position: Position,
+    pub float_side: FloatSide,
+    pub clear: Clear,
     pub inset: InsetEdges,
     pub color: CssColor,
     pub font_size_px: f32,
@@ -345,6 +371,7 @@ pub struct ComputedStyle {
     pub text_align: TextAlign,
     pub vertical_align: VerticalAlign,
     pub white_space: WhiteSpace,
+    pub visibility: Visibility,
     pub text_decoration_line: TextDecorationLine,
     pub letter_spacing_px: f32,
     pub word_spacing_px: f32,
@@ -438,6 +465,8 @@ impl ComputedStyle {
         Self {
             display: Display::Inline,
             position: Position::Static,
+            float_side: FloatSide::None,
+            clear: Clear::None,
             inset: InsetEdges::AUTO,
             color: CssColor::BLACK,
             font_size_px: 18.0,
@@ -447,6 +476,7 @@ impl ComputedStyle {
             text_align: TextAlign::Start,
             vertical_align: VerticalAlign::Baseline,
             white_space: WhiteSpace::Normal,
+            visibility: Visibility::Visible,
             text_decoration_line: TextDecorationLine::NONE,
             letter_spacing_px: 0.0,
             word_spacing_px: 0.0,
@@ -1430,6 +1460,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
         Some(parent) => ComputedStyle {
             display: initial.display,
             position: initial.position,
+            float_side: initial.float_side,
+            clear: initial.clear,
             inset: initial.inset,
             color: parent.color,
             font_size_px: parent.font_size_px,
@@ -1439,6 +1471,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             text_align: parent.text_align,
             vertical_align: initial.vertical_align,
             white_space: parent.white_space,
+            visibility: parent.visibility,
             text_decoration_line: parent.text_decoration_line,
             letter_spacing_px: parent.letter_spacing_px,
             word_spacing_px: parent.word_spacing_px,
@@ -1620,6 +1653,17 @@ fn apply_author_declarations(
             Position::Static,
         );
     }
+    if let Some((_, value)) = winning_value(declarations, "float", parse_float) {
+        style.float_side = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.float_side),
+            FloatSide::None,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "clear", parse_clear) {
+        style.clear =
+            resolve_non_inherited(value, parent_style.map(|parent| parent.clear), Clear::None);
+    }
     let inherited_color = parent_style.map_or(CssColor::BLACK, |parent| parent.color);
     if let Some((_, value)) = winning_value(declarations, "color", parse_color) {
         style.color = resolve_color_property(value, inherited_color);
@@ -1703,6 +1747,13 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.white_space),
             WhiteSpace::Normal,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "visibility", parse_visibility) {
+        style.visibility = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.visibility),
+            Visibility::Visible,
         );
     }
     if let Some((_, value)) = winning_text_decoration(declarations) {
@@ -1898,9 +1949,30 @@ fn resolve_non_inherited<T: Copy>(value: Specified<T>, parent: Option<T>, initia
 }
 
 fn parse_display(tokens: &[TokenKind]) -> Option<Specified<Display>> {
-    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+    let values = significant_tokens(tokens)
+        .map(|token| match token {
+            TokenKind::Ident(value) => Some(value.to_ascii_lowercase()),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    if values.len() == 2 {
+        let has_flow_root = values.iter().any(|value| value == "flow-root");
+        let has_list_item = values.iter().any(|value| value == "list-item");
+        if has_flow_root && has_list_item {
+            return Some(Specified::Value(Display::FlowRootListItem));
+        }
+        return None;
+    }
+
+    let [value] = values.as_slice() else {
+        return None;
+    };
+    match value.as_str() {
         "inline" => Some(Specified::Value(Display::Inline)),
         "block" => Some(Specified::Value(Display::Block)),
+        "flow-root" => Some(Specified::Value(Display::FlowRoot)),
+        "list-item" => Some(Specified::Value(Display::ListItem)),
         "inline-table" => Some(Specified::Value(Display::InlineTable)),
         "table" => Some(Specified::Value(Display::Table)),
         "table-caption" => Some(Specified::Value(Display::TableCaption)),
@@ -1924,6 +1996,31 @@ fn parse_position(tokens: &[TokenKind]) -> Option<Specified<Position>> {
     match single_ident(tokens)?.to_ascii_lowercase().as_str() {
         "static" => Some(Specified::Value(Position::Static)),
         "relative" => Some(Specified::Value(Position::Relative)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_float(tokens: &[TokenKind]) -> Option<Specified<FloatSide>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "none" => Some(Specified::Value(FloatSide::None)),
+        "left" => Some(Specified::Value(FloatSide::Left)),
+        "right" => Some(Specified::Value(FloatSide::Right)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_clear(tokens: &[TokenKind]) -> Option<Specified<Clear>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "none" => Some(Specified::Value(Clear::None)),
+        "left" => Some(Specified::Value(Clear::Left)),
+        "right" => Some(Specified::Value(Clear::Right)),
+        "both" => Some(Specified::Value(Clear::Both)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
         "unset" => Some(Specified::Unset),
@@ -1999,6 +2096,17 @@ fn parse_white_space(tokens: &[TokenKind]) -> Option<Specified<WhiteSpace>> {
         "pre" => Some(Specified::Value(WhiteSpace::Pre)),
         "pre-wrap" => Some(Specified::Value(WhiteSpace::PreWrap)),
         "pre-line" => Some(Specified::Value(WhiteSpace::PreLine)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_visibility(tokens: &[TokenKind]) -> Option<Specified<Visibility>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "visible" => Some(Specified::Value(Visibility::Visible)),
+        "hidden" => Some(Specified::Value(Visibility::Hidden)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
         "unset" => Some(Specified::Unset),
@@ -4768,6 +4876,35 @@ mod tests {
     }
 
     #[test]
+    fn float_clear_and_visibility_follow_inheritance_rules() {
+        let document = parse_document(
+            "<div id='parent' style='float:left; clear:both; visibility:hidden'>
+               <span id='child'>hidden</span>
+               <span id='override' style='float:right; clear:left; visibility:visible'>visible</span>
+             </div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+
+        let parent = computed.style_for(find_by_id(&document, "parent")).unwrap();
+        assert_eq!(parent.float_side, FloatSide::Left);
+        assert_eq!(parent.clear, Clear::Both);
+        assert_eq!(parent.visibility, Visibility::Hidden);
+
+        let child = computed.style_for(find_by_id(&document, "child")).unwrap();
+        assert_eq!(child.float_side, FloatSide::None);
+        assert_eq!(child.clear, Clear::None);
+        assert_eq!(child.visibility, Visibility::Hidden);
+
+        let override_style = computed
+            .style_for(find_by_id(&document, "override"))
+            .unwrap();
+        assert_eq!(override_style.float_side, FloatSide::Right);
+        assert_eq!(override_style.clear, Clear::Left);
+        assert_eq!(override_style.visibility, Visibility::Visible);
+    }
+
+    #[test]
     fn hwb_resolves_hues_white_black_normalization_alpha_and_missing_components() {
         // Independent expected sRGB values include CSS Color 4 examples and WPT cases.
         for (source, expected) in [
@@ -5681,7 +5818,13 @@ mod tests {
     #[test]
     fn table_ua_defaults_and_display_keywords_use_table_roles() {
         let document = parse_document(
-            "<style>#custom { display:table-row } #inline-table { display:inline-table }</style>
+            "<style>
+               #custom { display:table-row }
+               #inline-table { display:inline-table }
+               #flow-root { display:flow-root }
+               #list-item { display:list-item }
+               #flow-root-list { display:flow-root list-item }
+             </style>
              <table id='table'>
                <caption id='caption'>Cap</caption>
                <colgroup id='colgroup'><col id='col'></colgroup>
@@ -5689,7 +5832,9 @@ mod tests {
                <tbody id='tbody'><tr id='row'><td id='td'>D</td></tr></tbody>
                <tfoot id='tfoot'><tr><td>F</td></tr></tfoot>
              </table>
-             <div id='custom'>x</div><div id='inline-table'>i</div>",
+             <div id='custom'>x</div><div id='inline-table'>i</div>
+             <span id='flow-root'>f</span><span id='list-item'>l</span>
+             <span id='flow-root-list'>fl</span>",
         );
         let author = collect_author_styles(&document);
         let computed = compute_styles(&document, &author.styles);
@@ -5708,6 +5853,9 @@ mod tests {
             ("td", Display::TableCell),
             ("custom", Display::TableRow),
             ("inline-table", Display::InlineTable),
+            ("flow-root", Display::FlowRoot),
+            ("list-item", Display::ListItem),
+            ("flow-root-list", Display::FlowRootListItem),
         ];
         for (id, expected) in cases {
             assert_eq!(

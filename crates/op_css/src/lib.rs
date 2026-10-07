@@ -12,12 +12,12 @@ mod style;
 mod tokenizer;
 
 pub use computed::{
-    BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide,
+    BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide, Clear,
     ComputedBorder, ComputedFontWeight, ComputedLineHeight, ComputedPseudoStyle, ComputedQuotes,
-    ComputedStyle, ComputedStyleMap, CssColor, CustomPropertyMap, Display, FontStyle,
+    ComputedStyle, ComputedStyleMap, CssColor, CustomPropertyMap, Display, FloatSide, FontStyle,
     GeneratedContentItem, InsetEdges, LengthPercentage, MarginEdges, MarginValue, PaddingEdges,
-    Position, TableLayout, TextAlign, TextDecorationLine, TextTransform, VerticalAlign, WhiteSpace,
-    compute_styles,
+    Position, TableLayout, TextAlign, TextDecorationLine, TextTransform, VerticalAlign, Visibility,
+    WhiteSpace, compute_styles,
 };
 pub use parser::{parse_declaration_list, parse_stylesheet};
 pub use style::{

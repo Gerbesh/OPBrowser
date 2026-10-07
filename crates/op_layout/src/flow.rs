@@ -3,10 +3,10 @@ use super::inline::{
 };
 use super::*;
 use op_css::{
-    BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide,
-    ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Display,
+    BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide, Clear,
+    ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Display, FloatSide,
     FontStyle as CssFontStyle, LengthPercentage, MarginEdges, MarginValue, PaddingEdges,
-    PseudoElement, TableLayout, TextAlign, TextTransform, VerticalAlign, WhiteSpace,
+    PseudoElement, TableLayout, TextAlign, TextTransform, VerticalAlign, Visibility, WhiteSpace,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -40,6 +40,7 @@ pub(super) fn layout(
         y: 28,
         pending_margin: None,
         block_epoch: 0,
+        floats: Vec::new(),
         decorations: Vec::new(),
         text: Vec::new(),
         images_out: Vec::new(),
@@ -85,6 +86,7 @@ struct Context<'a, 'm> {
     y: i32,
     pending_margin: Option<i32>,
     block_epoch: usize,
+    floats: Vec<FloatBox>,
     decorations: Vec<BoxDecoration>,
     text: Vec<TextBox>,
     images_out: Vec<ImageBox>,
@@ -121,6 +123,29 @@ struct UsedBorderEdges {
     left: UsedBorderSide,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct FloatBox {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    side: FloatSide,
+}
+
+impl FloatBox {
+    fn right(self) -> i32 {
+        self.x.saturating_add(self.width)
+    }
+
+    fn bottom(self) -> i32 {
+        self.y.saturating_add(self.height)
+    }
+
+    fn overlaps_y(self, y: i32) -> bool {
+        y >= self.y && y < self.bottom()
+    }
+}
+
 #[derive(Clone, Copy)]
 struct UsedBlockHorizontal {
     margin_left: i32,
@@ -135,6 +160,8 @@ struct Style {
     inline: InlineStyle,
     text_align: TextAlign,
     vertical_align: VerticalAlign,
+    float_side: FloatSide,
+    clear: Clear,
     margin: MarginEdges,
     padding: PaddingEdges,
     background: TextColor,
@@ -350,12 +377,28 @@ impl<'a> Context<'a, '_> {
         containing_width: i32,
     ) {
         self.block_epoch = self.block_epoch.saturating_add(1);
+
+        if style.clear != Clear::None {
+            self.flush_pending_margin();
+            self.y = self.y.max(self.clearance_bottom(style.clear));
+        }
+
+        let display = self.block_content_display(content);
         if let BlockContent::Element(id) = content
+            && display == Display::Block
             && let Some(margin) = self.self_collapsing_block_margin(id, style, containing_width)
         {
             self.merge_pending_margin(margin);
             return;
         }
+
+        let establishes_bfc = matches!(display, Display::FlowRoot | Display::FlowRootListItem);
+        let (containing_x, containing_width) = if establishes_bfc {
+            self.available_around_floats(containing_x, containing_width, self.y)
+        } else {
+            (containing_x, containing_width)
+        };
+        let outer_floats = establishes_bfc.then(|| std::mem::take(&mut self.floats));
 
         let used = resolve_block_horizontal(style, containing_width);
         let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
@@ -460,6 +503,16 @@ impl<'a> Context<'a, '_> {
         // Parent/child margin collapse is intentionally deferred; consume the final
         // child margin before this block's padding/border boundary.
         self.flush_pending_margin();
+        if establishes_bfc {
+            let float_bottom = self
+                .floats
+                .iter()
+                .copied()
+                .map(FloatBox::bottom)
+                .max()
+                .unwrap_or(content_top);
+            self.y = self.y.max(float_bottom);
+        }
 
         let natural_content_height = self.y.saturating_sub(content_top).max(0);
         let target_content_height = resolve_block_content_height(
@@ -479,6 +532,9 @@ impl<'a> Context<'a, '_> {
 
         if let Some(index) = decoration {
             self.decorations[index].height = self.y.saturating_sub(border_y).max(0);
+        }
+        if let Some(outer_floats) = outer_floats {
+            self.floats = outer_floats;
         }
         self.pending_margin = Some(margin_bottom);
     }
@@ -558,6 +614,7 @@ impl<'a> Context<'a, '_> {
             y: 0,
             pending_margin: None,
             block_epoch: 0,
+            floats: Vec::new(),
             decorations: Vec::new(),
             text: Vec::new(),
             images_out: Vec::new(),
@@ -1483,7 +1540,7 @@ impl<'a> Context<'a, '_> {
                 }
 
                 let block_boundary =
-                    display == Display::Block || is_table_internal_display(display);
+                    is_block_level_display(display) || is_table_internal_display(display);
                 if block_boundary && !output.ends_with([' ', '\n']) {
                     output.push('\n');
                 }
@@ -1869,6 +1926,140 @@ impl<'a> Context<'a, '_> {
         }
     }
 
+    fn block_content_display(&self, content: BlockContent) -> Display {
+        match content {
+            BlockContent::Element(id) | BlockContent::ImageAlt(id) => {
+                self.document.element(id).map_or(Display::Block, |element| {
+                    self.element_display(id, &element.tag_name)
+                })
+            }
+            BlockContent::Generated(id, pseudo) => self
+                .computed_styles
+                .pseudo_style_for(id, pseudo)
+                .map_or(Display::Inline, |generated| generated.style.display),
+        }
+    }
+
+    fn available_around_floats(
+        &self,
+        containing_x: i32,
+        containing_width: i32,
+        y: i32,
+    ) -> (i32, i32) {
+        let containing_right = containing_x.saturating_add(containing_width);
+        let mut left = containing_x;
+        let mut right = containing_right;
+
+        for float in self
+            .floats
+            .iter()
+            .copied()
+            .filter(|float| float.overlaps_y(y))
+        {
+            match float.side {
+                FloatSide::Left => left = left.max(float.right()),
+                FloatSide::Right => right = right.min(float.x),
+                FloatSide::None => {}
+            }
+        }
+
+        left = left.clamp(containing_x, containing_right);
+        right = right.clamp(left, containing_right);
+        (left, right.saturating_sub(left).max(1))
+    }
+
+    fn clearance_bottom(&self, clear: Clear) -> i32 {
+        self.floats
+            .iter()
+            .copied()
+            .filter(|float| match clear {
+                Clear::None => false,
+                Clear::Left => float.side == FloatSide::Left,
+                Clear::Right => float.side == FloatSide::Right,
+                Clear::Both => matches!(float.side, FloatSide::Left | FloatSide::Right),
+            })
+            .map(FloatBox::bottom)
+            .max()
+            .unwrap_or(self.y)
+    }
+
+    fn float_block(
+        &mut self,
+        id: NodeId,
+        href: Option<&'a str>,
+        mut style: Style,
+        containing_x: i32,
+        containing_width: i32,
+        side: FloatSide,
+    ) {
+        if style.clear != Clear::None {
+            self.flush_pending_margin();
+            self.y = self.y.max(self.clearance_bottom(style.clear));
+        } else {
+            self.flush_pending_margin();
+        }
+
+        let normal_y = self.y;
+        let (available_x, available_width) =
+            self.available_around_floats(containing_x, containing_width, normal_y);
+        let used = resolve_block_horizontal(style, available_width);
+        let margin_right = resolve_margin(style.margin.right, available_width).unwrap_or(0);
+        let float_containing_x = match side {
+            FloatSide::Left | FloatSide::None => available_x,
+            FloatSide::Right => available_x
+                .saturating_add(available_width)
+                .saturating_sub(margin_right)
+                .saturating_sub(used.border_width)
+                .saturating_sub(used.margin_left),
+        };
+        let margin_box_width = used
+            .margin_left
+            .saturating_add(used.border_width)
+            .saturating_add(margin_right)
+            .max(1);
+
+        let outer_floats = std::mem::take(&mut self.floats);
+        let saved_pending_margin = self.pending_margin.take();
+        self.y = normal_y;
+        style.inline.boxes = None;
+        style.float_side = FloatSide::None;
+        style.clear = Clear::None;
+        let display = self.document.element(id).map_or(Display::Block, |element| {
+            self.element_display(id, &element.tag_name)
+        });
+        if matches!(display, Display::Table | Display::InlineTable) {
+            self.table(id, style, float_containing_x, available_width);
+        } else {
+            self.block(
+                BlockContent::Element(id),
+                href,
+                style,
+                float_containing_x,
+                available_width,
+            );
+        }
+        self.flush_pending_margin();
+
+        let descendant_float_bottom = self
+            .floats
+            .iter()
+            .copied()
+            .map(FloatBox::bottom)
+            .max()
+            .unwrap_or(self.y);
+        let float_bottom = self.y.max(descendant_float_bottom);
+        self.floats = outer_floats;
+        self.y = normal_y;
+        self.pending_margin = saved_pending_margin;
+        self.floats.push(FloatBox {
+            x: float_containing_x,
+            y: normal_y,
+            width: margin_box_width,
+            height: float_bottom.saturating_sub(normal_y).max(0),
+            side,
+        });
+    }
+
     fn apply_collapsed_margin(&mut self, next: i32) {
         let used = self
             .pending_margin
@@ -2135,6 +2326,16 @@ impl<'a> Context<'a, '_> {
                     href
                 };
 
+                if current.float_side != FloatSide::None
+                    && display != Display::Contents
+                    && tag != "img"
+                {
+                    let side = current.float_side;
+                    self.emit(items, inherited, containing_x, containing_width);
+                    self.float_block(id, href, current, containing_x, containing_width, side);
+                    return;
+                }
+
                 if display == Display::InlineTable {
                     current.inline.boxes = inherited.inline.boxes;
                     let mut atomic = self.inline_table_atomic(id, current, containing_width);
@@ -2146,7 +2347,7 @@ impl<'a> Context<'a, '_> {
                     self.emit(items, inherited, containing_x, containing_width);
                     self.table(id, current, containing_x, containing_width);
                 } else if tag == "img" {
-                    if display == Display::Block {
+                    if is_block_level_display(display) {
                         self.emit(items, inherited, containing_x, containing_width);
                         let image = self.images.get(&id).cloned();
                         if image.is_some() || attribute(element, "alt").is_none_or(str::is_empty) {
@@ -2170,14 +2371,14 @@ impl<'a> Context<'a, '_> {
                         self.collect_image(id, element, href, current, containing_width, items);
                     }
                 } else if tag == "br" {
-                    if display == Display::Block {
+                    if is_block_level_display(display) {
                         self.emit(items, inherited, containing_x, containing_width);
                         let mut line = vec![Item::Break];
                         self.emit(&mut line, current, containing_x, containing_width);
                     } else {
                         items.push(Item::Break);
                     }
-                } else if display == Display::Block || is_table_internal_display(display) {
+                } else if is_block_level_display(display) || is_table_internal_display(display) {
                     self.emit(items, inherited, containing_x, containing_width);
                     self.block(
                         BlockContent::Element(id),
@@ -2334,6 +2535,7 @@ impl<'a> Context<'a, '_> {
                 } else {
                     current.color
                 },
+                visible: current.visible,
                 boxes: current.boxes,
             };
             remaining -= 1;
@@ -2358,13 +2560,13 @@ impl<'a> Context<'a, '_> {
         }
 
         let mut style = computed_style(generated.style);
-        if generated.replaced_image && generated.style.display == Display::Block {
+        if generated.replaced_image && is_block_level_display(generated.style.display) {
             let image = self.generated_images.get(&(id, pseudo, 0)).cloned();
             self.emit(items, host_style, containing_x, containing_width);
             self.block_image((id, Some(pseudo)), href, style, image.as_ref(), containing);
             return;
         }
-        if generated.style.display == Display::Block {
+        if is_block_level_display(generated.style.display) {
             self.emit(items, host_style, containing_x, containing_width);
             self.block(
                 BlockContent::Generated(id, pseudo),
@@ -2577,6 +2779,7 @@ impl<'a> Context<'a, '_> {
                 width,
                 height,
                 image: image.clone(),
+                visible: style.inline.visible,
                 href: href.map(str::to_owned),
             });
         }
@@ -3384,6 +3587,19 @@ fn resolve_block_content_height(
 
 fn computed_style(style: ComputedStyle) -> Style {
     let font_size = style.font_size_px.round().clamp(1.0, 4096.0) as i32;
+    let hidden = style.visibility == Visibility::Hidden;
+    let mut text_color: TextColor = style.color.into();
+    let mut background: TextColor = style.background_color.into();
+    let mut border = style.border;
+    if hidden {
+        text_color.alpha = 0;
+        background.alpha = 0;
+        border.top.color.alpha = 0;
+        border.right.color.alpha = 0;
+        border.bottom.color.alpha = 0;
+        border.left.color.alpha = 0;
+    }
+
     Style {
         inline: InlineStyle {
             font_size,
@@ -3404,15 +3620,18 @@ fn computed_style(style: ComputedStyle) -> Style {
             letter_spacing: style.letter_spacing_px.round().clamp(-4096.0, 4096.0) as i32,
             word_spacing: style.word_spacing_px.round().clamp(-4096.0, 4096.0) as i32,
             text_transform: style.text_transform,
-            color: style.color.into(),
+            color: text_color,
+            visible: !hidden,
             boxes: None,
         },
         text_align: style.text_align,
         vertical_align: style.vertical_align,
+        float_side: style.float_side,
+        clear: style.clear,
         margin: style.margin,
         padding: style.padding,
-        background: style.background_color.into(),
-        border: style.border,
+        background,
+        border,
         width: style.width,
         min_width: style.min_width,
         max_width: style.max_width,
@@ -3460,6 +3679,13 @@ fn fallback_inline_style(tag: &str, inherited: InlineStyle) -> InlineStyle {
         },
         _ => inherited,
     }
+}
+
+fn is_block_level_display(display: Display) -> bool {
+    matches!(
+        display,
+        Display::Block | Display::FlowRoot | Display::ListItem | Display::FlowRootListItem
+    )
 }
 
 fn is_table_internal_display(display: Display) -> bool {
@@ -3538,10 +3764,13 @@ fn default_style() -> Style {
                 blue: 0,
                 alpha: 255,
             },
+            visible: true,
             boxes: None,
         },
         text_align: TextAlign::Start,
         vertical_align: VerticalAlign::Baseline,
+        float_side: FloatSide::None,
+        clear: Clear::None,
         margin: MarginEdges::ZERO,
         padding: PaddingEdges::ZERO,
         background: TextColor {
@@ -3578,6 +3807,8 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         inline: fallback_inline_style(tag, inherited.inline),
         text_align: inherited.text_align,
         vertical_align: VerticalAlign::Baseline,
+        float_side: FloatSide::None,
+        clear: Clear::None,
         margin: MarginEdges {
             top: MarginValue::Length(LengthPercentage::Px(top as f32)),
             right: MarginValue::ZERO,

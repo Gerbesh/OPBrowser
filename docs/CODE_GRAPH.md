@@ -775,8 +775,14 @@ adjacent sibling margin collapse before BoxDecoration/background-border FillRect
 zero-height self-collapsing subtrees now merge their entire adjoining-margin set into the pending
 block margin without advancing y; the analysis may pass through whitespace-only normal text,
 undecorated inline wrappers and display:contents, which lets block-in-inline collapse through an
-otherwise empty parent while preserving the ordinary path for visible/boxed content. `Display::Contents`
-uses the existing child/generated-content collection path without creating a principal box. Table
+otherwise empty parent while preserving the ordinary path for visible/boxed content. `FlowRoot` and
+`FlowRootListItem` establish an initial block formatting context: the block path snapshots the outer
+float set, avoids floats overlapping its start position, lays out with a local float set, extends its
+natural height to contained float bottoms, then restores the outer set. Float placement keeps the
+normal-flow y unchanged, while `clear` advances to the bottom of matching active floats. Floated
+tables preserve their dedicated table formatter rather than degrading into generic blocks.
+`Display::Contents` uses the existing child/generated-content collection path without creating a
+principal box; float on a contents-only element therefore does not create a float box. Table
 formatting additionally pre-expands contents wrappers only when their exposed non-ignorable
 descendants are table-internal, so anonymous row/cell fixup sees the correct structure while ordinary
 text/inline contents nodes remain present to carry inherited style. Flex and SVG-specific contents

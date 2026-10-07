@@ -94,6 +94,9 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
                 let Some(text_box) = layout.text_boxes.get(index) else {
                     continue;
                 };
+                if !text_box.visible {
+                    continue;
+                }
                 commands.push(PaintCommand::Text {
                     x: text_box.x,
                     y: text_box.y,
@@ -113,6 +116,9 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
                 let Some(image_box) = layout.image_boxes.get(index) else {
                     continue;
                 };
+                if !image_box.visible {
+                    continue;
+                }
                 commands.push(PaintCommand::Image {
                     x: image_box.x,
                     y: image_box.y,
@@ -374,6 +380,48 @@ mod tests {
     }
 
     #[test]
+    fn hidden_text_keeps_layout_record_but_emits_no_paint_command() {
+        let layout = LayoutTree {
+            viewport_width: 320,
+            content_height: 40,
+            box_decorations: vec![],
+            text_boxes: vec![TextBox {
+                x: 12,
+                y: 8,
+                width: 80,
+                height: 20,
+                text: "hidden".into(),
+                font_size: 18,
+                weight: FontWeight::Normal,
+                style: FontStyle::Normal,
+                decoration: TextDecoration {
+                    underline: false,
+                    line_through: false,
+                },
+                letter_spacing: 0,
+                word_spacing: 0,
+                color: TextColor {
+                    red: 0,
+                    green: 0,
+                    blue: 0,
+                    alpha: 0,
+                },
+                visible: false,
+                links: Vec::new(),
+            }],
+            image_boxes: vec![],
+            order: vec![LayoutItem::Text(0)],
+        };
+
+        let display_list = build_display_list(&layout, 200);
+        assert_eq!(display_list.commands.len(), 1);
+        assert!(matches!(
+            display_list.commands[0],
+            PaintCommand::FillRect { .. }
+        ));
+    }
+
+    #[test]
     fn creates_background_and_text_commands() {
         let layout = LayoutTree {
             viewport_width: 800,
@@ -400,6 +448,7 @@ mod tests {
                     blue: 56,
                     alpha: 255,
                 },
+                visible: true,
                 links: Vec::new(),
             }],
             image_boxes: vec![],

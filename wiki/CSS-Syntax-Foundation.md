@@ -176,7 +176,9 @@ Non-replaced inline elements now resolve background-color/padding/solid borders 
 InlineBoxStyle, contribute those extras to line fitting, and emit per-line BoxDecoration
 fragments before text painting. Generated `::before` text is inserted before real children and
 `::after` after them; both use the same line formatter, text transforms/spacing, and fragment
-paint path. `::first-letter` is parsed and cascaded separately from generated content, then layout
+paint path. CSS2 single-colon spellings `:before`, `:after` and `:first-letter` map to the same
+terminal pseudo-elements as their double-colon forms. `::first-letter` is parsed and cascaded
+separately from generated content, then layout
 applies its explicitly-authored inline properties to the first non-whitespace Unicode grapheme
 cluster. This keeps Regional Indicator pairs atomic and avoids overwriting color/font inheritance
 coming through `display:contents` when the pseudo did not author those properties. Inline box
@@ -184,7 +186,10 @@ identity includes the generated pseudo target so generated and host decorations 
 Alpha text/box colors are currently composited over the white page background. The existing
 hyperlink glyph/underline path uses computed color and decoration. Anchors with href have
 blue/underlined UA defaults before author cascade; nested/generated text can override them.
-Anchors without href retain ordinary inherited presentation.
+`visibility:visible/hidden` now participates in the inherited computed-style path. Hidden content
+retains its layout geometry; text/images carry a non-painting visibility bit to the display-list
+builder, and box colors are suppressed without changing box dimensions. Anchors without href retain
+ordinary inherited presentation.
 
 External `<link rel="stylesheet">` resources now join embedded rules at their actual DOM
 positions before selector matching, so stylesheet source order crosses file boundaries.

@@ -84,9 +84,10 @@ Measured progress on the unchanged v1 manifest:
 - table-structural `display:contents` pass: 181/200, **90.50%**;
 - grapheme-aware `::first-letter` pass: 182/200, **91.00%**;
 - self-collapsing block-in-inline margin pass: 183/200, **91.50%**;
-- current result: 183 passed, 17 failed, 0 render/infrastructure errors.
+- flow-root/BFC/float/visibility pass: 185/200, **92.50%**;
+- current result: 185 passed, 15 failed, 0 render/infrastructure errors.
 
-The manifest and upstream revision are unchanged, so 43.00% -> 63.00% -> 75.50% -> 86.00% -> 89.50% -> 90.50% -> 91.00% -> 91.50% is directly comparable. Two pinned Rec.2020 tests still encode the older piecewise Rec.2020 transfer expectation; OPBrowser follows the current 2026 CSS Color 4 BT.1886 gamma-2.40 definition instead of special-casing those tests. Near-zero OKLab/OKLCH failures are left for real gamut mapping rather than threshold hacks. The v1 harness also intentionally retains exact BGR comparison, so WPT fuzzy metadata does not silently change historical scoring semantics.
+The manifest and upstream revision are unchanged, so 43.00% -> 63.00% -> 75.50% -> 86.00% -> 89.50% -> 90.50% -> 91.00% -> 91.50% -> 92.50% is directly comparable. Two pinned Rec.2020 tests still encode the older piecewise Rec.2020 transfer expectation; OPBrowser follows the current 2026 CSS Color 4 BT.1886 gamma-2.40 definition instead of special-casing those tests. Near-zero OKLab/OKLCH failures are left for real gamut mapping rather than threshold hacks. The v1 harness also intentionally retains exact BGR comparison, so WPT fuzzy metadata does not silently change historical scoring semantics.
 
 ## GitHub Actions and public metrics
 
