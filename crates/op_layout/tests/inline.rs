@@ -445,7 +445,7 @@ fn visually_empty_inline_descendants_keep_own_frames_without_fake_text() {
 }
 
 #[test]
-fn nested_empty_descendants_do_not_duplicate_ancestors_or_cross_block_boundaries() {
+fn nested_empty_descendants_do_not_duplicate_ancestors_and_split_at_block_boundaries() {
     let page = layout(
         "<p><span style='padding:2px;border:1px solid red'><span style='padding:1px;border:1px solid blue'><em style='display:none'>hidden</em></span></span>Z</p>",
         300,
@@ -462,14 +462,18 @@ fn nested_empty_descendants_do_not_duplicate_ancestors_or_cross_block_boundaries
     );
     assert_eq!(page.text_boxes.len(), 1);
     assert_eq!(page.text_boxes[0].x, 42);
-    let page = layout(
+    let split = layout(
         "<div><span style='padding:2px;border:1px solid red'><div style='height:0'></div></span>Z</div>",
         300,
         &mut Fixed,
     );
-    assert!(page.box_decorations.is_empty());
-    assert_eq!(page.text_boxes.len(), 1);
-    assert_eq!(page.text_boxes[0].x, 32);
+    let reference = layout(
+        "<div><span style='padding:2px;padding-right:0;border:1px solid red;border-right-width:0'></span><div style='height:0'></div><span style='padding:2px;padding-left:0;border:1px solid red;border-left-width:0'></span>Z</div>",
+        300,
+        &mut Fixed,
+    );
+    assert_eq!(split.box_decorations, reference.box_decorations);
+    assert_eq!(split.text_boxes, reference.text_boxes);
     let page = layout(
         "<p><span style='padding:2px;border:1px solid red;white-space:pre'>  </span>Z</p>",
         300,
@@ -573,6 +577,22 @@ fn aligns_adjacent_images_and_wraps_them_as_atomic_boxes() {
     assert_eq!(images[0].y + 16, images[1].y + 32);
     assert_eq!(images[2].x, 32);
     assert!(images[2].y >= images[1].y + 32);
+}
+
+#[test]
+fn split_inline_whitespace_between_blocks_matches_explicit_fragments() {
+    let split = layout(
+        "<style>body>span{border:3px solid blue}</style><body><span><div>One</div><div>Two</div></span></body>",
+        800,
+        &mut Fixed,
+    );
+    let reference = layout(
+        "<style>body>span{border:3px solid blue}.notstart{border-left-width:0}.notend{border-right-width:0}</style><body><span class=notend></span><div>One</div><span class='notstart notend'></span><div>Two</div><span class=notstart></span></body>",
+        800,
+        &mut Fixed,
+    );
+    assert_eq!(split.box_decorations, reference.box_decorations);
+    assert_eq!(split.text_boxes, reference.text_boxes);
 }
 
 #[test]

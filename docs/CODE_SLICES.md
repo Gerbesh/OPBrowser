@@ -402,12 +402,16 @@ absolute/fixed boxes leave a zero-width marker in the line so auto-inset static 
 actual inline cursor without consuming width. Horizontal inline margins now affect inline advance,
 including negative values, while visual decoration excludes those margins. Initial
 `display:inline-block` packages a local block/BFC result into one atomic inline box with shrink-to-fit
-auto width. Definite block heights, including min/max-clamped explicit heights, propagate as the
-percentage-height basis for direct descendants. Auto-height blocks are deliberately not made definite
-merely by a min-height clamp. Sticky positioning, full inline containing-block rules, split-inline
-static-position paint order, the remaining CSS2 overconstraint/auto-margin equations and stacking
-contexts remain later work. WPT Positioning v1 moved from 18/100 (18.00%) to 25/100 (25.00%) without
-changing the manifest, while WPT Static remains 187/200 (93.50%).
+auto width. Block children inside an inline now split the parent-linked inline-box path into
+continuation nodes: ending/continuing fragments suppress the appropriate logical edge, intermediate
+empty fragments preserve line height only when CSS2 requires them, and later descendants resolve to
+the newest continuation. Relative inline offsets are carried to split block/float output without
+altering normal-flow geometry. Definite block heights, including min/max-clamped explicit heights,
+propagate as the percentage-height basis for direct descendants. Auto-height blocks are deliberately
+not made definite merely by a min-height clamp. Full inline containing-block rectangles, complete
+bidi/vertical writing, multicol, sticky, remaining CSS2 overconstraint/auto-margin equations and
+stacking remain later work. WPT Positioning v1 moved from 18/100 (18.00%) to 36/100 (36.00%) without
+changing the manifest, while WPT Static remains frozen for historical comparison.
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore

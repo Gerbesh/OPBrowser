@@ -2,12 +2,13 @@ use super::{
     BoxDecoration, DecorationBorder, FontStyle, FontWeight, ImageBox, LayoutItem, LinkSpan,
     TextBox, TextColor, TextDecoration, TextMeasurer, TextMetrics,
 };
-use op_css::{PseudoElement, TextAlign, TextTransform, VerticalAlign, WhiteSpace};
+use op_css::{Direction, PseudoElement, TextAlign, TextTransform, VerticalAlign, WhiteSpace};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct InlineBoxStyle {
     pub node: op_dom::NodeId,
     pub pseudo: Option<PseudoElement>,
+    pub direction: Direction,
     pub margin_right: i32,
     pub margin_left: i32,
     pub padding_top: i32,
@@ -72,6 +73,9 @@ pub(super) struct InlineBoxes {
 struct InlineBoxNode {
     style: InlineBoxStyle,
     parent: Option<usize>,
+    continuation: Option<usize>,
+    is_continuation: bool,
+    had_visible_content_before: bool,
     depth: usize,
     left: i32,
     right: i32,
@@ -85,6 +89,9 @@ impl InlineBoxes {
         self.nodes.push(InlineBoxNode {
             style,
             parent,
+            continuation: None,
+            is_continuation: false,
+            had_visible_content_before: false,
             depth: parent.map_or(1, |id| self.nodes[id].depth + 1),
             left: self.left(parent).saturating_add(style.left_advance()),
             right: self.right(parent).saturating_add(style.right_advance()),
@@ -100,6 +107,102 @@ impl InlineBoxes {
     pub(super) fn parent(&self, id: usize) -> Option<usize> {
         self.nodes[id].parent
     }
+
+    fn current_id(&self, mut id: usize) -> usize {
+        while let Some(next) = self.nodes[id].continuation {
+            id = next;
+        }
+        id
+    }
+
+    pub(super) fn current(&self, id: Option<usize>) -> Option<usize> {
+        id.map(|id| self.current_id(id))
+    }
+
+    pub(super) fn is_continuation(&self, id: usize) -> bool {
+        self.nodes[id].is_continuation
+    }
+
+    pub(super) fn had_visible_content_before(&self, id: usize) -> bool {
+        self.nodes[id].had_visible_content_before
+    }
+
+    pub(super) fn contains(&self, leaf: Option<usize>, ancestor: usize) -> bool {
+        let mut current = leaf;
+        while let Some(id) = current {
+            if id == ancestor {
+                return true;
+            }
+            current = self.parent(id);
+        }
+        false
+    }
+
+    pub(super) fn split(
+        &mut self,
+        id: Option<usize>,
+        fragment_has_visible_content: bool,
+    ) -> Option<usize> {
+        let tail = self.current(id)?;
+        let path = self.path(Some(tail));
+        let mut continuation_parent = None;
+
+        for old_id in path {
+            let original = self.nodes[old_id].style;
+
+            let mut ending = original;
+            let mut continuing = original;
+            match original.direction {
+                Direction::Ltr => {
+                    ending.margin_right = 0;
+                    ending.padding_right = 0;
+                    ending.border_right.width = 0;
+                    continuing.margin_left = 0;
+                    continuing.padding_left = 0;
+                    continuing.border_left.width = 0;
+                }
+                Direction::Rtl => {
+                    ending.margin_left = 0;
+                    ending.padding_left = 0;
+                    ending.border_left.width = 0;
+                    continuing.margin_right = 0;
+                    continuing.padding_right = 0;
+                    continuing.border_right.width = 0;
+                }
+            }
+            self.nodes[old_id].style = ending;
+            let new_id = self.push(continuing, continuation_parent);
+            self.nodes[new_id].is_continuation = true;
+            self.nodes[new_id].had_visible_content_before =
+                self.nodes[old_id].had_visible_content_before || fragment_has_visible_content;
+            self.nodes[old_id].continuation = Some(new_id);
+            continuation_parent = Some(new_id);
+        }
+
+        self.recompute_metrics();
+        continuation_parent
+    }
+
+    fn recompute_metrics(&mut self) {
+        for id in 0..self.nodes.len() {
+            let parent = self.nodes[id].parent;
+            let style = self.nodes[id].style;
+            self.nodes[id].depth = parent.map_or(1, |parent| self.nodes[parent].depth + 1);
+            self.nodes[id].left = parent
+                .map_or(0, |parent| self.nodes[parent].left)
+                .saturating_add(style.left_advance());
+            self.nodes[id].right = parent
+                .map_or(0, |parent| self.nodes[parent].right)
+                .saturating_add(style.right_advance());
+            self.nodes[id].top = parent
+                .map_or(0, |parent| self.nodes[parent].top)
+                .saturating_add(style.top_extra());
+            self.nodes[id].bottom = parent
+                .map_or(0, |parent| self.nodes[parent].bottom)
+                .saturating_add(style.bottom_extra());
+        }
+    }
+
     pub(super) fn horizontal(&self, id: Option<usize>) -> i32 {
         self.left(id).saturating_add(self.right(id))
     }

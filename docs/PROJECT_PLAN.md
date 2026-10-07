@@ -266,13 +266,15 @@ Status: IN PROGRESS.
   viewport-height-aware or nearest-positioned padding-box geometry, px/percentage insets on both axes,
   bottom-only placement, opposing-inset auto width/height stretching, shrink-to-fit auto widths and
   direct percentage-height resolution from definite containing blocks. Inline absolute/fixed boxes
-  with static-positioned axes now retain a zero-width marker at the real inline cursor instead of
+  with static-positioned axes retain a zero-width marker at the real inline cursor instead of
   flushing the line. Initial `display:inline-block` is atomic, shrink-to-fit and BFC-like; horizontal
-  inline margins, including negative margins, participate in advance without painting. Sticky, full
-  inline containing-block geometry, split-inline/static-position paint ordering, complete CSS2 abspos
-  overconstraint/auto-margin rules and stacking remain NEXT, followed by `overflow`, media queries,
-  font faces, background images, border radius and broader flex/grid work. Obscure value-space polish
-  must not displace these.
+  inline margins, including negative margins, participate in advance without painting. Block children
+  now split enclosing inline boxes into continuation fragments with CSS2 start/end edge suppression,
+  including logical LTR/RTL edges, empty intermediate line fragments and inherited relative visual
+  offsets for block/float descendants. Very large finite CSS lengths remain computed and are bounded
+  only at used layout geometry. Sticky, full inline containing-block rectangles, complete bidi/vertical
+  writing, multicol, CSS2 abspos overconstraint/auto-margin rules and stacking remain NEXT, followed by
+  `overflow`, media queries, font faces, background images, border radius and broader flex/grid work.
 - LATER broader computed values outside the readable-static-web priority.
 - LATER fuller normal flow and CSS inline formatting plus Unicode line breaking.
 - NEXT migrate the text backend toward DirectWrite shaping/fallback behind TextMeasurer per ADR-0003.
@@ -309,10 +311,13 @@ Status: IN PROGRESS.
   atomic `display:inline-block`, positioned shrink-to-fit width and intrinsic SVG replaced sizing,
   raising the unchanged WPT Positioning v1 manifest from 21/100 (21.00%) to 25/100 (25.00%);
   WPT Static v1 remains 187/200 (93.50%).
-- NEXT use the remaining WPT Positioning v1 failures to drive full inline containing blocks,
-  split-inline/static-position paint ordering and stacking, the remaining CSS2 abspos constraint
-  equations and sticky, then `overflow`; keep the 13 WPT Static v1 failures visible without letting
-  advanced color/SVG edge cases displace readable-static-web priorities.
+- DONE third positioning-driven pass implemented CSS2 split-inline continuations, logical LTR/RTL
+  fragment edges, required empty intermediate fragments, relative-inline offsets for split block/float
+  descendants and safe used-value clamping for very large finite lengths, raising the unchanged
+  WPT Positioning v1 manifest from 25/100 (25.00%) to 36/100 (36.00%).
+- NEXT use the remaining WPT Positioning v1 failures to drive real inline containing-block rectangles,
+  CSS2 content-height/line-height cases, remaining abspos constraint equations, vertical writing /
+  multicol and sticky, then `overflow`; keep WPT Static v1 frozen for historical comparability.
 
 ## M3 - Original JavaScript engine
 

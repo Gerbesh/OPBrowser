@@ -108,18 +108,25 @@ stretch an auto-sized positioned block. Other positioned `width:auto` cases use 
 shrink-to-fit path. Direct descendants can also resolve percentage heights from a definite
 containing-block height, including min/max-clamped explicit heights.
 
-Inline absolute/fixed boxes now leave a zero-width marker in the inline sequence, so an auto-inset
+Inline absolute/fixed boxes leave a zero-width marker in the inline sequence, so an auto-inset
 static position uses the actual line cursor without forcing a line flush or consuming width.
 Horizontal inline margins participate in inline advance, including negative values, while the
-painted decoration still excludes margin area. Initial `display:inline-block` creates one atomic
-inline box backed by a local block/BFC layout and shrink-to-fit auto width. Replaced image sizing can
-also consume intrinsic width/height/ratio metadata from the bounded SVG image slice.
+painted decoration excludes margin area. Initial `display:inline-block` creates one atomic inline
+box backed by a local block/BFC layout and shrink-to-fit auto width. Replaced image sizing can also
+consume intrinsic width/height/ratio metadata from the bounded SVG image slice.
 
-Sticky positioning, full inline containing blocks, split-inline/static-position paint ordering, the
+When an in-flow block appears inside an inline, the inline arena now creates continuation fragments.
+The ending and continuing fragments suppress opposite logical horizontal edges, with LTR/RTL deciding
+which physical side is start/end. Empty intermediate continuation lines are retained only when the
+split sequence requires them, and relative-positioned inline ancestors carry their visual offset to
+split block/float descendants without moving normal flow. Large finite CSS lengths are retained at
+computed-value time and safely bounded when converted to used integer geometry.
+
+Sticky positioning, full inline containing-block rectangles, complete bidi/vertical writing, the
 remaining CSS2 absolute-positioned overconstraint/auto-margin rules, stacking/z-index and
 scroll-container interactions remain follow-up work. WPT Positioning v1 tracks 100 pinned cases
 across both implemented and deliberately unsupported families; it moved from 18/100 (18.00%) to
-25/100 (25.00%) on the unchanged manifest.
+36/100 (36.00%) on the unchanged manifest.
 
 ## Initial flex formatting context
 

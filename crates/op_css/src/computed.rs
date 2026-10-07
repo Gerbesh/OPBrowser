@@ -69,6 +69,12 @@ pub enum FontStyle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Ltr,
+    Rtl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextAlign {
     Start,
     End,
@@ -373,6 +379,7 @@ pub struct ComputedStyle {
     pub font_weight: ComputedFontWeight,
     pub font_style: FontStyle,
     pub line_height: ComputedLineHeight,
+    pub direction: Direction,
     pub text_align: TextAlign,
     pub vertical_align: VerticalAlign,
     pub white_space: WhiteSpace,
@@ -478,6 +485,7 @@ impl ComputedStyle {
             font_weight: ComputedFontWeight::Normal,
             font_style: FontStyle::Normal,
             line_height: ComputedLineHeight::Normal,
+            direction: Direction::Ltr,
             text_align: TextAlign::Start,
             vertical_align: VerticalAlign::Baseline,
             white_space: WhiteSpace::Normal,
@@ -1473,6 +1481,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             font_weight: parent.font_weight,
             font_style: parent.font_style,
             line_height: parent.line_height,
+            direction: parent.direction,
             text_align: parent.text_align,
             vertical_align: initial.vertical_align,
             white_space: parent.white_space,
@@ -1731,6 +1740,13 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.line_height),
             ComputedLineHeight::Normal,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "direction", parse_direction) {
+        style.direction = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.direction),
+            Direction::Ltr,
         );
     }
     if let Some((_, value)) = winning_value(declarations, "text-align", parse_text_align) {
@@ -2202,6 +2218,17 @@ fn parse_spacing(
         _ => return None,
     };
     (value.is_finite() && (-4096.0..=4096.0).contains(&value)).then_some(Specified::Value(value))
+}
+
+fn parse_direction(tokens: &[TokenKind]) -> Option<Specified<Direction>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "ltr" => Some(Specified::Value(Direction::Ltr)),
+        "rtl" => Some(Specified::Value(Direction::Rtl)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
 }
 
 fn parse_text_align(tokens: &[TokenKind]) -> Option<Specified<TextAlign>> {
@@ -2918,7 +2945,7 @@ fn parse_length_percentage_token(
     let scalar = match value {
         LengthPercentage::Px(value) | LengthPercentage::Percent(value) => value,
     };
-    if !scalar.is_finite() || scalar.abs() > 1_000_000.0 {
+    if !scalar.is_finite() {
         return None;
     }
     if !allow_negative && scalar < 0.0 {
@@ -4883,6 +4910,33 @@ mod tests {
         assert_eq!(style.inset.left, Some(LengthPercentage::Percent(0.25)));
         assert_eq!(style.inset.right, Some(LengthPercentage::Px(4.0)));
         assert_eq!(style.inset.bottom, None);
+    }
+
+    #[test]
+    fn direction_inherits_and_large_finite_insets_remain_computed() {
+        let document = parse_document(
+            "<div id='parent' style='direction:rtl'>
+               <span id='child' style='position:absolute; left:-99999999999px'></span>
+               <span id='override' style='direction:ltr'></span>
+             </div>",
+        );
+        let author = collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+
+        let parent = computed.style_for(find_by_id(&document, "parent")).unwrap();
+        assert_eq!(parent.direction, Direction::Rtl);
+
+        let child = computed.style_for(find_by_id(&document, "child")).unwrap();
+        assert_eq!(child.direction, Direction::Rtl);
+        assert!(matches!(
+            child.inset.left,
+            Some(LengthPercentage::Px(value)) if value < -1_000_000.0
+        ));
+
+        let override_style = computed
+            .style_for(find_by_id(&document, "override"))
+            .unwrap();
+        assert_eq!(override_style.direction, Direction::Ltr);
     }
 
     #[test]

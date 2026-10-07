@@ -428,6 +428,7 @@ classDiagram
     }
     class InlineBoxes {
         parent-linked arena nodes
+        continuation links / split-fragment history
         cached cumulative edges and depth
         iterative stack transitions
     }
@@ -906,15 +907,15 @@ whose `of` list may begin immediately after the `of` token. `:has()` parses a st
 list and matches forward from its anchor through descendant/child/following-sibling relations while
 reusing compound matching and normal specificity. Empty-namespace `[|attr]` uses the same HTML
 attribute matcher without accepting whitespace between `|` and the name.
-Nested inline text/image/empty/pseudo items now retain parent-linked decoration stacks. Empty
-inline elements/pseudos create an `EmptyInline` item only when padding or borders reserve actual
-fragment geometry; a background alone on zero content no longer fabricates line height or splits
-collapsible whitespace. Flow owns the InlineBoxes arena; each character stores one optional index,
-without copying
-ancestors per character. Cached cumulative edges and iterative common-ancestor transitions
-participate in width fitting, wrap and alignment. Lines allocates outer decorations when
-opening fragments, then fills bounds when closing, so nested opaque backgrounds paint in
-containment order. Image own boxes remain atomic inside ancestor fragments; fitting reserves
+Nested inline text/image/empty/pseudo items retain parent-linked decoration stacks. Empty
+inline elements/pseudos create an `EmptyInline` item only when edges or a required split continuation
+reserve fragment geometry; a background alone on zero content does not fabricate a line. Flow owns
+the InlineBoxes arena; each character stores one optional index without copying ancestors per
+character. A block child can split the active arena path into continuation nodes, preserving fragment
+history while suppressing the logical ending/continuing edge for LTR or RTL. Cached cumulative edges
+are recomputed after a split and iterative common-ancestor transitions participate in width fitting,
+wrap and alignment. Lines allocates outer decorations when opening fragments, then fills bounds when
+closing, so nested opaque backgrounds paint in containment order. Image own boxes remain atomic inside ancestor fragments; fitting reserves
 ancestor edges while percentage dimensions retain the containing block width as their basis.
 InlineImage separates used dimensions from optional pixels. Missing sole-URL and DOM empty/
 absent-alt images use zero natural dimensions, independent CSS size axes and shared atomic/

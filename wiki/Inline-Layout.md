@@ -63,7 +63,7 @@ emits this sequence instead of painting all text before all images.
   GDI font realization for both measurement and paint. Underline/line-through are carried
   through the display list and painted over measured segment widths. `text-align` offsets
   each completed line. letter/word spacing participates in wrapping and native advances.
-- Non-replaced inline elements now produce real background/padding/solid-border fragments.
+- Non-replaced inline elements produce real background/padding/solid-border fragments.
   Their horizontal extras participate in fitting and alignment; vertical extras enlarge the
   safe line box, and wrapped fragments become independent BoxDecoration records. An ordinary
   nested `<b>/<em>/<a>` without its own box continues the outer decorated fragment. Decorated
@@ -72,6 +72,13 @@ emits this sequence instead of painting all text before all images.
   Text, images, empty boxes and generated pseudos share iterative ancestor transitions.
   All ancestor edges affect wrap/alignment and vertical extents. Outer decorations are
   allocated before inner decorations so an opaque outer background cannot cover inner paint.
+- Block children inside an inline now split the active decorated path into continuation nodes.
+  Ending and continuing fragments suppress the appropriate logical edge for computed `direction`,
+  so LTR and RTL preserve different physical start/end borders and padding. Later descendants
+  resolve to the newest continuation rather than reopening the original fragment. Empty continuation
+  lines are materialized only for the CSS2 cases that require line-height geometry between blocks.
+  Relative inline ancestors also carry their visual offset onto split block/float descendants while
+  their normal-flow and float exclusion geometry remains unchanged.
 - Generated `::before`/`::after` text from strings, `attr()`, CSS counters and quote commands is converted
   to ordinary InlineChar items at the host's child boundaries. Counter state is resolved before
   layout, so the formatter only sees final generated Unicode text. Pseudos inherit host typography,
@@ -98,12 +105,13 @@ verify variable glyph widths, Unicode, font-cache reuse, exact GDI-based positio
 and Text/Image/Text display-list order. Native smokes verify raster painting and
 a click through to the linked destination.
 
-This is still an initial left-to-right subset. Mixed computed inline typography and initial
-inline padding/background/solid-border fragments are supported. Block-level box-model
-support, including adjacent sibling margin collapse, is described in
-[CSS Block Box Model](CSS-Box-Model.md). Parent/child margin collapse, font families,
-decoration color/style/thickness, `tab-size`, advanced shaping/font fallback, bidi and
-grapheme-aware/full Unicode line breaking remain future work. `text-transform: capitalize`
+This is still not a bidi-capable inline formatter. Computed `direction:ltr|rtl` currently affects
+logical start/end handling for split inline fragments, but text ordering, bidi embedding and vertical
+writing remain future work. Mixed computed inline typography and initial inline
+padding/background/solid-border fragments are supported. Block-level box-model support, including
+adjacent sibling margin collapse, is described in [CSS Block Box Model](CSS-Box-Model.md).
+Parent/child margin collapse, font families, decoration color/style/thickness, `tab-size`, advanced
+shaping/font fallback, bidi and grapheme-aware/full Unicode line breaking remain future work. `text-transform: capitalize`
 currently uses whitespace word starts rather than full locale/context-sensitive CSS rules;
 word-spacing targets processed ASCII spaces, and spaced native painting advances per Unicode
 scalar while layout width stays anchored to whole-run GDI measurement plus CSS spacing.
@@ -113,9 +121,11 @@ dimensions/min/max, margins, padding, borders and background. Empty generated bl
 still materialize decorations. Empty generated strings and ordinary visually empty inline elements
 with their own box carry EmptyInline items: edge width affects wrapping/nowrap/alignment and
 font/vertical-edge metrics affect line geometry. They emit BoxDecoration without TextBox glyphs.
-Hidden/empty descendants and only collapsible whitespace also preserve an own empty host
-frame, while block boundaries prevent an extra synthesized line. Nested empty frames share
-all ancestor geometry; preformatted spaces retain their existing text behavior.
+Hidden/empty descendants and only collapsible whitespace preserve an own empty host frame when
+their edges reserve geometry. Block-inside-inline boundaries use continuation history to distinguish
+a required zero-width intermediate line from a fragment that should disappear after earlier visible
+inline content. Nested empty frames share all ancestor geometry; preformatted spaces retain their
+existing text behavior.
 Generated `url()` images share ordered inline text/image lists, baselines, atomic wrapping,
 intrinsic sizes and anchor click identity. Missing sole-URL replacements preserve CSS geometry
 around zero natural dimensions without pixels; mixed failures skip images and preserve text/

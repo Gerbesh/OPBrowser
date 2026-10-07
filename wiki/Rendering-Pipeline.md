@@ -165,8 +165,13 @@ shrink-to-fit positioned auto widths and direct percentage-height propagation fr
 heights are implemented. Inline positioned boxes can retain a zero-width static-position marker at
 the real line cursor. Horizontal inline margins, including negative values, participate in advance;
 initial `display:inline-block` runs a local block/BFC layout and enters the line as one atomic box.
-Sticky positioning, full inline containing blocks, split-inline/static-position paint ordering,
-stacking/z-index and the remaining abspos constraint equations remain later. The inline formatter
+Block children split active inline decoration paths into continuation nodes, suppressing opposite
+logical fragment edges according to computed LTR/RTL direction. Required zero-width intermediate
+fragments retain line height, later descendants attach to the newest continuation, and relative
+inline visual offsets are carried onto split block/float output without changing flow geometry.
+Large finite CSS lengths survive parsing and are bounded when converted to used integer geometry.
+Sticky positioning, full inline containing-block rectangles, complete bidi/vertical writing,
+stacking/z-index, multicol and the remaining abspos constraint equations remain later. The inline formatter
 injects already-resolved
 generated before/after text (strings, attributes or counters) around real DOM children and emits the same BoxDecoration shape for
 padded/background/bordered host or pseudo text fragments, so block and inline boxes share one

@@ -4,8 +4,8 @@ use super::inline::{
 use super::*;
 use op_css::{
     BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide, Clear,
-    ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Display, FloatSide,
-    FontStyle as CssFontStyle, InsetEdges, LengthPercentage, MarginEdges, MarginValue,
+    ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Direction, Display,
+    FloatSide, FontStyle as CssFontStyle, InsetEdges, LengthPercentage, MarginEdges, MarginValue,
     PaddingEdges, Position, PseudoElement, TableLayout, TextAlign, TextTransform, VerticalAlign,
     Visibility, WhiteSpace,
 };
@@ -194,6 +194,9 @@ struct UsedBlockHorizontal {
 #[derive(Clone, Copy)]
 struct Style {
     inline: InlineStyle,
+    inline_ancestor_dx: i32,
+    inline_ancestor_dy: i32,
+    direction: Direction,
     text_align: TextAlign,
     vertical_align: VerticalAlign,
     position: Position,
@@ -371,16 +374,37 @@ impl TableCollapsedBorders {
     }
 }
 
+fn collapsible_inline_char(ch: InlineChar<'_>) -> bool {
+    matches!(ch.ch, ' ' | '\t' | '\n' | '\r' | '\u{c}')
+        && matches!(
+            ch.style.white_space,
+            WhiteSpace::Normal | WhiteSpace::NoWrap
+        )
+}
+
+fn collapsible_inline_items(items: &[Item<'_>]) -> bool {
+    items
+        .iter()
+        .all(|item| matches!(item, Item::Char(ch) if collapsible_inline_char(*ch)))
+}
+
+fn inline_fragment_has_visible_content(
+    items: &[Item<'_>],
+    boxes: &InlineBoxes,
+    active: usize,
+) -> bool {
+    items.iter().any(|item| match item {
+        Item::Char(ch) => !collapsible_inline_char(*ch) && boxes.contains(ch.style.boxes, active),
+        Item::EmptyInline(style) | Item::Image(_, style, _) | Item::Atomic(_, style, _) => {
+            boxes.contains(style.boxes, active)
+        }
+        Item::Positioned(_, _) | Item::Break => false,
+    })
+}
+
 impl<'a> Context<'a, '_> {
     fn emit(&mut self, items: &mut Vec<Item<'a>>, style: Style, x: i32, width: i32) {
-        if items.iter().all(|item| {
-            matches!(
-                item,
-                Item::Char(ch)
-                    if matches!(ch.ch, ' ' | '\t' | '\n' | '\r' | '\u{c}')
-                        && matches!(ch.style.white_space, WhiteSpace::Normal | WhiteSpace::NoWrap)
-            )
-        }) {
+        if collapsible_inline_items(items) {
             items.clear();
             return;
         }
@@ -3052,11 +3076,12 @@ impl<'a> Context<'a, '_> {
         &mut self,
         id: NodeId,
         href: Option<&'a str>,
-        inherited: Style,
+        mut inherited: Style,
         containing_x: i32,
         containing_width: i32,
         items: &mut Vec<Item<'a>>,
     ) {
+        inherited.inline.boxes = self.inline_boxes.current(inherited.inline.boxes);
         let Some(node) = self.document.node(id) else {
             return;
         };
@@ -3075,6 +3100,15 @@ impl<'a> Context<'a, '_> {
                     return;
                 }
                 let mut current = self.element_style(id, tag, inherited);
+                current.inline_ancestor_dx = inherited.inline_ancestor_dx;
+                current.inline_ancestor_dy = inherited.inline_ancestor_dy;
+                if display == Display::Inline && current.position == Position::Relative {
+                    let containing_height = self.flow_height_stack.last().copied().flatten();
+                    let (dx, dy) =
+                        relative_position_offset(current, containing_width, containing_height);
+                    current.inline_ancestor_dx = current.inline_ancestor_dx.saturating_add(dx);
+                    current.inline_ancestor_dy = current.inline_ancestor_dy.saturating_add(dy);
+                }
                 let href = if tag == "a" {
                     attribute(element, "href")
                 } else {
@@ -3124,7 +3158,13 @@ impl<'a> Context<'a, '_> {
                 {
                     let side = current.float_side;
                     self.emit(items, inherited, containing_x, containing_width);
+                    let output_start = self.output_start();
+                    let dx = current.inline_ancestor_dx;
+                    let dy = current.inline_ancestor_dy;
+                    current.inline_ancestor_dx = 0;
+                    current.inline_ancestor_dy = 0;
                     self.float_block(id, href, current, containing_x, containing_width, side);
+                    self.translate_outputs_since(output_start, dx, dy);
                     return;
                 }
 
@@ -3185,7 +3225,34 @@ impl<'a> Context<'a, '_> {
                         items.push(Item::Break);
                     }
                 } else if is_block_level_display(display) || is_table_internal_display(display) {
+                    let active_inline = inherited.inline.boxes;
+                    if let Some(active_inline) = active_inline {
+                        let fragment_has_visible_content = inline_fragment_has_visible_content(
+                            items,
+                            &self.inline_boxes,
+                            active_inline,
+                        );
+                        let needs_empty_fragment = !fragment_has_visible_content;
+                        self.inline_boxes
+                            .split(Some(active_inline), fragment_has_visible_content);
+                        if needs_empty_fragment
+                            && (self.inline_boxes.horizontal(Some(active_inline)) != 0
+                                || (self.inline_boxes.is_continuation(active_inline)
+                                    && !self
+                                        .inline_boxes
+                                        .had_visible_content_before(active_inline)))
+                        {
+                            let mut fragment = inherited.inline;
+                            fragment.boxes = Some(active_inline);
+                            items.push(Item::EmptyInline(fragment));
+                        }
+                    }
                     self.emit(items, inherited, containing_x, containing_width);
+                    let output_start = self.output_start();
+                    let dx = current.inline_ancestor_dx;
+                    let dy = current.inline_ancestor_dy;
+                    current.inline_ancestor_dx = 0;
+                    current.inline_ancestor_dy = 0;
                     self.block(
                         BlockContent::Element(id),
                         href,
@@ -3193,6 +3260,7 @@ impl<'a> Context<'a, '_> {
                         containing_x,
                         containing_width,
                     );
+                    self.translate_outputs_since(output_start, dx, dy);
                 } else {
                     let initial_len = items.len();
                     let initial_epoch = self.block_epoch;
@@ -3220,7 +3288,18 @@ impl<'a> Context<'a, '_> {
                         (containing_x, containing_width),
                         items,
                     );
-                    if self.block_epoch == initial_epoch
+                    let latest_box = self.inline_boxes.current(current.inline.boxes);
+                    if self.block_epoch != initial_epoch
+                        && latest_box != current.inline.boxes
+                        && latest_box.is_some_and(|box_id| {
+                            !inline_fragment_has_visible_content(items, &self.inline_boxes, box_id)
+                        })
+                        && self.inline_boxes.horizontal(latest_box) != 0
+                    {
+                        let mut fragment = current.inline;
+                        fragment.boxes = latest_box;
+                        items.push(Item::EmptyInline(fragment));
+                    } else if self.block_epoch == initial_epoch
                         && current.inline.boxes.is_some_and(|box_id| {
                             let box_style = self.inline_boxes.style(box_id);
                             box_style.node == id
@@ -3697,6 +3776,7 @@ fn resolve_inline_box_style(
     visible.then_some(InlineBoxStyle {
         node,
         pseudo,
+        direction: style.direction,
         margin_right,
         margin_left,
         padding_top,
@@ -4613,6 +4693,9 @@ fn computed_style(style: ComputedStyle) -> Style {
             visible: !hidden,
             boxes: None,
         },
+        inline_ancestor_dx: 0,
+        inline_ancestor_dy: 0,
+        direction: style.direction,
         text_align: style.text_align,
         vertical_align: style.vertical_align,
         position: style.position,
@@ -4762,6 +4845,9 @@ fn default_style() -> Style {
             visible: true,
             boxes: None,
         },
+        inline_ancestor_dx: 0,
+        inline_ancestor_dy: 0,
+        direction: Direction::Ltr,
         text_align: TextAlign::Start,
         vertical_align: VerticalAlign::Baseline,
         position: Position::Static,
@@ -4802,6 +4888,9 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
     };
     Style {
         inline: fallback_inline_style(tag, inherited.inline),
+        inline_ancestor_dx: inherited.inline_ancestor_dx,
+        inline_ancestor_dy: inherited.inline_ancestor_dy,
+        direction: inherited.direction,
         text_align: inherited.text_align,
         vertical_align: VerticalAlign::Baseline,
         position: Position::Static,

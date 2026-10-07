@@ -2118,3 +2118,38 @@ This file is append-only project history.
   block-level static-position directionality, CSS2 absolute-position overconstraint/auto-margin
   equations, sticky positioning and overflow.
 
+## 2026-10-07 - CSS2 split-inline continuation pass
+
+- Reworked block-inside-inline handling around explicit continuation nodes in the parent-linked
+  `InlineBoxes` arena. Later inline descendants resolve to the newest continuation instead of
+  reopening the original fragment after an intervening block.
+- Split fragments now suppress the correct logical horizontal edge: LTR ending fragments drop the
+  right edge and continuations drop the left edge; RTL reverses those physical sides. Added initial
+  inherited computed `direction:ltr|rtl` support specifically for this logical fragment behavior;
+  this does not claim bidi text reordering or vertical-writing support.
+- Added split-fragment history so empty intermediate continuations preserve a zero-width line box
+  only when CSS2 requires it. This distinguishes whitespace-only block separators from cases where
+  real inline content already appeared before adjacent block children.
+- Relative-positioned inline ancestors now carry their visual offset onto block and float descendants
+  produced by a split while leaving normal-flow positions and float exclusion geometry unchanged.
+- Large finite CSS lengths are no longer rejected solely for exceeding an arbitrary one-million-unit
+  parse cap. They remain computed values and are bounded when converted to used integer layout
+  geometry, which keeps extreme off-screen insets safe without turning them into `auto`.
+- Updated deterministic inline regressions to compare block-inside-inline output against explicit
+  start/middle/end fragment references, including the required whitespace-between-blocks line.
+  Added computed-style coverage for direction inheritance/override and very large finite insets.
+- The unchanged WPT Positioning v1 manifest improved from **25/100 (25.00%)** to
+  **36/100 (36.00%)**, with 64 failures and zero render errors. The pass closes the empty-span,
+  split-inline/removal, whitespace-between-blocks, relative-inline float and large-negative-inset
+  slices without changing the manifest.
+- WPT Static v1 remains **187/200 (93.50%)** and Test262 Parser v1 remains
+  **523/1983 (26.37%)**.
+- Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace test
+  suite, native Win32 startup smoke, the pinned WPT/Test262 compatibility refresh, and the optimized
+  release build.
+- The rebuilt local browser at `target/release/op_browser.exe` is **1,049,088 bytes** with
+  SHA-256 `70789BDDDE62FA59C01268250E1F820D97707EE5D9E40BC7D9DCCB7E20A8D9B1`.
+- Remaining positioning priorities are real inline containing-block rectangles for absolute
+  descendants, CSS2 content-height/line-height cases, remaining absolute-position equations,
+  vertical writing/multicol, sticky positioning and overflow.
+
