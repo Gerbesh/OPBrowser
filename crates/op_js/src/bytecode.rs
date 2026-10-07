@@ -1,5 +1,6 @@
 use crate::{
-    BinaryOp, Expression, JsError, JsValue, Program, Statement, UnaryOp, VariableKind, parse_script,
+    BinaryOp, Expression, JsError, JsValue, LogicalOp, Program, Statement, UnaryOp, VariableKind,
+    parse_script,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,6 +16,10 @@ pub(crate) enum Instruction {
     Assign(String),
     Unary(UnaryOp),
     Binary(BinaryOp),
+    Pop,
+    Jump(usize),
+    JumpIfFalse(usize),
+    JumpIfTrue(usize),
     SetCompletion,
     Halt,
 }
@@ -25,57 +30,184 @@ pub fn compile_script(source: &str) -> Result<CompiledScript, JsError> {
 }
 
 pub(crate) fn compile_program(program: &Program) -> CompiledScript {
-    let mut code = Vec::new();
+    let mut compiler = Compiler::default();
     for statement in &program.statements {
-        compile_statement(statement, &mut code);
+        compiler.statement(statement);
     }
-    code.push(Instruction::Halt);
-    CompiledScript { code }
+    compiler.code.push(Instruction::Halt);
+    CompiledScript {
+        code: compiler.code,
+    }
 }
 
-fn compile_statement(statement: &Statement, code: &mut Vec<Instruction>) {
-    match statement {
-        Statement::Variable {
-            kind,
-            name,
-            initializer,
-        } => {
-            if let Some(initializer) = initializer {
-                compile_expression(initializer, code);
-            } else {
-                code.push(Instruction::Push(JsValue::Undefined));
+#[derive(Default)]
+struct Compiler {
+    code: Vec<Instruction>,
+    loops: Vec<LoopContext>,
+}
+
+#[derive(Default)]
+struct LoopContext {
+    continue_target: usize,
+    break_jumps: Vec<usize>,
+}
+
+impl Compiler {
+    fn statement(&mut self, statement: &Statement) {
+        match statement {
+            Statement::Variable { kind, declarations } => {
+                for declaration in declarations {
+                    if let Some(initializer) = &declaration.initializer {
+                        self.expression(initializer);
+                    } else {
+                        self.code.push(Instruction::Push(JsValue::Undefined));
+                    }
+                    self.code.push(Instruction::Declare {
+                        name: declaration.name.clone(),
+                        mutable: !matches!(kind, VariableKind::Const),
+                    });
+                }
+                self.code.push(Instruction::Push(JsValue::Undefined));
+                self.code.push(Instruction::SetCompletion);
             }
-            code.push(Instruction::Declare {
-                name: name.clone(),
-                mutable: !matches!(kind, VariableKind::Const),
-            });
-            code.push(Instruction::Push(JsValue::Undefined));
-            code.push(Instruction::SetCompletion);
+            Statement::Block(statements) => {
+                for statement in statements {
+                    self.statement(statement);
+                }
+            }
+            Statement::If {
+                test,
+                consequent,
+                alternate,
+            } => self.if_statement(test, consequent, alternate.as_deref()),
+            Statement::While { test, body } => self.while_statement(test, body),
+            Statement::Break => {
+                let jump = self.emit_jump();
+                self.loops
+                    .last_mut()
+                    .expect("parser only emits break inside loops")
+                    .break_jumps
+                    .push(jump);
+            }
+            Statement::Continue => {
+                let target = self
+                    .loops
+                    .last()
+                    .expect("parser only emits continue inside loops")
+                    .continue_target;
+                self.code.push(Instruction::Jump(target));
+            }
+            Statement::Expression(expression) => {
+                self.expression(expression);
+                self.code.push(Instruction::SetCompletion);
+            }
+            Statement::Empty => {}
         }
-        Statement::Expression(expression) => {
-            compile_expression(expression, code);
-            code.push(Instruction::SetCompletion);
-        }
-        Statement::Empty => {}
     }
-}
 
-fn compile_expression(expression: &Expression, code: &mut Vec<Instruction>) {
-    match expression {
-        Expression::Literal(value) => code.push(Instruction::Push(value.clone())),
-        Expression::Identifier(name) => code.push(Instruction::Load(name.clone())),
-        Expression::Unary { op, argument } => {
-            compile_expression(argument, code);
-            code.push(Instruction::Unary(*op));
+    fn if_statement(
+        &mut self,
+        test: &Expression,
+        consequent: &Statement,
+        alternate: Option<&Statement>,
+    ) {
+        self.expression(test);
+        let false_jump = self.emit_jump_if_false();
+        self.code.push(Instruction::Pop);
+        self.statement(consequent);
+        let end_jump = self.emit_jump();
+
+        let false_target = self.code.len();
+        self.patch_jump(false_jump, false_target);
+        self.code.push(Instruction::Pop);
+        if let Some(alternate) = alternate {
+            self.statement(alternate);
         }
-        Expression::Binary { left, op, right } => {
-            compile_expression(left, code);
-            compile_expression(right, code);
-            code.push(Instruction::Binary(*op));
+
+        let end = self.code.len();
+        self.patch_jump(end_jump, end);
+    }
+
+    fn while_statement(&mut self, test: &Expression, body: &Statement) {
+        let loop_start = self.code.len();
+        self.expression(test);
+        let false_jump = self.emit_jump_if_false();
+        self.code.push(Instruction::Pop);
+
+        self.loops.push(LoopContext {
+            continue_target: loop_start,
+            break_jumps: Vec::new(),
+        });
+        self.statement(body);
+        let loop_context = self.loops.pop().expect("loop context must exist");
+        self.code.push(Instruction::Jump(loop_start));
+
+        let false_cleanup = self.code.len();
+        self.patch_jump(false_jump, false_cleanup);
+        self.code.push(Instruction::Pop);
+        let end = self.code.len();
+        for jump in loop_context.break_jumps {
+            self.patch_jump(jump, end);
         }
-        Expression::Assignment { name, value } => {
-            compile_expression(value, code);
-            code.push(Instruction::Assign(name.clone()));
+    }
+
+    fn expression(&mut self, expression: &Expression) {
+        match expression {
+            Expression::Literal(value) => self.code.push(Instruction::Push(value.clone())),
+            Expression::Identifier(name) => self.code.push(Instruction::Load(name.clone())),
+            Expression::Unary { op, argument } => {
+                self.expression(argument);
+                self.code.push(Instruction::Unary(*op));
+            }
+            Expression::Binary { left, op, right } => {
+                self.expression(left);
+                self.expression(right);
+                self.code.push(Instruction::Binary(*op));
+            }
+            Expression::Logical { left, op, right } => {
+                self.expression(left);
+                let short_circuit = match op {
+                    LogicalOp::And => self.emit_jump_if_false(),
+                    LogicalOp::Or => self.emit_jump_if_true(),
+                };
+                self.code.push(Instruction::Pop);
+                self.expression(right);
+                let end = self.code.len();
+                self.patch_jump(short_circuit, end);
+            }
+            Expression::Assignment { name, value } => {
+                self.expression(value);
+                self.code.push(Instruction::Assign(name.clone()));
+            }
+        }
+    }
+
+    fn emit_jump(&mut self) -> usize {
+        let index = self.code.len();
+        self.code.push(Instruction::Jump(usize::MAX));
+        index
+    }
+
+    fn emit_jump_if_false(&mut self) -> usize {
+        let index = self.code.len();
+        self.code.push(Instruction::JumpIfFalse(usize::MAX));
+        index
+    }
+
+    fn emit_jump_if_true(&mut self) -> usize {
+        let index = self.code.len();
+        self.code.push(Instruction::JumpIfTrue(usize::MAX));
+        index
+    }
+
+    fn patch_jump(&mut self, index: usize, target: usize) {
+        match self.code.get_mut(index) {
+            Some(
+                Instruction::Jump(current)
+                | Instruction::JumpIfFalse(current)
+                | Instruction::JumpIfTrue(current),
+            ) => *current = target,
+            _ => unreachable!("compiler jump patch must reference a jump instruction"),
         }
     }
 }
@@ -94,5 +226,19 @@ mod tests {
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::Binary(BinaryOp::Multiply)))
         );
+    }
+
+    #[test]
+    fn compiles_control_flow_to_patched_jumps() {
+        let script = compile_script(
+            "let x = 0; while (x < 3) { if (x === 1) { x = x + 1; continue; } x = x + 1; } x",
+        )
+        .unwrap();
+        assert!(script.code.iter().any(
+            |instruction| matches!(instruction, Instruction::JumpIfFalse(target) if *target != usize::MAX)
+        ));
+        assert!(script.code.iter().any(
+            |instruction| matches!(instruction, Instruction::Jump(target) if *target != usize::MAX)
+        ));
     }
 }

@@ -1841,3 +1841,32 @@ This file is append-only project history.
 - The local release browser was rebuilt at `target/release/op_browser.exe`: 1,009,664 bytes,
   SHA-256 `1D948C02A1EA83745BD3655C39E79FB3B21F0A3A30711A051D9B42757B1B7322`.
 
+## 2026-10-07 - JavaScript control-flow bytecode pass
+
+- Expanded the original ECMAScript lexer/parser with blocks, `if/else`, `while`,
+  `break`/`continue`, comma-separated variable declarators and short-circuit `&&`/`||`.
+  Break/continue are rejected outside loops rather than accepted as fake syntax.
+- Reworked bytecode compilation around patched jump targets. Logical operators preserve the
+  original operand value on short-circuit; branch and loop conditions are explicitly removed from
+  the operand stack so control-flow paths keep stack invariants.
+- Reworked `JsRuntime` from a linear instruction iterator to an instruction-pointer VM with
+  `Jump`, `JumpIfFalse`, `JumpIfTrue` and `Pop` execution.
+- Added a bounded per-execution instruction budget (1,000,000 by default, configurable for tests)
+  and a dedicated execution-limit error so runaway loops cannot monopolize the renderer thread.
+- Added lexer, parser, compiler and runtime regressions for nested branches/loops, continue/break,
+  multiple declarations, short-circuit side effects/value preservation and runaway-loop aborts.
+  The op_js suite increased from 8 to 14 core tests, plus the existing probe tests.
+- The unchanged Test262 Parser v1 manifest improved from 364/1983 (18.36%) to
+  391/1983 (19.72%). This remains a parse-expectation score only; runtime Test262 conformance is
+  not claimed.
+- External compatibility refresh also reconfirmed WPT Static v1 at 187/200 (93.50%) with the same
+  13 known failures and zero render errors.
+- Full verification passed rustfmt, warning-free workspace Clippy, the complete workspace test
+  suite, native startup smoke, external compatibility refresh, optimized release build and
+  `git diff --check`.
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 1,009,664 bytes,
+  SHA-256 `38C1C367533F5A0F083F0EA003A3B09F82B41042F4483C6229A7BD9441D29310`.
+- Page `<script>` execution is still intentionally not connected. The next high-leverage JS
+  work is objects/properties/prototypes, then functions/calls/lexical environments; those are the
+  main blockers before DOM scripting can be wired honestly.
+

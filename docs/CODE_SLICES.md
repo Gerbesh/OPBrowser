@@ -1,6 +1,6 @@
 # OPBrowser Code Slices
 
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 
 A code slice is an end-to-end path through the architecture that produces one
 observable capability. This prevents isolated subsystems from becoming impressive
@@ -572,10 +572,13 @@ JavaScript source
   -> primitive completion value / persistent global binding
 ```
 
-The implemented subset covers scalar literals, single let/const/var declarations,
-assignment, unary/arithmetic/comparison/equality operators and string concatenation.
-A parse-only Test262 probe measures positive parse acceptance and expected parse failures.
-It deliberately does not claim runtime conformance.
+The implemented subset covers scalar literals, comma-separated let/const/var declarations,
+assignment, unary/arithmetic/comparison/equality operators, string concatenation, short-circuit
+logical operators, blocks, if/else, while and break/continue. Control flow is compiled to patched
+jumps and executed by an instruction-pointer VM with a bounded instruction budget. Binding storage
+is still global; full lexical block environments begin with the functions/closures slice.
+The parse-only Test262 probe moved from 364/1983 (18.36%) to 391/1983 (19.72%) on the unchanged
+manifest. It deliberately does not claim runtime conformance.
 
 Planned continuation:
 

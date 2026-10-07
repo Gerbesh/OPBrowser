@@ -50,7 +50,12 @@ Initial baseline:
 - 17 module tests skipped;
 - **18.36% Test262 Parser v1**.
 
-This must never be described as "18.36% JavaScript support" or full ECMAScript conformance.
+Measured progress on the unchanged v1 manifest:
+
+- initial control-flow/parser pass: 391/1983, **19.72%**;
+- current result: 391 passed, 1,592 failed expectations, 17 module tests skipped.
+
+This must never be described as "19.72% JavaScript support" or full ECMAScript conformance.
 
 ### WPT static v1
 

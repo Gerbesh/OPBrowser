@@ -1,6 +1,6 @@
 # OPBrowser Project Plan
 
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 
 ## North star
 
@@ -305,10 +305,15 @@ Status: IN PROGRESS.
 - DONE initial bytecode format/compiler for the implemented syntax.
 - DONE initial stack interpreter with persistent globals, mutable/const bindings, scalar
   coercion, arithmetic, string concatenation, truthiness and loose/strict equality.
+- DONE initial control-flow bytecode: blocks, if/else, while, break/continue, multiple
+  declarators and short-circuit &&/|| compile to patched jumps executed by an instruction-pointer
+  VM; a bounded instruction budget aborts runaway loops instead of hanging the renderer.
+- DONE second parser-measurement pass raised the unchanged Test262 Parser v1 manifest from
+  364/1983 (18.36%) to 391/1983 (19.72%).
 - NEXT values/objects/prototypes beyond the current primitive JsValue set.
 - LATER garbage collector.
 - NEXT functions/closures and lexical environments.
-- NEXT exceptions and control flow.
+- NEXT exceptions plus broader control flow (for/do/switch/labels).
 - LATER promises/microtasks.
 - LATER modules.
 - LATER standard built-ins.

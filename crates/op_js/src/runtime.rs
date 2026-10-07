@@ -3,20 +3,39 @@ use crate::{
 };
 use std::collections::HashMap;
 
+const DEFAULT_INSTRUCTION_BUDGET: usize = 1_000_000;
+
 #[derive(Debug, Clone)]
 struct Binding {
     value: JsValue,
     mutable: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct JsRuntime {
     globals: HashMap<String, Binding>,
+    instruction_budget: usize,
+}
+
+impl Default for JsRuntime {
+    fn default() -> Self {
+        Self {
+            globals: HashMap::new(),
+            instruction_budget: DEFAULT_INSTRUCTION_BUDGET,
+        }
+    }
 }
 
 impl JsRuntime {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_instruction_budget(instruction_budget: usize) -> Self {
+        Self {
+            globals: HashMap::new(),
+            instruction_budget,
+        }
     }
 
     pub fn eval_script(&mut self, source: &str) -> Result<JsValue, JsError> {
@@ -27,8 +46,18 @@ impl JsRuntime {
     pub fn execute(&mut self, script: &CompiledScript) -> Result<JsValue, JsError> {
         let mut stack = Vec::new();
         let mut completion = JsValue::Undefined;
+        let mut ip = 0usize;
+        let mut steps = 0usize;
 
-        for instruction in &script.code {
+        while let Some(instruction) = script.code.get(ip) {
+            steps = steps.saturating_add(1);
+            if steps > self.instruction_budget {
+                return Err(JsError::execution_limit(format!(
+                    "script exceeded instruction budget of {}",
+                    self.instruction_budget
+                )));
+            }
+
             match instruction {
                 Instruction::Push(value) => stack.push(value.clone()),
                 Instruction::Load(name) => {
@@ -83,11 +112,41 @@ impl JsRuntime {
                     let left = stack.pop().expect("compiler must push left operand");
                     stack.push(apply_binary(*op, left, right));
                 }
+                Instruction::Pop => {
+                    stack.pop().expect("compiler must leave a value to pop");
+                }
+                Instruction::Jump(target) => {
+                    debug_assert!(*target <= script.code.len());
+                    ip = *target;
+                    continue;
+                }
+                Instruction::JumpIfFalse(target) => {
+                    let value = stack
+                        .last()
+                        .expect("compiler must leave branch condition on stack");
+                    if !value.is_truthy() {
+                        debug_assert!(*target <= script.code.len());
+                        ip = *target;
+                        continue;
+                    }
+                }
+                Instruction::JumpIfTrue(target) => {
+                    let value = stack
+                        .last()
+                        .expect("compiler must leave branch condition on stack");
+                    if value.is_truthy() {
+                        debug_assert!(*target <= script.code.len());
+                        ip = *target;
+                        continue;
+                    }
+                }
                 Instruction::SetCompletion => {
                     completion = stack.pop().expect("compiler must push completion value");
                 }
                 Instruction::Halt => break,
             }
+
+            ip = ip.saturating_add(1);
         }
 
         debug_assert!(stack.is_empty());
@@ -221,5 +280,57 @@ mod tests {
 
         let error = runtime.eval_script("missing + 1").unwrap_err();
         assert_eq!(error.kind, crate::JsErrorKind::Reference);
+    }
+
+    #[test]
+    fn executes_control_flow_and_multiple_declarations() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let x = 0, total = 0; \
+                     while (x < 10) { \
+                       x = x + 1; \
+                       if (x === 2) { continue; } \
+                       if (x === 5) { break; } \
+                       total = total + x; \
+                     } \
+                     total",
+                )
+                .unwrap(),
+            JsValue::Number(8.0)
+        );
+        assert_eq!(runtime.global("x"), Some(&JsValue::Number(5.0)));
+        assert_eq!(runtime.global("total"), Some(&JsValue::Number(8.0)));
+    }
+
+    #[test]
+    fn logical_operators_short_circuit_and_preserve_operand_values() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime.eval_script("false && missing").unwrap(),
+            JsValue::Boolean(false)
+        );
+        assert_eq!(
+            runtime.eval_script("true || missing").unwrap(),
+            JsValue::Boolean(true)
+        );
+        assert_eq!(
+            runtime
+                .eval_script("let x = 0; false && (x = 1); true || (x = 2); x")
+                .unwrap(),
+            JsValue::Number(0.0)
+        );
+        assert_eq!(
+            runtime.eval_script("0 || 'fallback'").unwrap(),
+            JsValue::String("fallback".into())
+        );
+    }
+
+    #[test]
+    fn stops_runaway_control_flow_at_instruction_budget() {
+        let mut runtime = JsRuntime::with_instruction_budget(100);
+        let error = runtime.eval_script("while (true) {}").unwrap_err();
+        assert_eq!(error.kind, crate::JsErrorKind::ExecutionLimit);
     }
 }

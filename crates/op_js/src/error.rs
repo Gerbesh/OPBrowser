@@ -5,6 +5,7 @@ pub enum JsErrorKind {
     Syntax,
     Reference,
     Type,
+    ExecutionLimit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +35,14 @@ impl JsError {
     pub(crate) fn type_error(message: impl Into<String>) -> Self {
         Self {
             kind: JsErrorKind::Type,
+            offset: 0,
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn execution_limit(message: impl Into<String>) -> Self {
+        Self {
+            kind: JsErrorKind::ExecutionLimit,
             offset: 0,
             message: message.into(),
         }

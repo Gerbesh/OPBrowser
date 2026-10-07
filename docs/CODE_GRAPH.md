@@ -134,9 +134,22 @@ classDiagram
     }
 
     class JsRuntime {
+        -globals
+        -instruction_budget
+        +new()
+        +with_instruction_budget(limit)
         +eval_script(source) JsValue
         +execute(compiled) JsValue
         +global(name) JsValue
+    }
+    class CompiledScript {
+        code Instruction[]
+    }
+    class Instruction {
+        Push / Load / Declare / Assign
+        Unary / Binary / Pop
+        Jump / JumpIfFalse / JumpIfTrue
+        SetCompletion / Halt
     }
 
     class Encoding {
@@ -438,6 +451,8 @@ classDiagram
     }
 
     Engine --> NavigationState
+    JsRuntime --> CompiledScript : compile / execute
+    CompiledScript --> Instruction : ordered bytecode with patched jump targets
     NavigationState --> NavigationEntry
     Engine --> NetworkContext
     NetworkContext --> LoadedDocument

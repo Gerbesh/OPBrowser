@@ -15,6 +15,11 @@ pub enum TokenKind {
     Let,
     Const,
     Var,
+    If,
+    Else,
+    While,
+    Break,
+    Continue,
     True,
     False,
     Null,
@@ -34,8 +39,12 @@ pub enum TokenKind {
     LessEqual,
     Greater,
     GreaterEqual,
+    AmpAmp,
+    PipePipe,
     LeftParen,
     RightParen,
+    LeftBrace,
+    RightBrace,
     Semicolon,
     Comma,
     Eof,
@@ -145,8 +154,12 @@ impl<'a> Lexer<'a> {
             b'%' => TokenKind::Percent,
             b'(' => TokenKind::LeftParen,
             b')' => TokenKind::RightParen,
+            b'{' => TokenKind::LeftBrace,
+            b'}' => TokenKind::RightBrace,
             b';' => TokenKind::Semicolon,
             b',' => TokenKind::Comma,
+            b'&' if self.take(b'&') => TokenKind::AmpAmp,
+            b'|' if self.take(b'|') => TokenKind::PipePipe,
             b'=' if self.take(b'=') => {
                 if self.take(b'=') {
                     TokenKind::EqualEqualEqual
@@ -250,6 +263,11 @@ impl<'a> Lexer<'a> {
             "let" => TokenKind::Let,
             "const" => TokenKind::Const,
             "var" => TokenKind::Var,
+            "if" => TokenKind::If,
+            "else" => TokenKind::Else,
+            "while" => TokenKind::While,
+            "break" => TokenKind::Break,
+            "continue" => TokenKind::Continue,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "null" => TokenKind::Null,
@@ -333,7 +351,10 @@ mod tests {
 
     #[test]
     fn tokenizes_comments_literals_and_operators() {
-        let tokens = tokenize("let answer = 4.2e1 + 'x'; // tail\n answer !== 0").unwrap();
+        let tokens = tokenize(
+            "let answer = 4.2e1 + 'x'; // tail\n if (answer !== 0 && true) { answer = 1 || 2 }",
+        )
+        .unwrap();
         assert!(matches!(tokens[0].kind, TokenKind::Let));
         assert!(matches!(tokens[3].kind, TokenKind::Number(value) if value == 42.0));
         assert!(matches!(tokens[5].kind, TokenKind::String(ref value) if value == "x"));
@@ -341,6 +362,26 @@ mod tests {
             tokens
                 .iter()
                 .any(|token| matches!(token.kind, TokenKind::BangEqualEqual))
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|token| matches!(token.kind, TokenKind::If))
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|token| matches!(token.kind, TokenKind::AmpAmp))
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|token| matches!(token.kind, TokenKind::PipePipe))
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|token| matches!(token.kind, TokenKind::LeftBrace))
         );
     }
 
