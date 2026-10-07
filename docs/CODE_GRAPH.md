@@ -771,7 +771,11 @@ Separately, op_js now has source -> tokenize -> AST -> bytecode -> VM as an exec
 standalone language slice, and op_browser_core has tab -> lifecycle/protection -> discard
 candidate -> restore-state flow ready for later UI/renderer integration.
 The block-box path includes used width/min/max/auto-margin geometry, per-side borders and
-adjacent sibling margin collapse before BoxDecoration/background-border FillRects. `Display::Contents`
+adjacent sibling margin collapse before BoxDecoration/background-border FillRects. Conservative
+zero-height self-collapsing subtrees now merge their entire adjoining-margin set into the pending
+block margin without advancing y; the analysis may pass through whitespace-only normal text,
+undecorated inline wrappers and display:contents, which lets block-in-inline collapse through an
+otherwise empty parent while preserving the ordinary path for visible/boxed content. `Display::Contents`
 uses the existing child/generated-content collection path without creating a principal box. Table
 formatting additionally pre-expands contents wrappers only when their exposed non-ignorable
 descendants are table-internal, so anonymous row/cell fixup sees the correct structure while ordinary

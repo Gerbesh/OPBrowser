@@ -1750,3 +1750,28 @@ This file is append-only project history.
 - The local release browser was rebuilt at `target/release/op_browser.exe`: 983,040 bytes, SHA-256
   `6371FF14F00625C7E51A5DEA24F9CD9D005B87E2F37DC2CA4C04ACD281B2A57D`.
 
+## 2026-10-07 - Self-collapsing block-in-inline margin pass
+
+- Added conservative self-collapsing block analysis for zero-height block subtrees. Eligible blocks
+  have no vertical border/padding or nonzero resolved height and no generated before/after content.
+- The analysis can cross whitespace-only text in normal/nowrap whitespace modes, undecorated inline
+  wrappers and `display:contents`. Visible inline boxes, replaced content, preserved whitespace,
+  table/atomic contexts and generated content deliberately fall back to ordinary layout.
+- Self-collapsing blocks no longer consume their top margin and then flush their bottom margin as
+  separate vertical movement. Their complete adjoining-margin set is merged into `pending_margin`,
+  so it can still collapse with the previous/next sibling and through an otherwise empty parent.
+- Added a regression matching the CSS2 block-in-inline case: a zero-height child with 30px top and
+  40px bottom margin nested inside an inline wrapper now creates a 40px sibling gap rather than
+  70px, with no visible red background.
+- The pinned `block-in-inline-self-collapsing-only-child.html` reftest now passes exactly. The
+  unchanged WPT Static v1 manifest improved from 182/200 (91.00%) to 183/200 (91.50%), with
+  17 remaining failures and zero render errors.
+- The two pinned `display:flow-root` tests remain red because they intentionally combine BFC margin
+  containment with real float containment/avoidance, inline splitting and list-item behavior. The
+  next pass will implement that BFC/float foundation rather than aliasing flow-root to block.
+- Final verification passed rustfmt, generated HTML/CSS table checks, warning-free workspace Clippy,
+  the complete workspace test suite, Win32 startup smoke, optimized release build, repeated external
+  compatibility and `git diff --check`. Test262 Parser v1 remained 364/1983 (18.36%).
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 986,112 bytes, SHA-256
+  `BD77BA98537F7EDB20762825E02527D8CC14DBC65B07F1E56E0D869ED7505116`.
+

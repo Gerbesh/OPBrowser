@@ -68,9 +68,14 @@ margins use the more negative; mixed signs combine the largest positive with the
 negative. Whitespace-only DOM text between block siblings is discarded at the block-flow
 boundary so indentation/newlines do not create a fake anonymous line and break collapse.
 
-Parent/child collapse and empty-block self-collapse are not implemented yet. A final child
-margin is currently consumed before the parent's padding/border boundary instead of escaping
-through a margin-transparent parent.
+Self-collapsing zero-height blocks now merge their top/bottom margins into the shared pending
+margin set instead of advancing block-flow y. The detector can cross whitespace-only normal-flow
+text, undecorated inline wrappers and `display:contents`, allowing an empty block nested inside an
+inline-only wrapper and empty margin-transparent parent to collapse with surrounding sibling
+margins. It is deliberately conservative: borders/padding/nonzero resolved height, preserved
+whitespace, replaced content, generated before/after content or decorated inline wrappers fall
+back to ordinary layout. General non-empty parent/first-child and parent/last-child margin collapse
+still remains later work.
 
 ## Painting
 
@@ -87,7 +92,8 @@ background propagation and general alpha composition remain later rendering work
 - inline fragments clone edges on each wrapped line; sliced edge behavior remains later;
 - nested text/image/empty/pseudo boxes reserve all ancestor edges and paint outer frames first;
 - unavailable replacements preserve CSS boxes around zero natural sizes; nonempty alt uses text;
-- no parent/child or empty-block margin collapse;
+- self-collapsing empty-block propagation is implemented for conservative zero-geometry subtrees,
+  but general parent/first-child and parent/last-child collapse remains incomplete;
 - no `border-radius`, outlines, shadows, background images or multiple backgrounds;
 - percentage height needs a definite-height containing-block propagation pass;
 - table layout is implemented as a dedicated initial formatter with intrinsic content tracks,

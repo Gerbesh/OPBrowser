@@ -350,6 +350,13 @@ impl<'a> Context<'a, '_> {
         containing_width: i32,
     ) {
         self.block_epoch = self.block_epoch.saturating_add(1);
+        if let BlockContent::Element(id) = content
+            && let Some(margin) = self.self_collapsing_block_margin(id, style, containing_width)
+        {
+            self.merge_pending_margin(margin);
+            return;
+        }
+
         let used = resolve_block_horizontal(style, containing_width);
         let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
         let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
@@ -1868,6 +1875,153 @@ impl<'a> Context<'a, '_> {
             .take()
             .map_or(next, |previous| collapse_margins(previous, next));
         self.y = self.y.saturating_add(used);
+    }
+
+    fn merge_pending_margin(&mut self, next: i32) {
+        self.pending_margin = Some(
+            self.pending_margin
+                .take()
+                .map_or(next, |previous| collapse_margins(previous, next)),
+        );
+    }
+
+    fn self_collapsing_block_margin(
+        &self,
+        id: NodeId,
+        style: Style,
+        containing_width: i32,
+    ) -> Option<i32> {
+        self.self_collapsing_block_margin_inner(id, style, containing_width, 0)
+    }
+
+    fn self_collapsing_block_margin_inner(
+        &self,
+        id: NodeId,
+        style: Style,
+        containing_width: i32,
+        depth: usize,
+    ) -> Option<i32> {
+        if depth >= 256 {
+            return None;
+        }
+
+        let used = resolve_block_horizontal(style, containing_width);
+        if used.padding.top != 0
+            || used.padding.bottom != 0
+            || used.border.top.width != 0
+            || used.border.bottom.width != 0
+            || resolve_block_content_height(
+                style,
+                0,
+                used.padding.top,
+                used.padding.bottom,
+                used.border,
+            ) != 0
+        {
+            return None;
+        }
+
+        if self
+            .computed_styles
+            .pseudo_style_for(id, PseudoElement::Before)
+            .is_some()
+            || self
+                .computed_styles
+                .pseudo_style_for(id, PseudoElement::After)
+                .is_some()
+        {
+            return None;
+        }
+
+        let own = collapse_margins(
+            resolve_vertical_margin(style.margin.top, containing_width),
+            resolve_vertical_margin(style.margin.bottom, containing_width),
+        );
+        let descendants =
+            self.self_collapsing_children_margin(id, style, containing_width, depth + 1)?;
+        Some(collapse_margins(own, descendants))
+    }
+
+    fn self_collapsing_children_margin(
+        &self,
+        parent: NodeId,
+        inherited: Style,
+        containing_width: i32,
+        depth: usize,
+    ) -> Option<i32> {
+        if depth >= 256 {
+            return None;
+        }
+
+        let mut collapsed = 0;
+        for child in self.document.children(parent) {
+            let Some(node) = self.document.node(*child) else {
+                continue;
+            };
+            match &node.kind {
+                NodeKind::Text(text) => {
+                    if !text.is_empty()
+                        && (!text.chars().all(char::is_whitespace)
+                            || !matches!(
+                                inherited.inline.white_space,
+                                WhiteSpace::Normal | WhiteSpace::NoWrap
+                            ))
+                    {
+                        return None;
+                    }
+                }
+                NodeKind::Element(element) => {
+                    let tag = element.tag_name.as_str();
+                    let display = self.element_display(*child, tag);
+                    if display == Display::None {
+                        continue;
+                    }
+                    if matches!(tag, "img" | "br") {
+                        return None;
+                    }
+                    let child_style = self.element_style(*child, tag, inherited);
+                    let margin = match display {
+                        Display::Block => self.self_collapsing_block_margin_inner(
+                            *child,
+                            child_style,
+                            containing_width,
+                            depth + 1,
+                        )?,
+                        Display::Inline => {
+                            if resolve_inline_box_style(*child, None, child_style, containing_width)
+                                .is_some()
+                                || self
+                                    .computed_styles
+                                    .pseudo_style_for(*child, PseudoElement::Before)
+                                    .is_some()
+                                || self
+                                    .computed_styles
+                                    .pseudo_style_for(*child, PseudoElement::After)
+                                    .is_some()
+                            {
+                                return None;
+                            }
+                            self.self_collapsing_children_margin(
+                                *child,
+                                child_style,
+                                containing_width,
+                                depth + 1,
+                            )?
+                        }
+                        Display::Contents => self.self_collapsing_children_margin(
+                            *child,
+                            child_style,
+                            containing_width,
+                            depth + 1,
+                        )?,
+                        _ => return None,
+                    };
+                    collapsed = collapse_margins(collapsed, margin);
+                }
+                NodeKind::Document | NodeKind::Comment(_) | NodeKind::DocumentType { .. } => {}
+            }
+        }
+        Some(collapsed)
     }
 
     fn flush_pending_margin(&mut self) {

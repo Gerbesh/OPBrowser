@@ -150,7 +150,10 @@ sub/super/text-top/text-bottom/length/% are still unsupported. Transformed text 
 measured before line placement; op_paint carries italic/decoration/spacing metadata and Win32
 uses matching text advances while drawing measured decoration/link segments. It resolves used widths/min/max/auto margins,
 box-sizing, padding, independent border edges, fixed height constraints and sibling margin
-collapse, then emits BoxDecoration records. The inline formatter injects already-resolved
+collapse. Zero-height self-collapsing block subtrees can keep a collapsed adjoining-margin set
+pending through undecorated inline/`display:contents` wrappers and empty parents, so block-in-inline
+does not turn a 30px/40px collapsed pair into 70px of flow height. The normal path then emits
+BoxDecoration records. The inline formatter injects already-resolved
 generated before/after text (strings, attributes or counters) around real DOM children and emits the same BoxDecoration shape for
 padded/background/bordered host or pseudo text fragments, so block and inline boxes share one
 platform-neutral paint path. op_paint expands them into side-specific FillRect

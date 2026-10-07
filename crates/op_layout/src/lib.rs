@@ -820,6 +820,58 @@ mod tests {
     }
 
     #[test]
+    fn self_collapsing_block_in_inline_collapses_through_empty_parent() {
+        let document = op_html::parse_document(
+            "<style>
+               .prior,.next { width:100px; height:20px; background:green }
+               .parent { width:100px }
+               .empty { width:100px; height:0; margin-top:30px; margin-bottom:40px; background:red }
+             </style>
+             <div class='prior'></div>
+             <div class='parent'><span><div class='empty'></div></span></div>
+             <div class='next'></div>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let green = layout
+            .box_decorations
+            .iter()
+            .filter(|decoration| {
+                decoration.background
+                    == TextColor {
+                        red: 0,
+                        green: 128,
+                        blue: 0,
+                        alpha: 255,
+                    }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(green.len(), 2);
+        assert_eq!(green[1].y - (green[0].y + green[0].height), 40);
+        assert!(
+            layout.box_decorations.iter().all(|decoration| {
+                decoration.background
+                    != TextColor {
+                        red: 255,
+                        green: 0,
+                        blue: 0,
+                        alpha: 255,
+                    }
+                    || decoration.height == 0
+            }),
+            "self-collapsing red block must not paint visible area"
+        );
+    }
+
+    #[test]
     fn collapses_adjacent_sibling_vertical_margins() {
         assert_eq!(flow::collapse_margins(20, 12), 20);
         assert_eq!(flow::collapse_margins(20, -8), 12);

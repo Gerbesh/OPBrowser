@@ -285,7 +285,9 @@ Status: IN PROGRESS.
 - DONE fifth metric-driven pass raised the unchanged WPT Static v1 manifest from 179/200 (89.50%) to 181/200 (90.50%).
 - DONE `::first-letter` is a distinct fragment pseudo: selector/cascade support feeds grapheme-aware inline styling, including Regional Indicator flags and inherited-style preservation through `display:contents`.
 - DONE sixth metric-driven pass raised the unchanged WPT Static v1 manifest from 181/200 (90.50%) to 182/200 (91.00%).
-- NEXT build the BFC/block-in-inline foundation around `display:flow-root`; after that the larger queues are flexbox, SVG display contexts, ICC/tagged images, gamut mapping, form-control rendering, `::first-line`/bidi and fuller relative-color/interpolation semantics.
+- DONE self-collapsing zero-height blocks now keep their adjoining margin set pending through inline-only wrappers and empty parents, so block-in-inline margin collapse can propagate across the parent instead of summing top/bottom margins.
+- DONE seventh metric-driven pass raised the unchanged WPT Static v1 manifest from 182/200 (91.00%) to 183/200 (91.50%).
+- NEXT build the remaining BFC foundation around `display:flow-root`, including real float containment/avoidance; after that the larger queues are flexbox, SVG display contexts, ICC/tagged images, gamut mapping, form-control rendering, `::first-line`/bidi and fuller relative-color/interpolation semantics.
 
 ## M3 - Original JavaScript engine
 
