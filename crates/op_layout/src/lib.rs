@@ -1833,6 +1833,95 @@ mod tests {
     }
 
     #[test]
+    fn first_letter_styles_one_unicode_grapheme_cluster_after_leading_space() {
+        let document = op_html::parse_document(
+            "<style>
+               p { font-size:18px }
+               p::first-letter { font-size:2em; color:red }
+             </style>
+             <p>   🇬🇧 UK flag</p>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let flag = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("🇬🇧"))
+            .expect("regional-indicator pair should remain one styled text run");
+        assert_eq!(flag.text, "🇬🇧");
+        assert_eq!(flag.font_size, 36);
+        assert_eq!(
+            flag.color,
+            TextColor {
+                red: 255,
+                green: 0,
+                blue: 0,
+                alpha: 255,
+            }
+        );
+
+        let following = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("UK flag"))
+            .expect("following text should remain present");
+        assert_eq!(following.font_size, 18);
+        assert_eq!(
+            following.color,
+            TextColor {
+                red: 0,
+                green: 0,
+                blue: 0,
+                alpha: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn first_letter_only_overrides_explicit_properties_across_display_contents() {
+        let document = op_html::parse_document(
+            "<style>
+               div { color:red }
+               div::first-letter { background:transparent }
+               span { color:green; display:contents; background:red }
+             </style>
+             <div><span>PASS</span></div>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let pass = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text.contains("PASS"))
+            .expect("display:contents text should remain visible");
+        assert_eq!(
+            pass.color,
+            TextColor {
+                red: 0,
+                green: 128,
+                blue: 0,
+                alpha: 255,
+            }
+        );
+    }
+
+    #[test]
     fn display_contents_rows_flatten_into_one_anonymous_table_row() {
         let document = op_html::parse_document(
             "<style>

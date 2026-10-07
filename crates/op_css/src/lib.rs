@@ -92,6 +92,7 @@ pub enum AttributeMatcher {
 pub enum PseudoElement {
     Before,
     After,
+    FirstLetter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

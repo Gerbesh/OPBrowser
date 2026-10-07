@@ -176,8 +176,11 @@ Non-replaced inline elements now resolve background-color/padding/solid borders 
 InlineBoxStyle, contribute those extras to line fitting, and emit per-line BoxDecoration
 fragments before text painting. Generated `::before` text is inserted before real children and
 `::after` after them; both use the same line formatter, text transforms/spacing, and fragment
-paint path. Inline box identity includes the pseudo target so generated and host decorations
-stay distinct.
+paint path. `::first-letter` is parsed and cascaded separately from generated content, then layout
+applies its explicitly-authored inline properties to the first non-whitespace Unicode grapheme
+cluster. This keeps Regional Indicator pairs atomic and avoids overwriting color/font inheritance
+coming through `display:contents` when the pseudo did not author those properties. Inline box
+identity includes the generated pseudo target so generated and host decorations stay distinct.
 Alpha text/box colors are currently composited over the white page background. The existing
 hyperlink glyph/underline path uses computed color and decoration. Anchors with href have
 blue/underlined UA defaults before author cascade; nested/generated text can override them.

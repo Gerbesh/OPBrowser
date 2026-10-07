@@ -776,8 +776,12 @@ uses the existing child/generated-content collection path without creating a pri
 formatting additionally pre-expands contents wrappers only when their exposed non-ignorable
 descendants are table-internal, so anonymous row/cell fixup sees the correct structure while ordinary
 text/inline contents nodes remain present to carry inherited style. Flex and SVG-specific contents
-behavior remains separate work. Selector matching now adds
-attributes, +/~ and structural pseudos before the same cascade, including filtered nth selectors
+behavior remains separate work. Selector matching now also recognizes `::first-letter` as a
+terminal pseudo-element. Its declarations are computed as a fragment pseudo rather than generated
+content; layout overlays only explicitly authored inline properties onto the first non-whitespace
+Unicode grapheme cluster, using UAX #29 segmentation so Regional Indicator pairs stay atomic. This
+preserves descendant/`display:contents` inherited styles for properties the pseudo did not author.
+Selector matching also adds attributes, +/~ and structural pseudos before the same cascade, including filtered nth selectors
 whose `of` list may begin immediately after the `of` token. `:has()` parses a strict relative-selector
 list and matches forward from its anchor through descendant/child/following-sibling relations while
 reusing compound matching and normal specificity. Empty-namespace `[|attr]` uses the same HTML

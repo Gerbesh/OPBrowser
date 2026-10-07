@@ -120,6 +120,14 @@ Generated `url()` images share ordered inline text/image lists, baselines, atomi
 intrinsic sizes and anchor click identity. Missing sole-URL replacements preserve CSS geometry
 around zero natural dimensions without pixels; mixed failures skip images and preserve text/
 empty pseudo boxes. Nonempty DOM alt receives its own inline styling or ordinary block geometry.
+`::first-letter` now has an initial fragment-pseudo path. The first non-whitespace text cluster is
+selected with Unicode grapheme segmentation (UAX #29, via the focused `unicode-segmentation`
+dependency), so a Regional Indicator flag is styled as one cluster. The pseudo overlays only the
+inline properties it explicitly authored, preserving descendant and `display:contents` inheritance
+for untouched properties; an explicit font-size also recomputes the pseudo's used normal line-height.
+Leading/trailing punctuation rules, first-letter float/box geometry and the broader CSS Pseudo
+property surface remain future work.
+
 Language-aware automatic quote selection, custom counter styles and fully spec-complete counter
 scope edge cases are not implemented. Fragment edges currently clone
 on each wrapped line rather than implementing `box-decoration-break: slice`. Floats/tables/

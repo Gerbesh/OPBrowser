@@ -283,7 +283,9 @@ Status: IN PROGRESS.
 - DONE fourth metric-driven pass raised the unchanged WPT Static v1 manifest from 172/200 (86.00%) to 179/200 (89.50%).
 - DONE table formatting now treats structural `display:contents` wrappers as transparent during anonymous row/cell fixup while preserving non-table contents nodes as inherited-style carriers.
 - DONE fifth metric-driven pass raised the unchanged WPT Static v1 manifest from 179/200 (89.50%) to 181/200 (90.50%).
-- NEXT add `::first-letter` as a real fragment-pseudo/layout slice; after that the larger queues are flex/BFC, SVG display contexts, ICC/tagged images, gamut mapping, form-control rendering, `::first-line` and fuller relative-color/interpolation semantics.
+- DONE `::first-letter` is a distinct fragment pseudo: selector/cascade support feeds grapheme-aware inline styling, including Regional Indicator flags and inherited-style preservation through `display:contents`.
+- DONE sixth metric-driven pass raised the unchanged WPT Static v1 manifest from 181/200 (90.50%) to 182/200 (91.00%).
+- NEXT build the BFC/block-in-inline foundation around `display:flow-root`; after that the larger queues are flexbox, SVG display contexts, ICC/tagged images, gamut mapping, form-control rendering, `::first-line`/bidi and fuller relative-color/interpolation semantics.
 
 ## M3 - Original JavaScript engine
 

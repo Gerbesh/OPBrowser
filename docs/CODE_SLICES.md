@@ -650,7 +650,8 @@ CSS Color 4 implementation pass moved the unchanged WPT Static v1 manifest to 12
 (63.00%); the following system-color/@supports and selector-semantics pass moved it to
 151/200 (75.50%), the deferred-color/display-contents/nth-grammar pass moved it to
 172/200 (86.00%), the relational-selector/empty-inline pass moved it to 179/200
-(89.50%), and structural table `display:contents` moved it to 181/200 (90.50%).
+(89.50%), structural table `display:contents` moved it to 181/200 (90.50%), and the
+grapheme-aware `::first-letter` fragment-pseudo pass moved it to 182/200 (91.00%).
 These numbers name their subsets explicitly and are not full browser or ECMAScript conformance
 scores. Future scope changes require a new manifest version so agents
 can compare before/after results without moving the denominator underneath themselves.

@@ -367,6 +367,20 @@ pub struct ComputedStyle {
     pub caption_side: CaptionSide,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FragmentPseudoProperties {
+    pub color: bool,
+    pub font_size: bool,
+    pub font_weight: bool,
+    pub font_style: bool,
+    pub line_height: bool,
+    pub white_space: bool,
+    pub text_decoration: bool,
+    pub letter_spacing: bool,
+    pub word_spacing: bool,
+    pub text_transform: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComputedPseudoStyle {
     pub style: ComputedStyle,
@@ -375,6 +389,8 @@ pub struct ComputedPseudoStyle {
     pub items: Vec<GeneratedContentItem>,
     pub replaced_image: bool,
     pub quotes: ComputedQuotes,
+    /// Only meaningful for fragment pseudos such as ::first-letter.
+    pub fragment_properties: FragmentPseudoProperties,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -633,6 +649,19 @@ fn compute_subtree(
             generated,
             computed,
         );
+        compute_fragment_pseudo_style(
+            node,
+            PseudoElement::FirstLetter,
+            PseudoHost {
+                element,
+                style,
+                custom: &custom,
+                quotes: &quotes,
+            },
+            author_styles,
+            generated,
+            computed,
+        );
         (style, custom)
     });
 
@@ -683,6 +712,64 @@ struct PseudoHost<'a> {
     quotes: &'a ComputedQuotes,
 }
 
+fn fragment_pseudo_properties(declarations: &[MatchedDeclaration]) -> FragmentPseudoProperties {
+    let mut properties = FragmentPseudoProperties::default();
+    for matched in declarations {
+        match matched.declaration.name.as_str() {
+            "color" => properties.color = true,
+            "font-size" => properties.font_size = true,
+            "font-weight" => properties.font_weight = true,
+            "font-style" => properties.font_style = true,
+            "line-height" => properties.line_height = true,
+            "white-space" => properties.white_space = true,
+            "text-decoration" | "text-decoration-line" => properties.text_decoration = true,
+            "letter-spacing" => properties.letter_spacing = true,
+            "word-spacing" => properties.word_spacing = true,
+            "text-transform" => properties.text_transform = true,
+            _ => {}
+        }
+    }
+    properties
+}
+
+fn compute_fragment_pseudo_style(
+    node: NodeId,
+    pseudo: PseudoElement,
+    host: PseudoHost<'_>,
+    author_styles: &StyleMap,
+    generated: &GeneratedContext,
+    computed: &mut ComputedStyleMap,
+) {
+    if generated.suppressed || matches!(host.element.tag_name.as_str(), "img" | "br") {
+        return;
+    }
+    let declarations = author_styles.declarations_for_pseudo(node, pseudo);
+    if declarations.is_empty() {
+        return;
+    }
+
+    let custom = compute_custom_properties(Some(host.custom), declarations);
+    let resolved = substitute_declarations(declarations, &custom);
+    let mut style = inherited_base(Some(host.style));
+    apply_author_declarations(&mut style, Some(host.style), &resolved);
+    let fragment_properties = fragment_pseudo_properties(&resolved);
+
+    computed.pseudo_entries.insert(
+        (node, pseudo),
+        ComputedPseudoStyle {
+            style,
+            content: String::new(),
+            items: Vec::new(),
+            replaced_image: false,
+            quotes: host.quotes.clone(),
+            fragment_properties,
+        },
+    );
+    computed
+        .pseudo_custom_properties
+        .insert((node, pseudo), custom);
+}
+
 fn compute_pseudo_style(
     node: NodeId,
     pseudo: PseudoElement,
@@ -710,6 +797,7 @@ fn compute_pseudo_style(
         match pseudo {
             PseudoElement::Before => "open-quote",
             PseudoElement::After => "close-quote",
+            PseudoElement::FirstLetter => return,
         }
         .to_owned(),
     )];
@@ -745,6 +833,7 @@ fn compute_pseudo_style(
             items,
             replaced_image,
             quotes,
+            fragment_properties: FragmentPseudoProperties::default(),
         },
     );
     computed
@@ -3828,6 +3917,35 @@ mod tests {
         }
 
         find(document, document.root(), id).expect("expected id")
+    }
+
+    #[test]
+    fn first_letter_computes_as_a_non_generated_fragment_pseudo() {
+        let document = parse_document(
+            "<style>
+               #host { color:#123456; font-size:20px }
+               #host::first-letter { color:red; font-size:2em }
+             </style>
+             <p id='host'>Body</p>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let first = computed
+            .pseudo_style_for(find_by_id(&document, "host"), PseudoElement::FirstLetter)
+            .unwrap();
+
+        assert_eq!(first.style.font_size_px, 40.0);
+        assert_eq!(
+            first.style.color,
+            CssColor {
+                red: 255,
+                green: 0,
+                blue: 0,
+                alpha: 255,
+            }
+        );
+        assert!(first.content.is_empty());
+        assert!(first.items.is_empty());
+        assert!(!first.replaced_image);
     }
 
     #[test]

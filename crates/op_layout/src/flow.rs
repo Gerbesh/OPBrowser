@@ -8,6 +8,7 @@ use op_css::{
     FontStyle as CssFontStyle, LengthPercentage, MarginEdges, MarginValue, PaddingEdges,
     PseudoElement, TableLayout, TextAlign, TextTransform, VerticalAlign, WhiteSpace,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) fn layout(
     document: &Document,
@@ -91,6 +92,7 @@ struct Context<'a, 'm> {
 }
 
 /// Generated blocks share ordinary block sizing without adding synthetic DOM nodes.
+#[derive(Clone, Copy)]
 enum BlockContent {
     Element(NodeId),
     Generated(NodeId, PseudoElement),
@@ -402,6 +404,11 @@ impl<'a> Context<'a, '_> {
             .saturating_add(padding_top);
         let content_top = self.y;
 
+        let first_letter_host = match content {
+            BlockContent::Element(id) => Some(id),
+            BlockContent::Generated(_, _) | BlockContent::ImageAlt(_) => None,
+        };
+
         let mut items = Vec::new();
         match content {
             BlockContent::Element(id) => {
@@ -438,6 +445,9 @@ impl<'a> Context<'a, '_> {
                     self.collect_image(id, element, href, style, content_width, &mut items);
                 }
             }
+        }
+        if let Some(host) = first_letter_host {
+            self.apply_first_letter_style(host, &mut items);
         }
         self.emit(&mut items, style, content_x, content_width);
         // Parent/child margin collapse is intentionally deferred; consume the final
@@ -2079,6 +2089,100 @@ impl<'a> Context<'a, '_> {
                 );
             }
             NodeKind::Comment(_) | NodeKind::DocumentType(_) => {}
+        }
+    }
+
+    fn apply_first_letter_style(&self, host: NodeId, items: &mut [Item<'a>]) {
+        let Some(pseudo) = self
+            .computed_styles
+            .pseudo_style_for(host, PseudoElement::FirstLetter)
+        else {
+            return;
+        };
+
+        let Some(start) = items
+            .iter()
+            .position(|item| matches!(item, Item::Char(ch) if !ch.ch.is_whitespace()))
+        else {
+            return;
+        };
+
+        let mut source = String::new();
+        for item in &items[start..] {
+            let Item::Char(ch) = item else {
+                break;
+            };
+            source.push(ch.ch);
+        }
+        let Some(grapheme) = source.graphemes(true).next() else {
+            return;
+        };
+        let mut remaining = grapheme.chars().count();
+        let pseudo_inline = computed_style(pseudo.style).inline;
+        let properties = pseudo.fragment_properties;
+
+        for item in &mut items[start..] {
+            if remaining == 0 {
+                break;
+            }
+            let Item::Char(ch) = item else {
+                break;
+            };
+            let current = ch.style;
+            ch.style = InlineStyle {
+                font_size: if properties.font_size {
+                    pseudo_inline.font_size
+                } else {
+                    current.font_size
+                },
+                line_height: if properties.line_height || properties.font_size {
+                    pseudo_inline.line_height
+                } else {
+                    current.line_height
+                },
+                weight: if properties.font_weight {
+                    pseudo_inline.weight
+                } else {
+                    current.weight
+                },
+                font_style: if properties.font_style {
+                    pseudo_inline.font_style
+                } else {
+                    current.font_style
+                },
+                decoration: if properties.text_decoration {
+                    pseudo_inline.decoration
+                } else {
+                    current.decoration
+                },
+                white_space: if properties.white_space {
+                    pseudo_inline.white_space
+                } else {
+                    current.white_space
+                },
+                letter_spacing: if properties.letter_spacing {
+                    pseudo_inline.letter_spacing
+                } else {
+                    current.letter_spacing
+                },
+                word_spacing: if properties.word_spacing {
+                    pseudo_inline.word_spacing
+                } else {
+                    current.word_spacing
+                },
+                text_transform: if properties.text_transform {
+                    pseudo_inline.text_transform
+                } else {
+                    current.text_transform
+                },
+                color: if properties.color {
+                    pseudo_inline.color
+                } else {
+                    current.color
+                },
+                boxes: current.boxes,
+            };
+            remaining -= 1;
         }
     }
 

@@ -1722,3 +1722,31 @@ This file is append-only project history.
 - The local release browser was rebuilt at `target/release/op_browser.exe`: 946,688 bytes, SHA-256
   `A0C9393AE2C0E6BF6FEF352866A7442B53E99BDEB2D5F853057D0EE75FC56A92`.
 
+## 2026-10-07 - Grapheme-aware ::first-letter pass
+
+- Added `::first-letter` as a terminal CSS pseudo-element with normal selector specificity and a
+  distinct computed fragment-pseudo path, rather than treating it as generated `::before/::after`
+  content.
+- Added the focused `unicode-segmentation` dependency for UAX #29 extended grapheme boundaries.
+  Layout styles the first non-whitespace grapheme cluster atomically, so Regional Indicator pairs
+  such as the UK flag remain one first-letter unit instead of being split by Unicode scalar value.
+- First-letter fragment styling overlays only properties actually authored on the pseudo. This
+  preserves descendant and `display:contents` inheritance for untouched properties; an earlier
+  whole-style replacement incorrectly turned a green contents descendant red and was discarded.
+- When the pseudo changes `font-size`, its used normal line-height is recomputed from the pseudo
+  font size. This keeps first-letter line geometry aligned with an equivalent explicitly styled
+  inline element.
+- Added parser/style/computed/layout regressions for first-letter specificity, source buckets,
+  non-generated computed style, leading whitespace, Regional Indicator grapheme clustering and
+  `display:contents` inheritance.
+- The pinned first-letter WPT slice passes 2/2, including
+  `first-letter-flag-001.html` and `display-contents-first-letter-002.html`.
+- The unchanged WPT Static v1 manifest improved from 181/200 (90.50%) to 182/200 (91.00%), with
+  18 remaining failures and zero render/infrastructure errors. The next layout-focused queue is
+  BFC/block-in-inline behavior around `display:flow-root`, followed by flexbox.
+- Final verification passed rustfmt, generated HTML/CSS table checks, warning-free workspace Clippy,
+  the complete workspace test suite, Win32 startup smoke, optimized release build, repeated external
+  compatibility and `git diff --check`. Test262 Parser v1 remained 364/1983 (18.36%).
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 983,040 bytes, SHA-256
+  `6371FF14F00625C7E51A5DEA24F9CD9D005B87E2F37DC2CA4C04ACD281B2A57D`.
+

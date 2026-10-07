@@ -200,6 +200,7 @@ fn apply_author_styles(
                 None,
                 Some(PseudoElement::Before),
                 Some(PseudoElement::After),
+                Some(PseudoElement::FirstLetter),
             ] {
                 let specificity = collected
                     .rule
@@ -866,7 +867,7 @@ mod tests {
     #[test]
     fn matched_declarations_retain_style_link_and_inline_source_nodes() {
         let document = parse_document(
-            "<style id='embedded'>p { color:red } p::before { content:'A' }</style><link id='linked' rel='stylesheet'><p id='target' style='font-size:20px'>Body</p>",
+            "<style id='embedded'>p { color:red } p::before { content:'A' } p::first-letter { font-size:2em }</style><link id='linked' rel='stylesheet'><p id='target' style='font-size:20px'>Body</p>",
         );
         let target = element_by_id(&document, "target");
         let embedded = element_by_id(&document, "embedded");
@@ -895,6 +896,13 @@ mod tests {
                 .declarations_for_pseudo(target, PseudoElement::After)[0]
                 .style_node,
             linked
+        );
+        assert_eq!(
+            collection
+                .styles
+                .declarations_for_pseudo(target, PseudoElement::FirstLetter)[0]
+                .style_node,
+            embedded
         );
     }
 

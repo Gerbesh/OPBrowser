@@ -554,6 +554,7 @@ fn parse_pseudo_element(
     let pseudo = match name.to_ascii_lowercase().as_str() {
         "before" => PseudoElement::Before,
         "after" => PseudoElement::After,
+        "first-letter" => PseudoElement::FirstLetter,
         _ => {
             return Err(CssError {
                 offset: name_token.start,
@@ -1458,12 +1459,18 @@ mod tests {
     }
 
     #[test]
-    fn parses_before_after_as_terminal_pseudo_elements_with_type_specificity() {
-        let parsed = parse_stylesheet(".note::before, ::after { content:\"!\"; color:red }");
+    fn parses_supported_terminal_pseudo_elements_with_type_specificity() {
+        let parsed = parse_stylesheet(
+            ".note::before, ::after, .lead::first-letter { content:\"!\"; color:red }",
+        );
         assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
         let selectors = &parsed.value.rules[0].selectors;
         assert_eq!(selectors[0].pseudo_element, Some(PseudoElement::Before));
         assert_eq!(selectors[1].pseudo_element, Some(PseudoElement::After));
+        assert_eq!(
+            selectors[2].pseudo_element,
+            Some(PseudoElement::FirstLetter)
+        );
         assert_eq!(
             selectors[0].specificity,
             Specificity {
@@ -1477,6 +1484,14 @@ mod tests {
             Specificity {
                 ids: 0,
                 classes: 0,
+                types: 1,
+            }
+        );
+        assert_eq!(
+            selectors[2].specificity,
+            Specificity {
+                ids: 0,
+                classes: 1,
                 types: 1,
             }
         );
