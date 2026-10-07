@@ -264,11 +264,15 @@ Status: IN PROGRESS.
   plus all four inset properties feed layout. Relative boxes preserve normal-flow geometry while
   px/percentage offsets translate their output. Absolute/fixed boxes leave normal flow and now use
   viewport-height-aware or nearest-positioned padding-box geometry, px/percentage insets on both axes,
-  bottom-only placement, opposing-inset auto width/height stretching and direct percentage-height
-  resolution from definite containing blocks. Sticky, inline containing blocks, static-position edge
-  cases, complete CSS2 abspos overconstraint/auto-margin rules and stacking remain NEXT, followed by
-  `overflow`, media queries, font faces, background images, border radius and broader flex/grid work.
-  Obscure value-space polish must not displace these.
+  bottom-only placement, opposing-inset auto width/height stretching, shrink-to-fit auto widths and
+  direct percentage-height resolution from definite containing blocks. Inline absolute/fixed boxes
+  with static-positioned axes now retain a zero-width marker at the real inline cursor instead of
+  flushing the line. Initial `display:inline-block` is atomic, shrink-to-fit and BFC-like; horizontal
+  inline margins, including negative margins, participate in advance without painting. Sticky, full
+  inline containing-block geometry, split-inline/static-position paint ordering, complete CSS2 abspos
+  overconstraint/auto-margin rules and stacking remain NEXT, followed by `overflow`, media queries,
+  font faces, background images, border radius and broader flex/grid work. Obscure value-space polish
+  must not displace these.
 - LATER broader computed values outside the readable-static-web priority.
 - LATER fuller normal flow and CSS inline formatting plus Unicode line breaking.
 - NEXT migrate the text backend toward DirectWrite shaping/fallback behind TextMeasurer per ADR-0003.
@@ -301,10 +305,14 @@ Status: IN PROGRESS.
 - DONE ninth metric-driven pass raised the unchanged WPT Static v1 manifest from 185/200 (92.50%) to 187/200 (93.50%).
 - DONE first positioning-driven pass raised the unchanged WPT Positioning v1 manifest from
   18/100 (18.00%) to 21/100 (21.00%) while WPT Static v1 remained 187/200 (93.50%).
-- NEXT use the remaining WPT Positioning v1 failures to drive inline containing blocks,
-  static-position/negative-margin cases, the remaining CSS2 abspos constraint equations and sticky,
-  then `overflow`; keep the 13 WPT Static v1 failures visible but do not let color/SVG edge cases
-  displace readable-static-web priorities.
+- DONE second positioning-driven pass added inline static-position markers, horizontal inline margins,
+  atomic `display:inline-block`, positioned shrink-to-fit width and intrinsic SVG replaced sizing,
+  raising the unchanged WPT Positioning v1 manifest from 21/100 (21.00%) to 25/100 (25.00%);
+  WPT Static v1 remains 187/200 (93.50%).
+- NEXT use the remaining WPT Positioning v1 failures to drive full inline containing blocks,
+  split-inline/static-position paint ordering and stacking, the remaining CSS2 abspos constraint
+  equations and sticky, then `overflow`; keep the 13 WPT Static v1 failures visible without letting
+  advanced color/SVG edge cases displace readable-static-web priorities.
 
 ## M3 - Original JavaScript engine
 

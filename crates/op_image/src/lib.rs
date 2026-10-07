@@ -6,12 +6,30 @@ pub const MAX_ENCODED_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_PIXELS: u32 = 4 * 1024 * 1024;
 pub const MAX_DIMENSION: u32 = 4096;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntrinsicSize {
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub ratio: Option<(u32, u32)>,
+}
+
+impl IntrinsicSize {
+    pub const fn raster(width: u32, height: u32) -> Self {
+        Self {
+            width: Some(width),
+            height: Some(height),
+            ratio: Some((width, height)),
+        }
+    }
+}
+
 /// Top-down premultiplied BGRA, ready for GDI AlphaBlend. Fields stay validated.
 #[derive(Debug, PartialEq, Eq)]
 pub struct RasterImage {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
+    intrinsic: IntrinsicSize,
 }
 
 impl RasterImage {
@@ -34,6 +52,7 @@ impl RasterImage {
             width,
             height,
             pixels,
+            intrinsic: IntrinsicSize::raster(width, height),
         })
     }
 
@@ -45,6 +64,10 @@ impl RasterImage {
     }
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
+    }
+
+    pub fn intrinsic_size(&self) -> IntrinsicSize {
+        self.intrinsic
     }
 }
 
@@ -85,9 +108,266 @@ fn pixel_length(width: u32, height: u32, budget: usize) -> Result<usize, ImageEr
     Ok(length)
 }
 
+fn looks_like_svg(bytes: &[u8]) -> bool {
+    let Ok(source) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let head = &source[..source.len().min(1024)];
+    head.find("<svg").is_some_and(|index| {
+        head[index + 4..]
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_ascii_whitespace() || matches!(ch, '>' | '/'))
+    })
+}
+
+fn tag_attribute<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    for (index, _) in tag.match_indices(name) {
+        let before = tag[..index].chars().next_back();
+        if before.is_some_and(|ch| !ch.is_ascii_whitespace() && ch != '<') {
+            continue;
+        }
+        let mut rest = tag[index + name.len()..].trim_start();
+        if !rest.starts_with('=') {
+            continue;
+        }
+        rest = rest[1..].trim_start();
+        let quote = rest.chars().next()?;
+        if !matches!(quote, '"' | '\'') {
+            continue;
+        }
+        let value = &rest[quote.len_utf8()..];
+        let end = value.find(quote)?;
+        return Some(&value[..end]);
+    }
+    None
+}
+
+fn svg_length(value: &str) -> Option<f64> {
+    let value = value.trim();
+    if value.ends_with('%') {
+        return None;
+    }
+    let value = value.strip_suffix("px").unwrap_or(value).trim();
+    let number = value.parse::<f64>().ok()?;
+    number.is_finite().then_some(number)
+}
+
+fn svg_view_box(tag: &str) -> Option<(f64, f64, f64, f64)> {
+    let value = tag_attribute(tag, "viewBox")?;
+    let values = value
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == ',')
+        .filter(|part| !part.is_empty())
+        .map(str::parse::<f64>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    let [x, y, width, height] = values.as_slice() else {
+        return None;
+    };
+    (*width > 0.0 && *height > 0.0 && width.is_finite() && height.is_finite())
+        .then_some((*x, *y, *width, *height))
+}
+
+fn ratio_pair(width: f64, height: f64) -> Option<(u32, u32)> {
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+    let scale = 10_000.0;
+    let width = (width * scale).round().clamp(1.0, f64::from(u32::MAX)) as u32;
+    let height = (height * scale).round().clamp(1.0, f64::from(u32::MAX)) as u32;
+    Some((width, height))
+}
+
+fn raster_dimension(value: f64) -> Result<u32, ImageError> {
+    if !value.is_finite() || value <= 0.0 || value > f64::from(MAX_DIMENSION) {
+        return Err(ImageError::TooLarge);
+    }
+    Ok(value.round().max(1.0) as u32)
+}
+
+fn svg_raster_size(intrinsic: IntrinsicSize) -> Result<(u32, u32), ImageError> {
+    let ratio = intrinsic
+        .ratio
+        .map(|(width, height)| f64::from(width) / f64::from(height));
+    let (width, height) = match (intrinsic.width, intrinsic.height, ratio) {
+        (Some(width), Some(height), _) => (f64::from(width), f64::from(height)),
+        (Some(width), None, Some(ratio)) => (f64::from(width), f64::from(width) / ratio),
+        (None, Some(height), Some(ratio)) => (f64::from(height) * ratio, f64::from(height)),
+        (Some(width), None, None) => (f64::from(width), 150.0),
+        (None, Some(height), None) => (300.0, f64::from(height)),
+        (None, None, Some(ratio)) if ratio >= 2.0 => (300.0, 300.0 / ratio),
+        (None, None, Some(ratio)) => (150.0 * ratio, 150.0),
+        (None, None, None) => (300.0, 150.0),
+    };
+    Ok((raster_dimension(width)?, raster_dimension(height)?))
+}
+
+fn svg_color(value: &str) -> Option<(u8, u8, u8, u8)> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("none") {
+        return Some((0, 0, 0, 0));
+    }
+    if let Some(hex) = value.strip_prefix('#') {
+        if !hex.is_ascii() {
+            return None;
+        }
+        return match hex.len() {
+            3 => {
+                let mut channels = [0_u8; 3];
+                for (index, ch) in hex.as_bytes().iter().copied().enumerate() {
+                    let digit = (ch as char).to_digit(16)? as u8;
+                    channels[index] = digit * 17;
+                }
+                Some((channels[0], channels[1], channels[2], 255))
+            }
+            6 => {
+                let red = u8::from_str_radix(&hex[0..2], 16).ok()?;
+                let green = u8::from_str_radix(&hex[2..4], 16).ok()?;
+                let blue = u8::from_str_radix(&hex[4..6], 16).ok()?;
+                Some((red, green, blue, 255))
+            }
+            _ => None,
+        };
+    }
+    let rgb = match value.to_ascii_lowercase().as_str() {
+        "black" => (0, 0, 0),
+        "white" => (255, 255, 255),
+        "red" => (255, 0, 0),
+        "green" => (0, 128, 0),
+        "lime" => (0, 255, 0),
+        "blue" => (0, 0, 255),
+        "fuchsia" | "magenta" => (255, 0, 255),
+        "silver" => (192, 192, 192),
+        "gray" | "grey" => (128, 128, 128),
+        "orange" => (255, 165, 0),
+        "aqua" | "cyan" => (0, 255, 255),
+        "yellow" => (255, 255, 0),
+        _ => return None,
+    };
+    Some((rgb.0, rgb.1, rgb.2, 255))
+}
+
+fn svg_axis_value(
+    value: &str,
+    raster_extent: u32,
+    user_min: f64,
+    user_extent: Option<f64>,
+    is_extent: bool,
+) -> Option<f64> {
+    let value = value.trim();
+    if let Some(percent) = value.strip_suffix('%') {
+        let percent = percent.trim().parse::<f64>().ok()? / 100.0;
+        return percent
+            .is_finite()
+            .then_some(percent * f64::from(raster_extent));
+    }
+    let value = svg_length(value)?;
+    if let Some(user_extent) = user_extent {
+        let value = if is_extent { value } else { value - user_min };
+        Some(value * f64::from(raster_extent) / user_extent)
+    } else {
+        Some(value)
+    }
+}
+
+fn decode_svg(bytes: &[u8], pixel_budget: usize) -> Result<RasterImage, ImageError> {
+    let source = std::str::from_utf8(bytes)
+        .map_err(|_| ImageError::Decode("SVG is not valid UTF-8".to_owned()))?;
+    let svg_start = source
+        .find("<svg")
+        .ok_or_else(|| ImageError::Decode("missing SVG root".to_owned()))?;
+    let svg_end = source[svg_start..]
+        .find('>')
+        .map(|offset| svg_start + offset + 1)
+        .ok_or_else(|| ImageError::Decode("unterminated SVG root".to_owned()))?;
+    let root = &source[svg_start..svg_end];
+
+    let intrinsic_width = tag_attribute(root, "width")
+        .and_then(svg_length)
+        .filter(|value| *value > 0.0)
+        .map(raster_dimension)
+        .transpose()?;
+    let intrinsic_height = tag_attribute(root, "height")
+        .and_then(svg_length)
+        .filter(|value| *value > 0.0)
+        .map(raster_dimension)
+        .transpose()?;
+    let view_box = svg_view_box(root);
+    let ratio = match (intrinsic_width, intrinsic_height) {
+        (Some(width), Some(height)) => Some((width, height)),
+        _ => view_box.and_then(|(_, _, width, height)| ratio_pair(width, height)),
+    };
+    let intrinsic = IntrinsicSize {
+        width: intrinsic_width,
+        height: intrinsic_height,
+        ratio,
+    };
+    let (width, height) = svg_raster_size(intrinsic)?;
+    let length = pixel_length(width, height, pixel_budget)?;
+    let mut pixels = vec![0_u8; length];
+
+    let (view_x, view_y, view_width, view_height) =
+        view_box.unwrap_or((0.0, 0.0, f64::from(width), f64::from(height)));
+    let mut cursor = svg_end;
+    let mut rectangle_count = 0_usize;
+    while let Some(relative) = source[cursor..].find("<rect") {
+        rectangle_count = rectangle_count.saturating_add(1);
+        if rectangle_count > 4096 {
+            return Err(ImageError::TooLarge);
+        }
+        let start = cursor + relative;
+        let Some(relative_end) = source[start..].find('>') else {
+            break;
+        };
+        let end = start + relative_end + 1;
+        let tag = &source[start..end];
+        let fill = tag_attribute(tag, "fill")
+            .and_then(svg_color)
+            .unwrap_or((0, 0, 0, 255));
+        let x = tag_attribute(tag, "x")
+            .and_then(|value| svg_axis_value(value, width, view_x, Some(view_width), false))
+            .unwrap_or(0.0);
+        let y = tag_attribute(tag, "y")
+            .and_then(|value| svg_axis_value(value, height, view_y, Some(view_height), false))
+            .unwrap_or(0.0);
+        let rect_width = tag_attribute(tag, "width")
+            .and_then(|value| svg_axis_value(value, width, 0.0, Some(view_width), true))
+            .unwrap_or(0.0);
+        let rect_height = tag_attribute(tag, "height")
+            .and_then(|value| svg_axis_value(value, height, 0.0, Some(view_height), true))
+            .unwrap_or(0.0);
+
+        let x0 = x.floor().clamp(0.0, f64::from(width)) as u32;
+        let y0 = y.floor().clamp(0.0, f64::from(height)) as u32;
+        let x1 = (x + rect_width).ceil().clamp(0.0, f64::from(width)) as u32;
+        let y1 = (y + rect_height).ceil().clamp(0.0, f64::from(height)) as u32;
+        let (red, green, blue, alpha) = fill;
+        let red = (u16::from(red) * u16::from(alpha) / 255) as u8;
+        let green = (u16::from(green) * u16::from(alpha) / 255) as u8;
+        let blue = (u16::from(blue) * u16::from(alpha) / 255) as u8;
+        for row in y0..y1 {
+            for column in x0..x1 {
+                let index = ((row * width + column) * 4) as usize;
+                pixels[index..index + 4].copy_from_slice(&[blue, green, red, alpha]);
+            }
+        }
+        cursor = end;
+    }
+
+    Ok(RasterImage {
+        width,
+        height,
+        pixels,
+        intrinsic,
+    })
+}
+
 pub fn decode(bytes: &[u8], pixel_budget: usize) -> Result<RasterImage, ImageError> {
     if bytes.len() > MAX_ENCODED_BYTES {
         return Err(ImageError::TooLarge);
+    }
+    if looks_like_svg(bytes) {
+        return decode_svg(bytes, pixel_budget);
     }
     #[cfg(windows)]
     {
@@ -168,6 +448,7 @@ mod wic {
                     width,
                     height,
                     pixels,
+                    intrinsic: IntrinsicSize::raster(width, height),
                 })
             }
         };
@@ -213,9 +494,49 @@ mod tests {
             Err(ImageError::TooLarge)
         );
         assert!(decode(&png[..16], 100).is_err());
+    }
+
+    #[test]
+    fn decodes_bounded_svg_rects_and_preserves_intrinsic_metadata() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="50" height="25" viewBox="0 0 1000 1000">
+            <rect fill="#ff00ff" x="0" y="0" width="1000" height="1000"/>
+        </svg>"##;
+        let image = decode(svg, 50 * 25 * 4).unwrap();
+        assert_eq!((image.width(), image.height()), (50, 25));
         assert_eq!(
-            decode(b"<svg></svg>", 100),
-            Err(ImageError::UnsupportedFormat)
+            image.intrinsic_size(),
+            IntrinsicSize {
+                width: Some(50),
+                height: Some(25),
+                ratio: Some((50, 25)),
+            }
+        );
+        assert_eq!(&image.pixels()[..4], &[255, 0, 255, 255]);
+
+        let ratio_only =
+            br#"<svg viewBox="0 0 1000 500"><rect fill="blue" width="100%" height="100%"/></svg>"#;
+        let image = decode(ratio_only, 300 * 150 * 4).unwrap();
+        assert_eq!((image.width(), image.height()), (300, 150));
+        assert_eq!(
+            image.intrinsic_size(),
+            IntrinsicSize {
+                width: None,
+                height: None,
+                ratio: Some((10_000_000, 5_000_000)),
+            }
+        );
+        assert_eq!(&image.pixels()[..4], &[255, 0, 0, 255]);
+
+        let no_ratio = br#"<svg height="25"><rect fill="aqua" width="100%" height="100%"/></svg>"#;
+        let image = decode(no_ratio, 300 * 25 * 4).unwrap();
+        assert_eq!((image.width(), image.height()), (300, 25));
+        assert_eq!(
+            image.intrinsic_size(),
+            IntrinsicSize {
+                width: None,
+                height: Some(25),
+                ratio: None,
+            }
         );
     }
 

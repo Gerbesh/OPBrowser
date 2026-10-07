@@ -1265,6 +1265,92 @@ mod tests {
     }
 
     #[test]
+    fn inline_block_is_atomic_and_horizontal_margins_affect_inline_advance() {
+        let document = op_html::parse_document(
+            "<style>
+               body { margin:0 }
+               #host { font-size:10px; line-height:10px }
+               #box { display:inline-block; width:20px; height:10px; margin-left:5px; margin-right:-3px; background:red }
+             </style>
+             <div id=host>A<span id=box></span>B</div>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let a = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "A")
+            .unwrap();
+        let b = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "B")
+            .unwrap();
+        let box_ = layout
+            .box_decorations
+            .iter()
+            .find(|decoration| decoration.background == CssColor::RED.into())
+            .unwrap();
+
+        assert_eq!((box_.width, box_.height), (20, 10));
+        assert_eq!(box_.x, a.x + a.width + 5);
+        assert_eq!(b.x, box_.x + box_.width - 3);
+        assert_eq!(a.y, b.y);
+    }
+
+    #[test]
+    fn inline_absolute_static_marker_does_not_consume_inline_width() {
+        let document = op_html::parse_document(
+            "<style>
+               body { margin:0 }
+               #host { font-size:10px; line-height:10px }
+               #absolute { position:absolute; width:10px; height:10px; margin:0; background:red }
+             </style>
+             <div id=host>A<span id=absolute></span>B</div>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let a = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "A")
+            .unwrap();
+        let b = layout
+            .text_boxes
+            .iter()
+            .find(|text| text.text == "B")
+            .unwrap();
+        let absolute = layout
+            .box_decorations
+            .iter()
+            .find(|decoration| decoration.background == CssColor::RED.into())
+            .unwrap();
+
+        assert_eq!(
+            (absolute.x, absolute.width, absolute.height),
+            (a.x + a.width, 10, 10)
+        );
+        assert_eq!(b.x, absolute.x);
+        assert_eq!(a.y, b.y);
+    }
+
+    #[test]
     fn inline_flex_is_atomic_and_display_contents_stays_transparent() {
         fn render(source: &str) -> LayoutTree {
             let document = op_html::parse_document(source);

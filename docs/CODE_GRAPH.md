@@ -756,9 +756,13 @@ classDiagram
   Caption flow, real cell backgrounds/borders/padding and span geometry reach ordinary
   BoxDecoration/text/image output. Whitespace-only text between block siblings is suppressed before
   it can create anonymous line geometry.
-  op_layout::replaced resolves raster intrinsic/explicit/auto sizes and min/max ratio conflicts.
-  flow converts CSS percentage-width/font-relative/content-vs-border-box sizes and applies
-  the existing available-width/4096-height fitting policy after CSS used sizes.
+  op_image::RasterImage carries IntrinsicSize separately from raster canvas dimensions. Ordinary
+  raster decoders expose their natural width/height/ratio; the initial bounded SVG slice derives
+  optional root width/height plus viewBox ratio and rasterizes simple rect content into the same BGRA
+  resource. op_layout::replaced consumes optional intrinsic width/height/ratio for explicit/auto
+  replaced sizing, CSS default object dimensions and min/max ratio conflicts. flow converts CSS
+  percentage-width/font-relative/content-vs-border-box sizes and applies the existing
+  available-width/4096-height fitting policy after CSS used sizes.
   flow::resolve_image_size shares this path between DOM img and sole-URL inline pseudos;
   mixed generated lists retain anonymous intrinsic image items. Pseudo image box identity
   preserves host/pseudo separation and does not duplicate inherited decorated ancestors.

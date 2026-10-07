@@ -160,10 +160,14 @@ the table formatter instead of generic block layout. Positioned layout tracks po
 geometry in the same Context: relative boxes keep their normal-flow slot and translate retained
 output, absolute boxes leave flow and resolve against the nearest positioned ancestor padding box,
 and fixed boxes resolve against the viewport width/height. All four insets accept px/percentage
-values when their axis is definite; bottom-only placement, opposing-inset auto stretching and direct
-percentage-height propagation from definite block heights are implemented. Sticky positioning,
-inline containing blocks, static-position edge cases, stacking/z-index and the remaining abspos
-constraint equations remain later. The inline formatter injects already-resolved
+values when their axis is definite; bottom-only placement, opposing-inset auto stretching,
+shrink-to-fit positioned auto widths and direct percentage-height propagation from definite block
+heights are implemented. Inline positioned boxes can retain a zero-width static-position marker at
+the real line cursor. Horizontal inline margins, including negative values, participate in advance;
+initial `display:inline-block` runs a local block/BFC layout and enters the line as one atomic box.
+Sticky positioning, full inline containing blocks, split-inline/static-position paint ordering,
+stacking/z-index and the remaining abspos constraint equations remain later. The inline formatter
+injects already-resolved
 generated before/after text (strings, attributes or counters) around real DOM children and emits the same BoxDecoration shape for
 padded/background/bordered host or pseudo text fragments, so block and inline boxes share one
 platform-neutral paint path. `visibility:hidden` is retained as layout metadata on text/image

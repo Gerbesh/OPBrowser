@@ -8,6 +8,8 @@ use op_css::{PseudoElement, TextAlign, TextTransform, VerticalAlign, WhiteSpace}
 pub(super) struct InlineBoxStyle {
     pub node: op_dom::NodeId,
     pub pseudo: Option<PseudoElement>,
+    pub margin_right: i32,
+    pub margin_left: i32,
     pub padding_top: i32,
     pub padding_right: i32,
     pub padding_bottom: i32,
@@ -28,6 +30,18 @@ impl InlineBoxStyle {
         self.padding_right.saturating_add(self.border_right.width)
     }
 
+    pub(super) fn left_advance(self) -> i32 {
+        self.margin_left.saturating_add(self.left_extra())
+    }
+
+    pub(super) fn right_advance(self) -> i32 {
+        self.right_extra().saturating_add(self.margin_right)
+    }
+
+    pub(super) fn horizontal_advance(self) -> i32 {
+        self.left_advance().saturating_add(self.right_advance())
+    }
+
     pub(super) fn top_extra(self) -> i32 {
         self.border_top.width.saturating_add(self.padding_top)
     }
@@ -37,7 +51,9 @@ impl InlineBoxStyle {
     }
 
     pub(super) fn reserves_empty_fragment(self) -> bool {
-        self.padding_top > 0
+        self.margin_left != 0
+            || self.margin_right != 0
+            || self.padding_top > 0
             || self.padding_right > 0
             || self.padding_bottom > 0
             || self.padding_left > 0
@@ -70,8 +86,8 @@ impl InlineBoxes {
             style,
             parent,
             depth: parent.map_or(1, |id| self.nodes[id].depth + 1),
-            left: self.left(parent).saturating_add(style.left_extra()),
-            right: self.right(parent).saturating_add(style.right_extra()),
+            left: self.left(parent).saturating_add(style.left_advance()),
+            right: self.right(parent).saturating_add(style.right_advance()),
             top: self.top(parent).saturating_add(style.top_extra()),
             bottom: self.bottom(parent).saturating_add(style.bottom_extra()),
         });
@@ -114,11 +130,11 @@ impl InlineBoxes {
         while from != to {
             if depth(from) >= depth(to) {
                 let id = from.expect("unequal stack has a source node");
-                width = width.saturating_add(self.style(id).right_extra());
+                width = width.saturating_add(self.style(id).right_advance());
                 from = self.parent(id);
             } else {
                 let id = to.expect("unequal stack has a target node");
-                width = width.saturating_add(self.style(id).left_extra());
+                width = width.saturating_add(self.style(id).left_advance());
                 to = self.parent(id);
             }
         }
@@ -172,11 +188,19 @@ pub(super) struct InlineAtomic {
     pub order: Vec<LayoutItem>,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct PositionedStatic {
+    pub marker: usize,
+    pub x: i32,
+    pub y: i32,
+}
+
 pub(super) enum Item<'a> {
     Char(InlineChar<'a>),
     EmptyInline(InlineStyle),
     Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
     Atomic(InlineAtomic, InlineStyle, VerticalAlign),
+    Positioned(usize, InlineStyle),
     Break,
 }
 
@@ -188,6 +212,7 @@ enum BoxItem<'a> {
     Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
     Atomic(InlineAtomic, InlineStyle, VerticalAlign),
     EmptyInline(InlineStyle),
+    Positioned(usize, InlineStyle),
 }
 
 struct PreparedText {
@@ -204,6 +229,7 @@ enum PreparedBox {
     Text(PreparedText),
     Image(InlineImage, InlineStyle, Option<InlineBoxStyle>),
     Atomic(InlineAtomic, InlineStyle, VerticalAlign),
+    Positioned(usize, InlineStyle),
 }
 
 pub(super) struct Lines<'a, 'm> {
@@ -221,6 +247,7 @@ pub(super) struct Lines<'a, 'm> {
     pub text_boxes: Vec<TextBox>,
     pub image_boxes: Vec<ImageBox>,
     pub order: Vec<LayoutItem>,
+    pub positioned: Vec<PositionedStatic>,
 }
 
 impl<'a, 'm> Lines<'a, 'm> {
@@ -248,6 +275,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             text_boxes: Vec::new(),
             image_boxes: Vec::new(),
             order: Vec::new(),
+            positioned: Vec::new(),
         }
     }
 
@@ -303,6 +331,11 @@ impl<'a, 'm> Lines<'a, 'm> {
                     self.word(std::mem::take(&mut word));
                     self.empty_inline(style);
                 }
+                Item::Positioned(marker, style) => {
+                    preserved_cr = false;
+                    self.word(std::mem::take(&mut word));
+                    self.positioned(marker, style);
+                }
                 Item::Break => {
                     preserved_cr = false;
                     self.word(std::mem::take(&mut word));
@@ -354,7 +387,8 @@ impl<'a, 'm> Lines<'a, 'm> {
             Some(
                 BoxItem::Image(_, style, _)
                 | BoxItem::Atomic(_, style, _)
-                | BoxItem::EmptyInline(style),
+                | BoxItem::EmptyInline(style)
+                | BoxItem::Positioned(_, style),
             ) => style.boxes,
             None => None,
         }
@@ -506,11 +540,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             self.pending_space.take()
         };
         self.pending_space = None;
-        let extras = own_box.map_or(0, |box_style| {
-            box_style
-                .left_extra()
-                .saturating_add(box_style.right_extra())
-        });
+        let extras = own_box.map_or(0, InlineBoxStyle::horizontal_advance);
         let width = image.width.saturating_add(extras);
         let occupied =
             self.appended_width(&[], space)
@@ -611,6 +641,38 @@ impl<'a, 'm> Lines<'a, 'm> {
         self.boxes.push(BoxItem::EmptyInline(style));
     }
 
+    fn positioned(&mut self, marker: usize, style: InlineStyle) {
+        let space = if self.boxes.is_empty() {
+            None
+        } else {
+            self.pending_space.take()
+        };
+        self.pending_space = None;
+        let occupied =
+            self.appended_width(&[], space)
+                .saturating_add(self.inline_boxes.contribution(
+                    space.map_or(self.tail(), |value| value.style.boxes),
+                    style.boxes,
+                    0,
+                ));
+        let allows_wrap = matches!(
+            style.white_space,
+            WhiteSpace::Normal | WhiteSpace::PreWrap | WhiteSpace::PreLine
+        );
+        if allows_wrap && !self.boxes.is_empty() && occupied > self.width {
+            self.flush(false);
+        }
+        if !self.boxes.is_empty()
+            && let Some(space) = space
+        {
+            self.append(&[], Some(space));
+        }
+        self.line_width = self
+            .line_width
+            .saturating_add(self.inline_boxes.contribution(self.tail(), style.boxes, 0));
+        self.boxes.push(BoxItem::Positioned(marker, style));
+    }
+
     fn metrics_for(&mut self, style: InlineStyle) -> (TextMetrics, i32, i32) {
         let metrics = self
             .measurer
@@ -678,6 +740,9 @@ impl<'a, 'm> Lines<'a, 'm> {
                 BoxItem::EmptyInline(style) => {
                     prepared.push(PreparedBox::Text(self.prepare_text(&[], style)))
                 }
+                BoxItem::Positioned(marker, style) => {
+                    prepared.push(PreparedBox::Positioned(marker, style))
+                }
                 BoxItem::Text { chars, .. } => {
                     let mut start = 0;
                     while start < chars.len() {
@@ -721,6 +786,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                     VerticalAlign::Top | VerticalAlign::Bottom => 0,
                 },
                 PreparedBox::Text(text) => text.ascent,
+                PreparedBox::Positioned(_, _) => 0,
             })
             .max()
             .unwrap_or(default_ascent)
@@ -743,6 +809,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                         .saturating_add(self.inline_boxes.bottom(style.boxes)),
                     VerticalAlign::Top | VerticalAlign::Bottom => 0,
                 },
+                PreparedBox::Positioned(_, _) => 0,
             })
             .max()
             .unwrap_or(default_descent)
@@ -780,7 +847,9 @@ impl<'a, 'm> Lines<'a, 'm> {
         for item in prepared {
             let next_box = match &item {
                 PreparedBox::Text(text) => text.style.boxes,
-                PreparedBox::Image(_, style, _) | PreparedBox::Atomic(_, style, _) => style.boxes,
+                PreparedBox::Image(_, style, _)
+                | PreparedBox::Atomic(_, style, _)
+                | PreparedBox::Positioned(_, style) => style.boxes,
             };
             let path = self.inline_boxes.path(next_box);
             let common = active_fragments
@@ -791,14 +860,17 @@ impl<'a, 'm> Lines<'a, 'm> {
             while active_fragments.len() > common {
                 let (id, start_x, decoration) =
                     active_fragments.pop().expect("active inline fragment");
-                x = x.saturating_add(self.inline_boxes.style(id).right_extra());
+                let style = self.inline_boxes.style(id);
+                x = x.saturating_add(style.right_extra());
                 self.decorations[decoration].width = x.saturating_sub(start_x).max(0);
+                x = x.saturating_add(style.margin_right);
             }
             for id in path.into_iter().skip(common) {
                 let style = self.inline_boxes.style(id);
                 let parent = self.inline_boxes.parent(id);
                 let top = self.inline_boxes.top(parent);
                 let bottom = self.inline_boxes.bottom(parent);
+                x = x.saturating_add(style.margin_left);
                 let decoration = self.decorations.len();
                 self.decorations.push(BoxDecoration {
                     x,
@@ -826,6 +898,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                         let right = box_style.right_extra();
                         let top = box_style.top_extra();
                         let bottom = box_style.bottom_extra();
+                        x = x.saturating_add(box_style.margin_left);
                         self.decorations.push(BoxDecoration {
                             x,
                             y: baseline - bottom - image.height - top,
@@ -854,7 +927,11 @@ impl<'a, 'm> Lines<'a, 'm> {
                         });
                     }
                     x += image.width;
-                    x = x.saturating_add(own_box.map_or(0, InlineBoxStyle::right_extra));
+                    if let Some(box_style) = own_box {
+                        x = x
+                            .saturating_add(box_style.right_extra())
+                            .saturating_add(box_style.margin_right);
+                    }
                 }
                 PreparedBox::Atomic(mut atomic, _, vertical_align) => {
                     let top = match vertical_align {
@@ -918,11 +995,20 @@ impl<'a, 'm> Lines<'a, 'm> {
                     });
                     x += text.width;
                 }
+                PreparedBox::Positioned(marker, _) => {
+                    self.positioned.push(PositionedStatic {
+                        marker,
+                        x,
+                        y: self.y,
+                    });
+                }
             }
         }
         while let Some((id, start_x, decoration)) = active_fragments.pop() {
-            x = x.saturating_add(self.inline_boxes.style(id).right_extra());
+            let style = self.inline_boxes.style(id);
+            x = x.saturating_add(style.right_extra());
             self.decorations[decoration].width = x.saturating_sub(start_x).max(0);
+            x = x.saturating_add(style.margin_right);
         }
 
         self.y += ascent + descent;

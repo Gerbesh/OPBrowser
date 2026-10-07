@@ -81,9 +81,16 @@ with per-pixel alpha, then restores/releases GDI objects. Fully clipped images a
 skipped. Image rectangles use the existing toolbar/scroll-aware click/cursor hit
 testing and clear when the display list is replaced.
 
-Full CSS replaced-element layout, progressive loading, animation, srcset/picture,
-full loading-state/quirks-mode fallback semantics, percentage-height propagation, SVG/WebP/AVIF, EXIF orientation
-and color management remain future work.
+An initial bounded SVG image slice is supported before the platform raster decoder: root
+`width`/`height` and `viewBox` provide intrinsic width/height/ratio metadata, and simple
+`<rect>` content is rasterized into the same premultiplied BGRA resource used by ordinary images.
+The parser enforces the existing encoded/pixel/dimension budgets plus a rectangle-count cap. This is
+not a general SVG renderer: paths, text, transforms, gradients, filters, CSS/styling and broader SVG
+semantics remain future work.
+
+Progressive loading, animation, srcset/picture, full loading-state/quirks-mode fallback semantics,
+full percentage-height propagation, WebP/AVIF, EXIF orientation and color management also remain
+future work.
 
 ## CSS generated image content
 

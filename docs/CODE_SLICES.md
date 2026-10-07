@@ -397,12 +397,17 @@ normal flow. Absolute positioning uses the nearest positioned ancestor's initial
 fixed positioning uses the real viewport width and height supplied by `op_engine`. Insets on all four
 sides accept px/percentage values when their containing-block axis is definite. Bottom-only placement
 is resolved after layout, while opposing left/right or top/bottom insets can stretch an auto-sized
-absolute/fixed block. Definite block heights, including min/max-clamped explicit heights, propagate as
-the percentage-height basis for direct descendants. Auto-height blocks are deliberately not made
-definite merely by a min-height clamp. Sticky positioning, inline containing-block rules, static
-position edge cases, the remaining CSS2 overconstraint/auto-margin equations and stacking contexts
-remain later work. WPT Positioning v1 moved from 18/100 (18.00%) to 21/100 (21.00%) without changing
-the manifest, while WPT Static remains 187/200 (93.50%).
+absolute/fixed block. Other positioned `width:auto` cases use the initial shrink-to-fit path. Inline
+absolute/fixed boxes leave a zero-width marker in the line so auto-inset static position starts at the
+actual inline cursor without consuming width. Horizontal inline margins now affect inline advance,
+including negative values, while visual decoration excludes those margins. Initial
+`display:inline-block` packages a local block/BFC result into one atomic inline box with shrink-to-fit
+auto width. Definite block heights, including min/max-clamped explicit heights, propagate as the
+percentage-height basis for direct descendants. Auto-height blocks are deliberately not made definite
+merely by a min-height clamp. Sticky positioning, full inline containing-block rules, split-inline
+static-position paint order, the remaining CSS2 overconstraint/auto-margin equations and stacking
+contexts remain later work. WPT Positioning v1 moved from 18/100 (18.00%) to 25/100 (25.00%) without
+changing the manifest, while WPT Static remains 187/200 (93.50%).
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore

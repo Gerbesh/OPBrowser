@@ -11,6 +11,7 @@ pub type CustomPropertyMap = HashMap<String, Vec<TokenKind>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Display {
     Inline,
+    InlineBlock,
     Block,
     FlowRoot,
     ListItem,
@@ -1974,6 +1975,7 @@ fn parse_display(tokens: &[TokenKind]) -> Option<Specified<Display>> {
     };
     match value.as_str() {
         "inline" => Some(Specified::Value(Display::Inline)),
+        "inline-block" => Some(Specified::Value(Display::InlineBlock)),
         "block" => Some(Specified::Value(Display::Block)),
         "flow-root" => Some(Specified::Value(Display::FlowRoot)),
         "list-item" => Some(Specified::Value(Display::ListItem)),
@@ -5851,6 +5853,7 @@ mod tests {
             "<style>
                #custom { display:table-row }
                #inline-table { display:inline-table }
+               #inline-block { display:inline-block }
                #flex { display:flex }
                #inline-flex { display:inline-flex }
                #flow-root { display:flow-root }
@@ -5865,6 +5868,7 @@ mod tests {
                <tfoot id='tfoot'><tr><td>F</td></tr></tfoot>
              </table>
              <div id='custom'>x</div><div id='inline-table'>i</div>
+             <span id='inline-block'>ib</span>
              <div id='flex'>f</div><span id='inline-flex'>if</span>
              <span id='flow-root'>f</span><span id='list-item'>l</span>
              <span id='flow-root-list'>fl</span>",
@@ -5886,6 +5890,7 @@ mod tests {
             ("td", Display::TableCell),
             ("custom", Display::TableRow),
             ("inline-table", Display::InlineTable),
+            ("inline-block", Display::InlineBlock),
             ("flex", Display::Flex),
             ("inline-flex", Display::InlineFlex),
             ("flow-root", Display::FlowRoot),

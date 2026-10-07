@@ -70,22 +70,27 @@ families OPBrowser does not support yet, including sticky positioning, vertical 
 multicol interactions, so the score is a useful readiness baseline rather than a flattering subset.
 
 Initial baseline after the first absolute/fixed/relative layout pass was 18/100 (18.00%).
-After the first positioning-geometry follow-up:
+The first positioning-geometry follow-up reached 21/100 (21.00%). After the inline-static-position,
+inline-block and replaced-SVG follow-up:
 
 - 100 reftests checked;
-- 21 passed;
-- 79 failed;
+- 25 passed;
+- 75 failed;
 - 0 render/infrastructure errors;
-- **21.00% WPT Positioning v1**.
+- **25.00% WPT Positioning v1**.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves
 relative-position visual offsets without moving following flow, and supports px/percentage insets on
 all four sides when the corresponding axis is definite. It also supports bottom-only placement,
-opposing-inset auto width/height stretching and direct percentage-height resolution from definite
-block heights. Sticky positioning, inline containing blocks, static-position edge cases, complete
-CSS2 abspos overconstraint/auto-margin handling, stacking contexts, vertical writing modes and
-multicol remain open and are deliberately visible in this metric.
+opposing-inset auto width/height stretching, shrink-to-fit positioned auto widths, direct
+percentage-height resolution from definite block heights and zero-width inline markers for initial
+static positions. Horizontal inline margins, including negative margins, now affect advance;
+`display:inline-block` is an atomic initial BFC. Replaced image sizing can use intrinsic width,
+height and ratio metadata from the initial bounded SVG raster slice as well as raster images. Sticky
+positioning, full inline containing blocks, split-inline/static-position paint order, complete CSS2
+abspos overconstraint/auto-margin handling, stacking contexts, vertical writing modes and multicol
+remain open and are deliberately visible in this metric.
 
 This new metric does not replace WPT Static v1. The older 200-test manifest remains frozen so its
 43.00% -> 93.50% history stays directly comparable.

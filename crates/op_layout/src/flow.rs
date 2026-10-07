@@ -46,6 +46,7 @@ pub(super) fn layout(
         pending_margin: None,
         positioning_stack: Vec::new(),
         flow_height_stack: vec![Some(viewport_height)],
+        inline_positioned: Vec::new(),
         block_epoch: 0,
         floats: Vec::new(),
         decorations: Vec::new(),
@@ -71,7 +72,6 @@ pub(super) fn layout(
         );
         context.flush_pending_margin();
     }
-
     LayoutTree {
         viewport_width,
         content_height: context.y + 24,
@@ -96,6 +96,7 @@ struct Context<'a, 'm> {
     pending_margin: Option<i32>,
     positioning_stack: Vec<PositioningContext>,
     flow_height_stack: Vec<Option<i32>>,
+    inline_positioned: Vec<InlinePositioned<'a>>,
     block_epoch: usize,
     floats: Vec<FloatBox>,
     decorations: Vec<BoxDecoration>,
@@ -156,6 +157,14 @@ struct OutputStart {
     decorations: usize,
     text: usize,
     images: usize,
+}
+
+#[derive(Clone, Copy)]
+struct InlinePositioned<'a> {
+    id: NodeId,
+    href: Option<&'a str>,
+    style: Style,
+    display: Display,
 }
 
 impl FloatBox {
@@ -392,9 +401,23 @@ impl<'a> Context<'a, '_> {
                 LayoutItem::Text(index) => LayoutItem::Text(index + self.text.len()),
                 LayoutItem::Image(index) => LayoutItem::Image(index + self.images_out.len()),
             }));
+        let positioned = lines.positioned.clone();
         self.decorations.extend(lines.decorations);
         self.text.extend(lines.text_boxes);
         self.images_out.extend(lines.image_boxes);
+
+        for marker in positioned {
+            if let Some(positioned) = self.inline_positioned.get(marker.marker).copied() {
+                self.positioned_element(
+                    positioned.id,
+                    positioned.href,
+                    positioned.style,
+                    positioned.display,
+                    marker.x,
+                    marker.y,
+                );
+            }
+        }
     }
 
     fn output_start(&self) -> OutputStart {
@@ -446,6 +469,7 @@ impl<'a> Context<'a, '_> {
         mut style: Style,
         display: Display,
         static_x: i32,
+        static_y: i32,
     ) {
         self.flush_pending_margin();
         let saved_y = self.y;
@@ -470,6 +494,14 @@ impl<'a> Context<'a, '_> {
             && let (Some(left), Some(right)) = (left, right)
         {
             stretch_auto_positioned_width(&mut style, positioning.width, left, right);
+        } else if style.width.is_none() {
+            let available = positioning
+                .width
+                .saturating_sub(left.unwrap_or(0))
+                .saturating_sub(right.unwrap_or(0))
+                .max(1);
+            let shrink_to_fit = self.positioned_shrink_to_fit_content_width(id, style, available);
+            style.width = Some(LengthPercentage::Px(shrink_to_fit as f32));
         }
         let layout_width_basis = if style.width.is_some() {
             positioning.width
@@ -509,7 +541,6 @@ impl<'a> Context<'a, '_> {
             stretch_auto_positioned_height(&mut style, positioning.width, height, top, bottom);
         }
 
-        let static_y = saved_y;
         let provisional_y = top
             .map(|top| positioning.y.saturating_add(top))
             .unwrap_or(static_y);
@@ -607,7 +638,11 @@ impl<'a> Context<'a, '_> {
         let output_start = self.output_start();
         let establishes_bfc = matches!(
             display,
-            Display::FlowRoot | Display::FlowRootListItem | Display::Flex | Display::InlineFlex
+            Display::FlowRoot
+                | Display::FlowRootListItem
+                | Display::Flex
+                | Display::InlineFlex
+                | Display::InlineBlock
         );
         let (containing_x, containing_width) = if establishes_bfc {
             self.available_around_floats(containing_x, containing_width, self.y)
@@ -881,6 +916,7 @@ impl<'a> Context<'a, '_> {
             pending_margin: None,
             positioning_stack: Vec::new(),
             flow_height_stack: vec![None],
+            inline_positioned: Vec::new(),
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -915,6 +951,88 @@ impl<'a> Context<'a, '_> {
             baseline: margin_top
                 .saturating_add(metrics.baseline)
                 .clamp(0, margin_top.saturating_add(metrics.height).max(0)),
+            decorations: local.decorations,
+            text_boxes: local.text,
+            image_boxes: local.images_out,
+            order: local.order,
+        }
+    }
+
+    fn inline_block_atomic(
+        &mut self,
+        id: NodeId,
+        mut style: Style,
+        containing_width: i32,
+    ) -> InlineAtomic {
+        let margin_left = resolve_margin(style.margin.left, containing_width).unwrap_or(0);
+        let margin_right = resolve_margin(style.margin.right, containing_width).unwrap_or(0);
+        let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
+        let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
+        let available = containing_width
+            .saturating_sub(margin_left)
+            .saturating_sub(margin_right)
+            .max(1);
+
+        if style.width.is_none() {
+            let intrinsic = self.positioned_shrink_to_fit_content_width(id, style, available);
+            style.width = Some(LengthPercentage::Px(intrinsic.max(1) as f32));
+        }
+
+        style.margin = MarginEdges::ZERO;
+        let used = resolve_block_horizontal(style, available);
+        let document = self.document;
+        let images = self.images;
+        let generated_images = self.generated_images;
+        let computed_styles = self.computed_styles;
+        let mut local = Context {
+            document,
+            images,
+            generated_images,
+            computed_styles,
+            measurer: &mut *self.measurer,
+            inline_boxes: InlineBoxes::default(),
+            viewport_width: self.viewport_width,
+            viewport_height: self.viewport_height,
+            width: available,
+            y: 0,
+            pending_margin: None,
+            positioning_stack: Vec::new(),
+            flow_height_stack: vec![None],
+            inline_positioned: Vec::new(),
+            block_epoch: 0,
+            floats: Vec::new(),
+            decorations: Vec::new(),
+            text: Vec::new(),
+            images_out: Vec::new(),
+            order: Vec::new(),
+        };
+        local.block(BlockContent::Element(id), None, style, 0, available);
+        local.flush_pending_margin();
+
+        for decoration in &mut local.decorations {
+            decoration.x = decoration.x.saturating_add(margin_left);
+            decoration.y = decoration.y.saturating_add(margin_top);
+        }
+        for text in &mut local.text {
+            text.x = text.x.saturating_add(margin_left);
+            text.y = text.y.saturating_add(margin_top);
+        }
+        for image in &mut local.images_out {
+            image.x = image.x.saturating_add(margin_left);
+            image.y = image.y.saturating_add(margin_top);
+        }
+
+        let border_height = local.y.max(0);
+        InlineAtomic {
+            width: margin_left
+                .saturating_add(used.border_width)
+                .saturating_add(margin_right)
+                .max(1),
+            height: margin_top
+                .saturating_add(border_height)
+                .saturating_add(margin_bottom)
+                .max(0),
+            baseline: margin_top.saturating_add(border_height).max(0),
             decorations: local.decorations,
             text_boxes: local.text,
             image_boxes: local.images_out,
@@ -962,6 +1080,7 @@ impl<'a> Context<'a, '_> {
             pending_margin: None,
             positioning_stack: Vec::new(),
             flow_height_stack: vec![None],
+            inline_positioned: Vec::new(),
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -1209,6 +1328,7 @@ impl<'a> Context<'a, '_> {
             pending_margin: None,
             positioning_stack: Vec::new(),
             flow_height_stack: vec![None],
+            inline_positioned: Vec::new(),
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -2182,7 +2302,7 @@ impl<'a> Context<'a, '_> {
             if let Some(image) = self.images.get(&node)
                 && let Some((width, _)) = resolve_image_size(
                     style,
-                    (image.width(), image.height()),
+                    Some(image.intrinsic_size()),
                     None,
                     width_basis,
                     width_basis,
@@ -2232,6 +2352,39 @@ impl<'a> Context<'a, '_> {
             .max()
             .unwrap_or(0);
         (min.min(max), max.max(min))
+    }
+
+    fn positioned_shrink_to_fit_content_width(
+        &mut self,
+        id: NodeId,
+        style: Style,
+        available_width: i32,
+    ) -> i32 {
+        let padding_left = resolve_length(style.padding.left, available_width).max(0);
+        let padding_right = resolve_length(style.padding.right, available_width).max(0);
+        let border = resolve_border_edges(style.border);
+        let horizontal_extras = padding_left
+            .saturating_add(padding_right)
+            .saturating_add(border.left.width)
+            .saturating_add(border.right.width);
+        let margin_left = resolve_margin(style.margin.left, available_width).unwrap_or(0);
+        let margin_right = resolve_margin(style.margin.right, available_width).unwrap_or(0);
+        let available_content = available_width
+            .saturating_sub(horizontal_extras)
+            .saturating_sub(margin_left)
+            .saturating_sub(margin_right)
+            .max(0);
+
+        let mut text = String::new();
+        for child in self.document.children(id) {
+            self.collect_table_intrinsic_text(*child, &mut text);
+        }
+        let (text_min, text_max) = self.measure_table_intrinsic_text(&text, style.inline);
+        let image_width = self.table_intrinsic_image_width(id, style, available_width);
+        let preferred_min = text_min.max(image_width).max(0);
+        let preferred = text_max.max(preferred_min).max(image_width);
+
+        preferred_min.max(available_content.min(preferred))
     }
 
     fn collapsed_table_borders(&self, grid: &TableGrid, inherited: Style) -> TableCollapsedBorders {
@@ -2922,6 +3075,34 @@ impl<'a> Context<'a, '_> {
                     return;
                 }
                 let mut current = self.element_style(id, tag, inherited);
+                let href = if tag == "a" {
+                    attribute(element, "href")
+                } else {
+                    href
+                };
+
+                if matches!(current.position, Position::Absolute | Position::Fixed)
+                    && display != Display::Contents
+                {
+                    if display == Display::Inline {
+                        let marker = self.inline_positioned.len();
+                        current.inline.boxes = inherited.inline.boxes;
+                        self.inline_positioned.push(InlinePositioned {
+                            id,
+                            href,
+                            style: current,
+                            display,
+                        });
+                        items.push(Item::Positioned(marker, current.inline));
+                    } else {
+                        self.emit(items, inherited, containing_x, containing_width);
+                        self.flush_pending_margin();
+                        let static_y = self.y;
+                        self.positioned_element(id, href, current, display, containing_x, static_y);
+                    }
+                    return;
+                }
+
                 if display == Display::Inline {
                     current.inline.boxes = if tag == "img"
                         && (self.images.contains_key(&id)
@@ -2936,19 +3117,6 @@ impl<'a> Context<'a, '_> {
                             .or(inherited.inline.boxes)
                     };
                 }
-                let href = if tag == "a" {
-                    attribute(element, "href")
-                } else {
-                    href
-                };
-
-                if matches!(current.position, Position::Absolute | Position::Fixed)
-                    && display != Display::Contents
-                {
-                    self.emit(items, inherited, containing_x, containing_width);
-                    self.positioned_element(id, href, current, display, containing_x);
-                    return;
-                }
 
                 if current.float_side != FloatSide::None
                     && display != Display::Contents
@@ -2960,7 +3128,14 @@ impl<'a> Context<'a, '_> {
                     return;
                 }
 
-                if display == Display::InlineFlex {
+                if display == Display::InlineBlock {
+                    current.inline.boxes = inherited.inline.boxes;
+                    let mut atomic = self.inline_block_atomic(id, current, containing_width);
+                    if let Some(href) = href {
+                        inherit_atomic_href(&mut atomic, href);
+                    }
+                    items.push(Item::Atomic(atomic, current.inline, current.vertical_align));
+                } else if display == Display::InlineFlex {
                     current.inline.boxes = inherited.inline.boxes;
                     let mut atomic = self.inline_flex_atomic(id, current, containing_width);
                     if let Some(href) = href {
@@ -3271,7 +3446,7 @@ impl<'a> Context<'a, '_> {
                         };
                         let Some((width, height)) = resolve_image_size(
                             sizing,
-                            image.map_or((0, 0), |pixels| (pixels.width(), pixels.height())),
+                            image.map(|pixels| pixels.intrinsic_size()),
                             own_box,
                             containing_width,
                             containing_width
@@ -3310,7 +3485,7 @@ impl<'a> Context<'a, '_> {
             let own_box = resolve_inline_box_style(id, None, style, available_width);
             let Some((width, height)) = resolve_image_size(
                 style,
-                image.map_or((0, 0), |pixels| (pixels.width(), pixels.height())),
+                image.map(|pixels| pixels.intrinsic_size()),
                 own_box,
                 available_width,
                 available_width.saturating_sub(self.inline_boxes.horizontal(image_style.boxes)),
@@ -3372,7 +3547,7 @@ impl<'a> Context<'a, '_> {
             .saturating_sub(margin_right.unwrap_or(0));
         let Some((width, height)) = resolve_image_size(
             style,
-            image.map_or((0, 0), |pixels| (pixels.width(), pixels.height())),
+            image.map(|pixels| pixels.intrinsic_size()),
             box_style,
             containing_width,
             fit_width,
@@ -3438,7 +3613,7 @@ impl<'a> Context<'a, '_> {
 
 fn resolve_image_size(
     style: Style,
-    natural: (u32, u32),
+    intrinsic: Option<op_image::IntrinsicSize>,
     box_style: Option<InlineBoxStyle>,
     available_width: i32,
     fit_width: i32,
@@ -3461,7 +3636,7 @@ fn resolve_image_size(
         LengthPercentage::Percent(_) => None,
     };
     let (width, height) = super::replaced::dimensions(
-        natural,
+        intrinsic,
         style.width.map(width_value),
         style.height.and_then(height_value),
         (
@@ -3473,19 +3648,16 @@ fn resolve_image_size(
             style.max_height.and_then(height_value),
         ),
     );
-    let transparent = natural == (0, 0);
-    if (!transparent && (width == 0 || height == 0))
-        || (transparent
-            && width == 0
-            && height == 0
-            && horizontal_extras == 0
-            && vertical_extras == 0)
+    let missing = intrinsic.is_none();
+    if (!missing && (width == 0 || height == 0))
+        || (missing && width == 0 && height == 0 && horizontal_extras == 0 && vertical_extras == 0)
     {
         return None;
     }
     let (mut width, mut height) = (width as u32, height as u32);
     let available_width = fit_width.saturating_sub(horizontal_extras).max(1) as u32;
-    if width > available_width {
+    let preserves_ratio = intrinsic.is_some_and(|size| size.ratio.is_some());
+    if preserves_ratio && width > available_width {
         height = (u64::from(height) * u64::from(available_width) / u64::from(width))
             .max(u64::from(height > 0)) as u32;
         width = available_width;
@@ -3504,12 +3676,16 @@ fn resolve_inline_box_style(
     style: Style,
     containing_width: i32,
 ) -> Option<InlineBoxStyle> {
+    let margin_right = resolve_margin(style.margin.right, containing_width).unwrap_or(0);
+    let margin_left = resolve_margin(style.margin.left, containing_width).unwrap_or(0);
     let padding_top = resolve_length(style.padding.top, containing_width).max(0);
     let padding_right = resolve_length(style.padding.right, containing_width).max(0);
     let padding_bottom = resolve_length(style.padding.bottom, containing_width).max(0);
     let padding_left = resolve_length(style.padding.left, containing_width).max(0);
     let border = resolve_border_edges(style.border);
     let visible = style.background.alpha > 0
+        || margin_right != 0
+        || margin_left != 0
         || padding_top > 0
         || padding_right > 0
         || padding_bottom > 0
@@ -3521,6 +3697,8 @@ fn resolve_inline_box_style(
     visible.then_some(InlineBoxStyle {
         node,
         pseudo,
+        margin_right,
+        margin_left,
         padding_top,
         padding_right,
         padding_bottom,

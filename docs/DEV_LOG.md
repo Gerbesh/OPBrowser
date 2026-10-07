@@ -2087,3 +2087,34 @@ This file is append-only project history.
   cases, the rest of the CSS2 absolute-position constraint/auto-margin equations, then sticky and
   overflow.
 
+## 2026-10-07 - Inline static-position / inline-block / intrinsic SVG pass
+
+- Added initial `display:inline-block` computed-style support and an atomic inline-block layout path.
+  Auto-width inline blocks use shrink-to-fit sizing, run their contents through a local block/BFC
+  context, and contribute one atomic box to the surrounding inline formatting context.
+- Added horizontal margins to inline fragment advance, including negative margins, while keeping
+  those margins outside the painted border/background geometry. This closes the negative-margin
+  static-position case without introducing test-name-specific behavior.
+- Absolute/fixed inline boxes now leave a zero-width marker in the inline sequence. Auto-inset
+  static positions therefore use the actual inline cursor and line y-coordinate without consuming
+  inline width or forcing the surrounding line to flush.
+- Extended positioned `width:auto` handling with an initial shrink-to-fit path for cases that are
+  not stretched by opposing left/right insets.
+- Extended `op_image` with bounded intrinsic metadata and an initial SVG image slice. Replaced
+  sizing can now consume intrinsic width, height and ratio independently, including partial and
+  ratio-only SVG intrinsics, while retaining existing encoded-byte, dimension and pixel budgets.
+- Added regressions for inline absolute static markers, atomic inline-block margin geometry and the
+  expanded replaced-element intrinsic sizing rules.
+- The unchanged WPT Positioning v1 manifest improved from **21/100 (21.00%)** to
+  **25/100 (25.00%)**, with 75 failures and zero render errors. The newly passing slice includes the
+  negative-margin absolute-position case and three replaced-element min/width cases. WPT Static v1
+  remains **187/200 (93.50%)**, and Test262 Parser v1 remains **523/1983 (26.37%)**.
+- Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace test
+  suite, native Win32 startup smoke, the pinned WPT/Test262 compatibility refresh, and the optimized
+  release build.
+- The rebuilt local browser at `target/release/op_browser.exe` is **1,039,360 bytes** with
+  SHA-256 `E428E9A4DBFF3D4D632FE7EEBF4993EE73B25EAFB4F7DFBE15DB221D33F1018C`.
+- Remaining positioning priorities are full split-inline/inline containing-block geometry,
+  block-level static-position directionality, CSS2 absolute-position overconstraint/auto-margin
+  equations, sticky positioning and overflow.
+

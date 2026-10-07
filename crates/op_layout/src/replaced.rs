@@ -1,7 +1,9 @@
-//! Intrinsic raster sizing before OPBrowser's viewport/draw-size fitting policy.
+//! Intrinsic replaced-element sizing before OPBrowser's viewport/draw-size fitting policy.
+
+use op_image::IntrinsicSize;
 
 pub(super) fn dimensions(
-    natural: (u32, u32),
+    intrinsic: Option<IntrinsicSize>,
     width: Option<i32>,
     height: Option<i32>,
     width_limits: (i32, Option<i32>),
@@ -15,18 +17,41 @@ pub(super) fn dimensions(
     let max_height = height_limits.1.map_or(f64::INFINITY, |value| {
         f64::from(value.max(0)).max(min_height)
     });
-    let natural_width = f64::from(natural.0);
-    let natural_height = f64::from(natural.1);
     let clamp_width = |value: f64| value.clamp(min_width, max_width);
     let clamp_height = |value: f64| value.clamp(min_height, max_height);
-    // A missing/invalid image has zero natural dimensions and no usable ratio.
-    // Resolve its axes independently instead of dividing by a zero dimension.
-    if natural.0 == 0 || natural.1 == 0 {
+
+    let Some(intrinsic) = intrinsic else {
+        return (
+            clamp_width(width.map_or(0.0, f64::from)) as i32,
+            clamp_height(height.map_or(0.0, f64::from)) as i32,
+        );
+    };
+
+    let ratio = intrinsic
+        .ratio
+        .filter(|(width, height)| *width > 0 && *height > 0)
+        .map(|(width, height)| f64::from(width) / f64::from(height));
+    if ratio.is_none() {
+        let natural_width = intrinsic.width.map_or(300.0, f64::from);
+        let natural_height = intrinsic.height.map_or(150.0, f64::from);
         return (
             clamp_width(width.map_or(natural_width, f64::from)) as i32,
             clamp_height(height.map_or(natural_height, f64::from)) as i32,
         );
     }
+
+    let ratio = ratio.expect("checked above");
+    let natural_width = intrinsic
+        .width
+        .map(f64::from)
+        .or_else(|| intrinsic.height.map(|height| f64::from(height) * ratio))
+        .unwrap_or(300.0);
+    let natural_height = intrinsic
+        .height
+        .map(f64::from)
+        .or_else(|| intrinsic.width.map(|width| f64::from(width) / ratio))
+        .unwrap_or(natural_width / ratio);
+
     let (width, height) = match (width, height) {
         (Some(width), Some(height)) => (
             clamp_width(f64::from(width)),
@@ -34,11 +59,11 @@ pub(super) fn dimensions(
         ),
         (Some(width), None) => {
             let width = clamp_width(f64::from(width));
-            (width, clamp_height(width * natural_height / natural_width))
+            (width, clamp_height(width / ratio))
         }
         (None, Some(height)) => {
             let height = clamp_height(f64::from(height));
-            (clamp_width(height * natural_width / natural_height), height)
+            (clamp_width(height * ratio), height)
         }
         (None, None) => {
             let lower = (min_width / natural_width).max(min_height / natural_height);
@@ -64,6 +89,22 @@ pub(super) fn dimensions(
 mod tests {
     use super::*;
 
+    fn raster(width: u32, height: u32) -> Option<IntrinsicSize> {
+        Some(IntrinsicSize::raster(width, height))
+    }
+
+    fn intrinsic(
+        width: Option<u32>,
+        height: Option<u32>,
+        ratio: Option<(u32, u32)>,
+    ) -> Option<IntrinsicSize> {
+        Some(IntrinsicSize {
+            width,
+            height,
+            ratio,
+        })
+    }
+
     #[test]
     fn unavailable_natural_dimensions_have_no_ratio_and_keep_css_axes_independent() {
         for (width, height, limits, expected) in [
@@ -80,12 +121,18 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                dimensions((0, 0), width, height, limits.0, limits.1),
+                dimensions(None, width, height, limits.0, limits.1),
                 expected
             );
         }
         assert_eq!(
-            dimensions((0, 20), Some(40), None, (0, None), (0, None)),
+            dimensions(
+                intrinsic(None, Some(20), None),
+                Some(40),
+                None,
+                (0, None),
+                (0, None)
+            ),
             (40, 20)
         );
     }
@@ -101,7 +148,7 @@ mod tests {
             (None, Some(0), (0, 0)),
         ] {
             assert_eq!(
-                dimensions((200, 100), width, height, (0, None), (0, None)),
+                dimensions(raster(200, 100), width, height, (0, None), (0, None)),
                 expected
             );
         }
@@ -124,7 +171,7 @@ mod tests {
             ((300, Some(100)), (0, None), (300, 150)),
         ] {
             assert_eq!(
-                dimensions((200, 100), None, None, width_limits, height_limits),
+                dimensions(raster(200, 100), None, None, width_limits, height_limits),
                 expected,
                 "{width_limits:?} {height_limits:?}"
             );
@@ -134,24 +181,60 @@ mod tests {
     #[test]
     fn explicit_side_constraints_recompute_auto_side_and_allow_stretching() {
         assert_eq!(
-            dimensions((200, 100), Some(300), None, (0, Some(100)), (0, None)),
+            dimensions(raster(200, 100), Some(300), None, (0, Some(100)), (0, None)),
             (100, 50)
         );
         assert_eq!(
-            dimensions((200, 100), Some(100), None, (0, None), (80, None)),
+            dimensions(raster(200, 100), Some(100), None, (0, None), (80, None)),
             (100, 80)
         );
         assert_eq!(
-            dimensions((200, 100), None, Some(100), (300, None), (0, None)),
+            dimensions(raster(200, 100), None, Some(100), (300, None), (0, None)),
             (300, 100)
         );
         assert_eq!(
-            dimensions((200, 100), Some(50), Some(20), (80, None), (40, None)),
+            dimensions(raster(200, 100), Some(50), Some(20), (80, None), (40, None)),
             (80, 40)
         );
         assert_eq!(
-            dimensions((1, 4096), None, Some(1), (0, None), (0, None)),
+            dimensions(raster(1, 4096), None, Some(1), (0, None), (0, None)),
             (1, 1)
         );
+    }
+
+    #[test]
+    fn svg_partial_and_ratio_only_intrinsics_follow_css21_replaced_defaults() {
+        let ratio_two = Some((2, 1));
+        for (source, expected) in [
+            (intrinsic(Some(50), Some(25), ratio_two), (40, 20)),
+            (intrinsic(None, Some(25), ratio_two), (40, 20)),
+            (intrinsic(Some(50), None, ratio_two), (40, 20)),
+            (intrinsic(None, Some(25), None), (300, 20)),
+            (intrinsic(Some(50), None, None), (50, 20)),
+            (intrinsic(None, None, ratio_two), (40, 20)),
+            (intrinsic(None, None, None), (300, 20)),
+        ] {
+            assert_eq!(
+                dimensions(source, None, Some(20), (0, None), (0, None)),
+                expected,
+                "{source:?}"
+            );
+        }
+
+        for (source, expected) in [
+            (intrinsic(Some(50), Some(25), ratio_two), (40, 20)),
+            (intrinsic(None, Some(25), ratio_two), (40, 20)),
+            (intrinsic(Some(50), None, ratio_two), (40, 20)),
+            (intrinsic(None, Some(25), None), (40, 25)),
+            (intrinsic(Some(50), None, None), (40, 150)),
+            (intrinsic(None, None, ratio_two), (40, 20)),
+            (intrinsic(None, None, None), (40, 150)),
+        ] {
+            assert_eq!(
+                dimensions(source, None, None, (0, Some(40)), (0, None)),
+                expected,
+                "{source:?}"
+            );
+        }
     }
 }
