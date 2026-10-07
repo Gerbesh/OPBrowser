@@ -323,8 +323,15 @@ Status: IN PROGRESS.
   name/length properties and execution is bounded by call depth.
 - DONE function/parser pass raised the same Test262 Parser v1 manifest again to
   504/1983 (25.42%).
-- NEXT exceptions plus broader control flow (for/do/switch/labels), function hoisting and fuller
-  call semantics including this/new/arguments/arrow/default/rest/destructuring forms.
+- DONE initial broader control flow and abrupt completions: C-style for, do/while, switch
+  case/default fallthrough, prefix/postfix ++/--, explicit throw, try/catch/finally, optional catch
+  bindings and function-declaration hoisting. Return/throw/break/continue propagate through finally;
+  switch break and continue-to-outer-loop use patched control targets with lexical-scope unwind.
+- DONE broader-control/parser pass raised the unchanged Test262 Parser v1 manifest to
+  508/1983 (25.62%).
+- NEXT labels and for-in/for-of; fuller call/function semantics including this/new/arguments,
+  arrow/default/rest/destructuring forms; catchable runtime Error objects; per-iteration lexical
+  environments for for(let); and explicit VM call frames instead of native recursive calls.
 - LATER promises/microtasks.
 - LATER modules.
 - LATER standard built-ins.

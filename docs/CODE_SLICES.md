@@ -572,6 +572,7 @@ JavaScript source
   -> primitive or ObjectId completion value
   -> runtime-owned lexical environment chain -> global/function/block bindings
   -> closure capture -> function call/return
+  -> abrupt completion -> return / explicit throw / break / continue -> try/catch/finally
   -> runtime-owned object heap -> own properties -> prototype chain
 ```
 
@@ -581,14 +582,22 @@ logical operators, blocks, if/else, while and break/continue. It now also has re
 objects, object/array literals, dot/computed property access and writes, array holes/length growth,
 and an initial prototype chain including object-literal/__proto__ behavior and cycle rejection.
 Control flow is compiled to patched jumps and executed by an instruction-pointer VM with bounded
-instruction, object, lexical-environment and call-depth budgets. Bindings now resolve through
+instruction, object, lexical-environment and call-depth budgets. Bindings resolve through
 global/function/block lexical environments: let/const use the current block, var targets the nearest
 function/global environment, and function objects capture an environment for closures that survive
-scope exit. Initial declarations/expressions, calls, parameters, return, recursion and function
-name/length are executable. Hoisting, this/new/arguments, arrow/default/rest/destructuring syntax
-and exceptions remain later work. The parse-only Test262 probe moved from 364/1983 (18.36%) to
-391/1983 (19.72%), 408/1983 (20.57%) and now 504/1983 (25.42%) on the unchanged manifest. It
-deliberately does not claim runtime conformance.
+scope exit. Initial function declarations are hoisted within each compiled statement list. C-style
+for, do/while, switch fallthrough, ++/--, explicit throw and try/catch/finally now execute, including
+finally before return/throw/break/continue and control transfer back into an enclosing loop/switch.
+
+The current exception path deliberately distinguishes an explicit JavaScript throw from internal VM
+errors: catch handles explicit thrown values, while runtime Reference/Type errors are not yet
+materialized as catchable JavaScript Error objects. A for(let) loop has lexical loop scope but not
+the spec's fresh per-iteration binding used by closures. Function calls still recurse through the
+native Rust stack, so the temporary call-depth guard is 64 until explicit VM call frames replace
+native recursion. this/new/arguments, arrow/default/rest/destructuring forms, labels and for-in/of
+remain later work. The parse-only Test262 probe progressed 364 -> 391 -> 408 -> 504 -> 508 passed
+expectations, currently 508/1983 (25.62%) on the unchanged manifest; it deliberately does not claim
+runtime conformance.
 
 Planned continuation:
 

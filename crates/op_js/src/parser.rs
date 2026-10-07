@@ -21,6 +21,26 @@ pub enum Statement {
         test: Expression,
         body: Box<Statement>,
     },
+    DoWhile {
+        body: Box<Statement>,
+        test: Expression,
+    },
+    For {
+        initializer: Option<ForInitializer>,
+        test: Option<Expression>,
+        update: Option<Expression>,
+        body: Box<Statement>,
+    },
+    Switch {
+        discriminant: Expression,
+        cases: Vec<SwitchCase>,
+    },
+    Try {
+        block: Vec<Statement>,
+        handler: Option<CatchClause>,
+        finalizer: Option<Vec<Statement>>,
+    },
+    Throw(Expression),
     FunctionDeclaration {
         name: String,
         params: Vec<String>,
@@ -44,6 +64,27 @@ pub struct ObjectProperty {
     pub key: String,
     pub value: Expression,
     pub prototype_setter: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForInitializer {
+    Variable {
+        kind: VariableKind,
+        declarations: Vec<VariableDeclarator>,
+    },
+    Expression(Expression),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SwitchCase {
+    pub test: Option<Expression>,
+    pub consequent: Vec<Statement>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatchClause {
+    pub param: Option<String>,
+    pub body: Vec<Statement>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -81,6 +122,11 @@ pub enum Expression {
         params: Vec<String>,
         body: Vec<Statement>,
     },
+    Update {
+        target: AssignmentTarget,
+        op: UpdateOp,
+        prefix: bool,
+    },
     Unary {
         op: UnaryOp,
         argument: Box<Expression>,
@@ -99,6 +145,12 @@ pub enum Expression {
         target: AssignmentTarget,
         value: Box<Expression>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateOp {
+    Increment,
+    Decrement,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,6 +191,7 @@ struct Parser {
     tokens: Vec<Token>,
     index: usize,
     loop_depth: usize,
+    breakable_depth: usize,
     function_depth: usize,
 }
 
@@ -148,6 +201,7 @@ impl Parser {
             tokens,
             index: 0,
             loop_depth: 0,
+            breakable_depth: 0,
             function_depth: 0,
         }
     }
@@ -173,6 +227,23 @@ impl Parser {
         if self.take(&TokenKind::While) {
             return self.while_statement();
         }
+        if self.take(&TokenKind::Do) {
+            return self.do_while_statement();
+        }
+        if self.take(&TokenKind::For) {
+            return self.for_statement();
+        }
+        if self.take(&TokenKind::Switch) {
+            return self.switch_statement();
+        }
+        if self.take(&TokenKind::Try) {
+            return self.try_statement();
+        }
+        if self.take(&TokenKind::Throw) {
+            let value = self.assignment()?;
+            self.optional_semicolon();
+            return Ok(Statement::Throw(value));
+        }
         if self.take(&TokenKind::Function) {
             return self.function_declaration();
         }
@@ -192,10 +263,10 @@ impl Parser {
             return Ok(Statement::Return(value));
         }
         if self.take(&TokenKind::Break) {
-            if self.loop_depth == 0 {
+            if self.breakable_depth == 0 {
                 return Err(JsError::syntax(
                     self.previous().start,
-                    "break is only valid inside a loop",
+                    "break is only valid inside a loop or switch",
                 ));
             }
             self.optional_semicolon();
@@ -264,12 +335,247 @@ impl Parser {
     fn while_statement(&mut self) -> Result<Statement, JsError> {
         let test = self.parenthesized_expression("while")?;
         self.loop_depth += 1;
+        self.breakable_depth += 1;
         let body = self.statement();
+        self.breakable_depth -= 1;
         self.loop_depth -= 1;
         Ok(Statement::While {
             test,
             body: Box::new(body?),
         })
+    }
+
+    fn do_while_statement(&mut self) -> Result<Statement, JsError> {
+        self.loop_depth += 1;
+        self.breakable_depth += 1;
+        let body = self.statement();
+        self.breakable_depth -= 1;
+        self.loop_depth -= 1;
+        let body = body?;
+
+        if !self.take(&TokenKind::While) {
+            return Err(JsError::syntax(
+                self.current().start,
+                "expected 'while' after do-while body",
+            ));
+        }
+        let test = self.parenthesized_expression("while")?;
+        self.optional_semicolon();
+        Ok(Statement::DoWhile {
+            body: Box::new(body),
+            test,
+        })
+    }
+
+    fn for_statement(&mut self) -> Result<Statement, JsError> {
+        if !self.take(&TokenKind::LeftParen) {
+            return Err(JsError::syntax(
+                self.current().start,
+                "expected '(' after for",
+            ));
+        }
+
+        let initializer = if self.take(&TokenKind::Semicolon) {
+            None
+        } else {
+            let variable_kind = if self.take(&TokenKind::Let) {
+                Some(VariableKind::Let)
+            } else if self.take(&TokenKind::Const) {
+                Some(VariableKind::Const)
+            } else if self.take(&TokenKind::Var) {
+                Some(VariableKind::Var)
+            } else {
+                None
+            };
+
+            let initializer = if let Some(kind) = variable_kind {
+                Some(ForInitializer::Variable {
+                    kind,
+                    declarations: self.variable_declarations(kind)?,
+                })
+            } else {
+                Some(ForInitializer::Expression(self.assignment()?))
+            };
+
+            if !self.take(&TokenKind::Semicolon) {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "expected ';' after for initializer",
+                ));
+            }
+            initializer
+        };
+
+        let test = if self.take(&TokenKind::Semicolon) {
+            None
+        } else {
+            let test = self.assignment()?;
+            if !self.take(&TokenKind::Semicolon) {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "expected ';' after for condition",
+                ));
+            }
+            Some(test)
+        };
+
+        let update = if self.take(&TokenKind::RightParen) {
+            None
+        } else {
+            let update = self.assignment()?;
+            if !self.take(&TokenKind::RightParen) {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "expected ')' after for update",
+                ));
+            }
+            Some(update)
+        };
+
+        self.loop_depth += 1;
+        self.breakable_depth += 1;
+        let body = self.statement();
+        self.breakable_depth -= 1;
+        self.loop_depth -= 1;
+
+        Ok(Statement::For {
+            initializer,
+            test,
+            update,
+            body: Box::new(body?),
+        })
+    }
+
+    fn switch_statement(&mut self) -> Result<Statement, JsError> {
+        let discriminant = self.parenthesized_expression("switch")?;
+        if !self.take(&TokenKind::LeftBrace) {
+            return Err(JsError::syntax(
+                self.current().start,
+                "expected '{' after switch condition",
+            ));
+        }
+
+        self.breakable_depth += 1;
+        let result = (|| {
+            let mut cases = Vec::new();
+            let mut saw_default = false;
+
+            while !self.check(&TokenKind::RightBrace) {
+                if self.check(&TokenKind::Eof) {
+                    return Err(JsError::syntax(
+                        self.current().start,
+                        "expected '}' after switch body",
+                    ));
+                }
+
+                let test = if self.take(&TokenKind::Case) {
+                    let test = self.assignment()?;
+                    if !self.take(&TokenKind::Colon) {
+                        return Err(JsError::syntax(
+                            self.current().start,
+                            "expected ':' after switch case",
+                        ));
+                    }
+                    Some(test)
+                } else if self.take(&TokenKind::Default) {
+                    if saw_default {
+                        return Err(JsError::syntax(
+                            self.previous().start,
+                            "switch may only contain one default clause",
+                        ));
+                    }
+                    saw_default = true;
+                    if !self.take(&TokenKind::Colon) {
+                        return Err(JsError::syntax(
+                            self.current().start,
+                            "expected ':' after switch default",
+                        ));
+                    }
+                    None
+                } else {
+                    return Err(JsError::syntax(
+                        self.current().start,
+                        "expected case/default in switch body",
+                    ));
+                };
+
+                let mut consequent = Vec::new();
+                while !self.check(&TokenKind::Case)
+                    && !self.check(&TokenKind::Default)
+                    && !self.check(&TokenKind::RightBrace)
+                {
+                    consequent.push(self.statement()?);
+                }
+                cases.push(SwitchCase { test, consequent });
+            }
+            self.advance();
+            Ok(Statement::Switch {
+                discriminant,
+                cases,
+            })
+        })();
+        self.breakable_depth -= 1;
+        result
+    }
+
+    fn try_statement(&mut self) -> Result<Statement, JsError> {
+        let block = self.required_block("try")?;
+
+        let handler = if self.take(&TokenKind::Catch) {
+            let param = if self.take(&TokenKind::LeftParen) {
+                let token = self.advance().clone();
+                let TokenKind::Identifier(name) = token.kind else {
+                    return Err(JsError::syntax(token.start, "expected catch binding"));
+                };
+                if !self.take(&TokenKind::RightParen) {
+                    return Err(JsError::syntax(
+                        self.current().start,
+                        "expected ')' after catch binding",
+                    ));
+                }
+                Some(name)
+            } else {
+                None
+            };
+            Some(CatchClause {
+                param,
+                body: self.required_block("catch")?,
+            })
+        } else {
+            None
+        };
+
+        let finalizer = if self.take(&TokenKind::Finally) {
+            Some(self.required_block("finally")?)
+        } else {
+            None
+        };
+
+        if handler.is_none() && finalizer.is_none() {
+            return Err(JsError::syntax(
+                self.current().start,
+                "try requires catch or finally",
+            ));
+        }
+
+        Ok(Statement::Try {
+            block,
+            handler,
+            finalizer,
+        })
+    }
+
+    fn required_block(&mut self, owner: &str) -> Result<Vec<Statement>, JsError> {
+        if !self.take(&TokenKind::LeftBrace) {
+            return Err(JsError::syntax(
+                self.current().start,
+                format!("expected '{{' after {owner}"),
+            ));
+        }
+        let Statement::Block(statements) = self.block_statement()? else {
+            unreachable!("block_statement always returns a block")
+        };
+        Ok(statements)
     }
 
     fn function_declaration(&mut self) -> Result<Statement, JsError> {
@@ -320,7 +626,9 @@ impl Parser {
         }
 
         let saved_loop_depth = self.loop_depth;
+        let saved_breakable_depth = self.breakable_depth;
         self.loop_depth = 0;
+        self.breakable_depth = 0;
         self.function_depth += 1;
         let mut body = Vec::new();
         let result = (|| {
@@ -338,6 +646,7 @@ impl Parser {
         })();
         self.function_depth -= 1;
         self.loop_depth = saved_loop_depth;
+        self.breakable_depth = saved_breakable_depth;
         result?;
         Ok((params, body))
     }
@@ -360,6 +669,15 @@ impl Parser {
     }
 
     fn variable_statement(&mut self, kind: VariableKind) -> Result<Statement, JsError> {
+        let declarations = self.variable_declarations(kind)?;
+        self.optional_semicolon();
+        Ok(Statement::Variable { kind, declarations })
+    }
+
+    fn variable_declarations(
+        &mut self,
+        kind: VariableKind,
+    ) -> Result<Vec<VariableDeclarator>, JsError> {
         let mut declarations = Vec::new();
         loop {
             let token = self.advance().clone();
@@ -387,9 +705,7 @@ impl Parser {
                 break;
             }
         }
-
-        self.optional_semicolon();
-        Ok(Statement::Variable { kind, declarations })
+        Ok(declarations)
     }
 
     fn assignment(&mut self) -> Result<Expression, JsError> {
@@ -398,18 +714,7 @@ impl Parser {
             return Ok(left);
         }
 
-        let target = match left {
-            Expression::Identifier(name) => AssignmentTarget::Identifier(name),
-            Expression::Member { object, property } => {
-                AssignmentTarget::Member { object, property }
-            }
-            _ => {
-                return Err(JsError::syntax(
-                    self.previous().start,
-                    "invalid assignment target",
-                ));
-            }
-        };
+        let target = assignment_target(left, self.previous().start)?;
         let value = self.assignment()?;
         Ok(Expression::Assignment {
             target,
@@ -542,6 +847,23 @@ impl Parser {
     }
 
     fn unary(&mut self) -> Result<Expression, JsError> {
+        let update = if self.take(&TokenKind::PlusPlus) {
+            Some(UpdateOp::Increment)
+        } else if self.take(&TokenKind::MinusMinus) {
+            Some(UpdateOp::Decrement)
+        } else {
+            None
+        };
+        if let Some(op) = update {
+            let offset = self.previous().start;
+            let argument = self.member()?;
+            return Ok(Expression::Update {
+                target: assignment_target(argument, offset)?,
+                op,
+                prefix: true,
+            });
+        }
+
         let op = if self.take(&TokenKind::Plus) {
             Some(UnaryOp::Plus)
         } else if self.take(&TokenKind::Minus) {
@@ -613,6 +935,22 @@ impl Parser {
                     property: Box::new(property),
                 };
                 continue;
+            }
+
+            let update = if self.take(&TokenKind::PlusPlus) {
+                Some(UpdateOp::Increment)
+            } else if self.take(&TokenKind::MinusMinus) {
+                Some(UpdateOp::Decrement)
+            } else {
+                None
+            };
+            if let Some(op) = update {
+                let offset = self.previous().start;
+                return Ok(Expression::Update {
+                    target: assignment_target(expression, offset)?,
+                    op,
+                    prefix: false,
+                });
             }
 
             return Ok(expression);
@@ -784,6 +1122,16 @@ impl Parser {
     }
 }
 
+fn assignment_target(expression: Expression, offset: usize) -> Result<AssignmentTarget, JsError> {
+    match expression {
+        Expression::Identifier(name) => Ok(AssignmentTarget::Identifier(name)),
+        Expression::Member { object, property } => {
+            Ok(AssignmentTarget::Member { object, property })
+        }
+        _ => Err(JsError::syntax(offset, "invalid assignment target")),
+    }
+}
+
 fn same_variant(left: &TokenKind, right: &TokenKind) -> bool {
     std::mem::discriminant(left) == std::mem::discriminant(right)
 }
@@ -797,10 +1145,19 @@ fn identifier_name(kind: &TokenKind) -> Option<String> {
         TokenKind::If => "if",
         TokenKind::Else => "else",
         TokenKind::While => "while",
+        TokenKind::For => "for",
+        TokenKind::Do => "do",
+        TokenKind::Switch => "switch",
+        TokenKind::Case => "case",
+        TokenKind::Default => "default",
         TokenKind::Break => "break",
         TokenKind::Continue => "continue",
         TokenKind::Function => "function",
         TokenKind::Return => "return",
+        TokenKind::Throw => "throw",
+        TokenKind::Try => "try",
+        TokenKind::Catch => "catch",
+        TokenKind::Finally => "finally",
         TokenKind::True => "true",
         TokenKind::False => "false",
         TokenKind::Null => "null",
@@ -900,6 +1257,21 @@ mod tests {
             Statement::Expression(Expression::Call { .. })
         ));
         assert!(parse_script("return 1;").is_err());
+    }
+
+    #[test]
+    fn parses_for_do_switch_try_catch_finally_and_throw() {
+        let program = parse_script(
+            "for (let i = 0; i < 3; i++) { if (i === 1) continue; }              do { break; } while (true);              switch (2) { case 1: break; case 2: throw 7; default: break; }              try { throw 1; } catch (e) { e; } finally { 2; }              try { 1; } catch { 2; }",
+        )
+        .unwrap();
+        assert!(matches!(program.statements[0], Statement::For { .. }));
+        assert!(matches!(program.statements[1], Statement::DoWhile { .. }));
+        assert!(matches!(program.statements[2], Statement::Switch { .. }));
+        assert!(matches!(program.statements[3], Statement::Try { .. }));
+        assert!(matches!(program.statements[4], Statement::Try { .. }));
+        assert!(parse_script("switch (1) { default: 1; default: 2; }").is_err());
+        assert!(parse_script("try { 1; }").is_err());
     }
 
     #[test]

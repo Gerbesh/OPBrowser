@@ -6,8 +6,9 @@ SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 The executable core contains an owned lexer, AST parser, bytecode compiler and stack
 interpreter. The current language subset covers scalar literals, `let`/`const`/`var`
 declarations including comma-separated declarators, identifier load/assignment, unary
-`+`/`-`/`!`, arithmetic, comparisons, loose/strict equality, string concatenation,
-short-circuit `&&`/`||`, blocks, `if/else`, `while`, `break` and `continue`.
+`+`/`-`/`!`, prefix/postfix `++`/`--`, arithmetic, comparisons, loose/strict equality,
+string concatenation, short-circuit `&&`/`||`, blocks, `if/else`, `while`, C-style `for`,
+`do/while`, `switch` fallthrough, `break` and `continue`.
 It also supports object and array literals, shorthand data properties, dot/computed member access,
 member assignment, sparse array slots, dynamic index-driven array length growth and reference
 identity through runtime-owned `ObjectId` handles.
@@ -29,12 +30,22 @@ Functions are heap objects backed by owned bytecode templates. Function declarat
 expressions accept positional parameters, return values, recurse and expose initial `name` and
 `length` properties. Each function captures its creation environment, so closures can read and
 mutate bindings after their defining function or block has exited; named function expressions get
-a private recursive self-binding.
+a private recursive self-binding. Direct function declarations are instantiated before the other
+statements in their compiled statement list, providing initial declaration hoisting.
 
-This is still not page scripting. Function declaration hoisting, `this`, `new`, `arguments`,
-arrow/default/rest/destructuring forms, property descriptors/accessors, full array-length mutation
-rules, primitive boxing/ToPrimitive, exceptions, garbage collection, built-ins, promises/modules
-and DOM bindings are still absent. ASI is also still intentionally incomplete.
+Explicit thrown values use a distinct abrupt-completion path and can cross function calls into
+`catch`. `try/catch/finally` preserves or overrides return/throw/break/continue according to the
+finalizer completion, including break/continue that leave the try region and resume an outer
+loop/switch. Runtime-generated Reference/Type failures are still engine errors rather than
+catchable JavaScript Error objects.
+
+This is still not page scripting. `this`, `new`, `arguments`, arrow/default/rest/destructuring
+forms, labels, for-in/of, property descriptors/accessors, full array-length mutation rules,
+primitive boxing/ToPrimitive, garbage collection, built-ins, promises/modules and DOM bindings are
+still absent. C-style `for(let ...)` has one loop lexical environment rather than fresh
+per-iteration bindings, and ASI/line-terminator restrictions around throw/postfix updates are still
+incomplete. Function calls currently recurse through the native stack; the temporary depth limit is
+64 until calls move to explicit VM frames.
 
 ## Test262 measurement
 
@@ -55,10 +66,12 @@ For the combined local subsystem check use:
 ```
 
 The unchanged Test262 Parser v1 subset moved from **364/1983 (18.36%)** to
-**391/1983 (19.72%)**, then **408/1983 (20.57%)**, and now **504/1983 (25.42%)** after the initial
-function/call/return and lexical-environment pass. This remains a parse-expectation metric, not
-runtime conformance.
+**391/1983 (19.72%)**, then **408/1983 (20.57%)**, **504/1983 (25.42%)** after functions/closures,
+and **508/1983 (25.62%)** after broader control flow, updates and exceptions. This remains a
+parse-expectation metric, not runtime conformance.
 
-The next JS work is exceptions and broader control flow plus the missing call/function semantics
-(hoisting, this/new/arguments and modern parameter/function forms). Those are now the main blockers
-before page `<script>` execution can be connected without pretending compatibility that does not exist.
+The next JS work is the remaining call/object boundary needed by ordinary page code: `this`,
+`new`, `arguments`, JavaScript Error objects/catchable runtime failures and modern
+function/parameter forms. Labels, for-in/of and explicit VM call frames remain language/runtime
+work before page `<script>` execution can be connected without pretending compatibility that does
+not exist.

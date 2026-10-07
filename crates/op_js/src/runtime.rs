@@ -1,6 +1,6 @@
 use crate::{
-    BinaryOp, CompiledScript, JsError, JsValue, ObjectId, UnaryOp, VariableKind,
-    bytecode::{FunctionTemplate, Instruction},
+    BinaryOp, CompiledScript, JsError, JsValue, ObjectId, UnaryOp, UpdateOp, VariableKind,
+    bytecode::{FunctionTemplate, Instruction, TryTemplate},
     compile_script,
 };
 use std::{collections::HashMap, sync::Arc};
@@ -8,7 +8,7 @@ use std::{collections::HashMap, sync::Arc};
 const DEFAULT_INSTRUCTION_BUDGET: usize = 1_000_000;
 const DEFAULT_OBJECT_BUDGET: usize = 100_000;
 const DEFAULT_ENVIRONMENT_BUDGET: usize = 100_000;
-const DEFAULT_CALL_DEPTH_BUDGET: usize = 256;
+const DEFAULT_CALL_DEPTH_BUDGET: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct EnvironmentId(usize);
@@ -59,6 +59,14 @@ struct JsObject {
 enum RunOutcome {
     Complete(JsValue),
     Returned(JsValue),
+    Thrown(JsValue),
+    Break,
+    Continue,
+}
+
+enum CallOutcome {
+    Value(JsValue),
+    Thrown(JsValue),
 }
 
 #[derive(Debug)]
@@ -134,6 +142,13 @@ impl JsRuntime {
         let mut steps = 0usize;
         match self.run_code(&script.code, self.global_env, &mut steps, 0)? {
             RunOutcome::Complete(value) | RunOutcome::Returned(value) => Ok(value),
+            RunOutcome::Thrown(value) => Err(JsError::exception(value.to_js_string())),
+            RunOutcome::Break => Err(JsError::type_error(
+                "break across a try boundary is not implemented",
+            )),
+            RunOutcome::Continue => Err(JsError::type_error(
+                "continue across a try boundary is not implemented",
+            )),
         }
     }
 
@@ -179,6 +194,23 @@ impl JsRuntime {
                         .expect("compiler must leave assignment value on stack")
                         .clone();
                     self.assign_binding(env, name, value)?;
+                }
+                Instruction::UpdateBinding { name, op, prefix } => {
+                    let previous = self.load_binding(env, name)?.clone();
+                    let updated = apply_update(*op, &previous);
+                    self.assign_binding(env, name, updated.clone())?;
+                    stack.push(if *prefix { updated } else { previous });
+                }
+                Instruction::UpdateProperty { op, prefix } => {
+                    let key = stack.pop().expect("compiler must push update property key");
+                    let target = stack
+                        .pop()
+                        .expect("compiler must push update property target");
+                    let key = to_property_key(key);
+                    let previous = self.get_property(&target, &key)?;
+                    let updated = apply_update(*op, &previous);
+                    self.set_property(&target, &key, updated.clone())?;
+                    stack.push(if *prefix { updated } else { previous });
                 }
                 Instruction::CreateObject(prototype_setters) => {
                     let mut entries = Vec::with_capacity(prototype_setters.len());
@@ -272,8 +304,10 @@ impl JsRuntime {
                     }
                     arguments.reverse();
                     let callee = stack.pop().expect("compiler must push function callee");
-                    let value = self.call_value(callee, arguments, steps, call_depth + 1)?;
-                    stack.push(value);
+                    match self.call_value(callee, arguments, steps, call_depth + 1)? {
+                        CallOutcome::Value(value) => stack.push(value),
+                        CallOutcome::Thrown(value) => return Ok(RunOutcome::Thrown(value)),
+                    }
                 }
                 Instruction::Unary(op) => {
                     let value = stack.pop().expect("compiler must push unary operand");
@@ -283,6 +317,13 @@ impl JsRuntime {
                     let right = stack.pop().expect("compiler must push right operand");
                     let left = stack.pop().expect("compiler must push left operand");
                     stack.push(apply_binary(*op, left, right));
+                }
+                Instruction::Dup => {
+                    let value = stack
+                        .last()
+                        .expect("compiler must leave a value to duplicate")
+                        .clone();
+                    stack.push(value);
                 }
                 Instruction::Pop => {
                     stack.pop().expect("compiler must leave a value to pop");
@@ -323,6 +364,44 @@ impl JsRuntime {
                         continue;
                     }
                 }
+                Instruction::Try {
+                    template,
+                    break_target,
+                    break_unwind,
+                    continue_target,
+                    continue_unwind,
+                } => match self.run_try(template, env, steps, call_depth)? {
+                    RunOutcome::Complete(value) => completion = value,
+                    RunOutcome::Break => {
+                        let Some(target) = break_target else {
+                            return Ok(RunOutcome::Break);
+                        };
+                        debug_assert!(*target != usize::MAX && *target <= code.len());
+                        for _ in 0..*break_unwind {
+                            env = self.parent_environment(env)?;
+                        }
+                        ip = *target;
+                        continue;
+                    }
+                    RunOutcome::Continue => {
+                        let Some(target) = continue_target else {
+                            return Ok(RunOutcome::Continue);
+                        };
+                        debug_assert!(*target != usize::MAX && *target <= code.len());
+                        for _ in 0..*continue_unwind {
+                            env = self.parent_environment(env)?;
+                        }
+                        ip = *target;
+                        continue;
+                    }
+                    outcome => return Ok(outcome),
+                },
+                Instruction::Throw => {
+                    let value = stack.pop().expect("compiler must push thrown value");
+                    return Ok(RunOutcome::Thrown(value));
+                }
+                Instruction::BreakSignal => return Ok(RunOutcome::Break),
+                Instruction::ContinueSignal => return Ok(RunOutcome::Continue),
                 Instruction::Return => {
                     let value = stack
                         .pop()
@@ -342,13 +421,49 @@ impl JsRuntime {
         Ok(RunOutcome::Complete(completion))
     }
 
+    fn run_try(
+        &mut self,
+        template: &TryTemplate,
+        env: EnvironmentId,
+        steps: &mut usize,
+        call_depth: usize,
+    ) -> Result<RunOutcome, JsError> {
+        let mut outcome = self.run_code(&template.try_code, env, steps, call_depth)?;
+
+        if let RunOutcome::Thrown(value) = outcome.clone()
+            && let Some(catch_code) = &template.catch_code
+        {
+            let catch_env = self.allocate_environment(Some(env), EnvironmentKind::Block)?;
+            if let Some(param) = &template.catch_param {
+                self.environments[catch_env.0].bindings.insert(
+                    param.clone(),
+                    Binding {
+                        value,
+                        mutable: true,
+                        declaration_kind: VariableKind::Let,
+                    },
+                );
+            }
+            outcome = self.run_code(catch_code, catch_env, steps, call_depth)?;
+        }
+
+        if let Some(finally_code) = &template.finally_code {
+            let finally_outcome = self.run_code(finally_code, env, steps, call_depth)?;
+            if !matches!(finally_outcome, RunOutcome::Complete(_)) {
+                outcome = finally_outcome;
+            }
+        }
+
+        Ok(outcome)
+    }
+
     fn call_value(
         &mut self,
         callee: JsValue,
         arguments: Vec<JsValue>,
         steps: &mut usize,
         call_depth: usize,
-    ) -> Result<JsValue, JsError> {
+    ) -> Result<CallOutcome, JsError> {
         if call_depth > self.call_depth_budget {
             return Err(JsError::execution_limit(format!(
                 "script exceeded call depth budget of {}",
@@ -392,8 +507,15 @@ impl JsRuntime {
         }
 
         match self.run_code(&function.template.code, function_env, steps, call_depth)? {
-            RunOutcome::Returned(value) => Ok(value),
-            RunOutcome::Complete(_) => Ok(JsValue::Undefined),
+            RunOutcome::Returned(value) => Ok(CallOutcome::Value(value)),
+            RunOutcome::Complete(_) => Ok(CallOutcome::Value(JsValue::Undefined)),
+            RunOutcome::Thrown(value) => Ok(CallOutcome::Thrown(value)),
+            RunOutcome::Break => Err(JsError::type_error(
+                "break across a try boundary is not implemented",
+            )),
+            RunOutcome::Continue => Err(JsError::type_error(
+                "continue across a try boundary is not implemented",
+            )),
         }
     }
 
@@ -751,6 +873,14 @@ fn array_index(key: &str) -> Option<u32> {
     Some(value)
 }
 
+fn apply_update(op: UpdateOp, value: &JsValue) -> JsValue {
+    let number = value.to_number();
+    JsValue::Number(match op {
+        UpdateOp::Increment => number + 1.0,
+        UpdateOp::Decrement => number - 1.0,
+    })
+}
+
 fn apply_unary(op: UnaryOp, value: JsValue) -> JsValue {
     match op {
         UnaryOp::Plus => JsValue::Number(value.to_number()),
@@ -896,6 +1026,138 @@ mod tests {
         );
         assert_eq!(runtime.global("x"), Some(&JsValue::Number(5.0)));
         assert_eq!(runtime.global("total"), Some(&JsValue::Number(8.0)));
+    }
+
+    #[test]
+    fn executes_for_do_while_switch_fallthrough_break_and_continue() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let total = 0;                      for (let i = 0; i < 6; i++) {                        if (i === 2) continue;                        if (i === 5) break;                        total = total + i;                      }                      let d = 0; do { d = d + 1; } while (d < 3);                      total + d",
+                )
+                .unwrap(),
+            JsValue::Number(11.0)
+        );
+
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let out = 0; switch (2) {                        case 1: out = 1; break;                        case 2: out = 2;                        default: out = out + 3;                        case 4: out = out + 4;                      } out",
+                )
+                .unwrap(),
+            JsValue::Number(9.0)
+        );
+
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let loopSwitch = 0; for (let n = 0; n < 3; n++) {                        switch (n) { case 1: continue; default: loopSwitch = loopSwitch + n; }                      } loopSwitch",
+                )
+                .unwrap(),
+            JsValue::Number(2.0)
+        );
+    }
+
+    #[test]
+    fn for_let_is_lexical_while_for_var_escapes_to_function_scope() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script("for (var j = 0; j < 2; j++) {} j")
+                .unwrap(),
+            JsValue::Number(2.0)
+        );
+        runtime
+            .eval_script("for (let k = 0; k < 1; k++) {}")
+            .unwrap();
+        let error = runtime.eval_script("k").unwrap_err();
+        assert_eq!(error.kind, crate::JsErrorKind::Reference);
+    }
+
+    #[test]
+    fn prefix_and_postfix_updates_preserve_expression_values() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let i = 1; let a = i++; let b = ++i;                      let object = {x: 5}; let c = object.x--; let d = --object.x;                      (a === 1) && (b === 3) && (c === 5) && (d === 3) &&                      (i === 3) && (object.x === 3)",
+                )
+                .unwrap(),
+            JsValue::Boolean(true)
+        );
+        let error = runtime
+            .eval_script("const fixed = 1; fixed++;")
+            .unwrap_err();
+        assert_eq!(error.kind, crate::JsErrorKind::Type);
+    }
+
+    #[test]
+    fn function_declarations_are_available_before_their_source_position() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script("let result = add(2, 3); function add(a, b) { return a + b; } result",)
+                .unwrap(),
+            JsValue::Number(5.0)
+        );
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "function outer() { return inner(); function inner() { return 7; } } outer()",
+                )
+                .unwrap(),
+            JsValue::Number(7.0)
+        );
+    }
+
+    #[test]
+    fn explicit_throw_crosses_calls_and_catch_finally_obey_abrupt_completion() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "function boom() { throw 7; }                      let x = 0;                      try { boom(); } catch (e) { x = e + 1; } finally { x = x + 2; }                      x",
+                )
+                .unwrap(),
+            JsValue::Number(10.0)
+        );
+
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "function finalReturn() { try { return 1; } finally { return 2; } } finalReturn()",
+                )
+                .unwrap(),
+            JsValue::Number(2.0)
+        );
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "function preserveReturn() { try { return 3; } finally { let ignored = 1; } } preserveReturn()",
+                )
+                .unwrap(),
+            JsValue::Number(3.0)
+        );
+
+        let error = runtime
+            .eval_script("try { throw 'boom'; } finally { 1; }")
+            .unwrap_err();
+        assert_eq!(error.kind, crate::JsErrorKind::Exception);
+        assert_eq!(error.message, "boom");
+    }
+
+    #[test]
+    fn finally_runs_before_break_and_continue_cross_try_boundaries() {
+        let mut runtime = JsRuntime::new();
+        assert_eq!(
+            runtime
+                .eval_script(
+                    "let i = 0, seen = 0;                      while (i < 4) {                        i = i + 1;                        try {                          if (i === 2) continue;                          if (i === 4) break;                          seen = seen + i;                        } finally { seen = seen + 10; }                      }                      seen",
+                )
+                .unwrap(),
+            JsValue::Number(44.0)
+        );
     }
 
     #[test]

@@ -176,13 +176,25 @@ classDiagram
         params
         code Instruction[]
     }
+    class TryTemplate {
+        try_code Instruction[]
+        catch_param
+        catch_code Instruction[]?
+        finally_code Instruction[]?
+    }
+    class RunOutcome {
+        Complete / Returned / Thrown
+        Break / Continue
+    }
     class Instruction {
         Push / Load / Declare / Assign
+        UpdateBinding / UpdateProperty
         CreateObject / CreateArray / CreateFunction
         GetProperty / SetProperty / Call
-        Unary / Binary / Pop
+        Unary / Binary / Dup / Pop
         EnterScope / ExitScope / UnwindScopes
         Jump / JumpIfFalse / JumpIfTrue
+        Try / Throw / BreakSignal / ContinueSignal
         Return / SetCompletion / Halt
     }
 
@@ -492,7 +504,9 @@ classDiagram
     JsObject --> FunctionObject : optional callable payload
     FunctionObject --> FunctionTemplate : owned bytecode template
     FunctionObject --> Environment : captured closure
-    CompiledScript --> Instruction : ordered bytecode with patched jump targets
+    CompiledScript --> Instruction : ordered bytecode with patched jump/control targets
+    Instruction --> TryTemplate : nested try/catch/finally bytecode
+    JsRuntime --> RunOutcome : normal and abrupt completion propagation
     NavigationState --> NavigationEntry
     Engine --> NetworkContext
     NetworkContext --> LoadedDocument

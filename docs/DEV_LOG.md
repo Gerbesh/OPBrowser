@@ -1938,3 +1938,44 @@ This file is append-only project history.
   forms, exceptions and fuller ASI are still missing. Page `<script>` execution remains
   intentionally disconnected until those semantics and the DOM binding boundary are further along.
 
+## 2026-10-07 - JavaScript exceptions and broader control-flow pass
+
+- Added C-style `for`, `do/while`, `switch/case/default`, switch fallthrough and the correct
+  distinction between breakable loop/switch contexts and continue-only loop targets. Nested lexical
+  scopes unwind before local jumps and switch-contained continue can target an enclosing loop.
+- Added prefix/postfix `++`/`--` for identifier and member assignment targets. Runtime updates use
+  the existing numeric conversion path, preserve the old value for postfix and new value for prefix,
+  and still reject writes to const bindings.
+- Added explicit JavaScript abrupt completions for `throw`, `try/catch/finally`, optional catch
+  bindings, return, break and continue. Thrown values cross user-function calls into catch; finally
+  executes for normal and abrupt completion and an abrupt finalizer overrides the prior completion.
+- Added patched external break/continue targets to try bytecode so control can cross a try/finally
+  boundary, execute the finalizer first, unwind the required lexical scopes and resume the enclosing
+  loop or switch rather than being converted into an engine error.
+- Added initial function-declaration hoisting within compiled statement lists. Direct declarations
+  are instantiated before the remaining statements in scripts, blocks and function bodies, while
+  full declaration instantiation, TDZ/var hoisting and Annex B block-function semantics remain later.
+- The current C-style `for(let ...)` uses one lexical loop environment rather than the spec's fresh
+  per-iteration binding, so closure capture across iterations is explicitly not complete yet.
+- Explicit `throw` values are catchable, but runtime-generated Reference/Type failures still use
+  the engine error path instead of JavaScript Error objects; catchable Error objects are a later
+  runtime milestone.
+- Reduced the temporary native-recursive call-depth budget from 256 to 64 after the previous limit
+  was observed to overflow the Windows native stack before the guard fired. Explicit heap/VM call
+  frames remain the proper long-term fix.
+- Expanded op_js core coverage from 31 to 39 tests. New regressions cover for/do/switch execution,
+  fallthrough, continue-through-switch, let/var loop scope, prefix/postfix update values, function
+  hoisting, thrown values crossing calls, catch/finally return precedence and finally before
+  break/continue.
+- The unchanged Test262 Parser v1 manifest improved from 504/1983 (25.42%) to
+  508/1983 (25.62%). This remains a parse-expectation metric, not runtime Test262 conformance.
+- External compatibility refresh reconfirmed WPT Static v1 at 187/200 (93.50%) with 13 known
+  failures and zero render errors.
+- Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace test
+  suite, native startup smoke, external compatibility refresh and optimized release build.
+- The local release browser was rebuilt at `target/release/op_browser.exe`: 1,009,664 bytes,
+  SHA-256 `7112D2E4DDBA728EE892C23D4EF7C8822941A1F18703637AE79A06106D0BB8B1`.
+- Page scripting remains disconnected. The next JS priorities are `this`/`new`/`arguments`,
+  JavaScript Error objects and catchable runtime failures, modern function/parameter forms,
+  per-iteration loop bindings, labels/for-in/of and explicit VM call frames.
+
