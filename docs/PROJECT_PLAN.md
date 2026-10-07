@@ -261,13 +261,14 @@ Status: IN PROGRESS.
   relational selectors, sliced inline decoration edges and fuller
   parent/child margin collapsing / definite percentage-height propagation.
 - IN PROGRESS readable-static-web priority: computed `position: static|relative|absolute|fixed`
-  plus all four inset properties now feed layout. Relative boxes apply left/right and px top/bottom
-  visual offsets without moving following flow; absolute/fixed boxes leave normal flow and currently
-  resolve left/right plus px top against the nearest positioned ancestor or viewport. Sticky,
-  bottom-based abs/fixed placement, complete abspos auto/overconstraint rules, percentage vertical
-  insets and stacking remain NEXT, followed by `overflow`, media queries,
-  font faces, background images, border radius and broader flex/grid work. Obscure value-space
-  polish must not displace these.
+  plus all four inset properties feed layout. Relative boxes preserve normal-flow geometry while
+  px/percentage offsets translate their output. Absolute/fixed boxes leave normal flow and now use
+  viewport-height-aware or nearest-positioned padding-box geometry, px/percentage insets on both axes,
+  bottom-only placement, opposing-inset auto width/height stretching and direct percentage-height
+  resolution from definite containing blocks. Sticky, inline containing blocks, static-position edge
+  cases, complete CSS2 abspos overconstraint/auto-margin rules and stacking remain NEXT, followed by
+  `overflow`, media queries, font faces, background images, border radius and broader flex/grid work.
+  Obscure value-space polish must not displace these.
 - LATER broader computed values outside the readable-static-web priority.
 - LATER fuller normal flow and CSS inline formatting plus Unicode line breaking.
 - NEXT migrate the text backend toward DirectWrite shaping/fallback behind TextMeasurer per ADR-0003.
@@ -298,7 +299,10 @@ Status: IN PROGRESS.
 - DONE eighth metric-driven pass raised the unchanged WPT Static v1 manifest from 183/200 (91.50%) to 185/200 (92.50%).
 - DONE initial flex formatting context: computed `display:flex`/`inline-flex`, default single-line row item layout, anonymous text flex items, atomic shrink-to-content inline-flex and recursive `display:contents` item flattening.
 - DONE ninth metric-driven pass raised the unchanged WPT Static v1 manifest from 185/200 (92.50%) to 187/200 (93.50%).
-- NEXT use WPT Positioning v1 failures to drive sticky/abspos sizing/inline containing blocks and
+- DONE first positioning-driven pass raised the unchanged WPT Positioning v1 manifest from
+  18/100 (18.00%) to 21/100 (21.00%) while WPT Static v1 remained 187/200 (93.50%).
+- NEXT use the remaining WPT Positioning v1 failures to drive inline containing blocks,
+  static-position/negative-margin cases, the remaining CSS2 abspos constraint equations and sticky,
   then `overflow`; keep the 13 WPT Static v1 failures visible but do not let color/SVG edge cases
   displace readable-static-web priorities.
 

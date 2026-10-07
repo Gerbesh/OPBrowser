@@ -69,20 +69,23 @@ formatting and CSS Positioned Layout at the same pinned WPT revision. It intenti
 families OPBrowser does not support yet, including sticky positioning, vertical writing modes and
 multicol interactions, so the score is a useful readiness baseline rather than a flattering subset.
 
-Initial baseline after the first absolute/fixed/relative layout pass:
+Initial baseline after the first absolute/fixed/relative layout pass was 18/100 (18.00%).
+After the first positioning-geometry follow-up:
 
 - 100 reftests checked;
-- 18 passed;
-- 82 failed;
+- 21 passed;
+- 79 failed;
 - 0 render/infrastructure errors;
-- **18.00% WPT Positioning v1**.
+- **21.00% WPT Positioning v1**.
 
-The first implementation recognizes `position:absolute|fixed`, removes those boxes from normal
-flow, uses the nearest positioned ancestor or viewport as the initial containing block, preserves
-relative-position visual offsets without moving following flow, and supports px horizontal/vertical
-insets plus percentage horizontal insets. Sticky positioning, percentage vertical insets, complete
-CSS2 abspos overconstraint/auto sizing, inline containing blocks, stacking contexts, vertical
-writing modes and multicol remain open and are deliberately visible in this metric.
+The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
+uses the nearest positioned ancestor padding box or viewport as the containing block, preserves
+relative-position visual offsets without moving following flow, and supports px/percentage insets on
+all four sides when the corresponding axis is definite. It also supports bottom-only placement,
+opposing-inset auto width/height stretching and direct percentage-height resolution from definite
+block heights. Sticky positioning, inline containing blocks, static-position edge cases, complete
+CSS2 abspos overconstraint/auto-margin handling, stacking contexts, vertical writing modes and
+multicol remain open and are deliberately visible in this metric.
 
 This new metric does not replace WPT Static v1. The older 200-test manifest remains frozen so its
 43.00% -> 93.50% history stays directly comparable.

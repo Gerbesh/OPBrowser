@@ -156,12 +156,14 @@ does not turn a 30px/40px collapsed pair into 70px of flow height. The normal pa
 BoxDecoration records. The block path also tracks active float rectangles separately from normal
 flow. Flow-root creates a local float scope, expands to contained float bottoms and restores the
 outer scope; clear consults that active set before block placement. Floated tables continue through
-the table formatter instead of generic block layout. Initial positioned layout now tracks positioned
-ancestor geometry in the same Context: relative boxes keep their normal-flow slot and translate their
-retained output, absolute boxes leave flow and resolve against the nearest positioned ancestor, and
-fixed boxes resolve against the viewport. The initial path uses horizontal insets and px `top`;
-bottom-based abs/fixed placement waits for containing-block height propagation. Sticky positioning,
-stacking/z-index and full abspos constraint equations remain later. The inline formatter injects already-resolved
+the table formatter instead of generic block layout. Positioned layout tracks positioned ancestor
+geometry in the same Context: relative boxes keep their normal-flow slot and translate retained
+output, absolute boxes leave flow and resolve against the nearest positioned ancestor padding box,
+and fixed boxes resolve against the viewport width/height. All four insets accept px/percentage
+values when their axis is definite; bottom-only placement, opposing-inset auto stretching and direct
+percentage-height propagation from definite block heights are implemented. Sticky positioning,
+inline containing blocks, static-position edge cases, stacking/z-index and the remaining abspos
+constraint equations remain later. The inline formatter injects already-resolved
 generated before/after text (strings, attributes or counters) around real DOM children and emits the same BoxDecoration shape for
 padded/background/bordered host or pseudo text fragments, so block and inline boxes share one
 platform-neutral paint path. `visibility:hidden` is retained as layout metadata on text/image

@@ -7,6 +7,7 @@ use std::sync::Arc;
 pub type ImageResources = HashMap<NodeId, Arc<RasterImage>>;
 pub type GeneratedImageResources =
     HashMap<(NodeId, op_css::PseudoElement, usize), Arc<RasterImage>>;
+const DEFAULT_VIEWPORT_HEIGHT: i32 = 600;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageBox {
@@ -164,9 +165,28 @@ pub fn layout_document_with_computed_styles_and_metrics(
     computed_styles: &ComputedStyleMap,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
-    layout_document_with_resources_and_metrics(
+    layout_document_with_computed_styles_and_viewport_metrics(
         document,
         viewport_width,
+        DEFAULT_VIEWPORT_HEIGHT,
+        images,
+        computed_styles,
+        measurer,
+    )
+}
+
+pub fn layout_document_with_computed_styles_and_viewport_metrics(
+    document: &Document,
+    viewport_width: i32,
+    viewport_height: i32,
+    images: &ImageResources,
+    computed_styles: &ComputedStyleMap,
+    measurer: &mut dyn TextMeasurer,
+) -> LayoutTree {
+    layout_document_with_resources_and_viewport_metrics(
+        document,
+        viewport_width,
+        viewport_height,
         images,
         &GeneratedImageResources::new(),
         computed_styles,
@@ -182,9 +202,30 @@ pub fn layout_document_with_resources_and_metrics(
     computed_styles: &ComputedStyleMap,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
+    layout_document_with_resources_and_viewport_metrics(
+        document,
+        viewport_width,
+        DEFAULT_VIEWPORT_HEIGHT,
+        images,
+        generated_images,
+        computed_styles,
+        measurer,
+    )
+}
+
+pub fn layout_document_with_resources_and_viewport_metrics(
+    document: &Document,
+    viewport_width: i32,
+    viewport_height: i32,
+    images: &ImageResources,
+    generated_images: &GeneratedImageResources,
+    computed_styles: &ComputedStyleMap,
+    measurer: &mut dyn TextMeasurer,
+) -> LayoutTree {
     flow::layout(
         document,
         viewport_width,
+        viewport_height,
         images,
         generated_images,
         computed_styles,
@@ -317,6 +358,101 @@ mod tests {
             (10, 15, 40, 20)
         );
         assert_eq!((flow.x, flow.y, flow.width, flow.height), (32, 28, 50, 20));
+    }
+
+    #[test]
+    fn fixed_bottom_and_percentage_right_resolve_against_viewport() {
+        let document = op_html::parse_document(
+            "<style>
+               body { margin:0 }
+               #fixed { position:fixed; right:10%; bottom:10%; width:40px; height:20px; margin:0; background:blue }
+             </style>
+             <div id=fixed></div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let page = layout_document_with_computed_styles_and_viewport_metrics(
+            &document,
+            800,
+            600,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let fixed = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::BLUE.into())
+            .unwrap();
+        assert_eq!(
+            (fixed.x, fixed.y, fixed.width, fixed.height),
+            (680, 520, 40, 20)
+        );
+    }
+
+    #[test]
+    fn absolute_auto_size_stretches_between_all_four_insets() {
+        let document = op_html::parse_document(
+            "<style>
+               body { margin:0 }
+               #parent { position:relative; width:200px; height:100px; padding:10px; margin:0; background:red }
+               #absolute { position:absolute; left:25%; right:25%; top:10%; bottom:20%; margin:0; background:blue }
+             </style>
+             <div id=parent><div id=absolute></div></div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let page = layout_document_with_computed_styles_and_viewport_metrics(
+            &document,
+            800,
+            600,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let absolute = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::BLUE.into())
+            .unwrap();
+        assert_eq!(
+            (absolute.x, absolute.y, absolute.width, absolute.height),
+            (87, 40, 110, 84)
+        );
+    }
+
+    #[test]
+    fn percentage_height_uses_clamped_definite_positioned_parent_height() {
+        let document = op_html::parse_document(
+            "<style>
+               body { margin:0 }
+               #parent { position:absolute; width:100px; height:200px; max-height:100px; margin:0; background:red }
+               #child { width:50%; height:50%; margin:0; background:blue }
+             </style>
+             <div id=parent><div id=child></div></div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let page = layout_document_with_computed_styles_and_viewport_metrics(
+            &document,
+            800,
+            600,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+
+        let parent = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::RED.into())
+            .unwrap();
+        let child = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::BLUE.into())
+            .unwrap();
+        assert_eq!((parent.width, parent.height), (100, 100));
+        assert_eq!((child.width, child.height), (50, 50));
     }
 
     #[test]

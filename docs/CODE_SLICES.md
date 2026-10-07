@@ -391,15 +391,18 @@ computed position + inset edges
   -> normal display-list / native paint
 ```
 
-The first pass supports `position:static|relative|absolute|fixed`. Relative left/right and px
-top/bottom offsets move visual output while preserving the original flow contribution.
-Absolute/fixed blocks do not advance normal flow. Absolute positioning uses the nearest positioned
-ancestor's initial padding-box geometry; fixed positioning uses viewport coordinates. Horizontal
-percentage insets resolve against containing width; px `top` is applied. Bottom-based abs/fixed
-placement and vertical percentage insets still need containing-block heights. Sticky positioning,
-inline containing-block rules, full CSS2 auto/overconstraint equations and stacking contexts remain
-later work. A separate pinned WPT Positioning v1 subset intentionally includes those unsupported
-families and starts at 18/100 (18.00%), so the older 187/200 WPT Static score cannot hide them.
+The positioned path supports `position:static|relative|absolute|fixed`. Relative offsets move
+visual output while preserving the original flow contribution. Absolute/fixed blocks do not advance
+normal flow. Absolute positioning uses the nearest positioned ancestor's initial padding-box geometry;
+fixed positioning uses the real viewport width and height supplied by `op_engine`. Insets on all four
+sides accept px/percentage values when their containing-block axis is definite. Bottom-only placement
+is resolved after layout, while opposing left/right or top/bottom insets can stretch an auto-sized
+absolute/fixed block. Definite block heights, including min/max-clamped explicit heights, propagate as
+the percentage-height basis for direct descendants. Auto-height blocks are deliberately not made
+definite merely by a min-height clamp. Sticky positioning, inline containing-block rules, static
+position edge cases, the remaining CSS2 overconstraint/auto-margin equations and stacking contexts
+remain later work. WPT Positioning v1 moved from 18/100 (18.00%) to 21/100 (21.00%) without changing
+the manifest, while WPT Static remains 187/200 (93.50%).
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore

@@ -22,7 +22,9 @@ The project now has three reproducible external metrics rather than milestone gu
   result after the initial flex formatting/display-contents pass: **187/200, 93.50%**.
 - **WPT Positioning v1**: 100 pinned static reftests from CSS2 positioning/visual formatting and
   CSS Positioned Layout. Initial baseline after the first absolute/fixed/relative pass:
-  **18/100, 18.00%**. Unsupported sticky, multicol and vertical-writing cases remain in the sample.
+  **18/100, 18.00%**; current result after viewport-height, vertical-inset and definite-height
+  propagation work: **21/100, 21.00%**. Unsupported sticky, multicol, inline-containing-block and
+  vertical-writing cases remain in the sample.
 - **Test262 Parser v1**: a 2,000-path deterministic Test262 language sample. Module entries are
   skipped until module parsing is supported. Initial executable baseline: **364/1983, 18.36%**;
   current parser result: **523/1983, 26.37%**.

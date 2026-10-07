@@ -14,12 +14,14 @@ use unicode_segmentation::UnicodeSegmentation;
 pub(super) fn layout(
     document: &Document,
     viewport_width: i32,
+    viewport_height: i32,
     images: &ImageResources,
     generated_images: &GeneratedImageResources,
     computed_styles: &ComputedStyleMap,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
     let viewport_width = viewport_width.max(240);
+    let viewport_height = viewport_height.max(1);
     let mut stack = vec![document.root()];
     let mut root = document.root();
     while let Some(id) = stack.pop() {
@@ -38,10 +40,12 @@ pub(super) fn layout(
         measurer,
         inline_boxes: InlineBoxes::default(),
         viewport_width,
+        viewport_height,
         width: (viewport_width - 64).max(160),
         y: 28,
         pending_margin: None,
         positioning_stack: Vec::new(),
+        flow_height_stack: vec![Some(viewport_height)],
         block_epoch: 0,
         floats: Vec::new(),
         decorations: Vec::new(),
@@ -86,10 +90,12 @@ struct Context<'a, 'm> {
     measurer: &'m mut dyn TextMeasurer,
     inline_boxes: InlineBoxes,
     viewport_width: i32,
+    viewport_height: i32,
     width: i32,
     y: i32,
     pending_margin: Option<i32>,
     positioning_stack: Vec<PositioningContext>,
+    flow_height_stack: Vec<Option<i32>>,
     block_epoch: usize,
     floats: Vec<FloatBox>,
     decorations: Vec<BoxDecoration>,
@@ -142,6 +148,7 @@ struct PositioningContext {
     x: i32,
     y: i32,
     width: i32,
+    height: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -168,6 +175,7 @@ impl FloatBox {
 #[derive(Clone, Copy)]
 struct UsedBlockHorizontal {
     margin_left: i32,
+    margin_right: i32,
     padding: Edges,
     border: UsedBorderEdges,
     content_width: i32,
@@ -420,6 +428,7 @@ impl<'a> Context<'a, '_> {
             x: 0,
             y: 0,
             width: self.viewport_width.max(1),
+            height: Some(self.viewport_height),
         }
     }
 
@@ -442,6 +451,7 @@ impl<'a> Context<'a, '_> {
         let saved_y = self.y;
         let saved_margin = self.pending_margin.take();
         let saved_floats = std::mem::take(&mut self.floats);
+        let output_start = self.output_start();
 
         let positioning = if style.position == Position::Fixed {
             self.viewport_positioning_context()
@@ -456,12 +466,21 @@ impl<'a> Context<'a, '_> {
             .inset
             .right
             .map(|value| resolve_length(value, positioning.width));
-        let positioned_width = positioning
-            .width
-            .saturating_sub(left.unwrap_or(0))
-            .saturating_sub(right.unwrap_or(0))
-            .max(1);
-        let used = resolve_block_horizontal(style, positioned_width);
+        if style.width.is_none()
+            && let (Some(left), Some(right)) = (left, right)
+        {
+            stretch_auto_positioned_width(&mut style, positioning.width, left, right);
+        }
+        let layout_width_basis = if style.width.is_some() {
+            positioning.width
+        } else {
+            positioning
+                .width
+                .saturating_sub(left.unwrap_or(0))
+                .saturating_sub(right.unwrap_or(0))
+                .max(1)
+        };
+        let used = resolve_block_horizontal(style, layout_width_basis);
         let containing_x = if let Some(left) = left {
             positioning.x.saturating_add(left)
         } else if let Some(right) = right {
@@ -469,18 +488,32 @@ impl<'a> Context<'a, '_> {
                 .x
                 .saturating_add(positioning.width)
                 .saturating_sub(right)
-                .saturating_sub(used.border_width)
                 .saturating_sub(used.margin_left)
+                .saturating_sub(used.border_width)
+                .saturating_sub(used.margin_right)
         } else {
             static_x
         };
 
-        let static_y = saved_y;
-        self.y = style
+        let top = style
             .inset
             .top
-            .and_then(resolve_vertical_position_inset)
-            .map_or(static_y, |top| positioning.y.saturating_add(top));
+            .and_then(|value| resolve_position_inset(value, positioning.height));
+        let bottom = style
+            .inset
+            .bottom
+            .and_then(|value| resolve_position_inset(value, positioning.height));
+        if style.height.is_none()
+            && let (Some(height), Some(top), Some(bottom)) = (positioning.height, top, bottom)
+        {
+            stretch_auto_positioned_height(&mut style, positioning.width, height, top, bottom);
+        }
+
+        let static_y = saved_y;
+        let provisional_y = top
+            .map(|top| positioning.y.saturating_add(top))
+            .unwrap_or(static_y);
+        self.y = provisional_y;
         self.pending_margin = None;
         style.float_side = FloatSide::None;
         style.clear = Clear::None;
@@ -491,7 +524,7 @@ impl<'a> Context<'a, '_> {
             .map(|element| element.tag_name.as_str())
             .unwrap_or_default();
         if matches!(display, Display::Table | Display::InlineTable) {
-            self.table(id, style, containing_x, positioned_width);
+            self.table(id, style, containing_x, layout_width_basis);
         } else if tag == "img" {
             let element = self.document.element(id);
             let image = self.images.get(&id).cloned();
@@ -505,7 +538,7 @@ impl<'a> Context<'a, '_> {
                     href,
                     style,
                     image.as_ref(),
-                    (containing_x, positioned_width),
+                    (containing_x, layout_width_basis),
                 );
             } else {
                 self.block(
@@ -513,7 +546,7 @@ impl<'a> Context<'a, '_> {
                     href,
                     style,
                     containing_x,
-                    positioned_width,
+                    layout_width_basis,
                 );
             }
         } else {
@@ -522,10 +555,22 @@ impl<'a> Context<'a, '_> {
                 href,
                 style,
                 containing_x,
-                positioned_width,
+                layout_width_basis,
             );
         }
         self.flush_pending_margin();
+
+        if top.is_none()
+            && let (Some(bottom), Some(height)) = (bottom, positioning.height)
+        {
+            let laid_out_height = self.y.saturating_sub(provisional_y);
+            let desired_y = positioning
+                .y
+                .saturating_add(height)
+                .saturating_sub(bottom)
+                .saturating_sub(laid_out_height);
+            self.translate_outputs_since(output_start, 0, desired_y.saturating_sub(provisional_y));
+        }
 
         self.y = saved_y;
         self.pending_margin = saved_margin;
@@ -540,6 +585,7 @@ impl<'a> Context<'a, '_> {
         containing_x: i32,
         containing_width: i32,
     ) {
+        let containing_height = self.flow_height_stack.last().copied().flatten();
         self.block_epoch = self.block_epoch.saturating_add(1);
 
         if style.clear != Clear::None {
@@ -550,7 +596,9 @@ impl<'a> Context<'a, '_> {
         let display = self.block_content_display(content);
         if let BlockContent::Element(id) = content
             && display == Display::Block
-            && let Some(margin) = self.self_collapsing_block_margin(id, style, containing_width)
+            && !matches!(style.position, Position::Absolute | Position::Fixed)
+            && let Some(margin) =
+                self.self_collapsing_block_margin(id, style, containing_width, containing_height)
         {
             self.merge_pending_margin(margin);
             return;
@@ -573,6 +621,13 @@ impl<'a> Context<'a, '_> {
         let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
         let padding_top = used.padding.top;
         let padding_bottom = used.padding.bottom;
+        let definite_content_height = resolve_definite_content_height(
+            style,
+            containing_height,
+            padding_top,
+            padding_bottom,
+            used.border,
+        );
 
         self.apply_collapsed_margin(margin_top);
         let border_x = containing_x.saturating_add(used.margin_left);
@@ -631,8 +686,14 @@ impl<'a> Context<'a, '_> {
                     .saturating_sub(used.border.left.width)
                     .saturating_sub(used.border.right.width)
                     .max(1),
+                height: definite_content_height.map(|height| {
+                    height
+                        .saturating_add(padding_top)
+                        .saturating_add(padding_bottom)
+                }),
             });
         }
+        self.flow_height_stack.push(definite_content_height);
 
         if let BlockContent::Element(id) = content
             && matches!(display, Display::Flex | Display::InlineFlex)
@@ -693,6 +754,7 @@ impl<'a> Context<'a, '_> {
             }
             self.emit(&mut items, style, content_x, content_width);
         }
+        self.flow_height_stack.pop();
         // Parent/child margin collapse is intentionally deferred; consume the final
         // child margin before this block's padding/border boundary.
         self.flush_pending_margin();
@@ -714,6 +776,7 @@ impl<'a> Context<'a, '_> {
             padding_top,
             padding_bottom,
             used.border,
+            containing_height,
         );
         // Definite height/min/max controls the box even when its text overflows.
         self.y = content_top.saturating_add(target_content_height);
@@ -735,7 +798,7 @@ impl<'a> Context<'a, '_> {
         self.pending_margin = Some(margin_bottom);
 
         if style.position == Position::Relative {
-            let (dx, dy) = relative_position_offset(style, containing_width);
+            let (dx, dy) = relative_position_offset(style, containing_width, containing_height);
             self.translate_outputs_since(output_start, dx, dy);
         }
     }
@@ -812,10 +875,12 @@ impl<'a> Context<'a, '_> {
             measurer: &mut *self.measurer,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
+            viewport_height: self.viewport_height,
             width: available,
             y: 0,
             pending_margin: None,
             positioning_stack: Vec::new(),
+            flow_height_stack: vec![None],
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -891,10 +956,12 @@ impl<'a> Context<'a, '_> {
             measurer: &mut *self.measurer,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
+            viewport_height: self.viewport_height,
             width: available,
             y: 0,
             pending_margin: None,
             positioning_stack: Vec::new(),
+            flow_height_stack: vec![None],
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -1136,10 +1203,12 @@ impl<'a> Context<'a, '_> {
             measurer: &mut *self.measurer,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
+            viewport_height: self.viewport_height,
             width: containing_width.max(1),
             y: 0,
             pending_margin: None,
             positioning_stack: Vec::new(),
+            flow_height_stack: vec![None],
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -2439,6 +2508,7 @@ impl<'a> Context<'a, '_> {
             padding.top,
             padding.bottom,
             border,
+            None,
         );
         let vertical_extras = padding
             .top
@@ -2623,8 +2693,9 @@ impl<'a> Context<'a, '_> {
         id: NodeId,
         style: Style,
         containing_width: i32,
+        containing_height: Option<i32>,
     ) -> Option<i32> {
-        self.self_collapsing_block_margin_inner(id, style, containing_width, 0)
+        self.self_collapsing_block_margin_inner(id, style, containing_width, containing_height, 0)
     }
 
     fn self_collapsing_block_margin_inner(
@@ -2632,6 +2703,7 @@ impl<'a> Context<'a, '_> {
         id: NodeId,
         style: Style,
         containing_width: i32,
+        containing_height: Option<i32>,
         depth: usize,
     ) -> Option<i32> {
         if depth >= 256 {
@@ -2649,6 +2721,7 @@ impl<'a> Context<'a, '_> {
                 used.padding.top,
                 used.padding.bottom,
                 used.border,
+                containing_height,
             ) != 0
         {
             return None;
@@ -2718,6 +2791,7 @@ impl<'a> Context<'a, '_> {
                             *child,
                             child_style,
                             containing_width,
+                            None,
                             depth + 1,
                         )?,
                         Display::Inline => {
@@ -4030,9 +4104,9 @@ fn resolve_block_horizontal(style: Style, containing_width: i32) -> UsedBlockHor
         )
     };
 
-    let _ = margin_right;
     UsedBlockHorizontal {
         margin_left,
+        margin_right,
         padding,
         border,
         content_width,
@@ -4074,14 +4148,18 @@ fn resolve_length(value: LengthPercentage, basis: i32) -> i32 {
     }
 }
 
-fn resolve_vertical_position_inset(value: LengthPercentage) -> Option<i32> {
+fn resolve_position_inset(value: LengthPercentage, basis: Option<i32>) -> Option<i32> {
     match value {
         LengthPercentage::Px(value) => Some(bounded_round(value)),
-        LengthPercentage::Percent(_) => None,
+        LengthPercentage::Percent(value) => basis.map(|basis| bounded_round(value * basis as f32)),
     }
 }
 
-fn relative_position_offset(style: Style, containing_width: i32) -> (i32, i32) {
+fn relative_position_offset(
+    style: Style,
+    containing_width: i32,
+    containing_height: Option<i32>,
+) -> (i32, i32) {
     let dx = if let Some(left) = style.inset.left {
         resolve_length(left, containing_width)
     } else if let Some(right) = style.inset.right {
@@ -4089,9 +4167,17 @@ fn relative_position_offset(style: Style, containing_width: i32) -> (i32, i32) {
     } else {
         0
     };
-    let dy = if let Some(top) = style.inset.top.and_then(resolve_vertical_position_inset) {
+    let dy = if let Some(top) = style
+        .inset
+        .top
+        .and_then(|value| resolve_position_inset(value, containing_height))
+    {
         top
-    } else if let Some(bottom) = style.inset.bottom.and_then(resolve_vertical_position_inset) {
+    } else if let Some(bottom) = style
+        .inset
+        .bottom
+        .and_then(|value| resolve_position_inset(value, containing_height))
+    {
         -bottom
     } else {
         0
@@ -4120,6 +4206,75 @@ fn size_to_content_width(
         BoxSizing::ContentBox => resolved,
         BoxSizing::BorderBox => resolved.saturating_sub(horizontal_extras).max(0),
     }
+}
+
+fn stretch_auto_positioned_width(style: &mut Style, basis: i32, left: i32, right: i32) {
+    if style.width.is_some() {
+        return;
+    }
+    let margin_left = resolve_margin(style.margin.left, basis).unwrap_or(0);
+    let margin_right = resolve_margin(style.margin.right, basis).unwrap_or(0);
+    if matches!(style.margin.left, MarginValue::Auto) {
+        style.margin.left = MarginValue::Length(LengthPercentage::ZERO);
+    }
+    if matches!(style.margin.right, MarginValue::Auto) {
+        style.margin.right = MarginValue::Length(LengthPercentage::ZERO);
+    }
+    let padding = Edges {
+        top: resolve_length(style.padding.top, basis).max(0),
+        right: resolve_length(style.padding.right, basis).max(0),
+        bottom: resolve_length(style.padding.bottom, basis).max(0),
+        left: resolve_length(style.padding.left, basis).max(0),
+    };
+    let border = resolve_border_edges(style.border);
+    let horizontal_extras = padding
+        .left
+        .saturating_add(padding.right)
+        .saturating_add(border.left.width)
+        .saturating_add(border.right.width);
+    let border_width = basis
+        .saturating_sub(left)
+        .saturating_sub(right)
+        .saturating_sub(margin_left)
+        .saturating_sub(margin_right)
+        .max(0);
+    let property_width = match style.box_sizing {
+        BoxSizing::ContentBox => border_width.saturating_sub(horizontal_extras).max(0),
+        BoxSizing::BorderBox => border_width,
+    };
+    style.width = Some(LengthPercentage::Px(property_width as f32));
+}
+
+fn stretch_auto_positioned_height(
+    style: &mut Style,
+    width_basis: i32,
+    height_basis: i32,
+    top: i32,
+    bottom: i32,
+) {
+    if style.height.is_some() {
+        return;
+    }
+    let margin_top = resolve_vertical_margin(style.margin.top, width_basis);
+    let margin_bottom = resolve_vertical_margin(style.margin.bottom, width_basis);
+    let padding_top = resolve_length(style.padding.top, width_basis).max(0);
+    let padding_bottom = resolve_length(style.padding.bottom, width_basis).max(0);
+    let border = resolve_border_edges(style.border);
+    let vertical_extras = padding_top
+        .saturating_add(padding_bottom)
+        .saturating_add(border.top.width)
+        .saturating_add(border.bottom.width);
+    let border_height = height_basis
+        .saturating_sub(top)
+        .saturating_sub(bottom)
+        .saturating_sub(margin_top)
+        .saturating_sub(margin_bottom)
+        .max(0);
+    let property_height = match style.box_sizing {
+        BoxSizing::ContentBox => border_height.saturating_sub(vertical_extras).max(0),
+        BoxSizing::BorderBox => border_height,
+    };
+    style.height = Some(LengthPercentage::Px(property_height as f32));
 }
 
 fn empty_used_border_side() -> UsedBorderSide {
@@ -4171,20 +4326,14 @@ fn resolve_block_content_height(
     padding_top: i32,
     padding_bottom: i32,
     border: UsedBorderEdges,
+    containing_height: Option<i32>,
 ) -> i32 {
     let vertical_extras = padding_top
         .saturating_add(padding_bottom)
         .saturating_add(border.top.width)
         .saturating_add(border.bottom.width);
-    let to_content = |value: LengthPercentage| -> Option<i32> {
-        let LengthPercentage::Px(value) = value else {
-            return None;
-        };
-        let resolved = bounded_round(value).max(0);
-        Some(match style.box_sizing {
-            BoxSizing::ContentBox => resolved,
-            BoxSizing::BorderBox => resolved.saturating_sub(vertical_extras).max(0),
-        })
+    let to_content = |value: LengthPercentage| {
+        size_to_content_height(value, style.box_sizing, containing_height, vertical_extras)
     };
 
     let mut target = style.height.and_then(to_content).unwrap_or(natural_height);
@@ -4195,6 +4344,56 @@ fn resolve_block_content_height(
         target = target.min(max_height);
     }
     target.max(0)
+}
+
+fn resolve_definite_content_height(
+    style: Style,
+    containing_height: Option<i32>,
+    padding_top: i32,
+    padding_bottom: i32,
+    border: UsedBorderEdges,
+) -> Option<i32> {
+    let vertical_extras = padding_top
+        .saturating_add(padding_bottom)
+        .saturating_add(border.top.width)
+        .saturating_add(border.bottom.width);
+    let mut target = size_to_content_height(
+        style.height?,
+        style.box_sizing,
+        containing_height,
+        vertical_extras,
+    )?;
+    if let Some(min_height) = size_to_content_height(
+        style.min_height,
+        style.box_sizing,
+        containing_height,
+        vertical_extras,
+    ) {
+        target = target.max(min_height);
+    }
+    if let Some(max_height) = style.max_height.and_then(|value| {
+        size_to_content_height(value, style.box_sizing, containing_height, vertical_extras)
+    }) {
+        target = target.min(max_height);
+    }
+    Some(target.max(0))
+}
+
+fn size_to_content_height(
+    value: LengthPercentage,
+    box_sizing: BoxSizing,
+    basis: Option<i32>,
+    vertical_extras: i32,
+) -> Option<i32> {
+    let resolved = match value {
+        LengthPercentage::Px(value) => bounded_round(value),
+        LengthPercentage::Percent(value) => bounded_round(value * basis? as f32),
+    }
+    .max(0);
+    Some(match box_sizing {
+        BoxSizing::ContentBox => resolved,
+        BoxSizing::BorderBox => resolved.saturating_sub(vertical_extras).max(0),
+    })
 }
 
 fn computed_style(style: ComputedStyle) -> Style {

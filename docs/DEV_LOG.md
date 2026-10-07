@@ -2054,3 +2054,36 @@ This file is append-only project history.
   images and border radius. The old 13 WPT Static failures remain visible but no longer monopolize
   compatibility work.
 
+## 2026-10-07 - Positioned geometry / definite-height pass
+
+- Made the main engine-to-layout path viewport-height-aware while preserving compatibility wrappers
+  for existing width-only layout callers. Fixed positioning now resolves against the actual viewport
+  width and height instead of a width-only synthetic context.
+- Extended positioned containing blocks with definite height and added a direct block-height basis
+  stack for percentage-height resolution. Positioned ancestors expose their padding-box geometry;
+  explicit heights are min/max-clamped before descendants use them as a percentage basis, while
+  auto-height boxes are not incorrectly made definite by min-height alone.
+- Completed the next coherent absolute/fixed geometry slice: vertical percentage top/bottom insets,
+  bottom-only placement, opposing left/right auto-width stretching, opposing top/bottom auto-height
+  stretching, right-side margin accounting, and percentage relative vertical offsets when the direct
+  containing block height is definite.
+- Fixed computed-style inset parsing so percentage values are accepted for `top` and `bottom`;
+  previously horizontal percentage insets survived cascade while vertical ones were discarded before
+  layout could use them.
+- Prevented the self-collapsing zero-height fast path from swallowing absolute/fixed blocks and taught
+  that analysis to use a definite containing-height basis when one exists.
+- Added regressions for fixed bottom/percentage-right placement against an 800x600 viewport,
+  four-inset absolute auto stretching inside a definite positioned ancestor, and percentage-height
+  descendants of a max-height-clamped positioned parent.
+- The unchanged WPT Positioning v1 manifest improved from **18/100 (18.00%)** to
+  **21/100 (21.00%)**, with 79 failures and zero render errors. WPT Static v1 remains
+  **187/200 (93.50%)**, and Test262 Parser v1 remains **523/1983 (26.37%)**.
+- Final verification passed rustfmt, warning-free workspace Clippy, the complete workspace test
+  suite, native Win32 startup smoke, the pinned WPT/Test262 compatibility refresh, and the optimized
+  release build.
+- The rebuilt local browser at `target/release/op_browser.exe` is **1,017,856 bytes** with
+  SHA-256 `5B24F2B210E89CFFE32D859B05993360FA62027631273B285946C7AFBCA2B24D`.
+- Remaining positioning priorities are inline containing blocks, static-position and negative-margin
+  cases, the rest of the CSS2 absolute-position constraint/auto-margin equations, then sticky and
+  overflow.
+

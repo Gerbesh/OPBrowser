@@ -4,8 +4,8 @@ use op_css::{
 };
 use op_html::parse_document;
 use op_layout::{
-    ImageResources, layout_document_with_computed_styles_and_metrics,
-    layout_document_with_resources_and_metrics,
+    ImageResources, layout_document_with_computed_styles_and_viewport_metrics,
+    layout_document_with_resources_and_viewport_metrics,
 };
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link};
 use op_paint::{DisplayList, build_display_list};
@@ -107,9 +107,10 @@ struct PreparedDocument {
 
 impl PreparedDocument {
     fn render(&self, width: i32, height: i32) -> RenderedPage {
-        let layout = layout_document_with_resources_and_metrics(
+        let layout = layout_document_with_resources_and_viewport_metrics(
             &self.document,
             width,
+            height,
             &self.images.elements,
             &self.images.generated,
             &self.computed_styles,
@@ -193,9 +194,10 @@ impl Engine {
         let document = parse_document(html);
         let style_collection = collect_author_styles(&document);
         let computed_styles = compute_styles(&document, &style_collection.styles);
-        let layout = layout_document_with_computed_styles_and_metrics(
+        let layout = layout_document_with_computed_styles_and_viewport_metrics(
             &document,
             viewport_width,
+            viewport_height,
             &ImageResources::new(),
             &computed_styles,
             &mut text::Measurer::new(),

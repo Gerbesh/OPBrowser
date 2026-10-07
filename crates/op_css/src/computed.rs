@@ -1686,7 +1686,7 @@ fn apply_author_declarations(
         );
     }
     if let Some((_, value)) = winning_value(declarations, "top", |tokens| {
-        parse_inset(tokens, style.font_size_px, false)
+        parse_inset(tokens, style.font_size_px, true)
     }) {
         style.inset.top =
             resolve_non_inherited(value, parent_style.map(|parent| parent.inset.top), None);
@@ -1698,7 +1698,7 @@ fn apply_author_declarations(
             resolve_non_inherited(value, parent_style.map(|parent| parent.inset.right), None);
     }
     if let Some((_, value)) = winning_value(declarations, "bottom", |tokens| {
-        parse_inset(tokens, style.font_size_px, false)
+        parse_inset(tokens, style.font_size_px, true)
     }) {
         style.inset.bottom =
             resolve_non_inherited(value, parent_style.map(|parent| parent.inset.bottom), None);
@@ -4887,7 +4887,7 @@ mod tests {
     fn computes_absolute_and_fixed_position_keywords() {
         let document = parse_document(
             "<div id='absolute' style='position:absolute; top:12px; right:10%'></div>
-             <div id='fixed' style='position:fixed; left:8px; bottom:3px'></div>",
+             <div id='fixed' style='position:fixed; left:8px; bottom:10%'></div>",
         );
         let author = collect_author_styles(&document);
         let computed = compute_styles(&document, &author.styles);
@@ -4902,7 +4902,7 @@ mod tests {
         let fixed = computed.style_for(find_by_id(&document, "fixed")).unwrap();
         assert_eq!(fixed.position, Position::Fixed);
         assert_eq!(fixed.inset.left, Some(LengthPercentage::Px(8.0)));
-        assert_eq!(fixed.inset.bottom, Some(LengthPercentage::Px(3.0)));
+        assert_eq!(fixed.inset.bottom, Some(LengthPercentage::Percent(0.10)));
     }
 
     #[test]

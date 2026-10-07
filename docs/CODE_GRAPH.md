@@ -458,14 +458,17 @@ classDiagram
     }
     class FlowContext {
         viewport_width
+        viewport_height
         current y / floats
         positioning_stack PositioningContext[]
+        flow_height_stack Option<int>[]
         output vectors
     }
     class PositioningContext {
         x
         y
         width
+        definite height
     }
     class BoxDecoration {
         bounds

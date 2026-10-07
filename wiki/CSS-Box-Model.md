@@ -97,20 +97,21 @@ remain future work.
 
 Relative positioning preserves the box's normal-flow slot and translates only the output emitted
 for that subtree, including decorations, text and images. Horizontal percentage offsets resolve
-against the containing width; vertical percentage offsets are not implemented yet.
+against the containing width; vertical percentage offsets resolve when the direct containing block
+has a definite height.
 
 Absolute and fixed block-level boxes are removed from normal flow. Absolute boxes resolve against
-the nearest positioned ancestor tracked by the layout context, while fixed boxes resolve against
-the viewport. The first slice supports direct left/px-top placement, right-side horizontal
-placement, normal block width resolution and the existing table/image/block content paths without
-letting the positioned box advance following flow. Bottom-based placement waits for containing
-block height propagation rather than inventing a height.
+the nearest positioned ancestor's padding box, while fixed boxes resolve against the real viewport
+width and height. Insets on all four sides accept px/percentage values when the corresponding axis
+is definite. Bottom-only placement is supported, and opposing left/right or top/bottom insets can
+stretch an auto-sized positioned block. Direct descendants can also resolve percentage heights from
+a definite containing-block height, including min/max-clamped explicit heights.
 
-This is intentionally only the first positioned-layout slice. Sticky positioning, percentage
-vertical insets, inline containing blocks, complete CSS2 absolute-positioned auto/overconstraint
-rules, stacking/z-index and scroll-container interactions remain follow-up work. WPT Positioning v1
-tracks 100 pinned cases across both implemented and deliberately unsupported families; the initial
-baseline is 18/100 (18.00%).
+Sticky positioning, inline containing blocks, static-position edge cases, the remaining CSS2
+absolute-positioned overconstraint/auto-margin rules, stacking/z-index and scroll-container
+interactions remain follow-up work. WPT Positioning v1 tracks 100 pinned cases across both
+implemented and deliberately unsupported families; it moved from 18/100 (18.00%) to
+21/100 (21.00%) on the unchanged manifest.
 
 ## Initial flex formatting context
 
