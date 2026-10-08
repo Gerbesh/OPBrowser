@@ -1,6 +1,6 @@
 # Current Project Status
 
-Last reviewed: **8 October 2026**. This is a development snapshot, not a
+Last reviewed: **8 October 2026**. The [published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki) tracks the main repository's `wiki/` sources. This is a development snapshot, not a
 claim that OPBrowser is ready for everyday browsing.
 
 ## Working today

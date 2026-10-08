@@ -2660,3 +2660,24 @@ This file is append-only project history.
   remote is not initialized/available. Local Markdown pages are ready
   to publish once that repository is created.
 
+## 2026-10-08 - Publish OPBrowser Wiki to its own Git repository
+
+- User enabled the GitHub Wiki feature and initialized the first Home page.
+  The newly available OPBrowser.wiki.git remote cloned successfully with
+  the initial Home-only commit (501525f).
+- Added a version-controlled _Sidebar.md to the local Wiki source, grouping
+  project overview/status, architecture, implementation, and testing
+  documentation. The published Wiki has 22 ordinary pages plus the sidebar.
+- Added tools/publish_wiki.py, a bounded source-to-Wiki synchronizer that
+  rewrites relative Markdown page links to GitHub Wiki URLs and repository
+  docs links to the main branch, without deleting unrelated Wiki pages.
+  The tool requires a checkout of the separate Wiki Git repository and
+  supports --write/--check; it never performs Git commits automatically.
+- Synced 23 Markdown files into the Wiki checkout and pushed Wiki commit
+  40b3655 to master. Verified the remote HEAD and clean Wiki checkout.
+- Updated the main-repo Home, workflow documentation, README and project plan
+  to reflect that the Wiki is now published, rather than pending.
+- Added publisher unit tests for page links, docs links, unchanged external
+  links, missing references, and complete source rendering. The main repo
+  remains canonical; Wiki updates must be committed/pushed independently.
+

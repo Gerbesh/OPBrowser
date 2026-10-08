@@ -259,9 +259,12 @@ python -m unittest discover -s tools/tests -p "test_*.py"
 - Engineering narratives in `docs/CODE_GRAPH.md` and
   `docs/CODE_SLICES.md` remain manually reviewed; do not replace them
   blindly with the generated indexes.
-- `wiki/` is versioned in the main repo. Publishing these pages as
-  GitHub Wiki requires separately initializing `OPBrowser.wiki.git`;
-  that remote was not available at the 8 October review.
+- `wiki/` is versioned in the main repo. The separately initialized
+  GitHub Wiki is at `https://github.com/Gerbesh/OPBrowser/wiki`.
+  To republish pages, clone the `.wiki.git` repository separately and run
+  `python tools/publish_wiki.py --target WIKI_CHECKOUT --write`,
+  then commit/push the Wiki repository. It rewrites local Markdown
+  links and preserves unrelated pages in that separate Git repository.
 
 Known WPT divergence policy: [KNOWN_TEST_DIVERGENCES.md](KNOWN_TEST_DIVERGENCES.md).
 The two Rec.2020 references are non-blocking **known failures**, not

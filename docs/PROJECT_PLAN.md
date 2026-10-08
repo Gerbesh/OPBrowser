@@ -37,11 +37,11 @@ Primary conformance targets:
   symbols in `tools/code_slices.json`, generating
   `docs/GENERATED_CODE_SLICES.md`. Both reports and Wiki links are
   checked in normal Windows CI by `python tools/code_intelligence.py --check`.
-- BLOCKED external GitHub Wiki publication: repository-local source pages
-  exist under `wiki/`, but the distinct `OPBrowser.wiki.git` repository
-  has not been initialized. The main repository already exposes the pages.
-  GitHub Wiki publication requires enabling and creating its first page,
-  then syncing the tracked local pages.
+- DONE GitHub Wiki enabled, initialized and published to the distinct
+  `Gerbesh/OPBrowser.wiki.git` repository. The main repository's `wiki/`
+  source remains canonical; `tools/publish_wiki.py` rewrites links for
+  live Wiki pages, including a navigable `_Sidebar.md` index.
+  Git histories are independent and must be pushed separately.
 - NEXT keep README, Wiki status, generated reports, manual dependency graph,
   Code Slices and known-divergence log synchronized with future changes.
 

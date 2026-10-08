@@ -7,7 +7,7 @@
 
 Public repository: https://github.com/Gerbesh/OPBrowser
 
-**Documentation:** [Wiki home](wiki/Home.md) ·
+**Documentation:** [Published Wiki](https://github.com/Gerbesh/OPBrowser/wiki) ·
 [Current status](wiki/Current-Status.md) ·
 [Project plan](docs/PROJECT_PLAN.md) ·
 [Code Graph](docs/GENERATED_CODE_GRAPH.md) ·
@@ -24,9 +24,10 @@ known reference divergences against current CSS Color 4 gamma 2.4.
 `python tools/code_intelligence.py --write` regenerates the source-backed crate
 graph and curated code slices; `python tools/code_intelligence.py --check`
 verifies their freshness and Wiki internal links in CI. The `wiki/`
-directory is the maintained local source; the separate GitHub Wiki repository
-has not yet been initialized.
-
+directory remains the canonical source for the
+[published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki).
+Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
+synchronize after documentation updates.
 
 Status: early engine development. OPBrowser opens external HTTP/HTTPS HTML pages,
 local files and HTML data URLs from a native address bar or command-line argument.

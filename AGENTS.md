@@ -44,6 +44,7 @@ These rules are mandatory for every engineering update.
 - tools/code_intelligence.py --write regenerates generated crate graph and
   curated verified slices. Run --check before commits and in CI; update
   tools/code_slices.json when crossing new code boundaries.
-- wiki/ is the repository-local source for project wiki content.
-  The separate GitHub Wiki repository must be initialized/published independently.
+- wiki/ is the repository-local source for the published GitHub Wiki.
+  The separate OPBrowser.wiki.git repository has independent Git history:
+  use tools/publish_wiki.py to sync pages and push that repository separately.
 - docs/DEV_LOG.md is append-only project history, except typo corrections.

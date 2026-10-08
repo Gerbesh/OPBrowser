@@ -29,7 +29,10 @@ and original ECMAScript engine.
 
 The canonical implementation plan is
 [docs/PROJECT_PLAN.md](https://github.com/Gerbesh/OPBrowser/blob/main/docs/PROJECT_PLAN.md).
-This `wiki/` directory is the local version-controlled source of Wiki pages.
-It is **not yet published** to the separate GitHub Wiki repository. Read
-these pages through the main repository until Wiki initialization and
-publication are completed.
+This `wiki/` directory is the version-controlled source of the
+[published OPBrowser GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki).
+Run `python tools/publish_wiki.py --target target/opbrowser-wiki-publish --write`
+against a checkout of the separate Wiki Git repository, then commit and
+push that repository. Source links are rewritten for GitHub Wiki during
+publication; editing a page on GitHub directly can cause it to drift
+from these tracked sources.
