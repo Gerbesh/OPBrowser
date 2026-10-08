@@ -343,3 +343,47 @@ iteration/mutation, CORS, POST, credentials, abort, streaming bodies,
 response.json(), and full RequestInit do not exist yet. WinHTTP follows
 redirects before the final-origin check, rather than enforcing origin
 at each intermediate hop.
+
+## M4.14: Request, mutable Headers and origin-safe redirect handling
+
+The browser-global Headers constructor supports initializers from a
+record, pairs of arrays, or an existing Headers. It exposes get, has,
+set, append and delete with case-insensitive validated header names
+and tight memory/field limits. The self-hosted Request class accepts
+a URL or Request and a guarded subset of RequestInit:
+
+- method: GET (case-insensitive lowercase get accepted)
+- mode: same-origin only
+- credentials: omit only
+- redirect: follow or error
+- headers: a Headers instance, record, or pair array. Outbound headers
+  are limited to Accept, Accept-Language, If-None-Match, If-Modified-Since
+  and X-* under strict size/ASCII checks. Cookies/Authorization are
+  not supported.
+
+~~~javascript
+var request = new Request("message.txt", {
+  method: "GET",
+  headers: new Headers({ "X-Client": "OPBrowser" }),
+  redirect: "error"
+});
+fetch(request).then(function(response) {
+  return response.text();
+}).then(function(text) {
+  document.getElementById("output").textContent = text;
+});
+~~~
+
+Unlike the earlier transport, text/fetch GET requests no longer allow
+WinHTTP to follow redirects automatically. Every Location is resolved
+and checked against the original origin *before* the next request
+(maximum five hops). With redirect:error any HTTP redirect rejects.
+Other document/image/script/stylesheet loaders keep their existing
+WinHTTP redirect handling. Legacy opFetchText callbacks remain
+compatible and also benefit from the safer text path.
+
+This is not full Fetch or Headers conformance. Only bounded same-origin
+GET text responses are supported. credentials defaults to omit
+instead of the web standard's same-origin pending cookie isolation.
+There is no general Header iteration, Headers guards, CORS, POST,
+request body, streams, AbortSignal, HTTP cache, or response.json().

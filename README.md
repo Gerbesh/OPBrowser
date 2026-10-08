@@ -55,8 +55,11 @@ checkpoints. M4.11 adds bounded opFetchText(url, callback) for filtered
 post-presentation text-network work. M4.12 introduces self-hosted Promise
 reactions and a GET-only fetch()/Response.text() subset. M4.13 carries
 real HTTP statuses, reason phrases, redirect URL, and filtered Headers
-into Response; HTTP 404/500 fulfill with ok=false. Complete Fetch/CORS,
-RequestInit, streaming, and ECMAScript Promise conformance remain pending.
+into Response; HTTP 404/500 fulfill with ok=false. M4.14 adds a bounded
+Headers constructor, Request, safe GET RequestInit headers and manual
+per-hop same-origin redirect checks, including redirect:error.
+Complete Fetch/CORS, credentials, streams, caching, abort and ECMAScript
+Promise conformance remain pending.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 

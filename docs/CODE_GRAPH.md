@@ -16,6 +16,28 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.14: Request/Headers → vetted GET → pre-connect redirect policy
+
+The browser-context VM now installs a native Headers constructor with
+owned HashMap-backed, budgeted get/has/set/append/delete and initializer
+handling. A self-hosted Request wraps URL, GET method, Headers, same-origin
+mode, credentials:omit and follow/error redirect policy. fetch(Request,
+init) feeds these detached request options into opFetchText and
+JsRuntime::take_text_requests, which preserves page generation identity.
+
+Engine::dispatch_text_requests calls the new
+NetworkContext::load_text_response_for_page_with_options. Both op_js and
+op_net validate the allowlisted request header set. The WinHTTP loader
+adds vetted fields via WinHttpAddRequestHeaders; only bounded,
+same-origin GET network work runs off the page thread.
+
+For ResourceKind::Text, WinHTTP auto-follow is disabled.
+op_net::http::load_text_with_options resolves each Location and checks
+same_origin before the next network connection, at most five hops;
+redirect:error rejects the first redirect. Non-fetch loaders continue
+with their prior redirect behavior. Response metadata and body then
+return to the VM through the existing Promise/microtask/repaint path.
+
 ## M4.13: WinHTTP status and headers through owned Response and native pixels
 
 The op_net HTTP text loader now retains status, reason phrase, final URL,

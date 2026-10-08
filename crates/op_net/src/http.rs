@@ -232,49 +232,97 @@ pub(crate) fn load_script(source: &str, limit: usize) -> Result<(String, String)
 
 /// Decode only bounded plain text/JSON/HTML source; reject binary MIME and
 /// cross-origin redirects at the NetworkContext boundary.
+#[cfg(test)]
 pub(crate) fn load_text(
     source: &str,
     limit: usize,
 ) -> Result<crate::LoadedTextResponse, LoadError> {
-    let url = HttpUrl::parse(source)?;
+    load_text_with_options(source, limit, &[], false)
+}
+
+/// Same-origin bounded HTTP GET, with vetted caller header options.
+pub(crate) fn load_text_with_options(
+    source: &str,
+    limit: usize,
+    headers: &[(String, String)],
+    reject_redirect: bool,
+) -> Result<crate::LoadedTextResponse, LoadError> {
     #[cfg(windows)]
     {
-        let response = windows::load(url, ResourceKind::Text, limit.min(64 * 1024))?;
-        let mime = response
-            .content_type
-            .split(';')
-            .next()
-            .unwrap_or_default()
-            .trim()
-            .to_ascii_lowercase();
-        if !mime.is_empty()
-            && !matches!(
-                mime.as_str(),
-                "text/plain"
-                    | "text/html"
-                    | "text/javascript"
-                    | "application/javascript"
-                    | "application/json"
-                    | "text/css"
-            )
-        {
-            return Err(LoadError::UnsupportedContentType(mime));
+        // WinHTTP auto-redirects are disabled specifically for text/fetch.
+        // Check each Location before making the next network request.
+        let mut current = source.to_owned();
+        let mut redirected = false;
+        for hop in 0..=5 {
+            let url = HttpUrl::parse(&current)?;
+            let mut response =
+                windows::load_with_headers(url, ResourceKind::Text, limit.min(64 * 1024), headers)?;
+            if matches!(response.status, 301 | 302 | 303 | 307 | 308) {
+                if reject_redirect {
+                    return Err(LoadError::Network(
+                        "fetch redirect disallowed by RequestInit".into(),
+                    ));
+                }
+                if hop == 5 {
+                    return Err(LoadError::Network("fetch redirect limit exceeded".into()));
+                }
+                let location = response
+                    .headers
+                    .iter()
+                    .find(|(name, _)| name == "location")
+                    .map(|(_, value)| value.as_str())
+                    .ok_or_else(|| LoadError::Network("redirect without Location".into()))?;
+                let next = crate::resolve_link(Some(&current), location)?;
+                if !same_origin(source, &next) {
+                    return Err(LoadError::InvalidLink(
+                        "fetch redirect leaves original origin".into(),
+                    ));
+                }
+                current = next;
+                redirected = true;
+                continue;
+            }
+            response.redirected = redirected;
+            let mime = response
+                .content_type
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            if !mime.is_empty()
+                && !matches!(
+                    mime.as_str(),
+                    "text/plain"
+                        | "text/html"
+                        | "text/javascript"
+                        | "application/javascript"
+                        | "application/json"
+                        | "text/css"
+                )
+            {
+                return Err(LoadError::UnsupportedContentType(mime));
+            }
+            let charset = crate::encoding::charset_parameter(&response.content_type);
+            let text = crate::encoding::decode_script(
+                &response.bytes,
+                charset.as_deref(),
+                &response.address,
+            )?;
+            return Ok(crate::LoadedTextResponse {
+                address: response.address,
+                text,
+                status: response.status,
+                status_text: response.status_text,
+                headers: response.headers,
+                redirected: response.redirected,
+            });
         }
-        let charset = crate::encoding::charset_parameter(&response.content_type);
-        let text =
-            crate::encoding::decode_script(&response.bytes, charset.as_deref(), &response.address)?;
-        Ok(crate::LoadedTextResponse {
-            address: response.address,
-            text,
-            status: response.status,
-            status_text: response.status_text,
-            headers: response.headers,
-            redirected: response.redirected,
-        })
+        Err(LoadError::Network("fetch redirect limit exceeded".into()))
     }
     #[cfg(not(windows))]
     {
-        let _ = (url, limit);
+        let _ = (source, limit, headers, reject_redirect);
         Err(LoadError::Network("HTTP transport requires Windows".into()))
     }
 }
@@ -373,6 +421,15 @@ mod windows {
         resource: ResourceKind,
         byte_limit: usize,
     ) -> Result<Response, LoadError> {
+        load_with_headers(url, resource, byte_limit, &[])
+    }
+
+    pub(super) fn load_with_headers(
+        url: HttpUrl,
+        resource: ResourceKind,
+        byte_limit: usize,
+        headers: &[(String, String)],
+    ) -> Result<Response, LoadError> {
         // WinHTTP handles only transport/TLS/proxy/framing, never HTML or rendering.
         let agent = wide("OPBrowser/0.1");
         let session = Handle::checked(
@@ -431,10 +488,28 @@ mod windows {
             WINHTTP_OPTION_DISABLE_FEATURE,
             WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_AUTHENTICATION,
         )?;
+        for (name, value) in headers {
+            let header = wide(&format!("{name}: {value}"));
+            check(
+                unsafe {
+                    WinHttpAddRequestHeaders(
+                        request.0,
+                        header.as_ptr(),
+                        u32::MAX,
+                        WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE,
+                    )
+                },
+                "add GET request header",
+            )?;
+        }
         request.option(WINHTTP_OPTION_MAX_HTTP_AUTOMATIC_REDIRECTS, 5)?;
         request.option(
             WINHTTP_OPTION_REDIRECT_POLICY,
-            WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP,
+            if resource == ResourceKind::Text {
+                WINHTTP_OPTION_REDIRECT_POLICY_NEVER
+            } else {
+                WINHTTP_OPTION_REDIRECT_POLICY_DISALLOW_HTTPS_TO_HTTP
+            },
         )?;
         request.option(
             WINHTTP_OPTION_DECOMPRESSION,
@@ -487,41 +562,45 @@ mod windows {
         };
         let mut bytes = Vec::new();
         let mut buffer = [0u8; 16 * 1024];
-        loop {
-            if started.elapsed()
-                > Duration::from_secs(if resource == ResourceKind::Document {
-                    30
-                } else {
-                    5
-                })
-            {
-                return Err(LoadError::Network("resource read deadline exceeded".into()));
+        // Redirect bodies need not be read, decoded, or charged to the text
+        // body budget. Only the next approved URL is fetched.
+        if !(resource == ResourceKind::Text && matches!(status, 301 | 302 | 303 | 307 | 308)) {
+            loop {
+                if started.elapsed()
+                    > Duration::from_secs(if resource == ResourceKind::Document {
+                        30
+                    } else {
+                        5
+                    })
+                {
+                    return Err(LoadError::Network("resource read deadline exceeded".into()));
+                }
+                let mut read = 0;
+                check(
+                    unsafe {
+                        WinHttpReadData(
+                            request.0,
+                            buffer.as_mut_ptr().cast(),
+                            buffer.len() as u32,
+                            &mut read,
+                        )
+                    },
+                    "read body",
+                )?;
+                if read == 0 {
+                    break;
+                }
+                if bytes.len() + read as usize > byte_limit {
+                    return Err(match resource {
+                        ResourceKind::Document => LoadError::DocumentTooLarge,
+                        ResourceKind::Image => LoadError::ImageTooLarge,
+                        ResourceKind::Stylesheet => LoadError::StylesheetTooLarge,
+                        ResourceKind::Script => LoadError::ScriptTooLarge,
+                        ResourceKind::Text => LoadError::ScriptTooLarge,
+                    });
+                }
+                bytes.extend_from_slice(&buffer[..read as usize]);
             }
-            let mut read = 0;
-            check(
-                unsafe {
-                    WinHttpReadData(
-                        request.0,
-                        buffer.as_mut_ptr().cast(),
-                        buffer.len() as u32,
-                        &mut read,
-                    )
-                },
-                "read body",
-            )?;
-            if read == 0 {
-                break;
-            }
-            if bytes.len() + read as usize > byte_limit {
-                return Err(match resource {
-                    ResourceKind::Document => LoadError::DocumentTooLarge,
-                    ResourceKind::Image => LoadError::ImageTooLarge,
-                    ResourceKind::Stylesheet => LoadError::StylesheetTooLarge,
-                    ResourceKind::Script => LoadError::ScriptTooLarge,
-                    ResourceKind::Text => LoadError::ScriptTooLarge,
-                });
-            }
-            bytes.extend_from_slice(&buffer[..read as usize]);
         }
         Ok(Response {
             address,
@@ -717,6 +796,90 @@ mod tests {
                 .any(|(k, v)| k == "x-page" && v == "final")
         );
         server.join().unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn manual_text_redirect_checks_every_hop_before_network_io() {
+        use std::net::TcpListener;
+        let foreign = TcpListener::bind("127.0.0.1:0").unwrap();
+        foreign.set_nonblocking(true).unwrap();
+        let foreign_url = format!("http://{}/private", foreign.local_addr().unwrap());
+        let (address, server) = serve(vec![response(
+            "302 Found",
+            &format!("Location: {foreign_url}\r\n"),
+            b"",
+        )]);
+        let result = load_text(&format!("{address}/start"), 1024);
+        assert!(
+            matches!(result, Err(LoadError::InvalidLink(_))),
+            "{result:?}"
+        );
+        server.join().unwrap();
+        assert_eq!(
+            foreign.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn redirect_error_mode_stops_at_first_response() {
+        let (address, server) = serve(vec![response("302 Found", "Location: /next\r\n", b"")]);
+        let result = load_text_with_options(&format!("{address}/start"), 1024, &[], true);
+        assert!(matches!(result, Err(LoadError::Network(_))), "{result:?}");
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 1);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn allowed_same_origin_redirect_preserves_request_headers() {
+        let (address, server) = serve(vec![
+            response("302 Found", "Location: /final\r\n", b""),
+            response("200 OK", "Content-Type: text/plain\r\n", b"final"),
+        ]);
+        let result = load_text_with_options(
+            &format!("{address}/start"),
+            1024,
+            &[("x-client".into(), "allowed".into())],
+            false,
+        )
+        .unwrap();
+        assert!(result.redirected);
+        assert_eq!(result.address, format!("{address}/final"));
+        assert_eq!(result.text, "final");
+        let requests = server.join().unwrap();
+        assert!(
+            requests
+                .iter()
+                .all(|r| r.to_ascii_lowercase().contains("\r\nx-client: allowed\r\n"))
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn caller_headers_are_sent_on_real_winhttp_get() {
+        let (address, server) = serve(vec![response(
+            "200 OK",
+            "Content-Type: text/plain\r\n",
+            b"received",
+        )]);
+        let result = load_text_with_options(
+            &format!("{address}/input"),
+            1024,
+            &[("x-client".into(), "hello".into())],
+            false,
+        )
+        .unwrap();
+        assert_eq!(result.text, "received");
+        let requests = server.join().unwrap();
+        assert!(
+            requests[0]
+                .to_ascii_lowercase()
+                .contains("\r\nx-client: hello\r\n"),
+            "request did not carry custom header"
+        );
     }
 
     #[test]

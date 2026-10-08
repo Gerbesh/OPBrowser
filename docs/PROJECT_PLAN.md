@@ -917,3 +917,38 @@ counts must not be mislabeled as external conformance percentages.
   postcheck; strict per-hop redirect enforcement remains outstanding.
 - NEXT M4.14: Request/Headers primitives, controlled RequestInit,
   status/cache policy, JSON support, and redirect-hop origin safety.
+
+## M4.14 - Request, Headers, controlled RequestInit and per-hop redirects (2026-10-09)
+
+- DONE browser-context native Headers constructor with get/has/set/append/delete,
+  bounded fields/values, validated ASCII header-name tokens, copies from an
+  existing Headers object, JS object-record initializers and arrays of pairs.
+- DONE self-hosted Request(input[, init]) and fetch(Request[, init]) on the
+  independent OPBrowser JS engine. Request may clone another Request.
+  Supported init subset: GET method, same-origin mode, credentials: omit,
+  redirect: follow/error, and request headers from Headers/object/pair list.
+  Unsupported RequestInit fields and unsafe request headers reject promptly,
+  not silently ignored.
+- DONE safe outbound headers including Accept, Accept-Language,
+  If-None-Match, If-Modified-Since and X-* on WinHTTP GET. Native and network
+  layers enforce field/byte budgets and reject cookie/authorization/hop-by-hop
+  or control-character injection. Local file GET rejects nonempty headers.
+- DONE for text/fetch GET specifically: disabled WinHTTP automatic redirects
+  and implemented explicit <=5-hop redirect following, with same-origin
+  checks of every Location BEFORE opening the next URL. redirect:error
+  refuses the first redirect; normal HTML/CSS/image/script loaders preserve
+  their prior behavior.
+- DONE VM tests cover Headers validation, copying, case-insensitive get,
+  append/set/delete and RequestInit rejections. Real local HTTP-server
+  tests verify safe headers across redirects, cross-origin hop blocked before
+  connection and redirect:error; engine integration verifies a JS Request
+  header reaches the server and updates DOM/native paint after response.
+- LIMITATION native Headers is an early subset, not full standards prototype/
+  iterator API. Only GET, same-origin, bounded text MIME and 64KiB bodies.
+  CORS/preflight, request body, cookies/credentials, POST, AbortSignal,
+  streaming, response.json(), cache controls, request credentials and full
+  Fetch/ECMAScript semantics remain absent. The supported credentials default
+  is currently omit, unlike standard fetch's same-origin default, and that
+  difference is deliberate pending proper browser cookie isolation.
+- NEXT M4.15: native JSON parsing and Response.json(), Promise combinators,
+  standardized error handling, then CORS/cache/cookie architecture.

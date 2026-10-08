@@ -298,6 +298,26 @@
       "limitation": "Bounded same-origin GET text; status/reason/headers/final URL with Set-Cookie hidden. No CORS, streams or public Headers constructor."
     },
     {
+      "id": "S18",
+      "title": "Request Headers and guarded pre-connect redirect flow",
+      "status": "M4.14 bounded GET request fields and origin checks",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "read_headers_init"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "HeadersConstructor"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "allowed_request_headers"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "dispatch_text_requests"},
+        {"path": "crates/op_net/src/lib.rs", "symbol": "load_text_response_for_page_with_options"},
+        {"path": "crates/op_net/src/http.rs", "symbol": "load_text_with_options"},
+        {"path": "crates/op_net/src/http.rs", "symbol": "load_with_headers"},
+        {"path": "crates/op_net/src/links.rs", "symbol": "resolve_link"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "tick_timers"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "complete_text_response_request"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "present_reflow"}
+      ],
+      "limitation": "Same-origin GET text only, restricted request headers and <=5 checked redirect hops; no CORS, stream, credentials or POST."
+    },
+    {
       "id": "S6",
       "title": "WPT image comparison and reporting",
       "status": "Strict and opt-in fuzzy reports",

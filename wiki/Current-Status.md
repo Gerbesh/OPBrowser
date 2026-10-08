@@ -97,3 +97,12 @@ ok=false, and response.text() remains one-use and Promise-returning.
 Set-Cookie is hidden from JS. Navigation generation and request/size
 policies still apply; this is not full Fetch/CORS or ECMAScript
 Promise conformance.
+
+## M4.14: bounded Request, Headers and per-hop redirect protection
+
+A browser page can now create Headers, call get/has/set/append/delete,
+create Request(url, init), and pass Request into fetch. Whitelisted
+custom GET headers reach WinHTTP and local test servers. Text/fetch
+redirects are checked *before* visiting each new address, preventing
+cross-origin intermediate hops. redirect:error is supported. No general
+CORS, body upload, credentials, caching, streams or abort support yet.

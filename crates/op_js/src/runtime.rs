@@ -22,6 +22,8 @@ const MAX_PENDING_MICROTASKS: usize = 256;
 const MAX_TOTAL_MICROTASKS: u32 = 1024;
 const MAX_PENDING_TEXT_REQUESTS: usize = 8;
 const MAX_TOTAL_TEXT_REQUESTS: u32 = 32;
+const MAX_HTTP_HEADERS: usize = 32;
+const MAX_HTTP_HEADER_BYTES: usize = 8192;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct EnvironmentId(usize);
@@ -74,8 +76,12 @@ enum BuiltinFunction {
     ClearInterval,
     QueueMicrotask,
     OpFetchText,
+    HeadersConstructor,
     HeadersGet,
     HeadersHas,
+    HeadersSet,
+    HeadersAppend,
+    HeadersDelete,
 }
 
 #[derive(Debug, Clone)]
@@ -145,6 +151,8 @@ pub struct TextRequest {
     pub url: String,
     /// True for standard fetch, false for legacy callback status errors.
     pub include_http_errors: bool,
+    pub request_headers: Vec<(String, String)>,
+    pub reject_redirect: bool,
 }
 
 /// Detached text-response metadata delivered on the original page worker.
@@ -426,6 +434,14 @@ impl JsRuntime {
                 VariableKind::Const,
             );
         }
+        let headers_ctor =
+            self.allocate_lifecycle_method("Headers", BuiltinFunction::HeadersConstructor)?;
+        self.install_global_binding(
+            "Headers",
+            JsValue::Object(headers_ctor),
+            false,
+            VariableKind::Const,
+        );
         // Standards-shaped host facade; no networking work is done in JS.
         self.eval_script(include_str!("async_fetch.js"))?;
         Ok(())
@@ -494,24 +510,7 @@ impl JsRuntime {
     }
 
     fn build_response_metadata(&mut self, response: &TextResponse) -> Result<ObjectId, JsError> {
-        let get = self.allocate_lifecycle_method("get", BuiltinFunction::HeadersGet)?;
-        let has = self.allocate_lifecycle_method("has", BuiltinFunction::HeadersHas)?;
-        let headers = self.allocate_object(
-            ObjectKind::Headers,
-            Some(self.object_prototype),
-            HashMap::from([
-                ("get".into(), JsValue::Object(get)),
-                ("has".into(), JsValue::Object(has)),
-            ]),
-        )?;
-        self.header_values.insert(
-            headers,
-            response
-                .headers
-                .iter()
-                .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
-                .collect(),
-        );
+        let headers = self.make_headers(response.headers.iter().cloned().collect())?;
         self.allocate_object(
             ObjectKind::Ordinary,
             Some(self.object_prototype),
@@ -526,6 +525,165 @@ impl JsRuntime {
                 ("headers".into(), JsValue::Object(headers)),
             ]),
         )
+    }
+
+    fn header_name(value: &JsValue) -> Result<String, JsError> {
+        let key = value.to_js_string().to_ascii_lowercase();
+        if key.is_empty()
+            || key.len() > 128
+            || !key
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_|~".contains(&b))
+        {
+            return Err(JsError::type_error("invalid HTTP header name"));
+        }
+        Ok(key)
+    }
+
+    fn header_value(value: &JsValue) -> Result<String, JsError> {
+        let text = value.to_js_string();
+        let text = text.trim().to_owned();
+        if text.len() > 4096 || text.chars().any(|c| c.is_control()) {
+            return Err(JsError::type_error("invalid HTTP header value"));
+        }
+        Ok(text)
+    }
+
+    fn check_header_budget(values: &HashMap<String, String>) -> Result<(), JsError> {
+        if values.len() > MAX_HTTP_HEADERS
+            || values.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>() > MAX_HTTP_HEADER_BYTES
+        {
+            return Err(JsError::type_error("Headers budget exceeded"));
+        }
+        Ok(())
+    }
+
+    fn read_headers_init(
+        &self,
+        init: Option<&JsValue>,
+    ) -> Result<HashMap<String, String>, JsError> {
+        let mut result = HashMap::new();
+        let Some(value) = init else {
+            return Ok(result);
+        };
+        if matches!(value, JsValue::Undefined | JsValue::Null) {
+            return Ok(result);
+        }
+        let JsValue::Object(id) = value else {
+            return Err(JsError::type_error(
+                "Headers requires an object, array or Headers",
+            ));
+        };
+        let object = self.object(*id)?;
+        if object.kind == ObjectKind::Headers {
+            return Ok(self.header_values.get(id).cloned().unwrap_or_default());
+        }
+        let mut pairs: Vec<(JsValue, JsValue)> = Vec::new();
+        if object.kind == ObjectKind::Array {
+            let count = match object.properties.get("length") {
+                Some(JsValue::Number(n))
+                    if *n >= 0.0 && *n <= MAX_HTTP_HEADERS as f64 && *n == n.floor() =>
+                {
+                    *n as usize
+                }
+                _ => return Err(JsError::type_error("invalid header list length")),
+            };
+            for index in 0..count {
+                let entry = object
+                    .properties
+                    .get(&index.to_string())
+                    .ok_or_else(|| JsError::type_error("missing header pair"))?;
+                let JsValue::Object(pair_id) = entry else {
+                    return Err(JsError::type_error("header entry must be a pair"));
+                };
+                let pair = self.object(*pair_id)?;
+                if pair.kind != ObjectKind::Array
+                    || !matches!(pair.properties.get("length"), Some(JsValue::Number(2.0)))
+                {
+                    return Err(JsError::type_error("header pair must have two entries"));
+                }
+                pairs.push((
+                    pair.properties
+                        .get("0")
+                        .cloned()
+                        .unwrap_or(JsValue::Undefined),
+                    pair.properties
+                        .get("1")
+                        .cloned()
+                        .unwrap_or(JsValue::Undefined),
+                ));
+            }
+        } else if object.kind == ObjectKind::Ordinary {
+            if object.properties.len() > MAX_HTTP_HEADERS {
+                return Err(JsError::type_error("too many header fields"));
+            }
+            pairs.extend(
+                object
+                    .properties
+                    .iter()
+                    .map(|(key, value)| (JsValue::String(key.clone()), value.clone())),
+            );
+        } else {
+            return Err(JsError::type_error("unsupported Headers initializer"));
+        }
+        for (key, value) in pairs {
+            let key = Self::header_name(&key)?;
+            let value = Self::header_value(&value)?;
+            let current = result.entry(key).or_insert_with(String::new);
+            if !current.is_empty() {
+                current.push_str(", ");
+            }
+            current.push_str(&value);
+        }
+        Self::check_header_budget(&result)?;
+        Ok(result)
+    }
+
+    fn make_headers(&mut self, values: HashMap<String, String>) -> Result<ObjectId, JsError> {
+        Self::check_header_budget(&values)?;
+        let mut methods = HashMap::new();
+        for (name, builtin) in [
+            ("get", BuiltinFunction::HeadersGet),
+            ("has", BuiltinFunction::HeadersHas),
+            ("set", BuiltinFunction::HeadersSet),
+            ("append", BuiltinFunction::HeadersAppend),
+            ("delete", BuiltinFunction::HeadersDelete),
+        ] {
+            let method = self.allocate_lifecycle_method(name, builtin)?;
+            methods.insert(name.into(), JsValue::Object(method));
+        }
+        let id = self.allocate_object(ObjectKind::Headers, Some(self.object_prototype), methods)?;
+        self.header_values.insert(id, values);
+        Ok(id)
+    }
+
+    fn allowed_request_headers(&self, value: &JsValue) -> Result<Vec<(String, String)>, JsError> {
+        let JsValue::Object(id) = value else {
+            return Err(JsError::type_error("request headers must be Headers"));
+        };
+        if self.object(*id)?.kind != ObjectKind::Headers {
+            return Err(JsError::type_error("request headers must be Headers"));
+        }
+        let values = self.header_values.get(id).cloned().unwrap_or_default();
+        Self::check_header_budget(&values)?;
+        let mut headers = Vec::new();
+        for (name, value) in values {
+            // Same-origin safe subset, excluding cookies, authorization and
+            // hop-by-hop fields. No arbitrary header injection.
+            if !(matches!(
+                name.as_str(),
+                "accept" | "accept-language" | "if-none-match" | "if-modified-since"
+            ) || name.starts_with("x-"))
+            {
+                return Err(JsError::type_error("unsupported request header"));
+            }
+            if !value.bytes().all(|b| (32..=126).contains(&b)) {
+                return Err(JsError::type_error("non-ASCII request header value"));
+            }
+            headers.push((name, value));
+        }
+        headers.sort();
+        Ok(headers)
     }
 
     /// The host decides when to wake the page worker; no VM timer spawns threads.
@@ -1410,52 +1568,80 @@ impl JsRuntime {
             {
                 return Err(JsError::execution_limit("network task budget exceeded"));
             }
+            let include_http_errors = matches!(arguments.get(2), Some(JsValue::Boolean(true)));
+            let request_headers = if let Some(value) = arguments.get(3) {
+                self.allowed_request_headers(value)?
+            } else {
+                Vec::new()
+            };
+            let reject_redirect = matches!(arguments.get(4), Some(JsValue::Boolean(true)));
             let id = self.next_text_request_id;
             self.next_text_request_id += 1;
             self.text_callbacks.insert(id, JsValue::Object(*callback));
-            let include_http_errors = matches!(arguments.get(2), Some(JsValue::Boolean(true)));
             self.text_requests.push_back(TextRequest {
                 id,
                 url,
                 include_http_errors,
+                request_headers,
+                reject_redirect,
             });
             return Ok(CallOutcome::Value(JsValue::Number(f64::from(id))));
         }
+        if builtin == BuiltinFunction::HeadersConstructor {
+            let values = self.read_headers_init(arguments.first())?;
+            let id = self.make_headers(values)?;
+            return Ok(CallOutcome::Value(JsValue::Object(id)));
+        }
         if matches!(
             builtin,
-            BuiltinFunction::HeadersGet | BuiltinFunction::HeadersHas
+            BuiltinFunction::HeadersGet
+                | BuiltinFunction::HeadersHas
+                | BuiltinFunction::HeadersSet
+                | BuiltinFunction::HeadersAppend
+                | BuiltinFunction::HeadersDelete
         ) {
             let JsValue::Object(id) = this_value else {
-                return Err(JsError::type_error(
-                    "Headers method requires Headers receiver",
-                ));
+                return Err(JsError::type_error("Headers receiver must be Headers"));
             };
             if self.object(id)?.kind != ObjectKind::Headers {
-                return Err(JsError::type_error(
-                    "Headers method requires Headers receiver",
+                return Err(JsError::type_error("Headers receiver must be Headers"));
+            }
+            let name = Self::header_name(arguments.first().unwrap_or(&JsValue::Undefined))?;
+            if matches!(
+                builtin,
+                BuiltinFunction::HeadersGet | BuiltinFunction::HeadersHas
+            ) {
+                let value = self.header_values.get(&id).and_then(|v| v.get(&name));
+                return Ok(CallOutcome::Value(
+                    if builtin == BuiltinFunction::HeadersHas {
+                        JsValue::Boolean(value.is_some())
+                    } else {
+                        value
+                            .map(|v| JsValue::String(v.clone()))
+                            .unwrap_or(JsValue::Null)
+                    },
                 ));
             }
-            let key = arguments
-                .first()
-                .map(JsValue::to_js_string)
-                .unwrap_or_else(|| "undefined".into())
-                .to_ascii_lowercase();
-            if key.is_empty() || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
-                return Err(JsError::type_error("invalid HTTP header name"));
+            if builtin == BuiltinFunction::HeadersDelete {
+                if let Some(v) = self.header_values.get_mut(&id) {
+                    v.remove(&name);
+                }
+                return Ok(CallOutcome::Value(JsValue::Undefined));
             }
-            let value = self
-                .header_values
-                .get(&id)
-                .and_then(|headers| headers.get(&key));
-            return Ok(CallOutcome::Value(
-                if builtin == BuiltinFunction::HeadersHas {
-                    JsValue::Boolean(value.is_some())
-                } else {
-                    value
-                        .map(|v| JsValue::String(v.clone()))
-                        .unwrap_or(JsValue::Null)
-                },
-            ));
+            let value = Self::header_value(arguments.get(1).unwrap_or(&JsValue::Undefined))?;
+            let mut updated = self.header_values.get(&id).cloned().unwrap_or_default();
+            if builtin == BuiltinFunction::HeadersAppend {
+                let existing = updated.entry(name).or_default();
+                if !existing.is_empty() {
+                    existing.push_str(", ");
+                }
+                existing.push_str(&value);
+            } else {
+                updated.insert(name, value);
+            }
+            Self::check_header_budget(&updated)?;
+            self.header_values.insert(id, updated);
+            return Ok(CallOutcome::Value(JsValue::Undefined));
         }
         if matches!(
             builtin,
@@ -1755,8 +1941,12 @@ impl JsRuntime {
             | BuiltinFunction::ClearInterval
             | BuiltinFunction::QueueMicrotask
             | BuiltinFunction::OpFetchText
+            | BuiltinFunction::HeadersConstructor
             | BuiltinFunction::HeadersGet
-            | BuiltinFunction::HeadersHas => {
+            | BuiltinFunction::HeadersHas
+            | BuiltinFunction::HeadersSet
+            | BuiltinFunction::HeadersAppend
+            | BuiltinFunction::HeadersDelete => {
                 unreachable!("handled above")
             }
         };
@@ -3294,6 +3484,75 @@ mod tests {
             Some(&JsValue::String(
                 "404|false|Not Found|true|abc|true|null|null|https://site.test/missing.txt|not found".into()
             ))
+        );
+    }
+
+    #[test]
+    fn constructed_headers_are_bounded_case_insensitive_and_copied() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            "var a = new Headers({'X-One':'first'});\
+             a.append('x-one','second');\
+             var b = new Headers(a);\
+             a.set('x-one','changed');\
+             var result=b.get('X-ONE')+'|'+a.get('x-one')+'|'+b.has('x-one');\
+             a.delete('X-One');result=result+'|'+a.has('x-one');\
+             var pair = new Headers([['X-Pair','array']]);\
+             result=result+'|'+pair.get('x-pair');",
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("result"),
+            Some(&JsValue::String(
+                "first, second|changed|true|false|array".into()
+            ))
+        );
+        assert!(
+            vm.eval_script("new Headers({'bad header':'unsafe'});")
+                .is_err()
+        );
+        assert!(
+            vm.eval_script("new Headers({'X-OK':'hello\\r\\nInjected: yes'});")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn request_init_is_filtered_before_host_dispatch_and_input_is_cloned() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            "var headers=new Headers({'X-Client':'one'});\
+             var req=new Request('hello.txt',{method:'get',headers:headers,redirect:'error'});\
+             headers.set('x-client','two');\
+             var result=req.method+'|'+req.headers.get('x-client')+'|'+req.redirect;\
+             fetch(req);\
+             var errors='';\
+             fetch('no.txt',{method:'POST'}).catch(function(e){errors=errors+'method;';});\
+             fetch('no.txt',{headers:{Authorization:'bad'}})\
+               .catch(function(e){errors=errors+'auth;';});\
+             fetch('no.txt',{credentials:'include'})\
+               .catch(function(e){errors=errors+'creds;';});\
+             fetch('no.txt',{redirect:'manual'})\
+               .catch(function(e){errors=errors+'redirect;';});",
+        )
+        .unwrap();
+        let requests = vm.take_text_requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url, "hello.txt");
+        assert_eq!(
+            requests[0].request_headers,
+            vec![("x-client".into(), "one".into())]
+        );
+        assert!(requests[0].reject_redirect);
+        assert_eq!(
+            vm.global("result"),
+            Some(&JsValue::String("GET|one|error".into()))
+        );
+        assert_eq!(
+            vm.global("errors"),
+            Some(&JsValue::String("method;auth;creds;redirect;".into()))
         );
     }
 

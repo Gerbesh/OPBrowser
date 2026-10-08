@@ -2923,3 +2923,24 @@ This file is append-only project history.
   sensitive-header omission, plus DOM repaint after a 404 response body.
 - Outstanding: text-only GET, strict same-origin subset, no CORS/streams/
   abort/headers mutation, and redirect hops are not checked before fetch.
+
+## 2026-10-09 - M4.14 Request/Headers and safe redirects
+
+- Created bounded native Headers methods and browser-global constructor,
+  supporting object, array-of-pairs and copy construction, with token/value
+  validation and case-insensitive field names.
+- Added self-hosted Request and guarded fetch(Request, init) supporting GET,
+  same-origin, credentials:omit and redirect:follow/error. Unsupported
+  methods, RequestInit and unsafe fields fail before network dispatch.
+- Added page-owned request-header metadata, passed through generation-safe
+  network workers into WinHttpAddRequestHeaders. Whitelisted only limited
+  safe fields; no Cookie, Authorization or connection-control fields.
+- Disabled automatic WinHTTP redirection for text/fetch, then followed up
+  to five redirect hops with original-origin checks *before* each next GET.
+  redirect:error stops at the first 30x; local-resource headers are rejected.
+- New VM/HTTP/engine tests prove case-insensitive Headers behavior, cloned
+  RequestInit, disallowed cross-origin redirect never contacts target server,
+  allowed redirect preserves headers and a real JS-custom-header GET repaints
+  DOM/native pixels. Maintained compatibility for legacy opFetchText.
+- Still pending: full Headers prototype/iteration/guard semantics, CORS,
+  HTTP cache, credentials/cookies, POST, abort, binary bodies and JSON API.

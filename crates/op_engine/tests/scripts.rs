@@ -931,6 +931,82 @@ fn fetch_promise_cross_origin_is_rejected_by_request_policy() {
 
 #[test]
 #[cfg(windows)]
+fn fetch_request_headers_are_sent_and_response_repaints_native_pixels() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        for index in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                .unwrap();
+            let mut bytes = Vec::new();
+            while !bytes.ends_with(b"\r\n\r\n") {
+                let mut block = [0_u8; 2048];
+                let n = stream.read(&mut block).unwrap();
+                assert!(n > 0 && bytes.len() < 16 * 1024);
+                bytes.extend_from_slice(&block[..n]);
+            }
+            let request = String::from_utf8_lossy(&bytes);
+            let body = if index == 0 {
+                assert!(request.starts_with("GET /index.html "));
+                concat!(
+                    "<p id='out'>WAITING</p><script>",
+                    "var h=new Headers({'X-Client':'tested'});",
+                    "fetch(new Request('data.txt',{headers:h,redirect:'error'}))",
+                    ".then(function(r){return r.text();})",
+                    ".then(function(t){document.getElementById('out').textContent=t;})",
+                    ".catch(function(e){document.getElementById('out').textContent='FAIL:'+e.message;});",
+                    "</script>"
+                )
+            } else {
+                assert!(request.starts_with("GET /data.txt "));
+                assert!(
+                    request
+                        .to_ascii_lowercase()
+                        .contains("\r\nx-client: tested\r\n")
+                );
+                "HEADER-REACHED-SERVER"
+            };
+            let mime = if index == 0 {
+                "text/html"
+            } else {
+                "text/plain"
+            };
+            write!(stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            ).unwrap();
+            stream.flush().unwrap();
+        }
+    });
+    let mut engine = Engine::new();
+    engine
+        .navigate(&format!("{origin}/index.html"), 800, 600)
+        .unwrap();
+    let mut rendered = false;
+    for _ in 0..150 {
+        if let Some(page) = engine.tick_timers(800, 600)
+            && page.display_list.commands.iter().any(|cmd| matches!(
+                cmd,op_paint::PaintCommand::Text{text,..} if text.contains("HEADER-REACHED-SERVER")
+            ))
+        {
+            rendered = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        rendered,
+        "fetch Request header/body not delivered to native text paint"
+    );
+    server.join().unwrap();
+}
+
+#[test]
+#[cfg(windows)]
 fn fetch_http_404_has_real_status_headers_and_body_after_first_paint() {
     use std::io::{Read, Write};
     use std::net::TcpListener;

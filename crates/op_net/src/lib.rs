@@ -187,13 +187,55 @@ impl NetworkContext {
         top_level_url: &str,
         byte_limit: usize,
     ) -> Result<LoadedTextResponse, LoadError> {
+        self.load_text_response_for_page_with_options(source, top_level_url, byte_limit, &[], false)
+    }
+
+    /// Only vetted headers can be supplied by the JS Request subset.
+    pub fn load_text_response_for_page_with_options(
+        &self,
+        source: &str,
+        top_level_url: &str,
+        byte_limit: usize,
+        headers: &[(String, String)],
+        reject_redirect: bool,
+    ) -> Result<LoadedTextResponse, LoadError> {
+        if headers.len() > 32
+            || headers
+                .iter()
+                .map(|(n, v)| n.len() + v.len())
+                .sum::<usize>()
+                > 8192
+            || headers.iter().any(|(name, value)| {
+                !(matches!(
+                    name.as_str(),
+                    "accept" | "accept-language" | "if-none-match" | "if-modified-since"
+                ) || name.starts_with("x-"))
+                    || name.is_empty()
+                    || !name
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                    || !value.bytes().all(|b| (32..=126).contains(&b))
+            })
+        {
+            return Err(LoadError::InvalidLink("unsafe request headers".into()));
+        }
         scripts::enforce_same_origin(top_level_url, source)?;
         self.enforce_filter(source, ResourceType::Other, Some(top_level_url))?;
         if source.starts_with("http://") || source.starts_with("https://") {
-            let response = http::load_text(source, byte_limit.min(64 * 1024))?;
+            let response = http::load_text_with_options(
+                source,
+                byte_limit.min(64 * 1024),
+                headers,
+                reject_redirect,
+            )?;
             scripts::enforce_same_origin(top_level_url, &response.address)?;
             Ok(response)
         } else {
+            if !headers.is_empty() {
+                return Err(LoadError::InvalidLink(
+                    "request headers unavailable for local files".into(),
+                ));
+            }
             let text = scripts::load(source, top_level_url, byte_limit.min(64 * 1024))?;
             Ok(LoadedTextResponse {
                 address: source.to_owned(),

@@ -16,6 +16,25 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S18 - Request Headers → vetted WinHTTP GET → checked redirects (M4.14)
+
+Status: **IMPLEMENTED** for bounded same-origin GET text.
+
+~~~text
+page Request + Headers constructor/append/set → native header budget
+  → fetch(Request, RequestInit) → opFetchText queued request options
+  → Engine::dispatch_text_requests → NetworkContext::load_text_response_for_page_with_options
+  → http::load_text_with_options → windows::load_with_headers
+  → WinHttpAddRequestHeaders (restricted safe fields)
+  → status 3xx: resolve_link(Location) + same_origin check BEFORE next GET
+  → up to 5 hops / redirect:error short-circuit
+  → detached Response metadata → Promise microtask → DOM/native paint
+~~~
+
+Validated in VM tests and local WinHTTP/engine tests including a
+foreign-origin redirect whose destination server never receives
+a connection. No CORS, streams, POST, cookie credentials or abort.
+
 ## S17 - WinHTTP HTTP error and redirect metadata → Response → pixels (M4.13)
 
 Status: **IMPLEMENTED** for bounded same-origin GET text bodies.

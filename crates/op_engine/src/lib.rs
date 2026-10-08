@@ -348,6 +348,8 @@ impl Engine {
             let generation = self.generation;
             let id = request.id;
             let include_http_errors = request.include_http_errors;
+            let headers = request.request_headers;
+            let reject_redirect = request.reject_redirect;
             let source = match source {
                 Ok(source) => source,
                 Err(error) => {
@@ -381,7 +383,13 @@ impl Engine {
             let network = self.network.clone();
             std::thread::spawn(move || {
                 let result = network
-                    .load_text_response_for_page(&source, &base, NETWORK_TEXT_BYTES)
+                    .load_text_response_for_page_with_options(
+                        &source,
+                        &base,
+                        NETWORK_TEXT_BYTES,
+                        &headers,
+                        reject_redirect,
+                    )
                     .map_err(|error| error.to_string());
                 let _ = send.send(NetworkCompletion {
                     generation,

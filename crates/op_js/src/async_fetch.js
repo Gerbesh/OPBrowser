@@ -1,4 +1,52 @@
-// First standards-shaped fetch/Response slice. Network policy lives in op_net.
+// M4.14: bounded, same-origin Fetch/Request/Headers subset.
+// Header storage, validation and transmission are native to our original VM.
+function Request(input, init) {
+    if (input === undefined || input === null) {
+        throw new TypeError("Request requires a URL");
+    }
+    var url = input;
+    var method = "GET";
+    var headers = new Headers();
+    var mode = "same-origin";
+    var credentials = "omit";
+    var redirect = "follow";
+    if (input._opRequest === true) {
+        url = input.url;
+        method = input.method;
+        headers = new Headers(input.headers);
+        mode = input.mode;
+        credentials = input.credentials;
+        redirect = input.redirect;
+    }
+    if (init !== undefined && init !== null) {
+        if (init.method !== undefined) method = init.method;
+        if (init.headers !== undefined) headers = new Headers(init.headers);
+        if (init.mode !== undefined) mode = init.mode;
+        if (init.credentials !== undefined) credentials = init.credentials;
+        if (init.redirect !== undefined) redirect = init.redirect;
+        if (init.body !== undefined || init.signal !== undefined ||
+            init.cache !== undefined || init.referrer !== undefined ||
+            init.referrerPolicy !== undefined || init.integrity !== undefined ||
+            init.keepalive !== undefined) {
+            throw new TypeError("Unsupported RequestInit field");
+        }
+    }
+    if (method === "get") method = "GET";
+    if (method !== "GET") throw new TypeError("Only GET is supported");
+    if (mode !== "same-origin") throw new TypeError("Only same-origin is supported");
+    if (credentials !== "omit") throw new TypeError("Only credentials: omit is supported");
+    if (redirect !== "follow" && redirect !== "error") {
+        throw new TypeError("Only follow/error redirect modes are supported");
+    }
+    this._opRequest = true;
+    this.url = url;
+    this.method = method;
+    this.headers = headers;
+    this.mode = mode;
+    this.credentials = credentials;
+    this.redirect = redirect;
+}
+
 function Response(body, metadata) {
     this._body = body;
     this.bodyUsed = false;
@@ -15,23 +63,14 @@ Response.prototype.text = function() {
     return Promise.resolve(this._body);
 };
 
-function fetch(url, init) {
+function fetch(input, init) {
     return new Promise(function(resolve, reject) {
-        if (init !== undefined && init !== null) {
-            if (init.method !== undefined && init.method !== "GET") {
-                reject(new TypeError("Only GET is supported"));
-                return;
-            }
-            if (init.body !== undefined || init.headers !== undefined || init.credentials !== undefined) {
-                reject(new TypeError("Request init options are not supported yet"));
-                return;
-            }
-        }
         try {
-            opFetchText(url, function(text, error, metadata) {
+            var request = new Request(input, init);
+            opFetchText(request.url, function(text, error, metadata) {
                 if (error !== null) reject(new TypeError(error));
                 else resolve(new Response(text, metadata));
-            }, true);
+            }, true, request.headers, request.redirect === "error");
         } catch (error) {
             reject(error);
         }
