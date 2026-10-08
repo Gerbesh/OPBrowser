@@ -51,10 +51,12 @@ window load event delivery after the parser/defer/async boundaries.
 M4.9 adds page-owned setTimeout/clearTimeout with bounded task pumping
 on the engine worker, so callbacks can repaint after presentation.
 M4.10 adds repeating setInterval/clearInterval and bounded FIFO queueMicrotask
-checkpoints. M4.11 adds a bounded, nonstandard opFetchText(url, callback)
-network task API that updates pages after the first render using same-origin
-filtered text/JSON loading. Standard fetch(), Promise jobs and CORS remain
-unimplemented.
+checkpoints. M4.11 adds bounded opFetchText(url, callback) for filtered
+post-presentation text-network work. M4.12 introduces self-hosted Promise
+reactions and a GET-only fetch()/Response.text() subset. M4.13 carries
+real HTTP statuses, reason phrases, redirect URL, and filtered Headers
+into Response; HTTP 404/500 fulfill with ok=false. Complete Fetch/CORS,
+RequestInit, streaming, and ECMAScript Promise conformance remain pending.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 

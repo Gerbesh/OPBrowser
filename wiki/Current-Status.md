@@ -1,6 +1,6 @@
 # Current Project Status
 
-Last reviewed: **8 October 2026**. The [published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki) tracks the main repository's `wiki/` sources. This is a development snapshot, not a
+Last reviewed: **9 October 2026**. The [published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki) tracks the main repository's `wiki/` sources. This is a development snapshot, not a
 claim that OPBrowser is ready for everyday browsing.
 
 ## Working today
@@ -86,3 +86,14 @@ Same-origin filtering, size and MIME limits apply to text resources.
 Callbacks cannot leak into newly navigated pages. This is not standard
 fetch/Promise/Response, and network tasks do not yet support aborting,
 CORS, streaming or credentials.
+
+## M4.12–M4.13: Promise reactions and real fetch response metadata
+
+The original JS VM implements a bounded self-hosted Promise subset,
+queueMicrotask reaction checkpoints and a same-origin GET fetch().
+Real HTTP status, statusText, final URL, redirected flag and filtered
+Headers.get/has are available on Response. HTTP 404/500 fulfill with
+ok=false, and response.text() remains one-use and Promise-returning.
+Set-Cookie is hidden from JS. Navigation generation and request/size
+policies still apply; this is not full Fetch/CORS or ECMAScript
+Promise conformance.

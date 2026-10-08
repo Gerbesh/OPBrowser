@@ -279,6 +279,25 @@
       "limitation": "Self-hosted Promise reactions, same-origin GET, synthetic 200/OK text-only Response; HTTP failures reject, no CORS, headers, streaming or abort."
     },
     {
+      "id": "S17",
+      "title": "HTTP response metadata through own JS Headers to native pixels",
+      "status": "M4.13 GET status and headers metadata",
+      "steps": [
+        {"path": "crates/op_net/src/http.rs", "symbol": "load_text"},
+        {"path": "crates/op_net/src/lib.rs", "symbol": "LoadedTextResponse"},
+        {"path": "crates/op_net/src/lib.rs", "symbol": "load_text_response_for_page"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "dispatch_text_requests"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "tick_timers"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "TextResponse"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "complete_text_response_request"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "HeadersGet"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "drain_microtasks"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "present_reflow"}
+      ],
+      "limitation": "Bounded same-origin GET text; status/reason/headers/final URL with Set-Cookie hidden. No CORS, streams or public Headers constructor."
+    },
+    {
       "id": "S6",
       "title": "WPT image comparison and reporting",
       "status": "Strict and opt-in fuzzy reports",

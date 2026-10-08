@@ -21,7 +21,8 @@ const NETWORK_TEXT_BYTES: usize = 64 * 1024;
 struct NetworkCompletion {
     generation: u64,
     id: u32,
-    result: Result<String, String>,
+    include_http_errors: bool,
+    result: Result<op_net::LoadedTextResponse, String>,
 }
 
 use op_paint::{DisplayList, build_display_list};
@@ -346,12 +347,14 @@ impl Engine {
             let send = self.network_completion_send.clone();
             let generation = self.generation;
             let id = request.id;
+            let include_http_errors = request.include_http_errors;
             let source = match source {
                 Ok(source) => source,
                 Err(error) => {
                     let _ = send.send(NetworkCompletion {
                         generation,
                         id,
+                        include_http_errors,
                         result: Err(error),
                     });
                     self.network_active += 1;
@@ -368,6 +371,7 @@ impl Engine {
                 let _ = send.send(NetworkCompletion {
                     generation,
                     id,
+                    include_http_errors,
                     result: Err("network worker budget exceeded".into()),
                 });
                 self.network_active += 1;
@@ -377,11 +381,12 @@ impl Engine {
             let network = self.network.clone();
             std::thread::spawn(move || {
                 let result = network
-                    .load_text_for_page(&source, &base, NETWORK_TEXT_BYTES)
+                    .load_text_response_for_page(&source, &base, NETWORK_TEXT_BYTES)
                     .map_err(|error| error.to_string());
                 let _ = send.send(NetworkCompletion {
                     generation,
                     id,
+                    include_http_errors,
                     result,
                 });
                 ACTIVE_NETWORK_WORKERS.fetch_sub(1, Ordering::AcqRel);
@@ -405,8 +410,22 @@ impl Engine {
                     continue;
                 }
                 self.network_active = self.network_active.saturating_sub(1);
+                let result = completion.result.and_then(|response| {
+                    if !completion.include_http_errors && !(200..300).contains(&response.status) {
+                        Err(format!("server returned HTTP {}", response.status))
+                    } else {
+                        Ok(op_js::TextResponse {
+                            text: response.text,
+                            address: response.address,
+                            status: response.status,
+                            status_text: response.status_text,
+                            headers: response.headers,
+                            redirected: response.redirected,
+                        })
+                    }
+                });
                 network_failed +=
-                    usize::from(runtime.complete_text_request(completion.id, completion.result));
+                    usize::from(runtime.complete_text_response_request(completion.id, result));
             }
         }
         let prepared = self.active_document.as_mut()?;

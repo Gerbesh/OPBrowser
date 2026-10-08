@@ -930,6 +930,84 @@ fn fetch_promise_cross_origin_is_rejected_by_request_policy() {
 }
 
 #[test]
+#[cfg(windows)]
+fn fetch_http_404_has_real_status_headers_and_body_after_first_paint() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        for index in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                .unwrap();
+            let mut bytes = [0_u8; 8192];
+            let size = stream.read(&mut bytes).unwrap();
+            let request = String::from_utf8_lossy(&bytes[..size]);
+            let (status, headers, body) = if index == 0 {
+                assert!(request.starts_with("GET /index.html "));
+                (
+                    "200 OK",
+                    "Content-Type: text/html\r\n",
+                    concat!(
+                        "<p id='out'>Waiting</p><script>",
+                        "fetch('missing.txt').then(function(r){",
+                        "document.getElementById('out').textContent=",
+                        "r.status+'|'+r.ok+'|'+r.statusText+'|'+",
+                        "r.headers.get('X-MiXeD')+'|'+r.headers.has('set-cookie')+'|'+",
+                        "r.url+'|'+r.redirected;",
+                        "return r.text();",
+                        "}).then(function(body){var el=document.getElementById('out');",
+                        "el.textContent=el.textContent+'|'+body;",
+                        "}).catch(function(e){document.getElementById('out').textContent='ERROR:'+e.message;});",
+                        "</script>"
+                    ),
+                )
+            } else {
+                assert!(request.starts_with("GET /missing.txt "));
+                (
+                    "404 Not Found",
+                    "Content-Type: text/plain\r\nX-Mixed: SomeValue\r\nSet-Cookie: session=secret\r\n",
+                    "MISSING-BODY",
+                )
+            };
+            write!(stream,
+                "HTTP/1.1 {status}\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            ).unwrap();
+            stream.flush().unwrap();
+        }
+    });
+    let mut engine = Engine::new();
+    let initial = engine
+        .navigate(&format!("{origin}/index.html"), 800, 600)
+        .unwrap();
+    assert!(initial.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text{text,..} if text.contains("Waiting")
+    )));
+    let mut rendered = false;
+    for _ in 0..120 {
+        if let Some(page) = engine.tick_timers(800, 600) {
+            rendered = page.display_list.commands.iter().any(|cmd| matches!(
+                cmd, op_paint::PaintCommand::Text{text,..} if
+                text.contains(&format!("404|false|Not Found|SomeValue|false|{origin}/missing.txt|false|MISSING-BODY"))
+            ));
+            if rendered {
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        rendered,
+        "404 response metadata/body did not reach native pixels"
+    );
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    server.join().unwrap();
+}
+
+#[test]
 fn late_completion_from_previous_navigation_is_discarded() {
     let root = std::env::temp_dir().join(format!("opbrowser-m411-stale-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();

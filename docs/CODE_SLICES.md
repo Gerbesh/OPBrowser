@@ -16,6 +16,27 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S17 - WinHTTP HTTP error and redirect metadata → Response → pixels (M4.13)
+
+Status: **IMPLEMENTED** for bounded same-origin GET text bodies.
+
+~~~text
+WinHTTP text request → HTTP status, reason, final URL, headers
+  → op_net::LoadedTextResponse → NetworkContext::load_text_response_for_page
+  → Engine::dispatch_text_requests (generation-tagged worker completion)
+  → Engine::tick_timers → op_js::TextResponse
+  → JsRuntime::complete_text_response_request
+  → ObjectKind::Headers (case-insensitive get/has; no Set-Cookie)
+  → self-hosted Response.status / ok / statusText / url / redirected
+  → Response.text() Promise → FIFO microtask reaction → DOM text
+  → CSS/layout/native repaint
+~~~
+
+WinHTTP and engine tests verify status 201 redirects, 404/500 response
+bodies and fields, sensitive header filtering and native repaint. Legacy
+opFetchText still reports HTTP errors as callback errors. No streaming,
+CORS, POST, credentials, public Headers constructor or abort.
+
 ## S16 - Promise/fetch text GET → microtask reactions → native paint (M4.12)
 
 Status: **IMPLEMENTED** as a bounded, same-origin text GET subset.

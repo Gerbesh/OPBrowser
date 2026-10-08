@@ -53,6 +53,7 @@ enum ObjectKind {
     Array,
     Function,
     DomElement(usize),
+    Headers,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +74,8 @@ enum BuiltinFunction {
     ClearInterval,
     QueueMicrotask,
     OpFetchText,
+    HeadersGet,
+    HeadersHas,
 }
 
 #[derive(Debug, Clone)]
@@ -140,6 +143,19 @@ pub struct TimerReport {
 pub struct TextRequest {
     pub id: u32,
     pub url: String,
+    /// True for standard fetch, false for legacy callback status errors.
+    pub include_http_errors: bool,
+}
+
+/// Detached text-response metadata delivered on the original page worker.
+#[derive(Debug, Clone)]
+pub struct TextResponse {
+    pub text: String,
+    pub address: String,
+    pub status: u32,
+    pub status_text: String,
+    pub headers: Vec<(String, String)>,
+    pub redirected: bool,
 }
 
 /// A host mutation applied by the browser only after VM execution.
@@ -178,6 +194,7 @@ pub struct JsRuntime {
     microtasks_scheduled: u32,
     text_requests: VecDeque<TextRequest>,
     text_callbacks: HashMap<u32, JsValue>,
+    header_values: HashMap<ObjectId, HashMap<String, String>>,
     next_text_request_id: u32,
 }
 
@@ -253,6 +270,7 @@ impl Default for JsRuntime {
             microtasks_scheduled: 0,
             text_requests: VecDeque::new(),
             text_callbacks: HashMap::new(),
+            header_values: HashMap::new(),
             next_text_request_id: 1,
         };
 
@@ -328,6 +346,7 @@ impl JsRuntime {
         self.microtasks_scheduled = 0;
         self.text_requests.clear();
         self.text_callbacks.clear();
+        self.header_values.clear();
         self.next_text_request_id = 1;
         for element in elements.into_iter().take(4096) {
             self.dom_ids.entry(element.id).or_insert(element.node);
@@ -423,12 +442,41 @@ impl JsRuntime {
     /// Execute the callback on the page-owning worker after a validated
     /// network completion. Failed callbacks do not stop other tasks.
     pub fn complete_text_request(&mut self, id: u32, result: Result<String, String>) -> bool {
+        self.complete_text_response_request(
+            id,
+            result.map(|text| TextResponse {
+                text,
+                address: String::new(),
+                status: 200,
+                status_text: "OK".into(),
+                headers: Vec::new(),
+                redirected: false,
+            }),
+        )
+    }
+
+    pub fn complete_text_response_request(
+        &mut self,
+        id: u32,
+        result: Result<TextResponse, String>,
+    ) -> bool {
         let Some(callback) = self.text_callbacks.remove(&id) else {
             return false;
         };
         let arguments = match result {
-            Ok(text) => vec![JsValue::String(text), JsValue::Null],
-            Err(error) => vec![JsValue::Null, JsValue::String(error)],
+            Ok(response) => match self.build_response_metadata(&response) {
+                Ok(metadata) => vec![
+                    JsValue::String(response.text),
+                    JsValue::Null,
+                    JsValue::Object(metadata),
+                ],
+                Err(_) => vec![
+                    JsValue::Null,
+                    JsValue::String("response metadata budget exceeded".into()),
+                    JsValue::Null,
+                ],
+            },
+            Err(error) => vec![JsValue::Null, JsValue::String(error), JsValue::Null],
         };
         let mut steps = 0;
         let failed = !matches!(
@@ -443,6 +491,41 @@ impl JsRuntime {
         );
         self.drain_microtasks();
         failed
+    }
+
+    fn build_response_metadata(&mut self, response: &TextResponse) -> Result<ObjectId, JsError> {
+        let get = self.allocate_lifecycle_method("get", BuiltinFunction::HeadersGet)?;
+        let has = self.allocate_lifecycle_method("has", BuiltinFunction::HeadersHas)?;
+        let headers = self.allocate_object(
+            ObjectKind::Headers,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("get".into(), JsValue::Object(get)),
+                ("has".into(), JsValue::Object(has)),
+            ]),
+        )?;
+        self.header_values.insert(
+            headers,
+            response
+                .headers
+                .iter()
+                .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
+                .collect(),
+        );
+        self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("status".into(), JsValue::Number(f64::from(response.status))),
+                (
+                    "statusText".into(),
+                    JsValue::String(response.status_text.clone()),
+                ),
+                ("url".into(), JsValue::String(response.address.clone())),
+                ("redirected".into(), JsValue::Boolean(response.redirected)),
+                ("headers".into(), JsValue::Object(headers)),
+            ]),
+        )
     }
 
     /// The host decides when to wake the page worker; no VM timer spawns threads.
@@ -1330,8 +1413,49 @@ impl JsRuntime {
             let id = self.next_text_request_id;
             self.next_text_request_id += 1;
             self.text_callbacks.insert(id, JsValue::Object(*callback));
-            self.text_requests.push_back(TextRequest { id, url });
+            let include_http_errors = matches!(arguments.get(2), Some(JsValue::Boolean(true)));
+            self.text_requests.push_back(TextRequest {
+                id,
+                url,
+                include_http_errors,
+            });
             return Ok(CallOutcome::Value(JsValue::Number(f64::from(id))));
+        }
+        if matches!(
+            builtin,
+            BuiltinFunction::HeadersGet | BuiltinFunction::HeadersHas
+        ) {
+            let JsValue::Object(id) = this_value else {
+                return Err(JsError::type_error(
+                    "Headers method requires Headers receiver",
+                ));
+            };
+            if self.object(id)?.kind != ObjectKind::Headers {
+                return Err(JsError::type_error(
+                    "Headers method requires Headers receiver",
+                ));
+            }
+            let key = arguments
+                .first()
+                .map(JsValue::to_js_string)
+                .unwrap_or_else(|| "undefined".into())
+                .to_ascii_lowercase();
+            if key.is_empty() || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+                return Err(JsError::type_error("invalid HTTP header name"));
+            }
+            let value = self
+                .header_values
+                .get(&id)
+                .and_then(|headers| headers.get(&key));
+            return Ok(CallOutcome::Value(
+                if builtin == BuiltinFunction::HeadersHas {
+                    JsValue::Boolean(value.is_some())
+                } else {
+                    value
+                        .map(|v| JsValue::String(v.clone()))
+                        .unwrap_or(JsValue::Null)
+                },
+            ));
         }
         if matches!(
             builtin,
@@ -1630,7 +1754,9 @@ impl JsRuntime {
             | BuiltinFunction::SetInterval
             | BuiltinFunction::ClearInterval
             | BuiltinFunction::QueueMicrotask
-            | BuiltinFunction::OpFetchText => {
+            | BuiltinFunction::OpFetchText
+            | BuiltinFunction::HeadersGet
+            | BuiltinFunction::HeadersHas => {
                 unreachable!("handled above")
             }
         };
@@ -3134,6 +3260,40 @@ mod tests {
         assert_eq!(
             vm.global("output"),
             Some(&JsValue::String("true:200:used;body".into()))
+        );
+    }
+
+    #[test]
+    fn fetch_response_headers_are_case_insensitive_and_http_error_is_fulfilled() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            "var result='';fetch('missing.txt').then(function(r){\
+             result=r.status+'|'+r.ok+'|'+r.statusText+'|'+r.redirected+'|'+\
+             r.headers.get('X-REQUEST-ID')+'|'+r.headers.has('x-request-id')+'|'+\
+             r.headers.get('missing')+'|'+r.headers.get('set-cookie')+'|'+r.url;\
+             return r.text();}).then(function(body){result=result+'|'+body;});",
+        )
+        .unwrap();
+        let requests = vm.take_text_requests();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].include_http_errors);
+        assert!(!vm.complete_text_response_request(
+            requests[0].id,
+            Ok(TextResponse {
+                text: "not found".into(),
+                address: "https://site.test/missing.txt".into(),
+                status: 404,
+                status_text: "Not Found".into(),
+                redirected: true,
+                headers: vec![("x-request-id".into(), "abc".into())],
+            }),
+        ));
+        assert_eq!(
+            vm.global("result"),
+            Some(&JsValue::String(
+                "404|false|Not Found|true|abc|true|null|null|https://site.test/missing.txt|not found".into()
+            ))
         );
     }
 

@@ -314,3 +314,32 @@ async/await or unhandled-rejection events yet. The VM's 256 queued /
 
 Worker request filtering uses an immutable snapshot; statistics from
 its cloned counters do not aggregate with the main filter yet.
+
+## M4.13: real HTTP status, response URL and Headers lookup
+
+Same-origin GET fetch now fulfills for HTTP 404/500. Response.ok is
+false; status/statusText are the server's values, url is the final
+resource URL, and redirected reflects a followed redirect. The native
+Response.headers.get(name) and .has(name) support ASCII-insensitive
+header names, but never disclose Set-Cookie or Set-Cookie2.
+
+~~~javascript
+fetch("missing.txt").then(function(response) {
+  if (!response.ok) {
+    document.getElementById("output").textContent =
+      "HTTP " + response.status + ": " + response.statusText;
+  }
+  return response.text();
+});
+~~~
+
+Network, request filter, encoding or byte-budget failures reject the
+Promise; an HTTP 404 response itself does not. The original opFetchText
+callback still reports HTTP errors as errors.
+
+This remains limited to same-origin GET text resources (64 KiB).
+Local files have synthetic 200/OK. The public Headers constructor and
+iteration/mutation, CORS, POST, credentials, abort, streaming bodies,
+response.json(), and full RequestInit do not exist yet. WinHTTP follows
+redirects before the final-origin check, rather than enforcing origin
+at each intermediate hop.

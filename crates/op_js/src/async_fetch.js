@@ -1,10 +1,13 @@
 // First standards-shaped fetch/Response slice. Network policy lives in op_net.
-function Response(body) {
+function Response(body, metadata) {
     this._body = body;
     this.bodyUsed = false;
-    this.ok = true;
-    this.status = 200;
-    this.statusText = "OK";
+    this.status = metadata.status;
+    this.statusText = metadata.statusText;
+    this.url = metadata.url;
+    this.redirected = metadata.redirected;
+    this.headers = metadata.headers;
+    this.ok = this.status >= 200 && this.status <= 299;
 }
 Response.prototype.text = function() {
     if (this.bodyUsed) return Promise.reject(new TypeError("Body already consumed"));
@@ -24,9 +27,13 @@ function fetch(url, init) {
                 return;
             }
         }
-        opFetchText(url, function(text, error) {
-            if (error !== null) reject(new TypeError(error));
-            else resolve(new Response(text));
-        });
+        try {
+            opFetchText(url, function(text, error, metadata) {
+                if (error !== null) reject(new TypeError(error));
+                else resolve(new Response(text, metadata));
+            }, true);
+        } catch (error) {
+            reject(error);
+        }
     });
 }

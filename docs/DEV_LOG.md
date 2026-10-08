@@ -2907,3 +2907,19 @@ This file is append-only project history.
   guarded GET, no Promise combinators, no async/await or full thenable
   semantics. VM budgets and navigation-generation isolation remain.
 
+
+## 2026-10-09 - M4.13 real fetch HTTP response metadata
+
+- Introduced LoadedTextResponse from op_net, preserving real HTTP status,
+  reason, final URL, redirect flag, bounded header fields and decoded text.
+  HTTP 4xx/5xx are now data for fetch rather than automatic rejections.
+- Page worker delivers detached metadata into op_js::TextResponse and
+  constructs native Headers objects with case-insensitive get/has, omitting
+  Set-Cookie/Set-Cookie2. The self-hosted Response reads those fields.
+- Backward-compatible legacy opFetchText still reports HTTP errors in
+  its callback. Existing document/style/script/image status handling
+  is unchanged. Filter and generation isolation still apply.
+- Verified true WinHTTP redirect/201, HTTP 404/500 and final status/reason,
+  sensitive-header omission, plus DOM repaint after a 404 response body.
+- Outstanding: text-only GET, strict same-origin subset, no CORS/streams/
+  abort/headers mutation, and redirect hops are not checked before fetch.

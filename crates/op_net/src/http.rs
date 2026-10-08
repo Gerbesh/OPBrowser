@@ -232,7 +232,10 @@ pub(crate) fn load_script(source: &str, limit: usize) -> Result<(String, String)
 
 /// Decode only bounded plain text/JSON/HTML source; reject binary MIME and
 /// cross-origin redirects at the NetworkContext boundary.
-pub(crate) fn load_text(source: &str, limit: usize) -> Result<(String, String), LoadError> {
+pub(crate) fn load_text(
+    source: &str,
+    limit: usize,
+) -> Result<crate::LoadedTextResponse, LoadError> {
     let url = HttpUrl::parse(source)?;
     #[cfg(windows)]
     {
@@ -260,7 +263,14 @@ pub(crate) fn load_text(source: &str, limit: usize) -> Result<(String, String), 
         let charset = crate::encoding::charset_parameter(&response.content_type);
         let text =
             crate::encoding::decode_script(&response.bytes, charset.as_deref(), &response.address)?;
-        Ok((response.address, text))
+        Ok(crate::LoadedTextResponse {
+            address: response.address,
+            text,
+            status: response.status,
+            status_text: response.status_text,
+            headers: response.headers,
+            redirected: response.redirected,
+        })
     }
     #[cfg(not(windows))]
     {
@@ -352,6 +362,10 @@ mod windows {
         pub(super) address: String,
         pub(super) content_type: String,
         pub(super) bytes: Vec<u8>,
+        pub(super) status: u32,
+        pub(super) status_text: String,
+        pub(super) headers: Vec<(String, String)>,
+        pub(super) redirected: bool,
     }
 
     pub(super) fn load(
@@ -450,11 +464,27 @@ mod windows {
             },
             "read HTTP status",
         )?;
-        if !(200..300).contains(&status) {
+        // fetch() receives a Response for 4xx/5xx; other loaders retain their
+        // prior strict status policy.
+        if resource != ResourceKind::Text && !(200..300).contains(&status) {
             return Err(LoadError::HttpStatus(status));
         }
+        let status_text = query_string(&request, Some(WINHTTP_QUERY_STATUS_TEXT))?;
         let content_type = query_string(&request, Some(WINHTTP_QUERY_CONTENT_TYPE))?;
         let address = query_string(&request, None)?;
+        let scheme = if url.secure { "https" } else { "http" };
+        let original = format!("{scheme}://{}:{}{}", url.host, url.port, url.target);
+        let implicit_port = format!("{scheme}://{}{}", url.host, url.target);
+        let redirected = !address.eq_ignore_ascii_case(&original)
+            && !address.eq_ignore_ascii_case(&implicit_port);
+        let headers = if resource == ResourceKind::Text {
+            parse_exposed_headers(&query_string(
+                &request,
+                Some(WINHTTP_QUERY_RAW_HEADERS_CRLF),
+            )?)
+        } else {
+            Vec::new()
+        };
         let mut bytes = Vec::new();
         let mut buffer = [0u8; 16 * 1024];
         loop {
@@ -497,7 +527,39 @@ mod windows {
             address,
             content_type,
             bytes,
+            status,
+            status_text,
+            headers,
+            redirected,
         })
+    }
+
+    // Expose bounded basic-response headers; never expose Set-Cookie to JS.
+    fn parse_exposed_headers(raw: &str) -> Vec<(String, String)> {
+        let mut headers: Vec<(String, String)> = Vec::new();
+        for line in raw.lines().skip(1).take(128) {
+            let Some((name, value)) = line.split_once(':') else {
+                continue;
+            };
+            let name = name.trim().to_ascii_lowercase();
+            let value = value.trim();
+            if name.is_empty()
+                || matches!(name.as_str(), "set-cookie" | "set-cookie2")
+                || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                || value.chars().any(|c| c.is_control())
+            {
+                continue;
+            }
+            if let Some((_, existing)) = headers.iter_mut().find(|(key, _)| *key == name) {
+                if existing.len().saturating_add(value.len()) < 8192 {
+                    existing.push_str(", ");
+                    existing.push_str(value);
+                }
+            } else if headers.len() < 64 && value.len() < 8192 {
+                headers.push((name, value.to_owned()));
+            }
+        }
+        headers
     }
 
     fn query_string(request: &Handle, header: Option<u32>) -> Result<String, LoadError> {
@@ -511,6 +573,9 @@ mod windows {
             }
         };
         query(null_mut(), &mut length);
+        if length > 64 * 1024 {
+            return Err(LoadError::Network("response header budget exceeded".into()));
+        }
         if length == 0 {
             // Each caller supplies its own missing-header policy.
             if header.is_some() {
@@ -590,6 +655,68 @@ mod tests {
         .into_bytes();
         bytes.extend_from_slice(body);
         bytes
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn text_http_status_and_basic_headers_are_preserved_without_cookies() {
+        let (address, server) = serve(vec![response(
+            "500 Internal Server Error",
+            "Content-Type: text/plain; charset=UTF-8\r\nX-Mixed: value\r\nSet-Cookie: sid=secret\r\n",
+            b"FAILURE-BODY",
+        )]);
+        let loaded = load_text(&format!("{address}/failure"), 1024).unwrap();
+        assert_eq!(loaded.status, 500);
+        assert_eq!(loaded.status_text, "Internal Server Error");
+        assert_eq!(loaded.text, "FAILURE-BODY");
+        assert_eq!(loaded.address, format!("{address}/failure"));
+        assert!(!loaded.redirected);
+        assert!(
+            loaded
+                .headers
+                .iter()
+                .any(|(k, v)| k == "x-mixed" && v == "value")
+        );
+        assert!(loaded.headers.iter().all(|(k, _)| k != "set-cookie"));
+        server.join().unwrap();
+
+        // Other resource types retain the earlier strict HTTP status policy.
+        let (address, server) = serve(vec![response(
+            "404 Not Found",
+            "Content-Type: text/html\r\n",
+            b"NOT-FOUND",
+        )]);
+        assert_eq!(
+            load(&format!("{address}/missing")),
+            Err(LoadError::HttpStatus(404))
+        );
+        server.join().unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn text_response_uses_final_same_origin_redirect_url_and_status() {
+        let (address, server) = serve(vec![
+            response("302 Found", "Location: /final\r\n", b""),
+            response(
+                "201 Created",
+                "Content-Type: text/plain\r\nX-Page: final\r\n",
+                b"done",
+            ),
+        ]);
+        let loaded = load_text(&format!("{address}/start"), 1024).unwrap();
+        assert_eq!(loaded.status, 201);
+        assert_eq!(loaded.status_text, "Created");
+        assert!(loaded.redirected);
+        assert_eq!(loaded.address, format!("{address}/final"));
+        assert_eq!(loaded.text, "done");
+        assert!(
+            loaded
+                .headers
+                .iter()
+                .any(|(k, v)| k == "x-page" && v == "final")
+        );
+        server.join().unwrap();
     }
 
     #[test]

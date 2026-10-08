@@ -890,3 +890,30 @@ counts must not be mislabeled as external conformance percentages.
 - NEXT M4.13 move HTTP status/headers/redirect metadata into real Response,
   distinguish HTTP errors from network failures, then implement proper
   RequestInit/CORS and Promise conformance as the parser/runtime advances.
+
+## M4.13 - Real HTTP status and response headers (2026-10-09)
+
+- DONE WinHTTP text transport retains HTTP status/statusText, final URL,
+  redirected flag, selected bounded response headers and decoded text.
+  Fetch HTTP 4xx/5xx returns a fulfilled Response with ok=false; ordinary
+  HTML/CSS/script/image resource loaders keep their old strict non-2xx errors.
+- DONE NetworkContext::load_text_response_for_page preserves same-origin,
+  request filtering and final-redirect origin checks. Page generation tags
+  drop stale completions; no background worker executes JavaScript.
+- DONE op_js::TextResponse metadata and native ObjectKind::Headers get/has
+  methods with case-insensitive ASCII names. Set-Cookie and Set-Cookie2
+  never reach JavaScript. Response exposes status, statusText, ok,
+  redirected, url and one-use text() Promise.
+- DONE original opFetchText(url, callback) remains source compatible and
+  still reports HTTP errors via its error callback.
+- DONE VM, native WinHTTP and end-to-end engine tests verify status 201,
+  404, 500, redirects, header casing/cookie filtering, and an HTTP error
+  body updating the retained DOM and visible page.
+- LIMITATION still same-origin GET and allowlisted text MIME only,
+  64 KiB per resource. Local files use synthetic 200/OK; no public
+  Headers constructor, mutation/iteration, Request class, full
+  RequestInit, CORS/preflight, credentials, JSON.parse, streams,
+  POST, cache or abort. WinHTTP follows redirects before the final-origin
+  postcheck; strict per-hop redirect enforcement remains outstanding.
+- NEXT M4.14: Request/Headers primitives, controlled RequestInit,
+  status/cache policy, JSON support, and redirect-hop origin safety.

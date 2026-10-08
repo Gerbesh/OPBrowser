@@ -16,6 +16,21 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.13: WinHTTP status and headers through owned Response and native pixels
+
+The op_net HTTP text loader now retains status, reason phrase, final URL,
+redirect flag and bounded headers in LoadedTextResponse; non-text loaders
+still reject non-2xx. NetworkContext::load_text_response_for_page filters
+and checks same-origin at the request and final-response boundaries.
+Engine::dispatch_text_requests and Engine::tick_timers carry detached
+metadata through the generation-tagged page completion channel.
+JsRuntime::complete_text_response_request builds a TextResponse host
+object with an ObjectKind::Headers value and native HeadersGet/HeadersHas
+functions. Header names are normalized and Set-Cookie is excluded.
+The self-hosted Response calculates ok from HTTP status, then schedules
+Promise reactions using the already-owned microtask queue; DOM changes
+flow to native repaint. Legacy opFetchText retains status-error callbacks.
+
 ## M4.12: self-hosted Promise → filtered fetch → native repaint
 
 The original `op_js` VM bootstraps `async_promise.js`, implementing

@@ -36,6 +36,18 @@ pub struct LoadedDocument {
     pub source_kind: SourceKind,
 }
 
+/// Bounded basic HTTP response for the first fetch() implementation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedTextResponse {
+    pub address: String,
+    pub text: String,
+    pub status: u32,
+    pub status_text: String,
+    /// Lowercase names and UTF-8 values, with Set-Cookie deliberately omitted.
+    pub headers: Vec<(String, String)>,
+    pub redirected: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadedStylesheet {
     pub address: String,
@@ -153,22 +165,44 @@ impl NetworkContext {
         scripts::load(source, top_level_url, byte_limit)
     }
 
-    /// Same-origin, filtered, bounded text loading for experimental
-    /// callback-based JS network jobs. This does not implement fetch().
+    /// Preserve the M4.11 callback API: HTTP errors still use its error arm.
     pub fn load_text_for_page(
         &self,
         source: &str,
         top_level_url: &str,
         byte_limit: usize,
     ) -> Result<String, LoadError> {
+        let response = self.load_text_response_for_page(source, top_level_url, byte_limit)?;
+        if !(200..300).contains(&response.status) {
+            return Err(LoadError::HttpStatus(response.status));
+        }
+        Ok(response.text)
+    }
+
+    /// Fetch-oriented GET transport. HTTP 4xx/5xx are valid response objects;
+    /// only transport, policy, decoding and byte-budget failures return Err.
+    pub fn load_text_response_for_page(
+        &self,
+        source: &str,
+        top_level_url: &str,
+        byte_limit: usize,
+    ) -> Result<LoadedTextResponse, LoadError> {
         scripts::enforce_same_origin(top_level_url, source)?;
         self.enforce_filter(source, ResourceType::Other, Some(top_level_url))?;
         if source.starts_with("http://") || source.starts_with("https://") {
-            let (final_url, text) = http::load_text(source, byte_limit.min(64 * 1024))?;
-            scripts::enforce_same_origin(top_level_url, &final_url)?;
-            Ok(text)
+            let response = http::load_text(source, byte_limit.min(64 * 1024))?;
+            scripts::enforce_same_origin(top_level_url, &response.address)?;
+            Ok(response)
         } else {
-            scripts::load(source, top_level_url, byte_limit.min(64 * 1024))
+            let text = scripts::load(source, top_level_url, byte_limit.min(64 * 1024))?;
+            Ok(LoadedTextResponse {
+                address: source.to_owned(),
+                text,
+                status: 200,
+                status_text: "OK".into(),
+                headers: Vec::new(),
+                redirected: false,
+            })
         }
     }
 
