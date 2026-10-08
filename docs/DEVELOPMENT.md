@@ -237,6 +237,37 @@ This writes JSON, Shields endpoint data and a Markdown summary to
 skipped). These are named subset scores, not full browser/ECMAScript support percentages.
 See [Compatibility measurement](COMPATIBILITY.md) and `compat/README.md`.
 
+## Code Graph, Code Slicer and Wiki upkeep
+
+The repository now includes an offline, Python-standard-library-only
+`tools/code_intelligence.py` generator/checker. Python 3.11 or newer
+is required (for `tomllib`), in addition to the usual Rust toolchain.
+
+```powershell
+python tools/code_intelligence.py --write
+python tools/code_intelligence.py --check
+python -m unittest discover -s tools/tests -p "test_*.py"
+```
+
+- Code Graph reads real Cargo manifests and validates crate-to-crate edges.
+- Code Slicer reads `tools/code_slices.json` and checks every selected
+  Rust file/symbol anchor against the working tree. It is a curated flow
+  map, not an automatic call graph or a full Rust AST slicer.
+- Generated outputs `docs/GENERATED_CODE_GRAPH.md` and
+  `docs/GENERATED_CODE_SLICES.md` must be committed when changed.
+- `--check` additionally validates local Wiki links and runs in CI.
+- Engineering narratives in `docs/CODE_GRAPH.md` and
+  `docs/CODE_SLICES.md` remain manually reviewed; do not replace them
+  blindly with the generated indexes.
+- `wiki/` is versioned in the main repo. Publishing these pages as
+  GitHub Wiki requires separately initializing `OPBrowser.wiki.git`;
+  that remote was not available at the 8 October review.
+
+Known WPT divergence policy: [KNOWN_TEST_DIVERGENCES.md](KNOWN_TEST_DIVERGENCES.md).
+The two Rec.2020 references are non-blocking **known failures**, not
+excluded test cases. Strict WPT Static remains 197/200; the separately
+labelled WPT-authored fuzzy report is 198/200.
+
 ## Dependency rule
 
 Do not add a browser engine, rendering engine, or ready-made JavaScript engine as a

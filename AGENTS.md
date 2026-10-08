@@ -41,5 +41,9 @@ These rules are mandatory for every engineering update.
 
 - docs/CODE_GRAPH.md is the human-readable dependency and key-type graph.
 - docs/CODE_SLICES.md tracks vertical end-to-end slices from input to pixels/behavior.
+- tools/code_intelligence.py --write regenerates generated crate graph and
+  curated verified slices. Run --check before commits and in CI; update
+  tools/code_slices.json when crossing new code boundaries.
 - wiki/ is the repository-local source for project wiki content.
+  The separate GitHub Wiki repository must be initialized/published independently.
 - docs/DEV_LOG.md is append-only project history, except typo corrections.

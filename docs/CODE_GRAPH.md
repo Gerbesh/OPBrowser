@@ -1,9 +1,20 @@
 # OPBrowser Code Graph
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 This document is the maintained human-readable code/dependency graph. It is updated
 whenever crates, important types, or ownership boundaries change.
+
+**Connected Code Graph:** [GENERATED_CODE_GRAPH.md](GENERATED_CODE_GRAPH.md)
+is rebuilt directly from Cargo manifests by
+`python tools/code_intelligence.py --write`. The `--check` variant is
+enforced in Windows CI and fails when manifest-derived edges or Wiki
+references change without committed updates. This maintained document
+includes platform/native flow and ownership details that Cargo cannot infer;
+the generated graph describes **crate-level edges only**, not a call graph.
+See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
+functional paths. The 8 October baseline contains 12 crates and 22
+local dependency edges.
 
 ## Crate dependency graph
 

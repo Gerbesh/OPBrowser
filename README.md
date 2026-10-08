@@ -7,6 +7,27 @@
 
 Public repository: https://github.com/Gerbesh/OPBrowser
 
+**Documentation:** [Wiki home](wiki/Home.md) ·
+[Current status](wiki/Current-Status.md) ·
+[Project plan](docs/PROJECT_PLAN.md) ·
+[Code Graph](docs/GENERATED_CODE_GRAPH.md) ·
+[Code Slicer](docs/GENERATED_CODE_SLICES.md) ·
+[Known WPT reference divergences](docs/KNOWN_TEST_DIVERGENCES.md).
+
+Documentation snapshot (8 October 2026): frozen **WPT Static v1 strict
+197/200 (98.5%)**, WPT-metadata-aware **198/200 (99%, separately reported)**,
+WPT Positioning v1 **53/100 (53%)**, Test262 Parser v1 **523/1983 (26.37%)**
+parse-only. These are *narrow pinned subsets*, not overall browser readiness.
+Two Rec.2020 tests remain counted as failures but are classified as
+known reference divergences against current CSS Color 4 gamma 2.4.
+
+`python tools/code_intelligence.py --write` regenerates the source-backed crate
+graph and curated code slices; `python tools/code_intelligence.py --check`
+verifies their freshness and Wiki internal links in CI. The `wiki/`
+directory is the maintained local source; the separate GitHub Wiki repository
+has not yet been initialized.
+
+
 Status: early engine development. OPBrowser opens external HTTP/HTTPS HTML pages,
 local files and HTML data URLs from a native address bar or command-line argument.
 Its own tokenizer, tree builder, DOM, text layout and display list render the page

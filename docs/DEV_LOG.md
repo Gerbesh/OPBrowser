@@ -2628,3 +2628,35 @@ This file is append-only project history.
   modes. No edits to frozen fixtures, manifest, output-pixel comparison,
   or original CI/JSON metric.
 
+## 2026-10-08 - Documentation audit, Wiki refresh, connected Code Graph and Code Slicer
+
+- Audit README, AGENTS.md, docs, 17 existing local Wiki pages, CI workflow
+  and GitHub Wiki availability. Correct outdated project overview and
+  compatibility descriptions, add current status, roadmap, code-intelligence
+  and known-divergence Wiki navigation pages. Local Wiki now remains the
+  version-controlled documentation source until the separately hosted
+  OPBrowser.wiki.git repository is initialized.
+- Verify the current W3C CSS Color 4 CRD (7 October 2026) defines Rec.2020
+  as BT.1886 display-referred gamma 2.4. Classify rec2020-001 and
+  predefined-012 as known non-blocking legacy-reference divergences
+  without deleting/skipping their WPT entries, making them pass in a
+  reporting branch, or changing RGB conversion for test-specific output.
+  Review this determination on any spec, WPT revision or numeric
+  conversion change.
+- Reiterate exact Static 197/200, separate WPT-authored fuzzy Static
+  198/200, Positioning 53/100 and Test262 Parser 523/1983. These are
+  narrow pinned suites, not browser completion estimates.
+- Add Python-standard-library-only tools/code_intelligence.py: derive
+  Cargo crate dependency graph and a Mermaid report; validate feature
+  slice paths, Rust source anchors, unique slice IDs and multiple-crate
+  coverage from tools/code_slices.json. Generate committed Markdown under
+  docs/GENERATED_CODE_GRAPH.md and docs/GENERATED_CODE_SLICES.md.
+- Wire --check and unit tests into the Windows CI job, validating
+  generated report freshness, source anchors and internal Wiki links.
+  Preserve manually maintained CODE_GRAPH.md and CODE_SLICES.md
+  for design intent and complex architectural ownership not inferable
+  from Cargo manifests.
+- Document why GitHub Wiki cannot yet be populated: its separate git
+  remote is not initialized/available. Local Markdown pages are ready
+  to publish once that repository is created.
+

@@ -4,6 +4,26 @@ Compatibility percentages must come from repeatable external suites, not milesto
 project-owned regression counts. OPBrowser reports each metric with a named manifest version and
 a pinned upstream revision.
 
+## Known legacy-reference divergences (not excluded)
+
+Two pinned `rec2020` reftests (`predefined-012.html` and
+`rec2020-001.html`) expect green references that diverge from the
+current W3C CSS Color 4 display-referred transfer rule (Rec.2020
+BT.1886 gamma **2.4**). OPBrowser intentionally retains the newer
+specified transfer instead of hardcoding those legacy reference colors.
+These cases are classified as **known, non-blocking reference
+divergences**. They are **not skipped, removed, or converted to PASS**:
+they continue to lower the reported WPT score.
+
+- Static v1 exact: **197/200 (98.50%)**, including both failures.
+- Static v1 with source-authored `meta[name=fuzzy]`: **198/200 (99.00%)**;
+  the separate XYZ byte-level allowance accounts for the difference.
+- Positioning v1 exact: **53/100 (53.00%)**.
+
+See [KNOWN_TEST_DIVERGENCES.md](KNOWN_TEST_DIVERGENCES.md) for the
+pinned fixture names, current W3C specification URL, scope, review triggers
+and commands. No global exclusion list or relaxed CI threshold is used.
+
 ## Local project baseline
 
 Run the fast project-owned regression baseline with:

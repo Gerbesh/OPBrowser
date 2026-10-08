@@ -5,7 +5,12 @@ and original ECMAScript engine.
 
 ## Start here
 
+- [Current Status (verified metrics and missing features)](Current-Status.md)
 - [Project Overview](Project-Overview.md)
+- [Roadmap](Roadmap.md)
+- [Known Test Divergences (Rec.2020)](Known-Test-Divergences.md)
+- [Code Graph (crate dependencies)](Code-Graph.md)
+- [Code Slicer (source-backed feature paths)](Code-Slicer.md)
 - [Architecture](Architecture.md)
 - [Rendering Pipeline](Rendering-Pipeline.md)
 - [CSS Syntax Foundation](CSS-Syntax-Foundation.md)
@@ -22,5 +27,9 @@ and original ECMAScript engine.
 - [Development Workflow](Development-Workflow.md)
 - [Compatibility Strategy](Compatibility-Strategy.md)
 
-The canonical implementation plan remains docs/PROJECT_PLAN.md. The wiki explains
-the project for humans; the docs directory tracks engineering state in more detail.
+The canonical implementation plan is
+[docs/PROJECT_PLAN.md](https://github.com/Gerbesh/OPBrowser/blob/main/docs/PROJECT_PLAN.md).
+This `wiki/` directory is the local version-controlled source of Wiki pages.
+It is **not yet published** to the separate GitHub Wiki repository. Read
+these pages through the main repository until Wiki initialization and
+publication are completed.

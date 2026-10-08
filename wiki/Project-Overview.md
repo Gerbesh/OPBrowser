@@ -16,9 +16,18 @@ Core goals:
 
 The project starts on Windows 11 x86-64 using Rust and the MSVC toolchain.
 
-The current milestone opens external HTTP/HTTPS HTML pages through a native address
-bar or startup URL. It displays static text using the original engine, supports
-Back/Forward/Reload and scrolling, and keeps the window responsive during loading.
-Text hyperlinks are clickable, including relative HTTP(S) and local-file links.
-PNG/JPEG/GIF/BMP images support bounded HTTP/file/data loading, dimensions, alpha,
-alt fallback and image links. CSS and JavaScript remain future work.
+The current milestone can open local/file/data and bounded HTTP(S) HTML,
+paint its own DOM/CSS layout into a Win32 window, navigate links, scroll,
+and reflow retained pages. The CSS parser/cascade, box/inline/flex/table
+layout and positioned painting are functional **partial implementations**,
+not future ideas. Raster images and ICC color conversions use Windows
+infrastructure codecs only; layout and paint remain OPBrowser-owned.
+
+A separate original JavaScript lexer/parser/bytecode/VM supports a useful
+language subset, but the VM **does not yet run page scripts** or bind to
+DOM/Web APIs. Tabs, the task manager, automatic tab freezing, comprehensive
+content blocking and full web compatibility are still roadmap work.
+
+See [Current Status](Current-Status.md), [Roadmap](Roadmap.md),
+[Code Graph](Code-Graph.md), [Code Slicer](Code-Slicer.md) and
+[Known Test Divergences](Known-Test-Divergences.md).

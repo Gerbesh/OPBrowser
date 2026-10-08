@@ -17,22 +17,21 @@ when its observable behavior exists.
 
 The project now has three reproducible external metrics rather than milestone guesses:
 
-- **WPT Static v1**: 200 pinned static HTML/CSS reftests rendered at 800 x 600 through the
-  ordinary OPBrowser engine/display-list/GDI path. Initial baseline: **86/200, 43.00%**; current
-  result after the initial flex formatting/display-contents pass: **187/200, 93.50%**.
-- **WPT Positioning v1**: 100 pinned static reftests from CSS2 positioning/visual formatting and
-  CSS Positioned Layout. Initial baseline after the first absolute/fixed/relative pass:
-  **18/100, 18.00%**; current result after viewport/definite-height geometry, inline static-position,
-  inline-block/replaced sizing and the CSS2 split-inline continuation pass: **36/100, 36.00%**.
-  The follow-up absolute/fixed auto-margin constraint pass has four passing project regressions and
-  no change to the frozen WPT Positioning v1 score. Follow-up work now accumulates
-  containing inline fragments across separate layout runs and handles RTL static flow widths.
-  The CSS2 font-content/inline-block baseline and block-before-inline paint pass improved the
-  unchanged manifest to **38/100, 38.00%**, without reducing WPT Static (187/200).
-  Unsupported sticky, multicol, full stacking and vertical-writing cases remain in the sample.
-- **Test262 Parser v1**: a 2,000-path deterministic Test262 language sample. Module entries are
-  skipped until module parsing is supported. Initial executable baseline: **364/1983, 18.36%**;
-  current parser result: **523/1983, 26.37%**.
+- **WPT Static v1 exact**: 200 pinned reftests, **197/200 (98.50%)**.
+  A separate opt-in report applying only original WPT-authored
+  `meta[name=fuzzy]` tolerances gives **198/200 (99%)**.
+- **WPT Positioning v1**: 100 pinned position/layout reftests,
+  **53/100 (53.00%)**. Vertical writing, sticky, multicol and
+  complete positioning remain substantially incomplete.
+- **Test262 Parser v1**: 2,000 pinned entries, 17 module cases skipped;
+  **523/1983 (26.37%)** of executable parse expectations pass.
+  This is **not** JavaScript runtime conformance.
+
+The two remaining Rec.2020 cases use legacy color reference targets:
+they remain **counted as failed** but are classified as known non-blocking
+reference divergences against CSS Color 4 gamma 2.4. See
+[Known Test Divergences](Known-Test-Divergences.md). The XYZ case is
+accepted only in the opt-in source-authored fuzzy report.
 
 The Test262 number is parse-only. It is not a JavaScript runtime percentage. Each WPT number is a
 named static subset, not a full-platform WPT percentage.
@@ -83,4 +82,4 @@ DOM scripting and the required Web APIs. When a metric changes scope or sampling
 a new version instead of silently redefining the old percentage.
 
 The detailed command contract, exact revisions and non-goals live in
-[docs/COMPATIBILITY.md](../docs/COMPATIBILITY.md).
+[docs/COMPATIBILITY.md](https://github.com/Gerbesh/OPBrowser/blob/main/docs/COMPATIBILITY.md).

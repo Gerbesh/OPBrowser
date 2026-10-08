@@ -1,10 +1,20 @@
 # OPBrowser Code Slices
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 A code slice is an end-to-end path through the architecture that produces one
 observable capability. This prevents isolated subsystems from becoming impressive
 piles of code that never form a browser.
+
+**Connected Code Slicer:** [GENERATED_CODE_SLICES.md](GENERATED_CODE_SLICES.md)
+is regenerated from a curated list of feature paths in
+`tools/code_slices.json`. `python tools/code_intelligence.py --check`
+verifies that every referenced Rust file and symbol still exists,
+that every slice is valid, and that generated docs and Wiki links are
+current. The same validator runs in CI. This is a **source-anchor
+feature-flow checker**, not a whole-program AST/data-flow slicer; these
+hand-maintained architectural narratives remain the deeper explanation.
+See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
 ## S0 - Native process startup
 

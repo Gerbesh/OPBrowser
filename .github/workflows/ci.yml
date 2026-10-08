@@ -41,6 +41,12 @@ jobs:
       - name: Verify generated CSS named color table
         run: python tools/generate_css_named_colors.py --check
 
+      - name: Test Code Graph and Code Slicer validator
+        run: python -m unittest discover -s tools/tests -p "test_*.py"
+
+      - name: Verify Code Graph, Code Slicer and Wiki links
+        run: python tools/code_intelligence.py --check
+
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 

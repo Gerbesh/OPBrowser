@@ -13,7 +13,28 @@ Every coherent update follows the same loop:
 
 Red builds are not considered completed updates.
 
-See AGENTS.md for the exact repository rules.
+See [AGENTS.md](https://github.com/Gerbesh/OPBrowser/blob/main/AGENTS.md)
+for the exact repository rules.
+
+## Code Graph, Code Slicer and Wiki freshness
+
+```powershell
+python tools/code_intelligence.py --write # update graph and curated slices
+python tools/code_intelligence.py --check # CI verification + Wiki link check
+```
+
+The graph reads all workspace Cargo manifests; slice definitions in
+`tools/code_slices.json` must point to actual Rust files and symbols.
+Two reproducible Markdown files are tracked in `docs/`. The verifier
+will reject stale reports and broken relative Wiki links.
+Update `wiki/Current-Status.md` and `wiki/Compatibility-Strategy.md`
+when measured progress changes. Classify legacy reference mismatches in
+`docs/KNOWN_TEST_DIVERGENCES.md` without removing them from metrics.
+
+GitHub's **separate Wiki Git repository is not yet initialized**;
+`wiki/` under the main repository remains the authoritative source.
+Once enabled and initialized under the repository's Wiki tab, publish
+these pages to that Git repository without losing history.
 
 The test suite includes bounded loopback HTTP fixtures and native control dispatch /
 repaint coverage. `cargo run -p op_browser -- --navigation-smoke-test` additionally

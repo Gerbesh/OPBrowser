@@ -22,6 +22,29 @@ Primary conformance targets:
 - BLOCKED: configured or implemented, but prevented by an external dependency/state.
 - LATER: planned but intentionally deferred.
 
+## Documentation, Wiki and code intelligence (2026-10-08)
+
+- DONE reviewed local `wiki/` pages against current engine capabilities and
+  external test measurements. Updated the home page, overview, compatibility,
+  workflow and added current status/roadmap/reference-divergence guides.
+- DONE recognized two pinned legacy Rec.2020 color reference mismatches as
+  known, non-blocking WPT failures. They **remain failed** in the exact
+  197/200 metric and the metadata-aware 198/200 metric. Never remove them
+  from a frozen manifest merely to raise its percentage.
+- DONE connected offline Code Graph: derive all local crate edges from
+  Cargo manifests and produce `docs/GENERATED_CODE_GRAPH.md`.
+- DONE connected curated Code Slicer: validate feature paths and source
+  symbols in `tools/code_slices.json`, generating
+  `docs/GENERATED_CODE_SLICES.md`. Both reports and Wiki links are
+  checked in normal Windows CI by `python tools/code_intelligence.py --check`.
+- BLOCKED external GitHub Wiki publication: repository-local source pages
+  exist under `wiki/`, but the distinct `OPBrowser.wiki.git` repository
+  has not been initialized. The main repository already exposes the pages.
+  GitHub Wiki publication requires enabling and creating its first page,
+  then syncing the tracked local pages.
+- NEXT keep README, Wiki status, generated reports, manual dependency graph,
+  Code Slices and known-divergence log synchronized with future changes.
+
 ## M0 - Foundation
 
 Status: DONE at initial level.

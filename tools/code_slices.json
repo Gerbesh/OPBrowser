@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "slices": [
+    {
+      "id": "S1",
+      "title": "HTML source to visible pixels",
+      "status": "Static pipeline implemented",
+      "steps": [
+        {
+          "path": "crates/op_net/src/lib.rs",
+          "symbol": "load_document"
+        },
+        {
+          "path": "crates/op_html/src/lib.rs",
+          "symbol": "Tokenizer"
+        },
+        {
+          "path": "crates/op_engine/src/lib.rs",
+          "symbol": "render_html"
+        },
+        {
+          "path": "crates/op_layout/src/flow.rs",
+          "symbol": "layout"
+        },
+        {
+          "path": "crates/op_paint/src/lib.rs",
+          "symbol": "build_display_list"
+        },
+        {
+          "path": "crates/op_platform_win/src/lib.rs",
+          "symbol": "paint_command"
+        }
+      ],
+      "limitation": "This path lacks complete CSS, forms, DOM scripting and a GPU backend."
+    },
+    {
+      "id": "S2",
+      "title": "Navigation and retained layout",
+      "status": "Initial implementation",
+      "steps": [
+        {
+          "path": "crates/op_engine/src/lib.rs",
+          "symbol": "navigate"
+        },
+        {
+          "path": "crates/op_engine/src/lib.rs",
+          "symbol": "reflow"
+        },
+        {
+          "path": "crates/op_platform_win/src/lib.rs",
+          "symbol": "paint_window"
+        }
+      ],
+      "limitation": "No full History API or single-page-application lifecycle."
+    },
+    {
+      "id": "S3",
+      "title": "Author CSS to painted box",
+      "status": "Partial CSS",
+      "steps": [
+        {
+          "path": "crates/op_engine/src/styles.rs",
+          "symbol": "load"
+        },
+        {
+          "path": "crates/op_css/src/lib.rs",
+          "symbol": "compute_styles"
+        },
+        {
+          "path": "crates/op_layout/src/flow.rs",
+          "symbol": "layout"
+        },
+        {
+          "path": "crates/op_paint/src/lib.rs",
+          "symbol": "build_display_list"
+        }
+      ],
+      "limitation": "CSS cascade, first-line and some grouping exist; many CSS properties and layout modes remain partial."
+    },
+    {
+      "id": "S4",
+      "title": "Color-managed image to GDI",
+      "status": "Implemented initial raster/ICC slice",
+      "steps": [
+        {
+          "path": "crates/op_engine/src/images.rs",
+          "symbol": "load"
+        },
+        {
+          "path": "crates/op_image/src/lib.rs",
+          "symbol": "convert_icc_rgb"
+        },
+        {
+          "path": "crates/op_platform_win/src/raster.rs",
+          "symbol": "paint"
+        }
+      ],
+      "limitation": "Windows WIC performs codec/color conversion; OPBrowser owns resource policy and paint."
+    },
+    {
+      "id": "S5",
+      "title": "Original JavaScript engine boundary",
+      "status": "Standalone VM; no DOM binding",
+      "steps": [
+        {
+          "path": "crates/op_js/src/lib.rs",
+          "symbol": "parse_script"
+        },
+        {
+          "path": "crates/op_js/src/lib.rs",
+          "symbol": "JsRuntime"
+        },
+        {
+          "path": "crates/op_engine/src/lib.rs",
+          "symbol": "Engine"
+        }
+      ],
+      "limitation": "No page script evaluation, DOM bindings, or event loop; engine depends on the VM but does not yet execute page scripts."
+    },
+    {
+      "id": "S6",
+      "title": "WPT image comparison and reporting",
+      "status": "Strict and opt-in fuzzy reports",
+      "steps": [
+        {
+          "path": "crates/op_browser/src/bin/wpt_probe.rs",
+          "symbol": "different_pixels"
+        },
+        {
+          "path": "crates/op_browser/src/bin/wpt_probe.rs",
+          "symbol": "within_wpt_fuzzy"
+        },
+        {
+          "path": "crates/op_platform_win/src/lib.rs",
+          "symbol": "render_display_list_to_bgra"
+        }
+      ],
+      "limitation": "Strict Static: 197/200; metadata-aware Static: 198/200; two Rec.2020 fixtures remain known mismatches."
+    }
+  ]
+}

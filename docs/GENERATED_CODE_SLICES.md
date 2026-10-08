@@ -1,0 +1,110 @@
+# Generated Code Slices
+
+> Generated from `tools/code_slices.json` and validated against live Rust files.
+> This is a curated vertical feature map, **not** an AST/call/data-flow slicer.
+
+## S1 — HTML source to visible pixels
+
+Status: **Static pipeline implemented**.
+
+```text
+op_net::load_document
+op_html::Tokenizer
+op_engine::render_html
+op_layout::layout
+op_paint::build_display_list
+op_platform_win::paint_command
+```
+
+- [`op_net::load_document`](../crates/op_net/src/lib.rs#L141)
+- [`op_html::Tokenizer`](../crates/op_html/src/lib.rs#L56)
+- [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L188)
+- [`op_layout::layout`](../crates/op_layout/src/flow.rs#L15)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_platform_win::paint_command`](../crates/op_platform_win/src/lib.rs#L641)
+
+This path lacks complete CSS, forms, DOM scripting and a GPU backend.
+
+## S2 — Navigation and retained layout
+
+Status: **Initial implementation**.
+
+```text
+op_engine::navigate
+op_engine::reflow
+op_platform_win::paint_window
+```
+
+- [`op_engine::navigate`](../crates/op_engine/src/lib.rs#L258)
+- [`op_engine::reflow`](../crates/op_engine/src/lib.rs#L241)
+- [`op_platform_win::paint_window`](../crates/op_platform_win/src/lib.rs#L554)
+
+No full History API or single-page-application lifecycle.
+
+## S3 — Author CSS to painted box
+
+Status: **Partial CSS**.
+
+```text
+op_engine::load
+op_css::compute_styles
+op_layout::layout
+op_paint::build_display_list
+```
+
+- [`op_engine::load`](../crates/op_engine/src/styles.rs#L105)
+- [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
+- [`op_layout::layout`](../crates/op_layout/src/flow.rs#L15)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+
+CSS cascade, first-line and some grouping exist; many CSS properties and layout modes remain partial.
+
+## S4 — Color-managed image to GDI
+
+Status: **Implemented initial raster/ICC slice**.
+
+```text
+op_engine::load
+op_image::convert_icc_rgb
+op_platform_win::paint
+```
+
+- [`op_engine::load`](../crates/op_engine/src/images.rs#L24)
+- [`op_image::convert_icc_rgb`](../crates/op_image/src/lib.rs#L386)
+- [`op_platform_win::paint`](../crates/op_platform_win/src/raster.rs#L121)
+
+Windows WIC performs codec/color conversion; OPBrowser owns resource policy and paint.
+
+## S5 — Original JavaScript engine boundary
+
+Status: **Standalone VM; no DOM binding**.
+
+```text
+op_js::parse_script
+op_js::JsRuntime
+op_engine::Engine
+```
+
+- [`op_js::parse_script`](../crates/op_js/src/lib.rs#L18)
+- [`op_js::JsRuntime`](../crates/op_js/src/lib.rs#L20)
+- [`op_engine::Engine`](../crates/op_engine/src/lib.rs#L128)
+
+No page script evaluation, DOM bindings, or event loop; engine depends on the VM but does not yet execute page scripts.
+
+## S6 — WPT image comparison and reporting
+
+Status: **Strict and opt-in fuzzy reports**.
+
+```text
+op_browser::different_pixels
+op_browser::within_wpt_fuzzy
+op_platform_win::render_display_list_to_bgra
+```
+
+- [`op_browser::different_pixels`](../crates/op_browser/src/bin/wpt_probe.rs#L200)
+- [`op_browser::within_wpt_fuzzy`](../crates/op_browser/src/bin/wpt_probe.rs#L133)
+- [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L60)
+
+Strict Static: 197/200; metadata-aware Static: 198/200; two Rec.2020 fixtures remain known mismatches.
+
+See [CODE_SLICES.md](CODE_SLICES.md) for full engineering notes.
