@@ -156,7 +156,19 @@ W3C CSS Color 4 now specifies gamma 2.4 for Rec.2020, while frozen
 reference values in two cases appear to target an older transfer function:
 they were not modified or made to pass through special-case constants.
 The WPT probe remains pixel-exact and neither the manifest nor its thresholds
-have changed.
+have changed. The first composited effects pipeline supports CSS opacity
+and one invert() filter expression. It isolates nested groups into bounded
+Win32 offscreen buffers and merges each group's internal overlapping
+children once into its parent. A prior failure involving two invert-filtered
+absolute siblings beneath a half-opacity container now passes:
+composited-filters-under-opacity.html. On the unchanged manifests Static
+is 192/200 (96.00%), Positioning 53/100 (53.00%), both with zero render
+errors. Remaining eight static failures involve ICC profiles and image
+backgrounds, :visited history colors, first-line shadows/currentcolor and
+bidirectional text, color conversion rounding/precision and two Rec.2020
+references with pre-2026 transfer expectations. The effect implementation
+does not yet cover all filters/opacity contexts, color-managed compositing,
+gradient/shadow effects or exact antialiasing.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves

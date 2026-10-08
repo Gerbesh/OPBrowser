@@ -1004,6 +1004,20 @@ and limited use -> referenced text children; recursive traversal is bounded
 during id lookup. These slices improve WPT Static 187/200 to 191/200, with
 no additional external engine dependency.
 
+ComputedStyle now holds independently cascaded opacity and a supported
+single invert() filter value, with CSS-global keyword handling. flow::Style
+carries them into block painting; collect_paint_groups adds opacity/filter
+owners as atomic ancestors of positioned descendants and records effect
+amounts. op_paint::build_display_list emits BeginLayer/EndLayer for each
+affected subtree without reordering negative or positive z-index phases.
+op_platform_win::paint_commands_inner matches nested layer boundaries and
+composite_layer paints each group onto paired GDI white/black DIBs,
+recovers an approximate premultiplied BGRA image, applies inversion, and
+AlphaBlends the result once onto the parent target. This compositor is
+shared between the real Win32 window and headless WPT rendering. Bounded
+layer allocation/depth falls back to unfiltered visible contents rather
+than silently dropping them.
+
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting
 an extra empty inline fragment after a block child/pseudo flushed the collection. Nested

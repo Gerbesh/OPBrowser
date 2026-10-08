@@ -68,6 +68,10 @@ impl Surface {
         }
     }
 
+    pub(super) fn clear_black(&self) {
+        unsafe { std::ptr::write_bytes(self.bits, 0, self.byte_len) };
+    }
+
     pub(super) fn pixels(&self) -> Vec<u8> {
         unsafe { std::slice::from_raw_parts(self.bits, self.byte_len) }.to_vec()
     }
@@ -185,6 +189,105 @@ mod tests {
                 pixel & 255 > 200 && (pixel >> 8) & 255 < 100 && (pixel >> 16) & 255 < 100
             })));
         }
+    }
+
+    #[test]
+    fn opacity_layer_composites_overlapping_rectangles_once() {
+        let target = Surface::new(null_mut(), 180, 180).unwrap();
+        target.clear_white();
+        let yellow = op_paint::Color {
+            r: 255,
+            g: 255,
+            b: 0,
+        };
+        let commands = [
+            PaintCommand::BeginLayer {
+                opacity: 128,
+                invert: 0,
+            },
+            PaintCommand::FillRect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 150,
+                color: yellow,
+            },
+            PaintCommand::FillRect {
+                x: 50,
+                y: 0,
+                width: 100,
+                height: 150,
+                color: yellow,
+            },
+            PaintCommand::EndLayer,
+        ];
+        crate::paint_commands(target.dc, &commands, &mut Vec::new());
+        unsafe {
+            GdiFlush();
+        }
+        let first = unsafe { GetPixel(target.dc, 25, 70) };
+        let overlap = unsafe { GetPixel(target.dc, 75, 70) };
+        let second = unsafe { GetPixel(target.dc, 125, 70) };
+        assert_eq!(first, overlap, "overlap must not apply parent alpha twice");
+        assert_eq!(first, second);
+        assert!((127..=128).contains(&((first >> 16) & 255)));
+        assert_eq!(unsafe { GetPixel(target.dc, 175, 70) }, 0xffffff);
+    }
+
+    #[test]
+    fn nested_invert_filter_and_opacity_make_uniform_light_blue() {
+        let target = Surface::new(null_mut(), 180, 180).unwrap();
+        target.clear_white();
+        let yellow = op_paint::Color {
+            r: 255,
+            g: 255,
+            b: 0,
+        };
+        let commands = [
+            PaintCommand::BeginLayer {
+                opacity: 128,
+                invert: 0,
+            },
+            PaintCommand::BeginLayer {
+                opacity: 255,
+                invert: 255,
+            },
+            PaintCommand::FillRect {
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 150,
+                color: yellow,
+            },
+            PaintCommand::EndLayer,
+            PaintCommand::BeginLayer {
+                opacity: 255,
+                invert: 255,
+            },
+            PaintCommand::FillRect {
+                x: 50,
+                y: 0,
+                width: 100,
+                height: 150,
+                color: yellow,
+            },
+            PaintCommand::EndLayer,
+            PaintCommand::EndLayer,
+        ];
+        crate::paint_commands(target.dc, &commands, &mut Vec::new());
+        unsafe {
+            GdiFlush();
+        }
+        let rgb = |x| {
+            let pixel = unsafe { GetPixel(target.dc, x, 75) };
+            (pixel & 255, (pixel >> 8) & 255, (pixel >> 16) & 255)
+        };
+        assert_eq!(rgb(25), rgb(75), "alpha must apply to filtered group once");
+        assert_eq!(rgb(75), rgb(125));
+        let (red, green, blue) = rgb(75);
+        assert!((127..=129).contains(&red), "{red}");
+        assert!((127..=129).contains(&green), "{green}");
+        assert_eq!(blue, 255);
     }
 
     #[test]

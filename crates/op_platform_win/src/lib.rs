@@ -66,9 +66,7 @@ pub fn render_display_list_to_bgra(
         .ok_or_else(|| "failed to create offscreen GDI surface".to_owned())?;
     surface.clear_white();
     let mut link_regions = Vec::new();
-    for command in &display_list.commands {
-        paint_command(surface.dc, command, &mut link_regions);
-    }
+    paint_commands(surface.dc, &display_list.commands, &mut link_regions);
     unsafe {
         windows_sys::Win32::Graphics::Gdi::GdiFlush();
     }
@@ -589,9 +587,7 @@ fn paint_window(hwnd: HWND) {
     if let Some(storage) = DISPLAY_LIST.get()
         && let Ok(display_list) = storage.read()
     {
-        for command in &display_list.commands {
-            paint_command(hdc, command, &mut link_regions);
-        }
+        paint_commands(hdc, &display_list.commands, &mut link_regions);
     }
     if let Ok(mut regions) = LINK_REGIONS.get_or_init(|| RwLock::new(Vec::new())).write() {
         *regions = link_regions;
@@ -604,8 +600,212 @@ fn paint_window(hwnd: HWND) {
     PAINTED_ONCE.store(true, Ordering::SeqCst);
 }
 
+fn paint_commands(hdc: *mut c_void, commands: &[PaintCommand], links: &mut Vec<LinkRegion>) {
+    paint_commands_inner(hdc, commands, links, 0);
+}
+
+fn paint_commands_inner(
+    hdc: *mut c_void,
+    commands: &[PaintCommand],
+    links: &mut Vec<LinkRegion>,
+    depth: usize,
+) {
+    let mut index = 0usize;
+    while index < commands.len() {
+        if let PaintCommand::BeginLayer { opacity, invert } = commands[index] {
+            let mut nesting = 1usize;
+            let mut end = index + 1;
+            while end < commands.len() && nesting > 0 {
+                match commands[end] {
+                    PaintCommand::BeginLayer { .. } => nesting += 1,
+                    PaintCommand::EndLayer => nesting -= 1,
+                    _ => {}
+                }
+                end += 1;
+            }
+            if nesting == 0 && depth < 32 {
+                composite_layer(
+                    hdc,
+                    &commands[index + 1..end - 1],
+                    opacity,
+                    invert,
+                    links,
+                    depth + 1,
+                );
+            } else if nesting == 0 && opacity > 0 {
+                paint_unmodified_group(hdc, &commands[index + 1..end - 1], links);
+            }
+            index = end;
+        } else {
+            if !matches!(commands[index], PaintCommand::EndLayer) {
+                paint_command(hdc, &commands[index], links);
+            }
+            index += 1;
+        }
+    }
+}
+
+// Preserve visible document contents if bounded offscreen compositing cannot
+// allocate a surface. Effects may be omitted, but content is never dropped.
+fn paint_unmodified_group(
+    target: *mut c_void,
+    commands: &[PaintCommand],
+    links: &mut Vec<LinkRegion>,
+) {
+    for command in commands {
+        if !matches!(
+            command,
+            PaintCommand::BeginLayer { .. } | PaintCommand::EndLayer
+        ) {
+            paint_command(target, command, links);
+        }
+    }
+}
+
+fn layer_bounds(commands: &[PaintCommand]) -> Option<(i32, i32, i32, i32)> {
+    let mut bounds: Option<(i32, i32, i32, i32)> = None;
+    for command in commands {
+        let rect = match command {
+            PaintCommand::FillRect {
+                x,
+                y,
+                width,
+                height,
+                ..
+            }
+            | PaintCommand::Image {
+                x,
+                y,
+                width,
+                height,
+                ..
+            } => (*x, *y, *width, *height),
+            PaintCommand::Text {
+                x,
+                y,
+                font_size,
+                text,
+                ..
+            } => (
+                *x,
+                y.saturating_sub(*font_size),
+                (text.chars().count() as i32)
+                    .saturating_mul(*font_size)
+                    .saturating_mul(2)
+                    .max(1),
+                font_size.saturating_mul(3).max(1),
+            ),
+            _ => continue,
+        };
+        if rect.2 <= 0 || rect.3 <= 0 {
+            continue;
+        }
+        let right = rect.0.saturating_add(rect.2);
+        let bottom = rect.1.saturating_add(rect.3);
+        bounds = Some(match bounds {
+            Some((left, top, old_right, old_bottom)) => (
+                left.min(rect.0),
+                top.min(rect.1),
+                old_right.max(right),
+                old_bottom.max(bottom),
+            ),
+            None => (rect.0, rect.1, right, bottom),
+        });
+    }
+    bounds
+}
+
+fn composite_layer(
+    target: *mut c_void,
+    commands: &[PaintCommand],
+    opacity: u8,
+    invert: u8,
+    links: &mut Vec<LinkRegion>,
+    depth: usize,
+) {
+    if opacity == 0 {
+        return;
+    }
+    let Some((x, y, right, bottom)) = layer_bounds(commands) else {
+        return;
+    };
+    let width = right.saturating_sub(x);
+    let height = bottom.saturating_sub(y);
+    if width <= 0
+        || height <= 0
+        || width > 4096
+        || height > 4096
+        || (width as u64) * (height as u64) > 4_194_304
+    {
+        paint_unmodified_group(target, commands, links);
+        return;
+    }
+
+    let Some(white) = raster::Surface::new(target, width, height) else {
+        paint_unmodified_group(target, commands, links);
+        return;
+    };
+    let Some(black) = raster::Surface::new(target, width, height) else {
+        paint_unmodified_group(target, commands, links);
+        return;
+    };
+    white.clear_white();
+    black.clear_black();
+    unsafe {
+        SetViewportOrgEx(white.dc, x.saturating_neg(), y.saturating_neg(), null_mut());
+        SetViewportOrgEx(black.dc, x.saturating_neg(), y.saturating_neg(), null_mut());
+    }
+    let mut group_links = Vec::new();
+    paint_commands_inner(black.dc, commands, &mut group_links, depth);
+    paint_commands_inner(white.dc, commands, &mut Vec::new(), depth);
+    unsafe {
+        windows_sys::Win32::Graphics::Gdi::GdiFlush();
+    }
+    let black_pixels = black.pixels();
+    let white_pixels = white.pixels();
+    let mut result = vec![0u8; black_pixels.len()];
+    for (index, (black_pixel, white_pixel)) in black_pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(white_pixels.as_chunks::<4>().0.iter())
+        .enumerate()
+    {
+        let lost_white = (0..3)
+            .map(|channel| white_pixel[channel] as i32 - black_pixel[channel] as i32)
+            .max()
+            .unwrap_or(255)
+            .clamp(0, 255);
+        let alpha = 255 - lost_white;
+        let scaled_alpha = (alpha * opacity as i32 + 127) / 255;
+        for channel in 0..3 {
+            let premult = (black_pixel[channel] as i32).clamp(0, alpha);
+            let filtered =
+                (premult * (255 - invert as i32) + (alpha - premult) * invert as i32 + 127) / 255;
+            result[4 * index + channel] =
+                ((filtered * opacity as i32 + 127) / 255).clamp(0, scaled_alpha) as u8;
+        }
+        result[4 * index + 3] = scaled_alpha as u8;
+    }
+    if let Ok(raster_image) =
+        op_paint::RasterImage::from_premultiplied_bgra(width as u32, height as u32, result)
+    {
+        let composite = PaintCommand::Image {
+            x,
+            y,
+            width,
+            height,
+            image: std::sync::Arc::new(raster_image),
+            href: None,
+        };
+        paint_command(target, &composite, &mut Vec::new());
+        links.extend(group_links);
+    }
+}
+
 fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Vec<LinkRegion>) {
     match command {
+        PaintCommand::BeginLayer { .. } | PaintCommand::EndLayer => {}
         PaintCommand::Image {
             x,
             y,

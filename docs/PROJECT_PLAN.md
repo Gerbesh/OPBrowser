@@ -406,13 +406,22 @@ Status: IN PROGRESS.
   improving the unchanged frozen suite 187/200 -> 191/200 (93.50% -> 95.50%),
   with zero render errors. Add color and engine regressions. These are narrow
   slices, not complete CSS gamut mapping, HTML forms, or SVG rendering.
-- NEXT close remaining nine frozen WPT Static failures via real CSS features:
-  ICC @color-profile and PNG color management, background images, full CSS
-  group opacity/filter compositing, correct currentcolor/first-line effects,
-  link history-sensitive :visited handling, modern color conversion precision,
-  and bidirectional text/first-line painting. Distinguish contemporary
-  Rec.2020 transfer semantics from pinned historical reftest references.
-  Continue table row/group paint and CSS positioning as separate workstreams.
+- DONE first bounded group-opacity and invert-filter pipeline: opacity and
+  filter:invert() now participate in the computed CSS cascade. Opacity/filter
+  owners and their positioned descendants form nested paint layers, rendered
+  by the Win32 painter into independent white/black offscreen surfaces and
+  recomposited once into a premultiplied-alpha image. Two GDI overlap tests
+  and a computed cascade regression cover this. The frozen Static WPT suite
+  improves 191/200 -> 192/200 (96.00%), resolving
+  composited-filters-under-opacity, with no Positioning regression (53/100).
+  Size and recursion budgets prevent unbounded offscreen allocations; oversized
+  groups retain content without effects. This is not full CSS filter/opacity.
+- NEXT close remaining eight frozen WPT Static failures: ICC @color-profile,
+  tagged PNG color management/background images, :visited painting,
+  currentcolor/first-line effects, more precise XYZ/reftest color mapping,
+  bidirectional text, and reviewing the two legacy Rec.2020 transfer
+  references against the 2026 gamma 2.4 specification. Continue row/group
+  table painting and CSS positioning as separate workstreams.
 
 ## M3 - Original JavaScript engine
 

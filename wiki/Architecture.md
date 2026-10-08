@@ -75,6 +75,15 @@ SVG viewport and glyph positioning engine. The CSS color path now protects
 near-black OKLab/OKLCH output from artificial chromatic clipping artifacts
 while retaining bright wide-gamut conversion until full gamut mapping is
 implemented consistently across color spaces.
+Group opacity and a single CSS invert() filter are now computed as
+non-inherited values, then represented as nested PaintGroup layers with
+BeginLayer/EndLayer display-list commands. The Win32 GDI backend paints
+each group to bounded black/white offscreen DIBs, recovers premultiplied
+alpha from the paired images, inverts RGB within the group when requested,
+and composites the group once. Native UI and WPT both use this path.
+Pixel budgets and depth limits allow a fallback to visible content if
+effects cannot be rendered safely. This is not a full CSS filter or
+transparency-color-management implementation.
 This is not full CSS stacking: additional context triggers, other auto-z
 paint-phase details and exact interleaving remain future work. Win32 drawing
 never decides paint order.

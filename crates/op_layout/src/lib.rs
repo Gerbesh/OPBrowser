@@ -104,6 +104,8 @@ pub struct PaintGroup {
     pub parent: Option<PaintKey>,
     /// Inline boxes paint their own fragment backgrounds before atomic children.
     pub inline_owner: bool,
+    pub opacity: u8,
+    pub invert: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

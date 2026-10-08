@@ -541,6 +541,27 @@ This is still not complete SVG layout, hit testing, or coordinate/raster support
 Engine and color regressions preserve the narrow behavior. Frozen Static
 passes 191/200 from 187/200; Positioning stays at 53/100.
 
+The following CSS effects slice introduces non-inherited opacity and a
+single filter:invert() expression in computed-style resolution. Layout
+marks opacity/filter owners as paint groups, including static block owners
+and positioned children; their nested parent relationships are retained
+through collect_paint_groups. The display list emits BeginLayer/EndLayer
+around group paint commands while retaining the existing iterative
+negative/background/foreground/positive stacking phases.
+Win32's shared GDI command painter creates paired offscreen surfaces,
+renders each group's contents onto black and white, estimates per-pixel
+coverage from the difference, applies CSS invert to premultiplied RGB,
+then composites the entire group exactly once with the declared opacity.
+The same path drives native window painting and WPT headless reftests.
+The layer area and depth are bounded; oversized or failed allocations
+fall back to visible unfiltered content rather than erasing the group.
+Windows tests enforce uniform opacity over overlapping rectangles and
+nested invert/opacity behavior; CSS tests check cascade/non-inheritance.
+This raises Static to 192/200 and leaves Positioning 53/100 with zero
+render errors. Remaining limits include other CSS filter functions,
+precise shadow/gradient handling, other opacity-bearing inline/table
+contexts and complete alpha/color-space precision.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus

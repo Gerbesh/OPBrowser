@@ -137,7 +137,10 @@ fn collect_paint_groups(
         while let Some(node) = ancestor {
             if let Some(style) = styles.style_for(node)
                 && style.position != Position::Static
-                && (style.z_index.is_some() || style.position == Position::Fixed)
+                && (style.z_index.is_some()
+                    || style.position == Position::Fixed
+                    || style.opacity < 1.0
+                    || style.invert_filter > 0.0)
                 && !matches!(style.display, Display::None | Display::Contents)
                 && let Some(&index) = dom_order.get(&node)
             {
@@ -160,10 +163,15 @@ fn collect_paint_groups(
                 .get(key.source_order)
                 .and_then(|node| styles.style_for(*node))
                 .is_some_and(|style| style.display == Display::Inline);
+            let style = node_by_order
+                .get(key.source_order)
+                .and_then(|node| styles.style_for(*node));
             PaintGroup {
                 key,
                 parent,
                 inline_owner,
+                opacity: style.map_or(255, |s| (s.opacity * 255.0).round() as u8),
+                invert: style.map_or(0, |s| (s.invert_filter * 255.0).round() as u8),
             }
         })
         .collect()
@@ -309,6 +317,8 @@ struct Style {
     margin: MarginEdges,
     padding: PaddingEdges,
     background: TextColor,
+    opacity: f32,
+    invert_filter: f32,
     border: BorderEdges,
     width: Option<LengthPercentage>,
     min_width: LengthPercentage,
@@ -1171,6 +1181,13 @@ impl<'a> Context<'a, '_> {
             // are retained by mark_positioned_outputs_since, so those children
             // remain in the ancestor stacking context rather than becoming
             // atomic descendants of the auto-z parent.
+            let id = match content {
+                BlockContent::Element(id)
+                | BlockContent::Generated(id, _)
+                | BlockContent::ImageAlt(id) => id,
+            };
+            self.mark_positioned_outputs_since(output_start, self.paint_group(id, style));
+        } else if style.opacity < 1.0 || style.invert_filter > 0.0 {
             let id = match content {
                 BlockContent::Element(id)
                 | BlockContent::Generated(id, _)
@@ -5556,6 +5573,8 @@ fn computed_style(style: ComputedStyle) -> Style {
         margin: style.margin,
         padding: style.padding,
         background,
+        opacity: style.opacity,
+        invert_filter: style.invert_filter,
         border,
         width: style.width,
         min_width: style.min_width,
@@ -5714,6 +5733,8 @@ fn default_style() -> Style {
             blue: 0,
             alpha: 0,
         },
+        opacity: 1.0,
+        invert_filter: 0.0,
         border: BorderEdges::NONE,
         width: None,
         min_width: LengthPercentage::ZERO,
@@ -5758,6 +5779,8 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         },
         padding: PaddingEdges::ZERO,
         background: default_style().background,
+        opacity: 1.0,
+        invert_filter: 0.0,
         border: BorderEdges::NONE,
         width: None,
         min_width: LengthPercentage::ZERO,

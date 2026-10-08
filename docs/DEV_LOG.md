@@ -2461,3 +2461,28 @@ This file is append-only project history.
   the expected colors in two pinned references. Further full-spec work is
   required for legitimate 200/200.
 
+## 2026-10-08 - First nested group-opacity and filter compositing
+
+- Investigate the nine remaining WPT Static failures. Confirm the contemporary
+  CSS Color 4 Rec.2020 reference mandates a display-referred gamma of 2.4;
+  preserve standards compliance rather than modifying historic WPT references.
+- Add non-inherited computed CSS opacity and a single invert() filter with
+  global keywords, percentage/number support, clamping, and a conservative
+  parser that rejects unimplemented filter chains.
+- Preserve effect ownership in layout paint groups, including static block
+  owners and positioned child contexts. The paint builder wraps affected
+  contexts in BeginLayer/EndLayer markers, retaining the stacking traversal.
+- In the shared Win32 GDI painter, render nested groups to paired black/white
+  offscreen DIBs, reconstruct alpha coverage, apply inversion to the
+  premultiplied channels and composite once at the owning group opacity.
+  Bounded layers use a 4M-pixel/4096px cap and a depth limit of 32. On
+  failure, preserve document content with an unfiltered fallback.
+- Add GDI tests proving overlapping rectangles retain uniform half-opacity,
+  nested invert under parent opacity yields uniform light-blue, and CSS
+  computed style tests for cascade/non-inheritance/invalid values.
+- The previously failing WPT Static
+  css/css-color/composited-filters-under-opacity.html now passes. Pinned WPT
+  Static improves 191/200 -> 192/200 (96%), Positioning stays 53/100
+  (53%), both with no render errors. ICC images, shadows, color gamut
+  mapping, more filter functions and full SVG remain incomplete.
+

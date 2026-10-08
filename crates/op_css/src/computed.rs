@@ -392,6 +392,8 @@ pub struct ComputedStyle {
     pub text_transform: TextTransform,
     pub background_color: CssColor,
     background_color_value: ComputedColorValue,
+    pub opacity: f32,
+    pub invert_filter: f32,
     pub margin: MarginEdges,
     pub padding: PaddingEdges,
     pub border: BorderEdges,
@@ -499,6 +501,8 @@ impl ComputedStyle {
             text_transform: TextTransform::None,
             background_color: CssColor::TRANSPARENT,
             background_color_value: ComputedColorValue::Absolute(CssColor::TRANSPARENT),
+            opacity: 1.0,
+            invert_filter: 0.0,
             margin: MarginEdges::ZERO,
             padding: PaddingEdges::ZERO,
             border: BorderEdges::NONE,
@@ -1496,6 +1500,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             text_transform: parent.text_transform,
             background_color: initial.background_color,
             background_color_value: initial.background_color_value,
+            opacity: initial.opacity,
+            invert_filter: initial.invert_filter,
             margin: initial.margin,
             padding: initial.padding,
             border: initial.border,
@@ -1816,6 +1822,13 @@ fn apply_author_declarations(
             parent_style.map(|parent| parent.text_transform),
             TextTransform::None,
         );
+    }
+    if let Some((_, value)) = winning_value(declarations, "opacity", parse_opacity) {
+        style.opacity = resolve_non_inherited(value, parent_style.map(|p| p.opacity), 1.0);
+    }
+    if let Some((_, value)) = winning_value(declarations, "filter", parse_invert_filter) {
+        style.invert_filter =
+            resolve_non_inherited(value, parent_style.map(|p| p.invert_filter), 0.0);
     }
     if let Some((_, value)) = winning_background_color(declarations) {
         style.background_color_value = resolve_non_inherited(
@@ -2992,6 +3005,40 @@ fn absolute_or_font_relative_px(value: f32, unit: &str, font_px: f32) -> Option<
     result.is_finite().then_some(result)
 }
 
+fn parse_invert_filter(tokens: &[TokenKind]) -> Option<Specified<f32>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| 0.0));
+    }
+    if single_ident(tokens).is_some_and(|name| name.eq_ignore_ascii_case("none")) {
+        return Some(Specified::Value(0.0));
+    }
+    let parts: Vec<_> = significant_tokens(tokens).collect();
+    let [TokenKind::Function(name), amount, TokenKind::CloseParen] = parts.as_slice() else {
+        return None;
+    };
+    if !name.eq_ignore_ascii_case("invert") {
+        return None;
+    }
+    let value = match amount {
+        TokenKind::Number(number) => parse_number(number)?,
+        TokenKind::Percentage(number) => parse_number(number)? / 100.0,
+        _ => return None,
+    };
+    Some(Specified::Value(value.clamp(0.0, 1.0)))
+}
+
+fn parse_opacity(tokens: &[TokenKind]) -> Option<Specified<f32>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| 1.0));
+    }
+    let value = match single_significant_token(tokens)? {
+        TokenKind::Number(number) => parse_number(number)?,
+        TokenKind::Percentage(number) => parse_number(number)? / 100.0,
+        _ => return None,
+    };
+    Some(Specified::Value(value.clamp(0.0, 1.0)))
+}
+
 fn parse_number(value: &str) -> Option<f32> {
     value.parse::<f32>().ok().filter(|value| value.is_finite())
 }
@@ -4089,6 +4136,56 @@ mod tests {
         }
 
         find(document, document.root(), id).expect("expected id")
+    }
+
+    #[test]
+    fn opacity_and_invert_filter_compute_with_css_cascade_and_non_inheritance() {
+        let document = parse_document(
+            "<style>
+                #parent { opacity: 50%; filter: invert(100%) }
+                #child { opacity: inherit; filter: inherit }
+                #plain { }
+                #zero { opacity: -2; filter: invert(-25%) }
+                #max { opacity: 5; filter: invert(200%) }
+                #invalid { opacity: 30%; filter: invert(40%) blur(2px) }
+                #initial { opacity: initial; filter: none }
+              </style>
+              <div id='parent'>
+                <div id='child'></div><div id='plain'></div>
+              </div>
+              <div id='zero'></div><div id='max'></div>
+              <div id='invalid'></div><div id='initial'></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let style = |id| *computed.style_for(find_by_id(&document, id)).unwrap();
+        assert_eq!(
+            (style("parent").opacity, style("parent").invert_filter),
+            (0.5, 1.0)
+        );
+        assert_eq!(
+            (style("child").opacity, style("child").invert_filter),
+            (0.5, 1.0)
+        );
+        assert_eq!(
+            (style("plain").opacity, style("plain").invert_filter),
+            (1.0, 0.0)
+        );
+        assert_eq!(
+            (style("zero").opacity, style("zero").invert_filter),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            (style("max").opacity, style("max").invert_filter),
+            (1.0, 1.0)
+        );
+        assert_eq!(
+            (style("invalid").opacity, style("invalid").invert_filter),
+            (0.3, 0.0)
+        );
+        assert_eq!(
+            (style("initial").opacity, style("initial").invert_filter),
+            (1.0, 0.0)
+        );
     }
 
     #[test]

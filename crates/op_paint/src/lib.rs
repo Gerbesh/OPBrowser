@@ -35,6 +35,11 @@ impl Color {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaintCommand {
+    BeginLayer {
+        opacity: u8,
+        invert: u8,
+    },
+    EndLayer,
     Image {
         x: i32,
         y: i32,
@@ -118,9 +123,19 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
 
     // Iterative context traversal avoids Rust stack overflow on deeply nested markup.
     // Negative children go after the context's block background, before its text.
-    let mut pending = vec![(None, false)];
-    while let Some((context, foreground)) = pending.pop() {
-        if !foreground {
+    let effects = layout
+        .paint_groups
+        .iter()
+        .map(|group| (group.key, (group.opacity, group.invert)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut pending = vec![(None, 0u8)];
+    while let Some((context, stage)) = pending.pop() {
+        if stage == 0 {
+            if let Some(&(opacity, invert)) = context.and_then(|key| effects.get(&key))
+                && (opacity < 255 || invert > 0)
+            {
+                commands.push(PaintCommand::BeginLayer { opacity, invert });
+            }
             if context.is_some() {
                 let layer = if context.is_some_and(|key| inline_owners.contains(&key)) {
                     op_layout::DecorationPaintLayer::PositionedInline
@@ -129,13 +144,13 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
                 };
                 emit_backgrounds(layout, &mut commands, layer, context);
             }
-            pending.push((context, true));
+            pending.push((context, 1));
             if let Some(siblings) = children.get(&context) {
                 for &key in siblings.iter().rev().filter(|key| key.z_index < 0) {
-                    pending.push((Some(key), false));
+                    pending.push((Some(key), 0));
                 }
             }
-        } else {
+        } else if stage == 1 {
             if context.is_none() {
                 // Root negative contexts belong behind in-flow block backgrounds.
                 emit_backgrounds(
@@ -154,11 +169,16 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
             };
             emit_backgrounds(layout, &mut commands, layer, context);
             emit_foreground(layout, &mut commands, context);
+            pending.push((context, 2));
             if let Some(siblings) = children.get(&context) {
                 for &key in siblings.iter().rev().filter(|key| key.z_index >= 0) {
-                    pending.push((Some(key), false));
+                    pending.push((Some(key), 0));
                 }
             }
+        } else if let Some(&(opacity, invert)) = context.and_then(|key| effects.get(&key))
+            && (opacity < 255 || invert > 0)
+        {
+            commands.push(PaintCommand::EndLayer);
         }
     }
     DisplayList { commands }
