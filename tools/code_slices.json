@@ -196,6 +196,21 @@
       "limitation": "Concurrent fetch and initial-load JS polling only; no event loop, DOMContentLoaded, module scripts or SRI."
     },
     {
+      "id": "S12",
+      "title": "Page readyState and DOMContentLoaded/load lifecycle to paint",
+      "status": "M4.8 initial-load DOM lifecycle subset",
+      "steps": [
+        {"path": "crates/op_html/src/tree_builder.rs", "symbol": "parse_document_with_script_hook"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "advance_state"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "set_document_ready_state"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "dispatch_lifecycle"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_lifecycle_event"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "prepare_source"}
+      ],
+      "limitation": "Initial-load-only readyState and DOMContentLoaded/load; no timers, event loop or post-presentation async work."
+    },
+    {
       "id": "S6",
       "title": "WPT image comparison and reporting",
       "status": "Strict and opt-in fuzzy reports",

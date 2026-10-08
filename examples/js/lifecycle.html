@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><title>OPBrowser DOM lifecycle</title></head>
+<body>
+<h1>Lifecycle demo</h1>
+<p id="status">Before JavaScript</p>
+<script>
+var stages = "parser:" + document.readyState;
+document.addEventListener("readystatechange", function (event) {
+  stages = stages + ";state:" + document.readyState;
+});
+document.addEventListener("DOMContentLoaded", function (event) {
+  stages = stages + ";DOM:" + document.readyState;
+});
+window.addEventListener("load", function (event) {
+  document.getElementById("status").textContent = stages + ";load:" + document.readyState;
+});
+</script>
+<p id="late">Markup parsed after the first script</p>
+</body>
+</html>

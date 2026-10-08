@@ -217,6 +217,30 @@ op_dom::set_text_content
 
 Concurrent fetch and initial-load JS polling only; no event loop, DOMContentLoaded, module scripts or SRI.
 
+## S12 — Page readyState and DOMContentLoaded/load lifecycle to paint
+
+Status: **M4.8 initial-load DOM lifecycle subset**.
+
+```text
+op_html::parse_document_with_script_hook
+op_engine::advance_state
+op_js::set_document_ready_state
+op_engine::dispatch_lifecycle
+op_js::dispatch_lifecycle_event
+op_dom::set_text_content
+op_engine::prepare_source
+```
+
+- [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
+- [`op_engine::advance_state`](../crates/op_engine/src/scripts.rs#L186)
+- [`op_js::set_document_ready_state`](../crates/op_js/src/runtime.rs#L341)
+- [`op_engine::dispatch_lifecycle`](../crates/op_engine/src/scripts.rs#L206)
+- [`op_js::dispatch_lifecycle_event`](../crates/op_js/src/runtime.rs#L354)
+- [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
+- [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L222)
+
+Initial-load-only readyState and DOMContentLoaded/load; no timers, event loop or post-presentation async work.
+
 ## S6 — WPT image comparison and reporting
 
 Status: **Strict and opt-in fuzzy reports**.
