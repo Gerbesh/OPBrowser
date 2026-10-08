@@ -292,6 +292,8 @@ Status: IN PROGRESS.
 - DONE WPT Positioning v1 adds 100 pinned positioning/visual-formatting reftests at the existing
   WPT revision with a deliberately broad initial baseline of 18/100 (18.00%) and zero render errors;
   WPT Static v1 remains frozen at 187/200 (93.50%) for historical comparability.
+- DONE opt-in WPT failed-reftest bitmap diagnostics with dependency-free top-down BMP output,
+  maximum 12 saved actual/reference pairs per run and unchanged metric semantics.
 - DONE CSS Color 4 Lab/LCH/OKLab/OKLCH plus display-p3/display-p3-linear, A98 RGB, ProPhoto RGB, Rec.2020 and XYZ predefined-space conversion to the current 8-bit sRGB paint target; `currentColor` now resolves for color/background/borders.
 - DONE first metric-driven WPT pass raised WPT Static v1 from 86/200 (43.00%) to 126/200 (63.00%) without changing the manifest.
 - DONE deterministic CSS system colors/deprecated aliases, simple declaration-form `@supports`, Selectors 4 `:lang()` Extended Filtering, inherited `:dir(ltr|rtl)`, and initial `:open`/`:required`/`:optional`/`:visited` semantics.

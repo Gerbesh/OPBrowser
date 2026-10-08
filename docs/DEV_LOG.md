@@ -2234,3 +2234,22 @@ This file is append-only project history.
   **1,058,304 bytes**, SHA-256
   `848E3E20616377D09A2B453CE76FBEB9175D0F50E0516778587F5F0B8C9BB25A`.
 
+## 2026-10-08 - WPT reftest pixel-diagnostic output
+
+- Add explicit `wpt_probe --dump-failures DIRECTORY`. Failed rendered test/reference
+  images are written as Windows-compatible top-down 32-bit BGRA BMP pairs named
+  with their 1-based manifest case number; no new encoder dependency.
+- Validate dimensions and buffer length and guard 32-bit BMP size overflow.
+  Limit dumps to the first 12 rendered failures; normal CI and probe use save nothing
+  unless the flag is explicitly supplied. Parser and score semantics are unchanged.
+- Add automated coverage for BMP structure, native BGRA byte order, top-down pixel
+  orientation and invalid buffer dimensions. Manually exercised the flag on five
+  focused WPT cases. This diagnosed a single-row background difference that caused
+  a temporary Static-suite regression, allowing the suspect typography change to
+  be reverted before publication.
+- Verified the bounded dump behavior with a 15-case failing manifest: exactly 24 BMP
+  files (12 test/reference pairs) were written, with all 15 failures still counted.
+- Final workspace rustfmt check, Clippy with -D warnings, all workspace tests and native
+  Win32 startup/paint smoke passed. The release browser binary from the layout commit
+  remains unchanged.
+

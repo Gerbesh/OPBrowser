@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 const DEFAULT_WIDTH: i32 = 800;
 const DEFAULT_HEIGHT: i32 = 600;
 const FAILURE_LOG_LIMIT: usize = 30;
+const FAILURE_DUMP_LIMIT: usize = 12;
 
 #[derive(Default)]
 struct Counts {
@@ -24,6 +25,7 @@ struct Config {
     channel_tolerance: u8,
     max_different_pixels: usize,
     json_out: Option<PathBuf>,
+    dump_failures: Option<PathBuf>,
 }
 
 fn main() {
@@ -31,7 +33,8 @@ fn main() {
         eprintln!("{error}");
         eprintln!(
             "usage: wpt_probe <wpt-root> <manifest.tsv> [--width N] [--height N] \
-             [--channel-tolerance N] [--max-different-pixels N] [--json-out PATH]"
+             [--channel-tolerance N] [--max-different-pixels N] [--json-out PATH] \
+             [--dump-failures DIRECTORY]"
         );
         std::process::exit(2);
     });
@@ -56,6 +59,15 @@ fn main() {
 
     let mut counts = Counts::default();
     let mut logged_failures = 0usize;
+    if let Some(directory) = &config.dump_failures {
+        fs::create_dir_all(directory).unwrap_or_else(|error| {
+            eprintln!(
+                "cannot create failure dump {}: {error}",
+                directory.display()
+            );
+            std::process::exit(2);
+        });
+    }
 
     for (test, reference) in entries {
         counts.total += 1;
@@ -70,6 +82,19 @@ fn main() {
                     counts.passed += 1;
                 } else {
                     counts.failed += 1;
+                    if counts.failed <= FAILURE_DUMP_LIMIT
+                        && let Some(directory) = &config.dump_failures
+                        && let Err(error) = dump_bitmaps(
+                            directory,
+                            counts.total,
+                            (config.width, config.height),
+                            &test_pixels,
+                            &reference_pixels,
+                        )
+                    {
+                        eprintln!("failed to dump case {}: {error}", counts.total);
+                        std::process::exit(2);
+                    }
                     if logged_failures < FAILURE_LOG_LIMIT {
                         println!("FAIL {test} != {reference}: different_pixels={different}");
                         logged_failures += 1;
@@ -104,6 +129,12 @@ fn main() {
     println!("failed={}", counts.failed);
     println!("render_errors={}", counts.errors);
     println!("percent={percent:.2}");
+    if let Some(directory) = &config.dump_failures {
+        println!(
+            "failure_bitmaps_saved_at={} (up to {FAILURE_DUMP_LIMIT} cases)",
+            directory.display()
+        );
+    }
 
     if let Some(path) = config.json_out
         && let Err(error) = write_json(&path, &suite, upstream, &counts, percent)
@@ -132,6 +163,7 @@ fn parse_args() -> Result<Config, String> {
         channel_tolerance: 0,
         max_different_pixels: 0,
         json_out: None,
+        dump_failures: None,
     };
 
     while let Some(argument) = args.next() {
@@ -163,6 +195,12 @@ fn parse_args() -> Result<Config, String> {
                     args.next()
                         .ok_or_else(|| "--json-out requires a path".to_owned())?,
                 ));
+            }
+            "--dump-failures" => {
+                config.dump_failures =
+                    Some(PathBuf::from(args.next().ok_or_else(|| {
+                        "--dump-failures requires a directory".to_owned()
+                    })?));
             }
             _ => return Err(format!("unknown argument: {argument}")),
         }
@@ -231,6 +269,56 @@ fn render(root: &Path, relative: &str, width: i32, height: i32) -> Result<Vec<u8
         .render_source(source, width, height)
         .map_err(|error| error.to_string())?;
     render_display_list_to_bgra(&page.display_list, width, height)
+}
+
+/// Keep the probe dependency-free: 32-bit top-down Windows BMP stores the
+/// native renderer's BGRA pixels directly, without an image encoder.
+fn bmp_from_bgra(pixels: &[u8], width: i32, height: i32) -> std::io::Result<Vec<u8>> {
+    let expected = usize::try_from(width)
+        .ok()
+        .and_then(|w| usize::try_from(height).ok().and_then(|h| w.checked_mul(h)))
+        .and_then(|pixels| pixels.checked_mul(4));
+    if expected != Some(pixels.len()) || height == i32::MIN {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "BGRA dimensions do not match the pixel buffer",
+        ));
+    }
+    let data_len = u32::try_from(pixels.len()).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "bitmap exceeds 4 GiB")
+    })?;
+    let file_len = data_len.checked_add(54).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "bitmap exceeds 4 GiB")
+    })?;
+    let mut bmp = Vec::with_capacity(file_len as usize);
+    bmp.extend_from_slice(b"BM");
+    bmp.extend_from_slice(&file_len.to_le_bytes());
+    bmp.extend_from_slice(&[0; 4]);
+    bmp.extend_from_slice(&54u32.to_le_bytes());
+    bmp.extend_from_slice(&40u32.to_le_bytes());
+    bmp.extend_from_slice(&width.to_le_bytes());
+    bmp.extend_from_slice(&(-height).to_le_bytes());
+    bmp.extend_from_slice(&1u16.to_le_bytes());
+    bmp.extend_from_slice(&32u16.to_le_bytes());
+    bmp.extend_from_slice(&0u32.to_le_bytes());
+    bmp.extend_from_slice(&data_len.to_le_bytes());
+    bmp.extend_from_slice(&[0; 16]);
+    bmp.extend_from_slice(pixels);
+    Ok(bmp)
+}
+
+fn dump_bitmaps(
+    directory: &Path,
+    index: usize,
+    dimensions: (i32, i32),
+    actual: &[u8],
+    expected: &[u8],
+) -> std::io::Result<()> {
+    for (suffix, pixels) in [("actual", actual), ("reference", expected)] {
+        let path = directory.join(format!("case-{index:04}-{suffix}.bmp"));
+        fs::write(path, bmp_from_bgra(pixels, dimensions.0, dimensions.1)?)?;
+    }
+    Ok(())
 }
 
 fn different_pixels(left: &[u8], right: &[u8], tolerance: u8) -> usize {
@@ -305,6 +393,18 @@ mod tests {
             manifest_suite_name(Path::new("compat/wpt-positioning-v1.tsv")),
             "wpt-positioning-v1"
         );
+    }
+
+    #[test]
+    fn top_down_bmp_wraps_bgra_without_reordering_channels() {
+        let pixels = [10, 20, 30, 255, 40, 50, 60, 255];
+        let bmp = bmp_from_bgra(&pixels, 2, 1).unwrap();
+        assert_eq!(&bmp[..2], b"BM");
+        assert_eq!(u32::from_le_bytes(bmp[2..6].try_into().unwrap()), 62);
+        assert_eq!(i32::from_le_bytes(bmp[22..26].try_into().unwrap()), -1);
+        assert_eq!(&bmp[54..], &pixels);
+        assert!(bmp_from_bgra(&pixels, 3, 1).is_err());
+        assert!(bmp_from_bgra(&pixels, 2, -1).is_err());
     }
 
     #[test]

@@ -964,6 +964,7 @@ compat/wpt-static-v1.tsv
   -> op_platform_win::render_display_list_to_bgra
   -> shared paint_command/GDI path
   -> exact BGR pixel comparison
+  -> optional first 12 failed reference/test BGRA BMP pairs
   -> JSON + badge metric
 
 .github/workflows/ci.yml

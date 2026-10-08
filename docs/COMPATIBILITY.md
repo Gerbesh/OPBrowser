@@ -34,6 +34,25 @@ Run the external subsets with local checkouts:
 The script writes machine-readable JSON, Shields endpoint JSON and a Markdown summary under
 `artifacts/compatibility/`.
 
+### Inspecting failed WPT reftests
+
+The `wpt_probe` binary can optionally save original test/reference raster pixels for failing
+reftests without adding an image encoder dependency:
+
+```powershell
+cargo run -p op_browser --bin wpt_probe -- `
+  target\compat-wpt compat\wpt-positioning-v1.tsv `
+  --dump-failures target\wpt-debug
+```
+
+The `--dump-failures` switch writes Windows-compatible top-down 32-bit BGRA BMP files,
+paired as `case-0001-actual.bmp` / `case-0001-reference.bmp`, into the named directory.
+The numbers refer to manifest row positions, so the pair can be mapped back to source.
+Dumping is explicitly opt-in, limited to the first **12** rendered failures per run,
+and excludes files with render errors. It is disabled in normal CI to avoid storing
+hundreds of megabytes of raw bitmaps. The score and failure threshold are unchanged.
+To isolate a later test, create a temporary one-row manifest and run the same command.
+
 ### Test262 parser v1
 
 The v1 manifest contains 2,000 deterministic paths sampled across `test/language/**/*.js` at
@@ -99,11 +118,14 @@ the unchanged pinned Positioning v1 suite remains at 36/100 (36.00%) with no reg
 The next inline-containing-block pass preserves unstyled relative inline ancestors in the line
 box arena, records first/last fragment padding-edge rectangles within a formatting run, handles
 LTR/RTL edge choice, and applies relative visual offsets to inline paint and absolute descendants.
-Five new deterministic inline regressions pass; WPT Positioning v1 remains **36/100 (36.00%)**
-without losing old passes, WPT Static v1 remains **187/200 (93.50%)**, and the Test262 Parser v1
-sample remains **523/1983 (26.37%)**. Sticky, cross-run split-inline containing geometry,
-complete bidi/vertical writing, multicol, stacking contexts and complex/replaced abspos
-constraints remain deliberately visible gaps.
+Five initial inline containing-block regressions pass. A further pass accumulated
+fragment geometry across separate block/line formatting runs, deferred absolute layout
+until the containing inline fragments were complete, resolved nested pending subtrees,
+and corrected horizontal RTL static positioning against hypothetical flow width.
+Eight more deterministic layout regressions pass; WPT Positioning v1 remains
+**36/100 (36.00%)** without losing old passes, WPT Static v1 remains **187/200 (93.50%)**,
+and the Test262 Parser v1 sample remains **523/1983 (26.37%)**. Sticky, vertical
+writing, multicol, stacking contexts and complex/replaced abspos constraints remain gaps.
 
 This new metric does not replace WPT Static v1. The older 200-test manifest remains frozen so its
 43.00% -> 93.50% history stays directly comparable.

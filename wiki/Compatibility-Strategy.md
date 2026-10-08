@@ -25,9 +25,10 @@ The project now has three reproducible external metrics rather than milestone gu
   **18/100, 18.00%**; current result after viewport/definite-height geometry, inline static-position,
   inline-block/replaced sizing and the CSS2 split-inline continuation pass: **36/100, 36.00%**.
   The follow-up absolute/fixed auto-margin constraint pass has four passing project regressions and
-  no change to the frozen WPT Positioning v1 score. Unsupported sticky, multicol,
-  full inline-containing-block rectangles, stacking and vertical-writing
-  cases remain in the sample.
+  no change to the frozen WPT Positioning v1 score. Follow-up work now accumulates
+  containing inline fragments across separate layout runs and handles RTL static flow widths
+  without changing the pinned result. Unsupported sticky, multicol, stacking and
+  vertical-writing cases remain in the sample.
 - **Test262 Parser v1**: a 2,000-path deterministic Test262 language sample. Module entries are
   skipped until module parsing is supported. Initial executable baseline: **364/1983, 18.36%**;
   current parser result: **523/1983, 26.37%**.
@@ -46,6 +47,19 @@ with:
 ```
 
 The normal `.\tools\compatibility.ps1` command continues to run project-owned subsystem tests.
+
+For a visual comparison of a failing WPT test/reference pair, use the opt-in diagnostic
+BMP dump rather than guessing at the pixel difference:
+
+```powershell
+cargo run -p op_browser --bin wpt_probe -- `
+  target\compat-wpt compat\wpt-positioning-v1.tsv `
+  --dump-failures target\wpt-debug
+```
+
+It saves a pair of top-down BGRA BMPs per failure, named with their manifest row number,
+with a bounded maximum of twelve pairs per invocation. The normal CI path does not
+save these bitmaps, and enabling dumps does not change any metric.
 
 ## CI publication
 
