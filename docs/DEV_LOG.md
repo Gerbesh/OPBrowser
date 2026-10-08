@@ -2888,3 +2888,22 @@ This file is append-only project history.
 - Verified WinHTTP delayed JSON, local-file text, cross-origin errors
   and stale navigation completions. fetch(), Promise, CORS, streaming
   and cancellation remain outside the supported M4.11 scope.
+
+## 2026-10-09 - M4.12 Promise reactions and initial fetch facade
+
+- Bootstrapped an OPBrowser-owned self-hosted Promise implementation over
+  the original VM. It implements synchronous executor invocation,
+  single-settlement pending/fulfilled/rejected states, promise adoption,
+  FIFO reaction scheduling through the existing bounded microtask queue,
+  then/catch/finally and resolve/reject.
+- Added a tiny page-host fetch/Response facade on top of the already
+  filtered same-origin opFetchText loader: GET, text-only Response,
+  one-use body consumption, Promise-based success/failure. No new network
+  worker model or third-party JS engine was added.
+- Added dedicated VM tests and local/native-paint plus blocked-origin
+  engine integration tests, and a manual example page.
+- Remaining conformance gaps are explicit: synthetic status 200/OK,
+  HTTP error status rejection, no headers/CORS/streams/RequestInit beyond
+  guarded GET, no Promise combinators, no async/await or full thenable
+  semantics. VM budgets and navigation-generation isolation remain.
+

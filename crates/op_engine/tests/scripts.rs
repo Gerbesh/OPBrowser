@@ -855,6 +855,81 @@ fn winhttp_text_completion_runs_on_engine_after_first_render() {
 }
 
 #[test]
+fn fetch_promise_resolves_a_local_response_and_repaints() {
+    let root = std::env::temp_dir().join(format!("opbrowser-m412-fetch-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let page = root.join("index.html");
+    std::fs::write(root.join("hello.txt"), "FETCH-RESOLVED").unwrap();
+    std::fs::write(
+        &page,
+        concat!(
+            "<p id='out'>Before fetch</p>",
+            "<script>fetch('hello.txt').then(function(response){",
+            "if(!response.ok || response.status!==200)throw 'bad response';",
+            "return response.text();",
+            "}).then(function(body){",
+            "document.getElementById('out').textContent=body;",
+            "}).catch(function(error){document.getElementById('out').textContent='ERROR';});",
+            "</script>"
+        ),
+    )
+    .unwrap();
+    let mut engine = Engine::new();
+    let initial = engine
+        .navigate(&page.display().to_string(), 800, 600)
+        .unwrap();
+    assert!(initial.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text{text,..} if text.contains("Before fetch")
+    )));
+    let mut resolved = false;
+    for _ in 0..100 {
+        if let Some(page) = engine.tick_timers(800, 600)
+            && page.display_list.commands.iter().any(|cmd| {
+                matches!(
+                    cmd, op_paint::PaintCommand::Text{text,..} if text.contains("FETCH-RESOLVED")
+                )
+            })
+        {
+            resolved = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(resolved, "fetch promise did not repaint the retained page");
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fetch_promise_cross_origin_is_rejected_by_request_policy() {
+    let root = std::env::temp_dir().join(format!("opbrowser-m412-cross-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let page = root.join("index.html");
+    std::fs::write(
+        &page,
+        concat!(
+            "<p id='out'>Waiting</p>",
+            "<script>fetch('https://example.com/outside.txt')",
+            ".then(function(){document.getElementById('out').textContent='UNSAFE';})",
+            ".catch(function(){document.getElementById('out').textContent='REJECTED';});</script>"
+        ),
+    )
+    .unwrap();
+    let mut engine = Engine::new();
+    engine
+        .navigate(&page.display().to_string(), 800, 600)
+        .unwrap();
+    let result = engine
+        .tick_timers(800, 600)
+        .expect("rejected promise updates DOM");
+    assert!(result.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text{text,..} if text.contains("REJECTED")
+    )));
+    assert!(engine.next_timer_wait().is_none());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn late_completion_from_previous_navigation_is_discarded() {
     let root = std::env::temp_dir().join(format!("opbrowser-m411-stale-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();

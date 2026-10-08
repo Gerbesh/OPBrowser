@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>M4.12 Promise + fetch smoke example</title>
+<h1>Promise and fetch</h1>
+<p id="output">Waiting for network</p>
+<script>
+var result = document.getElementById("output");
+Promise.resolve("starting").then(function(message) {
+    result.textContent = message;
+});
+fetch("message.txt")
+    .then(function(response) {
+        if (!response.ok) throw new Error("HTTP request failed");
+        return response.text();
+    })
+    .then(function(body) { result.textContent = body; })
+    .catch(function(error) { result.textContent = "Fetch failed: " + error.message; });
+</script>

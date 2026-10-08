@@ -274,7 +274,43 @@ and native pixels without input. Per-resource cap is 64 KiB; the
 page budget is eight concurrent requests and 32 total. A navigation
 change prevents any old callback from changing the new document.
 
-This is deliberately not the standard fetch API. No Promise, Response,
-CORS, streaming, request cancellation, cookies or cross-origin reads.
+M4.11's callback function is retained as a compatibility bridge.
+
+## M4.12: Promise reaction jobs and the first fetch/Response subset
+
+`Promise` is self-hosted by the original OPBrowser interpreter rather than
+imported from any ready-made JavaScript engine. Its `then`, `catch`,
+`finally`, `Promise.resolve`, and `Promise.reject` schedule FIFO
+reactions through the bounded existing `queueMicrotask` host queue.
+Promise executors run immediately; registered reactions run at
+microtask checkpoints. Pending promise resolution and chained
+promise/thenable adoption are covered by VM regression tests.
+
+Page scripts can use:
+
+```javascript
+fetch("message.txt")
+  .then(function(response) { return response.text(); })
+  .then(function(text) {
+    document.getElementById("output").textContent = text;
+  })
+  .catch(function(error) {
+    document.getElementById("output").textContent = error.message;
+  });
+```
+
+This fetch is restricted to same-origin GET text resources of 64 KiB or
+less, through the existing M4.11 background request pipeline and
+page-generation checks. A successful Response has ok=true, status=200,
+statusText="OK" and single-use text() that returns a Promise.
+
+Important conformance gaps: the 200/OK metadata is synthetic; HTTP error
+responses currently *reject*, unlike standard fetch, and Response has no
+real status/headers or stream. There are no Request/Headers interfaces,
+CORS, credentials, POST bodies, AbortController, Promise.all/race/any,
+async/await or unhandled-rejection events yet. The VM's 256 queued /
+1024 per-page microtask limits remain in force. Use the manual sample
+`examples/js/promise-fetch.html` to observe an asynchronous DOM repaint.
+
 Worker request filtering uses an immutable snapshot; statistics from
 its cloned counters do not aggregate with the main filter yet.

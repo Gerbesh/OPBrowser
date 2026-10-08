@@ -1,6 +1,6 @@
 # OPBrowser Project Plan
 
-Last updated: 2026-10-08
+Last updated: 2026-10-09
 
 ## North star
 
@@ -859,3 +859,34 @@ counts must not be mislabeled as external conformance percentages.
   earlier same-origin classic-script subset.
 - NEXT integrate a standards-grounded Promise/reaction system and fetch(),
   and unify task arbitration rather than 20ms in-flight polling.
+
+## M4.12 - Self-hosted Promise reactions and initial fetch/Response (2026-10-09)
+
+- DONE OPBrowser's original JS interpreter now bootstraps its own self-hosted
+  Promise implementation. The constructor invokes executors synchronously;
+  pending/fulfilled/rejected states, single settlement, adoption of returned
+  promises/thenables, FIFO reaction dispatch, then/catch/finally and
+  Promise.resolve/Promise.reject are exercised by VM tests.
+- DONE Promise reactions use the existing page-owned bounded queueMicrotask
+  pipeline. Callbacks run after scripts, click/lifecycle events, timers and
+  post-paint network completions, not inline inside Promise.then.
+- DONE initial fetch(url[, init]) GET facade, fulfilled with a basic Response
+  object exposing ok/status/statusText, single-consumption text() Promise,
+  and rejected on load/filter errors. The implementation reuses the M4.11
+  filtered, same-origin, bounded text request workers and generation gating;
+  all JS execution stays on the page worker.
+- DONE VM regressions for queue ordering, pending settlement, returned
+  Promise adoption, thrown errors, finally and fetch Response consumption;
+  integration tests for local GET to real native pixels and cross-origin
+  network-policy rejection. Manual demo: examples/js/promise-fetch.html.
+- LIMITATION this is a deliberately partial standards-shaped API: text-only,
+  GET-only and same-origin. Successful Response metadata currently reports
+  synthetic 200/OK; HTTP 4xx/5xx currently reject instead of producing a
+  Response with ok=false. No Headers/Request object, JSON parsing, CORS,
+  streaming, abort, credentials, body upload, Promise combinators,
+  async/await, full thenable/species semantics or unhandled-rejection events.
+  Jobs remain subject to existing 256-per-checkpoint and 1024-per-page
+  microtask quotas; request completions still use 20ms active polling.
+- NEXT M4.13 move HTTP status/headers/redirect metadata into real Response,
+  distinguish HTTP errors from network failures, then implement proper
+  RequestInit/CORS and Promise conformance as the parser/runtime advances.

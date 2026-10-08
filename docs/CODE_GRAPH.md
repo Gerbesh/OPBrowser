@@ -1,6 +1,6 @@
 # OPBrowser Code Graph
 
-Last updated: 2026-10-08
+Last updated: 2026-10-09
 
 This document is the maintained human-readable code/dependency graph. It is updated
 whenever crates, important types, or ownership boundaries change.
@@ -15,6 +15,25 @@ the generated graph describes **crate-level edges only**, not a call graph.
 See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
+
+## M4.12: self-hosted Promise → filtered fetch → native repaint
+
+The original `op_js` VM bootstraps `async_promise.js`, implementing
+Promise state/settlement and reaction dispatch in its own ECMAScript subset.
+Reactions call the original `queueMicrotask` builtin and drain at retained
+task checkpoints in `JsRuntime::drain_microtasks`. No foreign JS runtime
+or second microtask queue is involved.
+
+For page contexts, `JsRuntime::install_dom_snapshot` also loads
+`async_fetch.js`: `fetch()` wraps `opFetchText` in a Promise and
+`Response.text()` returns a second Promise. The existing
+`JsRuntime::take_text_requests` → `Engine::dispatch_text_requests` →
+`NetworkContext::load_text_for_page` → `Engine::tick_timers` →
+`JsRuntime::complete_text_request` pipeline delivers a completion back
+to the owning VM; Promise reactions then record `DomTextMutation`
+and reuse CSS/layout/native paint. Page generations reject stale results.
+This is not yet full HTTP Response semantics: synthetic 200/OK on
+successful filtered text loads; failed HTTP status currently rejects.
 
 ## First live JS → DOM → repaint boundary (M4.1)
 

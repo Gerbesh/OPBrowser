@@ -1,6 +1,6 @@
 # OPBrowser Code Slices
 
-Last updated: 2026-10-08
+Last updated: 2026-10-09
 
 A code slice is an end-to-end path through the architecture that produces one
 observable capability. This prevents isolated subsystems from becoming impressive
@@ -15,6 +15,29 @@ current. The same validator runs in CI. This is a **source-anchor
 feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
+
+## S16 - Promise/fetch text GET → microtask reactions → native paint (M4.12)
+
+Status: **IMPLEMENTED** as a bounded, same-origin text GET subset.
+
+```text
+page script: fetch(url).then(function(response) { return response.text(); }).then(handler)
+  -> self-hosted async_fetch.js + async_promise.js in original op_js VM
+  -> OpFetchText -> JsRuntime::take_text_requests
+  -> Engine::dispatch_text_requests -> NetworkContext::load_text_for_page
+  -> WinHTTP/local read on bounded worker + generation-tagged completion
+  -> Engine::tick_timers -> JsRuntime::complete_text_request
+  -> Promise resolution -> JsRuntime::drain_microtasks (FIFO)
+  -> user handler -> DomTextMutation -> Document::set_text_content
+  -> compute_styles -> render -> Win32 pixels
+```
+
+VM tests verify Promise chaining/FIFO/rejection/Response consumption;
+`crates/op_engine/tests/scripts.rs` exercises end-to-end local file
+resolution and rejected cross-origin GET. The generated S16 anchors this
+path to concrete Rust functions. The Response metadata is synthetic;
+this does not yet implement cross-origin CORS, response status/headers,
+streaming or POST.
 
 ## S7 - Classic inline JS → DOM → native pixels (M4.1)
 

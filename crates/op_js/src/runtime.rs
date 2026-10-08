@@ -279,6 +279,19 @@ impl Default for JsRuntime {
                 reference_error_prototype,
             )
             .expect("built-in ReferenceError constructor must fit initial runtime budgets");
+        // Promise reactions use the original FIFO microtask queue.
+        let microtask = runtime
+            .allocate_lifecycle_method("queueMicrotask", BuiltinFunction::QueueMicrotask)
+            .expect("built-in microtask function must fit runtime budgets");
+        runtime.install_global_binding(
+            "queueMicrotask",
+            JsValue::Object(microtask),
+            false,
+            VariableKind::Const,
+        );
+        runtime
+            .eval_script(include_str!("async_promise.js"))
+            .expect("bundled Promise bootstrap must compile and run");
 
         runtime
     }
@@ -381,7 +394,6 @@ impl JsRuntime {
             ("clearTimeout", BuiltinFunction::ClearTimeout),
             ("setInterval", BuiltinFunction::SetInterval),
             ("clearInterval", BuiltinFunction::ClearInterval),
-            ("queueMicrotask", BuiltinFunction::QueueMicrotask),
             ("opFetchText", BuiltinFunction::OpFetchText),
         ] {
             let function = self.allocate_lifecycle_method(name, builtin)?;
@@ -395,6 +407,8 @@ impl JsRuntime {
                 VariableKind::Const,
             );
         }
+        // Standards-shaped host facade; no networking work is done in JS.
+        self.eval_script(include_str!("async_fetch.js"))?;
         Ok(())
     }
     /// Drain only requests, never JS closures, to the network dispatcher.
@@ -3055,5 +3069,92 @@ mod tests {
         }
         assert!(vm.next_timer_wait().is_none());
         assert_eq!(vm.global("count"), Some(&JsValue::Number(1024.0)));
+    }
+
+    #[test]
+    fn promise_executor_is_sync_but_reactions_are_fifo_microtasks() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var log=''; var p=new Promise(function(resolve){log=log+'E';resolve(3);});\
+             p.then(function(x){log=log+'A'+x;return x+4;})\
+              .then(function(x){log=log+'B'+x;});\
+             queueMicrotask(function(){log=log+'M';});log=log+'S';",
+        )
+        .unwrap();
+        assert_eq!(vm.global("log"), Some(&JsValue::String("ESA3MB7".into())));
+    }
+
+    #[test]
+    fn pending_promise_settles_later_and_adopts_returned_promise() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var later; var log='';\
+             var pending=new Promise(function(resolve){later=resolve;});\
+             pending.then(function(value){return Promise.resolve(value+1);})\
+                    .then(function(value){log=log+value;});",
+        )
+        .unwrap();
+        assert_eq!(vm.global("log"), Some(&JsValue::String(String::new())));
+        vm.eval_script("later(6);later(99);").unwrap();
+        assert_eq!(vm.global("log"), Some(&JsValue::String("7".into())));
+    }
+
+    #[test]
+    fn rejected_promise_catches_throw_and_finally_preserves_resolution() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var result='';\
+             Promise.resolve(2).then(function(){throw 'bad';})\
+                .catch(function(error){result=result+error;return 8;})\
+                .finally(function(){result=result+'F';})\
+                .then(function(value){result=result+value;});",
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::String("badF8".into())));
+    }
+
+    #[test]
+    fn fetch_returns_promise_and_response_text_is_single_use() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            "var output='';\
+             fetch('message.txt').then(function(response){\
+                 output=output+response.ok+':'+response.status+':';\
+                 var text=response.text();\
+                 response.text().catch(function(error){output=output+'used;';});\
+                 return text;\
+             }).then(function(text){output=output+text;});",
+        )
+        .unwrap();
+        let requests = vm.take_text_requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url, "message.txt");
+        assert!(!vm.complete_text_request(requests[0].id, Ok("body".into())));
+        assert_eq!(
+            vm.global("output"),
+            Some(&JsValue::String("true:200:used;body".into()))
+        );
+    }
+
+    #[test]
+    fn fetch_failure_rejects_and_unsupported_method_never_sends_request() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            "var errors='';\
+             fetch('message.txt').catch(function(error){errors=errors+error.message;});\
+             fetch('message.txt',{method:'POST'}).catch(function(error){\
+                 errors=errors+'|'+error.message;\
+             });",
+        )
+        .unwrap();
+        let requests = vm.take_text_requests();
+        assert_eq!(requests.len(), 1);
+        assert!(!vm.complete_text_request(requests[0].id, Err("blocked".into())));
+        assert_eq!(
+            vm.global("errors"),
+            Some(&JsValue::String("|Only GET is supportedblocked".into()))
+        );
     }
 }
