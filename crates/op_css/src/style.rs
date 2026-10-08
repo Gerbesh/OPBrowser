@@ -274,6 +274,7 @@ fn apply_author_styles(
                 Some(PseudoElement::Before),
                 Some(PseudoElement::After),
                 Some(PseudoElement::FirstLetter),
+                Some(PseudoElement::FirstLine),
             ] {
                 let specificity = collected
                     .rule

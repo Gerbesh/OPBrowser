@@ -2548,3 +2548,32 @@ This file is append-only project history.
   incomplete general CSS Color 5 handling; unchanged exact-pixel
   WPT comparator does not apply WPT fuzzy metadata.
 
+## 2026-10-08 - First-line pseudo fragment painting and WPT bidi match
+
+- Start from commit 6e5fddc with frozen Static WPT 195/200.
+- Inspect the remaining five cases. Confirm actual XYZ blue = 244 vs
+  the explicit reference = 245, while WPT's own maxDifference=0-1
+  metadata permits such quantization; retain the strict unchanged
+  pixel-exact checker. Confirm Rec.2020 gamma 2.4 remains specified by
+  CSS Color 4 despite two earlier test reference values expecting brighter
+  greens; do not introduce test-specific conversion constants.
+- Extend CSS selector grammar with ::first-line and legacy :first-line,
+  collect pseudo declarations in the author cascade, and resolve their
+  fragment pseudo styles without creating generated DOM content.
+- Pass an optional first-line text/background style into inline Lines
+  only for the host block's final collected inline sequence. Apply the
+  color to inheriting text runs only on the actual first flush. Draw the
+  background as inline ink behind the first-line text, not subsequent
+  lines. After comparing actual/reference paint screenshots, align the
+  first-line rectangle to the same GDI text metrics as ordinary inline
+  spans rather than using line-height leading.
+- Add engine tests for a forced break (first-line green, second-line red)
+  and reference-equivalent background height. The previously failing
+  selectors/first-line-bidi-002.html now passes pixel-for-pixel.
+- Pinned WPT Static improves 195/200 -> 196/200 (98.00%), no render
+  errors, unchanged tests and thresholds. Four failures remain:
+  currentcolor-003, predefined-012, rec2020-001 and xyz-003. The first
+  still needs first-line currentcolor inherited decorations, gradients,
+  outline/box/text/drop shadows; the others need precision/spec/reftest
+  reconciliation without falsifying comparison scores.
+

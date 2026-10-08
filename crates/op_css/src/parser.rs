@@ -659,6 +659,7 @@ fn parse_pseudo_element(
         "before" => PseudoElement::Before,
         "after" => PseudoElement::After,
         "first-letter" => PseudoElement::FirstLetter,
+        "first-line" => PseudoElement::FirstLine,
         _ => {
             return Err(CssError {
                 offset: name_token.start,
@@ -690,6 +691,7 @@ fn parse_legacy_pseudo_element(
         "before" => PseudoElement::Before,
         "after" => PseudoElement::After,
         "first-letter" => PseudoElement::FirstLetter,
+        "first-line" => PseudoElement::FirstLine,
         _ => {
             return Err(CssError {
                 offset: name_token.start,

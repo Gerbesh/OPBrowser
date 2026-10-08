@@ -310,6 +310,13 @@ pub(super) struct InlineStyle {
 }
 
 #[derive(Clone, Copy)]
+pub(super) struct FirstLinePaint {
+    pub base_color: TextColor,
+    pub text_color: Option<TextColor>,
+    pub background: Option<TextColor>,
+}
+
+#[derive(Clone, Copy)]
 pub(super) struct InlineChar<'a> {
     pub ch: char,
     pub href: Option<&'a str>,
@@ -411,6 +418,7 @@ pub(super) struct Lines<'a, 'm> {
     pub fragments: Vec<InlineFragment>,
     /// Baseline of the final line in local layout coordinates.
     pub last_baseline: Option<i32>,
+    first_line_paint: Option<FirstLinePaint>,
 }
 
 impl<'a, 'm> Lines<'a, 'm> {
@@ -441,7 +449,13 @@ impl<'a, 'm> Lines<'a, 'm> {
             positioned: Vec::new(),
             fragments: Vec::new(),
             last_baseline: None,
+            first_line_paint: None,
         }
+    }
+
+    pub fn with_first_line(mut self, paint: Option<FirstLinePaint>) -> Self {
+        self.first_line_paint = paint;
+        self
     }
 
     pub fn layout(mut self, items: Vec<Item<'a>>) -> Self {
@@ -911,6 +925,11 @@ impl<'a, 'm> Lines<'a, 'm> {
             return;
         }
 
+        let first_line_paint = if self.last_baseline.is_none() {
+            self.first_line_paint
+        } else {
+            None
+        };
         let boxes = std::mem::take(&mut self.boxes);
         let mut prepared = Vec::new();
         for item in boxes {
@@ -935,9 +954,14 @@ impl<'a, 'm> Lines<'a, 'm> {
                             .iter()
                             .position(|ch| ch.style != style)
                             .map_or(chars.len(), |n| start + n);
-                        prepared.push(PreparedBox::Text(
-                            self.prepare_text(&chars[start..end], style),
-                        ));
+                        let mut text = self.prepare_text(&chars[start..end], style);
+                        if let Some(first) = first_line_paint
+                            && style.color == first.base_color
+                            && let Some(color) = first.text_color
+                        {
+                            text.style.color = color;
+                        }
+                        prepared.push(PreparedBox::Text(text));
                         start = end;
                     }
                 }
@@ -1207,6 +1231,30 @@ impl<'a, 'm> Lines<'a, 'm> {
                         continue;
                     }
                     let (dx, dy) = self.inline_boxes.visual_offset(text.style.boxes);
+                    if let Some(color) = first_line_paint.and_then(|paint| paint.background)
+                        && color.alpha > 0
+                    {
+                        // The first-line background occupies the same
+                        // glyph-metrics box as an ordinary inline span.
+                        // Line-height leading is not part of its background.
+                        let top = baseline
+                            .saturating_sub(text.metrics.ascent)
+                            .saturating_add(dy);
+                        self.decorations.push(BoxDecoration {
+                            paint_layer: DecorationPaintLayer::Inline,
+                            paint_key: self.inline_boxes.paint_key(text.style.boxes),
+                            x: x.saturating_add(dx),
+                            y: top,
+                            width: text.width,
+                            height: text.metrics.ascent.saturating_add(text.metrics.descent),
+                            background: color,
+                            background_image: None,
+                            border_top: DecorationBorder { width: 0, color },
+                            border_right: DecorationBorder { width: 0, color },
+                            border_bottom: DecorationBorder { width: 0, color },
+                            border_left: DecorationBorder { width: 0, color },
+                        });
+                    }
                     let key = self.inline_boxes.paint_key(text.style.boxes);
                     self.order
                         .push(LayoutItem::Text(self.text_boxes.len()).with_optional_paint_key(key));

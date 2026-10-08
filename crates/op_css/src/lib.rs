@@ -93,6 +93,7 @@ pub enum PseudoElement {
     Before,
     After,
     FirstLetter,
+    FirstLine,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -102,6 +102,15 @@ transform. Repeated conversions are memoized within the prepared page;
 quoted CSS strings, unknown profiles and other color syntaxes are not
 rewritten. Static v1 reaches 195/200 (97.50%). This is an initial
 custom RGB profile path, not full CSS Color 5 color management.
+The CSS text pipeline now supports a first ::first-line/:first-line
+fragment styling slice: selector matching and computed fragment pseudo
+styles feed optional first-line ink data to the inline line assembler.
+The first actual flushed line receives its inherited pseudo color and
+background; future lines remain unaffected. The background ink uses
+the same font-metrics height and baseline as an ordinary inline box
+rather than the full line-height. The frozen strict Static score reaches
+196/200 (98.00%); dynamic font/gradient/shadow/currentcolor first-line
+corner cases remain partial.
 This is not full CSS stacking: additional context triggers, other auto-z
 paint-phase details and exact interleaving remain future work. Win32 drawing
 never decides paint order.

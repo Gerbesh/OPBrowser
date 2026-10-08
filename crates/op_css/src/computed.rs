@@ -739,6 +739,19 @@ fn compute_subtree(
             generated,
             computed,
         );
+        compute_fragment_pseudo_style(
+            node,
+            PseudoElement::FirstLine,
+            PseudoHost {
+                element,
+                style,
+                custom: &custom,
+                quotes: &quotes,
+            },
+            author_styles,
+            generated,
+            computed,
+        );
         (style, custom)
     });
 
@@ -874,7 +887,7 @@ fn compute_pseudo_style(
         match pseudo {
             PseudoElement::Before => "open-quote",
             PseudoElement::After => "close-quote",
-            PseudoElement::FirstLetter => return,
+            PseudoElement::FirstLetter | PseudoElement::FirstLine => return,
         }
         .to_owned(),
     )];

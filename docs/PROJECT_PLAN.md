@@ -440,12 +440,24 @@ Status: IN PROGRESS.
   Invalid/unknown profiles remain invalid. Parser, CSS token, WIC regressions
   and the unchanged pinned at-color-profile-001 reference pass. Static
   194/200 -> 195/200 (97.50%), no WPT render errors.
-- NEXT close five remaining frozen WPT Static failures: first-line/currentcolor
-  backgrounds/shadows/gradients, more precise XYZ or separately reported
-  spec-declared fuzzy metadata, complex bidi/first-line layout, and two
-  legacy Rec.2020 transfer references. Full CSS5 color profile support
-  (alpha, alternative components and device CMYK) remains incomplete.
-  Continue row/group tables and CSS positioning as separate workstreams.
+- DONE first-line fragment styling foundation: recognize ::first-line and the
+  legacy :first-line spelling in selector parsing and the author cascade,
+  compute a fragment pseudo-style independently from generated content,
+  and paint first-line text and background during the actual first line
+  flush rather than recoloring the whole block. Preserve colors on later
+  lines and on descendants with explicit color. Use GDI glyph metrics for
+  first-line background geometry so the same ink box matches an ordinary
+  inline span. Dedicated engine regressions verify color, breaks, and
+  background heights. Frozen WPT Static advances 195/200 -> 196/200
+  (98.00%) with first-line-bidi-002 passing exactly; no WPT fixtures
+  or comparison thresholds were modified.
+- NEXT close four remaining Static failures: more complete ::first-line
+  currentcolor inheritance across descendant backgrounds/borders and CSS
+  gradient/shadow/filter effects, investigate XYZ color rounding while
+  preserving its WPT fuzzy metadata, and reconcile the two pinned Rec.2020
+  references without violating CSS Color 4's gamma 2.4 rule. Full
+  first-line font metric restyling and dynamic line-break reflow are not yet
+  implemented. Continue row/group tables and CSS positioning separately.
 
 ## M3 - Original JavaScript engine
 

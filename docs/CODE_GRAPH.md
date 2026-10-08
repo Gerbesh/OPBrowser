@@ -1045,6 +1045,17 @@ caching repeated profile/color pairs in the engine. This is a profile-
 aware computed color path, not a new renderer or external browser engine.
 The frozen Static score rises 194 -> 195/200 on the same exact comparator.
 
+CSS ::first-line text path: op_css::parser and op_css::style now collect
+FirstLine selectors; op_css::computed creates a fragment-only pseudo style
+per host. flow::Context::emit_with_first_line optionally passes the host's
+text/background changes as FirstLinePaint into inline::Lines. During only
+the first Lines::flush, inherited-color text runs are recolored and
+optional background BoxDecoration ink is generated behind their text;
+the paint rectangle reuses GDI text glyph metrics, matching the existing
+inline-span decoration geometry. The text-line traversal still owns
+wrapping and explicit breaks. Strict Static v1 reaches 196/200 while
+Positioning remains measured independently.
+
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting
 an extra empty inline fragment after a block child/pseudo flushed the collection. Nested

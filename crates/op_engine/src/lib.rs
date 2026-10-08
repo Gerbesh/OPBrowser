@@ -896,6 +896,48 @@ mod tests {
     }
 
     #[test]
+    fn first_line_pseudo_paints_only_first_line_after_explicit_break() {
+        let html = "<style>p { color:red;line-height:20px }            p::first-line { color:green;background:#ffc0cb }</style>            <p>alpha<br>beta</p>";
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let text_color = |needle: &str| -> (u8, u8, u8) {
+            commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::Text { text, color, .. } if text.contains(needle) => {
+                        Some((color.r, color.g, color.b))
+                    }
+                    _ => None,
+                })
+                .expect("expected painted line")
+        };
+        assert_eq!(text_color("alpha"), (0, 128, 0));
+        assert_eq!(text_color("beta"), (255, 0, 0));
+        assert!(commands.iter().any(|command| matches!(command,
+            PaintCommand::FillRect {color,..}
+                if (color.r,color.g,color.b)==(255,192,203)
+        )));
+    }
+
+    #[test]
+    fn first_line_background_uses_same_font_metrics_as_inline_background() {
+        let html = "<style>p {font-size:10px}            #styled::first-line {background:#ffc0cb}            #control span {background:#ffc0cb}</style>            <p id='styled'>sample<br>plain</p>            <p id='control'><span>sample</span><br>plain</p>";
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let heights: Vec<i32> = commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::FillRect { height, color, .. }
+                    if (color.r, color.g, color.b) == (255, 192, 203) =>
+                {
+                    Some(*height)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(heights.len(), 2, "{heights:?}");
+        assert_eq!(heights[0], heights[1]);
+    }
+
+    #[test]
     fn intrinsic_table_tracks_and_spacing_reach_display_list() {
         let display_list = Engine::new().render_html(
             "<style>

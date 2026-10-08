@@ -1,6 +1,6 @@
 use super::inline::{
-    InlineAtomic, InlineBoxStyle, InlineBoxes, InlineChar, InlineFragment, InlineImage,
-    InlineStyle, Item, Lines,
+    FirstLinePaint, InlineAtomic, InlineBoxStyle, InlineBoxes, InlineChar, InlineFragment,
+    InlineImage, InlineStyle, Item, Lines,
 };
 use super::*;
 use op_css::{
@@ -520,11 +520,36 @@ fn inline_fragment_has_visible_content(
 
 impl<'a> Context<'a, '_> {
     fn emit(&mut self, items: &mut Vec<Item<'a>>, style: Style, x: i32, width: i32) {
+        self.emit_with_first_line(items, style, x, width, None);
+    }
+
+    fn emit_with_first_line(
+        &mut self,
+        items: &mut Vec<Item<'a>>,
+        style: Style,
+        x: i32,
+        width: i32,
+        host: Option<NodeId>,
+    ) {
         if collapsible_inline_items(items) {
             items.clear();
             return;
         }
         self.flush_pending_margin();
+        let first_line_paint = host.and_then(|node| {
+            let pseudo = self
+                .computed_styles
+                .pseudo_style_for(node, PseudoElement::FirstLine)?;
+            let first = computed_style(pseudo.style);
+            Some(FirstLinePaint {
+                base_color: style.inline.color,
+                text_color: pseudo
+                    .fragment_properties
+                    .color
+                    .then_some(first.inline.color),
+                background: (first.background.alpha > 0).then_some(first.background),
+            })
+        });
         let lines = Lines::new(
             self.measurer,
             &self.inline_boxes,
@@ -534,6 +559,7 @@ impl<'a> Context<'a, '_> {
             self.y,
             width.max(1),
         )
+        .with_first_line(first_line_paint)
         .layout(std::mem::take(items));
         self.y = lines.bottom();
         if let Some(baseline) = lines.last_baseline {
@@ -1136,7 +1162,13 @@ impl<'a> Context<'a, '_> {
             if let Some(host) = first_letter_host {
                 self.apply_first_letter_style(host, &mut items);
             }
-            self.emit(&mut items, style, content_x, content_width);
+            self.emit_with_first_line(
+                &mut items,
+                style,
+                content_x,
+                content_width,
+                first_letter_host,
+            );
         }
         self.flow_height_stack.pop();
         // Parent/child margin collapse is intentionally deferred; consume the final

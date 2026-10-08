@@ -197,7 +197,21 @@ currentcolor-003, predefined-012, rec2020-001, xyz-003 and
 first-line-bidi-002. The XYZ WPT fuzzy metadata is still not used
 in the exact-pixel score, and no references or tolerances were changed.
 General Color 5 color-profile alpha/CMYK and history-dependent styling
-remain unsupported.
+remain unsupported. The next text-fragment pass recognizes CSS
+::first-line/:first-line in selector parsing and author cascade, computes
+its fragment style, and paints the first actual line with its own inherited
+color and inline-sized background without altering following lines.
+selectors/first-line-bidi-002.html now matches the reference image
+pixel-for-pixel. Frozen Static v1 advances 195/200 -> 196/200 (98.00%)
+on the unchanged exact comparator. Positioning remains 53/100 (53.00%)
+without new render errors. The four outstanding Static cases are:
+currentcolor-003.html, predefined-012.html, rec2020-001.html and
+xyz-003.html. currentcolor-003 still needs first-line dynamic inheritance
+and CSS gradient/shadow/filter painting. XYZ differs by one blue byte in
+a region where the WPT explicitly declares maxDifference=0-1, but
+the project's strict score intentionally does not apply that allowance.
+Both Rec.2020 pinned reference colors differ from the gamma 2.4 current
+CSS Color 4 transfer; the reference manifests have not been changed.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves

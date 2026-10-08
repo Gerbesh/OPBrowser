@@ -602,6 +602,25 @@ RGB input for 3-channel ICC profiles, but does not implement general
 color-profile alpha, CMYK/device channels or broad CSS Color 5 syntax.
 Frozen Static improves to 195/200, Positioning unchanged at 53/100.
 
+The first-line fragment slice adds FirstLine to the CSS pseudo-element grammar
+(both ::first-line and legacy :first-line), selector matching and computed
+fragment pseudo-style pipeline, without pretending a fragment creates
+generated content. For a block's final inline sequence, flow::Context
+passes the host's computed first-line text and background colors into
+inline::Lines. The real first line flush uses the pseudo text color for
+runs inheriting the host color, preserving descendant explicit colors.
+The first line background is painted in the inline decoration phase
+behind its text, with the exact ascent/descent glyph metrics box also
+used by regular inline spans. Subsequent automatic lines and explicit
+breaks retain the original colors. Two engine tests verify that a second
+line after br remains unmodified, and that first-line background height
+equals the height of an equivalent painted inline span. This brings the
+unchanged strict WPT Static v1 suite to 196/200 (98.00%) by passing
+selectors/first-line-bidi-002. Remaining limitations: partial first-line
+inherited currentcolor resolution for descendants' borders/backgrounds,
+font reflow under first-line pseudo font changes, and unsupported
+gradients/shadows/filter chains.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus
