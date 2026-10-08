@@ -364,10 +364,17 @@ Status: IN PROGRESS.
   Regressions cover layering, nested inline groups, auto-z, wrapping, atomic
   backgrounds and retained reflow. Frozen WPT Static 187/200 and Positioning
   38/100 remain unchanged with zero render errors.
-- NEXT refine auto-z placement and complete inline-block's own positioning,
-  all CSS stacking-context triggers and exact paint phase ordering; plus overflow
-  clipping, font fallback and line-height cases. Multicol, vertical writing and
-  sticky remain unsupported.
+- DONE CSS positioned auto-z own-ink grouping: relative blocks and inline-blocks
+  now tag their own backgrounds/text at level zero even when separately positioned
+  descendants exist. Their own ink follows z=0 source order while explicitly
+  stacked children keep independent keys and can escape the auto-z parent.
+  Added five regressions for zero-level ties, positive/negative children, explicit
+  inline-block stacking isolation and reflow. WPT Static 187/200, Positioning
+  38/100 remain unchanged with zero render errors.
+- NEXT complete positioning for inline-block/flex/table and full CSS paint phases,
+  context triggers (opacity/transforms/etc.), accurate auto-z interleaving with
+  floats and line backgrounds, overflow clipping, font fallback and line-height.
+  Multicol, vertical writing and sticky remain unsupported.
 
 ## M3 - Original JavaScript engine
 

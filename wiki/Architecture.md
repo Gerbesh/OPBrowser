@@ -44,9 +44,14 @@ An explicit inline z-index is an atomic parent context; auto-z does not trap
 explicitly stacked descendants. PaintGroup also records inline ownership so
 the inline ancestor background precedes its atomic inline-block descendants.
 Independent inline formatting contexts reset outer inline-arena indices.
-This is not full CSS stacking: additional context triggers, auto-z details,
-and exact painting interleaving remain future work. Win32 drawing never
-decides paint order.
+Position-relative block and inline-block owners with z-index:auto now place
+their own ink into the common z=0 source order even when they have stacked
+children. Because their children keep independent PaintKeys and auto-z does
+not establish an ancestor context, a positive child can paint over later
+siblings and a negative child can remain behind the parent's background.
+This is not full CSS stacking: additional context triggers, other auto-z
+paint-phase details and exact interleaving remain future work. Win32 drawing
+never decides paint order.
 
 External HTML travels from address input through a worker-owned Engine and op_net
 into the same original renderer. Structural containers preserve nested heading /

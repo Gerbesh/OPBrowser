@@ -2354,3 +2354,21 @@ This file is append-only project history.
   38/100 (38.00%); zero render errors on both. Full CSS paint ordering
   and all stacking-context triggers remain future work.
 
+## 2026-10-08 - Relative auto-z paint order for blocks and inline-blocks
+
+- Remove the previous shortcut that left relative blocks in the normal paint
+  phase whenever they contained independently positioned children.
+  Tag only the parent's own unpositioned decoration/text/image outputs with
+  its PaintKey. Auto-z uses level zero and does not create an ancestor atomic
+  context; explicit-z descendants retain their own keys.
+- Verify CSS source-order ties with earlier z=0 absolute siblings for both
+  relative blocks and relative inline-blocks. Both tests failed before the
+  patch and pass after it. A positive child still escapes an auto-z parent's
+  paint group; a negative child remains behind the parent's own background.
+- Validate explicit-z inline-block atomic containment with higher-z descendants,
+  including a reflow round trip.
+- Add five focused engine regression tests. Entire Rust workspace test suite
+  and strict Clippy pass. Frozen WPT Static v1 187/200 (93.50%), Positioning v1
+  38/100 (38.00%), zero render errors. Remaining auto-z paint-phase interleaving
+  and additional stacking context triggers still need work.
+

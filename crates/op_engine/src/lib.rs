@@ -2158,6 +2158,123 @@ mod tests {
     }
 
     #[test]
+    fn relative_auto_block_paints_own_background_in_zero_level_source_order() {
+        let html = r#"<div style="position:relative;height:120px">
+            <div style="position:absolute;z-index:0;top:0;left:0;width:50px;height:25px;background:blue"></div>
+            <div style="position:relative;z-index:auto;background:red;width:70px;height:60px">
+              PARENT
+              <div style="position:absolute;z-index:0;top:0;left:0;background:lime;width:60px;height:20px"></div>
+            </div>
+        </div>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let colors: Vec<_> = commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::FillRect { color, width, .. } if [50, 70, 60].contains(width) => {
+                    Some((color.r, color.g, color.b))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(colors, [(0, 0, 255), (255, 0, 0), (0, 255, 0)]);
+    }
+
+    #[test]
+    fn relative_auto_inline_block_paints_own_background_in_zero_level_source_order() {
+        let html = r#"<div style="position:relative;height:120px">
+            <div style="position:absolute;z-index:0;top:0;left:0;width:50px;height:25px;background:blue"></div>
+            <span style="display:inline-block;position:relative;z-index:auto;background:red;width:70px;height:60px">
+              PARENT
+              <span style="position:absolute;z-index:0;top:0;left:0;background:lime;width:60px;height:20px"></span>
+            </span>
+        </div>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let colors: Vec<_> = commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::FillRect { color, width, .. } if [50, 70, 60].contains(width) => {
+                    Some((color.r, color.g, color.b))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(colors, [(0, 0, 255), (255, 0, 0), (0, 255, 0)]);
+    }
+
+    #[test]
+    fn relative_auto_inline_block_child_stacks_above_outside_higher_z() {
+        let html = r#"<div style="position:relative;height:120px">
+            <span style="display:inline-block;position:relative;z-index:auto;background:red;width:70px;height:60px">
+              <span style="position:absolute;z-index:9;top:0;left:0;background:lime;width:60px;height:20px"></span>
+            </span>
+            <div style="position:absolute;z-index:2;top:0;left:0;width:50px;height:25px;background:blue"></div>
+        </div>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let colors: Vec<_> = commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::FillRect { color, width, .. } if [50, 70, 60].contains(width) => {
+                    Some((color.r, color.g, color.b))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(colors, [(255, 0, 0), (0, 0, 255), (0, 255, 0)]);
+    }
+
+    #[test]
+    fn inline_block_with_explicit_z_is_atomic_against_outside_sibling() {
+        let html = r#"<div style="position:relative;height:120px">
+            <span style="display:inline-block;position:relative;z-index:1;background:red;width:70px;height:60px">
+              <span style="position:absolute;z-index:99;top:0;left:0;background:lime;width:60px;height:20px"></span>
+            </span>
+            <div style="position:absolute;z-index:2;top:0;left:0;width:50px;height:25px;background:blue"></div>
+        </div>"#;
+        let mut engine = Engine::new();
+        let first = engine.set_html_page(html, 800, 600);
+        let colors = |commands: &[PaintCommand]| -> Vec<_> {
+            commands
+                .iter()
+                .filter_map(|item| match item {
+                    PaintCommand::FillRect { color, width, .. } if [50, 70, 60].contains(width) => {
+                        Some((color.r, color.g, color.b))
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(
+            colors(&first.commands),
+            [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
+        );
+        engine.reflow(440, 600).unwrap();
+        assert_eq!(
+            colors(&engine.reflow(800, 600).unwrap().display_list.commands),
+            [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
+        );
+    }
+
+    #[test]
+    fn relative_auto_inline_block_negative_child_paints_under_own_background() {
+        let html = r#"<div style="position:relative;height:120px">
+            <span style="display:inline-block;position:relative;z-index:auto;background:red;width:70px;height:60px">
+              <span style="position:absolute;z-index:-1;top:0;left:0;background:lime;width:60px;height:20px"></span>
+            </span>
+        </div>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let colors: Vec<_> = commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::FillRect { color, width, .. } if [70, 60].contains(width) => {
+                    Some((color.r, color.g, color.b))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(colors, [(0, 255, 0), (255, 0, 0)]);
+    }
+
+    #[test]
     fn relative_table_caption_overlays_preceding_absolute_indicator() {
         let html = "<div style='display:inline-block;position:relative;height:200px'>\
             <div style='position:absolute;left:0;top:100px;width:50px;height:50px;background:red'></div>\

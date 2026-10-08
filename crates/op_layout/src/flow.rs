@@ -1166,34 +1166,17 @@ impl<'a> Context<'a, '_> {
         if style.position == Position::Relative {
             let (dx, dy) = relative_position_offset(style, containing_width, containing_height);
             self.translate_outputs_since(output_start, dx, dy);
-            // A relative box without nested positioned paints can enter the
-            // foreground as one group. If it contains absolute children,
-            // promoting its whole subtree would incorrectly move ordinary
-            // text above those children. Full nested stacking needs groups.
-            let has_positioned_descendants = self.decorations[output_start.decorations..]
-                .iter()
-                .any(|box_| {
-                    matches!(
-                        box_.paint_layer,
-                        DecorationPaintLayer::PositionedBlock
-                            | DecorationPaintLayer::PositionedInline
-                    )
-                })
-                || self.order[output_start.order..].iter().any(|item| {
-                    matches!(
-                        item,
-                        LayoutItem::PositionedText(_, _) | LayoutItem::PositionedImage(_, _)
-                    )
-                });
-            // Explicit z-index creates an atomic context even with nested positioned children.
-            if style.z_index.is_some() || !has_positioned_descendants {
-                let id = match content {
-                    BlockContent::Element(id)
-                    | BlockContent::Generated(id, _)
-                    | BlockContent::ImageAlt(id) => id,
-                };
-                self.mark_positioned_outputs_since(output_start, self.paint_group(id, style));
-            }
+            // Paint this relative box's *own* ink at z=0 for 'auto', even
+            // when it contains separately positioned children. Existing keys
+            // are retained by mark_positioned_outputs_since, so those children
+            // remain in the ancestor stacking context rather than becoming
+            // atomic descendants of the auto-z parent.
+            let id = match content {
+                BlockContent::Element(id)
+                | BlockContent::Generated(id, _)
+                | BlockContent::ImageAlt(id) => id,
+            };
+            self.mark_positioned_outputs_since(output_start, self.paint_group(id, style));
         }
     }
 

@@ -114,7 +114,14 @@ parent/atomic background paint order. Its five end-to-end regressions pass,
 and the same frozen WPT Static/Positioning scores remain 187/200 and 38/100
 with zero render errors. Full CSS stacking still requires remaining auto-z
 nuances, positioned atomic-inline owner cases, additional context triggers
-and complete paint phases.
+and complete paint phases. The next relative-auto pass moves the parent's own
+paint into the zero-level source-ordered group even with positioned children;
+explicit children remain independent and negative children paint underneath
+the parent's background. Five regression tests cover block/inline-block same-z
+ties, positive and negative children, explicit inline-block atomic isolation
+and reflow. Frozen WPT Static is still 187/200 and Positioning still 38/100
+with zero render errors; remaining auto-z paint-phase interactions are not
+fully conformant.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves

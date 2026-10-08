@@ -471,9 +471,18 @@ retaining their independently positioned keys. Local table/block/flex inline
 formatters clear caller-owned inline arena indices before entering new contexts;
 this also fixes an index-out-of-bounds panic in nested inline-block content.
 PaintGroup.inline_owner keeps the inline ancestor background behind its atomic
-block descendants. Full CSS stacking remains incomplete: auto-z placement,
-positioned inline-block owners and non-position stacking triggers are partial,
-and some CSS background/inline interleaving remains coarse.
+block descendants. Relative block paint promotion no longer depends on the
+absence of nested positioned outputs: Context::block tags only the parent's
+ordinary decoration and foreground with a zero-level PaintKey even for z-index:auto.
+Because LayoutItem::positioned and decoration marking retain existing positioned
+keys, nested explicit-z children remain independent participants in the nearest
+real atomic ancestor context. This corrects same-level source ordering of the
+parent's own ink relative to earlier positioned siblings for both block and
+inline-block while preserving positive and negative child ordering. Explicit-z
+inline-block context isolation and reflow are regression-tested. Full CSS
+stacking remains incomplete: additional context triggers, auto-z interleaving
+with other CSS paint phases, and some inline/block decoration ordering remain
+coarse.
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
