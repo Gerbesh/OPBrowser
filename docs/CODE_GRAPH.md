@@ -1203,3 +1203,18 @@ Unlike the M4.1/M4.2 historical post-parse implementation above, the
 current engine uses this parser-pause path. Tokenization remains eager,
 and document.write, async/defer, script modules and DOM lifecycle events
 are still unsupported.
+
+## M4.7: bounded defer/async resource scheduling (current)
+
+The op_engine::scripts::parse_and_execute parser callback now schedules
+same-origin external classic defer/async source fetches on scoped workers
+using the page's immutable NetworkContext. Each fetch reserves a bounded
+byte allowance, shares request/deadline accounting, and sends a completion
+record over a channel. Only the engine thread can run JsRuntime::eval_script
+or apply detached DomTextMutation updates.
+
+ParserScriptRunner::drain_ready polls async completions at script closing
+tags; deferred completions wait in a keyed table and are executed after
+tree construction in original document order. Initial load drains remaining
+async work before paint. Scoped workers cannot outlive page preparation.
+An independent browser event loop remains unimplemented.

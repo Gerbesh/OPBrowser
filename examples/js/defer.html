@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><title>OPBrowser defer scheduling demonstration</title></head>
+<body>
+<h1>Defer script demo</h1>
+<p id="status">Before</p>
+<script>var result = "Inline-before-";</script>
+<script defer src="defer.js"></script>
+<p id="late">Later node available to deferred script</p>
+<script>result = result + "Inline-after-";</script>
+</body>
+</html>

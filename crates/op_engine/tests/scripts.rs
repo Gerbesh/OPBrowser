@@ -231,3 +231,171 @@ fn winhttp_external_javascript_roundtrip_executes_to_dom() {
     );
     server.join().unwrap();
 }
+
+#[test]
+fn defer_scripts_wait_for_complete_dom_and_execute_in_source_order() {
+    let root = std::env::temp_dir().join(format!("opbrowser-js-m47-defer-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let page = root.join("index.html");
+    std::fs::write(
+        root.join("first.js"),
+        "if (document.getElementById('later') == null) { throw 'no later DOM'; } trace=trace+'D';",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("second.js"),
+        "trace=trace+'E'; document.getElementById('out').textContent=trace;",
+    )
+    .unwrap();
+    std::fs::write(
+        &page,
+        concat!(
+            "<p id='out'>Before</p>",
+            "<script>var trace='A';</script>",
+            "<script defer src='first.js'></script>",
+            "<script>trace=trace+'B';</script>",
+            "<script defer src='second.js'></script>",
+            "<p id='later'>Present after parse</p>",
+            "<script>trace=trace+'C';</script>",
+        ),
+    )
+    .unwrap();
+    let mut engine = Engine::new();
+    let rendered = engine
+        .navigate(&page.display().to_string(), 800, 600)
+        .unwrap();
+    let report = engine.active_script_report().unwrap();
+    assert_eq!(
+        (report.executed, report.failed, report.skipped),
+        (5, 0, 0),
+        "{report:?}"
+    );
+    assert!(rendered.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("ABCDE")
+    )));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn async_external_script_executes_in_retained_vm() {
+    let root = std::env::temp_dir().join(format!("opbrowser-js-m47-async-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let page = root.join("index.html");
+    std::fs::write(
+        root.join("async.js"),
+        "document.getElementById('out').textContent='ASYNC-READY';",
+    )
+    .unwrap();
+    std::fs::write(
+        &page,
+        concat!(
+            "<p id='out'>Before</p>",
+            "<script async src='async.js'></script>",
+            "<p id='later'>Later</p>",
+        ),
+    )
+    .unwrap();
+    let mut engine = Engine::new();
+    let rendered = engine
+        .navigate(&page.display().to_string(), 800, 600)
+        .unwrap();
+    let report = engine.active_script_report().unwrap();
+    assert_eq!(
+        (report.executed, report.failed, report.skipped),
+        (1, 0, 0),
+        "{report:?}"
+    );
+    assert!(rendered.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("ASYNC-READY")
+    )));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn inline_async_and_defer_flags_do_not_defer_classic_inline_script() {
+    let mut engine = Engine::new();
+    let rendered = engine.set_html_page(
+        "<p id='out'>Before</p><script async defer>var value='SYNC'; \
+         if (document.getElementById('later') != null) { value='WRONG'; } \
+         document.getElementById('out').textContent=value;</script><p id='later'>After</p>",
+        800,
+        600,
+    );
+    assert!(rendered.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("SYNC")
+    )));
+    assert!(!rendered.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("WRONG")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().executed, 1);
+}
+
+#[test]
+#[cfg(windows)]
+fn async_scripts_execute_in_download_completion_order_not_tag_order() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::time::{Duration, Instant};
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    listener.set_nonblocking(true).unwrap();
+    let server = std::thread::spawn(move || {
+        let mut workers = Vec::new();
+        for _ in 0..3 {
+            let began = Instant::now();
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(began.elapsed() < Duration::from_secs(8));
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            };
+            stream.set_nonblocking(false).unwrap();
+            workers.push(std::thread::spawn(move || {
+                stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+                let mut buffer = [0_u8; 8192];
+                let count = stream.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..count]);
+                let (mime, body) = if request.starts_with("GET /index.html ") {
+                    ("text/html", concat!(
+                        "<p id='out'>Before</p>",
+                        "<script>var finished='';</script>",
+                        "<script async src='slow.js'></script>",
+                        "<script async src='fast.js'></script>",
+                    ))
+                } else if request.starts_with("GET /slow.js ") {
+                    std::thread::sleep(Duration::from_millis(500));
+                    ("text/javascript", "finished=finished+'S';document.getElementById('out').textContent=finished;")
+                } else {
+                    assert!(request.starts_with("GET /fast.js "), "{request:?}");
+                    ("text/javascript", "finished=finished+'F';document.getElementById('out').textContent=finished;")
+                };
+                write!(stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: {mime};charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()).unwrap();
+                stream.flush().unwrap();
+            }));
+        }
+        for worker in workers {
+            worker.join().unwrap();
+        }
+    });
+    let mut engine = Engine::new();
+    let rendered = engine
+        .navigate(&format!("{origin}/index.html"), 800, 600)
+        .unwrap();
+    let report = engine.active_script_report().unwrap();
+    assert_eq!(
+        (report.executed, report.failed, report.skipped),
+        (3, 0, 0),
+        "{report:?}"
+    );
+    assert!(rendered.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("FS")
+    )));
+    server.join().unwrap();
+}

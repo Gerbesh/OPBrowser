@@ -177,7 +177,23 @@
         {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
         {"path": "crates/op_engine/src/lib.rs", "symbol": "prepare_source"}
       ],
-      "limitation": "Eager tokenization; no document.write reentry, async/defer, modules or load event loop."
+      "limitation": "Eager tokenization; no document.write reentry, module scripts, independent async event loop or DOM lifecycle events."
+    },
+    {
+      "id": "S11",
+      "title": "Bounded defer and async classic JavaScript scheduling",
+      "status": "M4.7 concurrent source fetch with parser polling",
+      "steps": [
+        {"path": "crates/op_html/src/tree_builder.rs", "symbol": "parse_document_with_script_hook"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "parse_and_execute"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "prepare_fetch"},
+        {"path": "crates/op_net/src/lib.rs", "symbol": "load_script_for_page"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "drain_ready"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "evaluate_loaded"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "eval_script"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"}
+      ],
+      "limitation": "Concurrent fetch and initial-load JS polling only; no event loop, DOMContentLoaded, module scripts or SRI."
     },
     {
       "id": "S6",

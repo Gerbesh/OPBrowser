@@ -42,7 +42,10 @@ at parser boundaries. A first native `click` event slice now retains JS
 handlers registered by `addEventListener` or `onclick`, allowing text
 changes and reflow after user interaction. M4.5 adds capture-target-bubble and
 listener removal plus event cancellation state. M4.6 runs classic scripts
-during DOM tree construction. Async/defer, document.write and broad Web APIs are **not** implemented.
+during DOM tree construction. M4.7 adds bounded external classic defer
+(after parsing, in order) and async (concurrent source fetching,
+execution at parser/end-of-load polling points). An independent event loop,
+document.write and broad Web APIs are **not** implemented.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 

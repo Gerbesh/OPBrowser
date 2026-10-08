@@ -21,8 +21,10 @@ claim that OPBrowser is ready for everyday browsing.
   `removeEventListener`, `stopPropagation` and `preventDefault`
   event state. Classic scripts run during tree construction at script
   closing tags, with retained DOM snapshots refreshed as markup arrives.
-  Async/defer, document.write, native default-action cancellation
-  and broad Web APIs remain absent.
+  Bounded external classic defer/async now fetch concurrently; defer runs
+  in document order after parsing; async runs at parser/load polling
+  points. An independent event loop, document.write, native default-action
+  cancellation and broad Web APIs remain absent.
 - Network request filtering foundation; full adblock UI/subscription pipeline
   is **not** implemented.
 

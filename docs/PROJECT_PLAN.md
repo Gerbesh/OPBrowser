@@ -154,6 +154,25 @@ Primary conformance targets:
 - NEXT add standards-aware deferred/async scheduling and lifecycle hooks,
   then larger DOM/Web API surface.
 
+## M4.7 - Bounded defer and async classic-script scheduling (2026-10-08)
+
+- DONE external classic defer scripts fetch on scoped workers and execute
+  after the DOM is constructed, in original document order.
+- DONE external classic async scripts fetch concurrently and execute in
+  completion order at parser script boundaries or load finalization.
+  Inline async/defer attributes are ignored; async wins over defer for
+  external scripts with both attributes.
+- DONE each in-flight source reserves the existing aggregate byte budget,
+  honors script request/deadline limits and same-origin request filtering.
+  All JS execution and DOM mutation remain on the engine thread.
+- DONE regressions cover defer order and complete DOM, inline attribute
+  timing, async loading, and WinHTTP slow/fast completion-order dispatch.
+- LIMITATION async execution is polled at script closing tags or before
+  initial page presentation, not by an independent browser event loop.
+  Navigation waits for worker completion. document.readyState,
+  DOMContentLoaded/load, document.write, modules and SRI are still absent.
+- NEXT implement document lifecycle state/events, followed by interactive
+  asynchronous completion and task scheduling.
 ## M0 - Foundation
 
 Status: DONE at initial level.

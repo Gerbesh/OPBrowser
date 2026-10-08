@@ -2810,3 +2810,15 @@ This file is append-only project history.
   callbacks referencing late elements.
 - The tokenizer is still eager; document.write, reentrant parsing, async,
   defer, integrity verification and full HTML loading events are absent.
+
+## 2026-10-08 - M4.7 bounded external defer/async script scheduler
+
+- Added scoped parallel source fetching for classic defer and async scripts
+  through the existing filtered/same-origin network loader.
+- Deferred scripts run after DOM completion in source order; async scripts
+  run in download completion order at parser/end-of-load polling points.
+- JS execution and DOM mutations stay on one engine thread; in-flight
+  fetches reserve a share of the aggregate external byte budget.
+- Added local-file regressions and WinHTTP slow/fast async ordering test.
+- Browser event loop, readyState/DOMContentLoaded/load, document.write,
+  modules, SRI and interactive async dispatch are still future work.

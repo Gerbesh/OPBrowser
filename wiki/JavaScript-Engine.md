@@ -187,3 +187,19 @@ cannot reenter the tokenizer, external fetches are synchronous, and async,
 defer, integrity, modules, DOMContentLoaded, and load scheduling remain
 unsupported. M4.6 regression tests prove that earlier scripts cannot query
 future DOM IDs and that late nodes become available after parser completion.
+
+## M4.7: external classic async and defer scheduling
+
+OPBrowser now differentiates blocking, deferred and async external classic
+scripts. The filtered same-origin loader fetches deferred and async
+resources concurrently on bounded scoped workers without granting those
+threads access to JS VM or live DOM. Deferred scripts execute after HTML
+tree construction in document order. Async scripts execute in completion
+order when polled at script boundaries or during initial-load finalization.
+When both external flags occur, async wins. Inline classic scripts ignore
+both timing attributes. Failed downloads remain non-fatal.
+
+Initial navigation still waits for scheduled workers: this is not an
+independent event loop. Async cannot execute at arbitrary tokenizer points,
+during interactive frames or after page presentation. No document.readyState,
+DOMContentLoaded, load event scheduling, modules, SRI or document.write yet.

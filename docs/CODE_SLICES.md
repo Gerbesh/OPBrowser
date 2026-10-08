@@ -1087,3 +1087,22 @@ globals and can find newly parsed nodes, and a click listener installed
 early can access elements parsed after that script. This path supersedes
 the post-parse timing described in the historical S7 and S8 sections.
 Tokenization is eager; document.write and async/defer are not implemented.
+
+## S11 - External defer/async script to retained DOM (M4.7)
+
+Status: IMPLEMENTED as bounded initial-load scheduling, not a browser
+event loop.
+
+    script close in HTML parser
+      -> ParserScriptRunner::prepare_fetch
+      -> scoped worker and filtered NetworkContext::load_script_for_page
+      -> CompletedScript channel
+      -> ParserScriptRunner::drain_ready / complete
+      -> async completion-order execution at parser polls
+      -> deferred source-order execution after DOM construction
+      -> JsRuntime::eval_script / Document::set_text_content
+      -> CSS/layout/paint
+
+Local-file and WinHTTP tests cover deferred ordering, async completion
+ordering, inline flags and retained DOM. There is no post-presentation
+event loop, module support, SRI, document.write or DOMContentLoaded.
