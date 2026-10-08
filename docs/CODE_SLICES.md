@@ -524,6 +524,23 @@ rather than full browser-compatible row-height rules; row-group paint beyond
 basic spans is approximate, and percent-based absolute containing heights
 remain incomplete.
 
+The WPT Static v1 191/200 pass adds three independent rendering slices.
+CSS Color 4 parsing now routes absolute OKLab/OKLCH colors through a small
+near-black output correction: if the corresponding achromatic color would
+round to black in the 8-bit SDR framebuffer, an out-of-gamut source chroma
+is reduced by binary search at fixed lightness/hue before quantization.
+Brighter wide-gamut colors retain the existing direct conversion until
+general gamut mapping is consistently implemented across color spaces.
+In HTML form layout, raw direct text children of select are not emitted as
+page content; option elements keep their own visibility rules.
+For the current text-only SVG slice, defs never directly paint, SVG text with
+display:contents suppresses its text, outermost SVG with display:contents
+has no paint context, nested SVG/g containers remain traversable, and use
+can expand text node children from an id-referenced SVG text source.
+This is still not complete SVG layout, hit testing, or coordinate/raster support.
+Engine and color regressions preserve the narrow behavior. Frozen Static
+passes 191/200 from 187/200; Positioning stays at 53/100.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus

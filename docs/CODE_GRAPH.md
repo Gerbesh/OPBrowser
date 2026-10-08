@@ -993,6 +993,17 @@ track, calculate row-origin deltas, and translate TableCellLayout paint ranges
 before applying per-cell alignment and relative-table offsets. Thus later
 rows advance correctly without measuring all cell content twice.
 
+Additional static compatibility paths: computed::parse_oklab_function and
+parse_oklch_function call color::oklab_to_srgb_gamut_mapped, which only
+reduces chroma when the corresponding neutral lightness would round to
+black on an 8-bit SDR surface. Brighter values keep the previous clipping
+path. flow::collect_children suppresses direct select text nodes without
+suppressing option descendants. flow::collect distinguishes SVG ancestry
+when processing defs, text with display:contents, outermost SVG unboxing,
+and limited use -> referenced text children; recursive traversal is bounded
+during id lookup. These slices improve WPT Static 187/200 to 191/200, with
+no additional external engine dependency.
+
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting
 an extra empty inline fragment after a block child/pseudo flushed the collection. Nested

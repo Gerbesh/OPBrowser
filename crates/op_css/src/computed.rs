@@ -1,5 +1,5 @@
 use crate::color::{
-    lab_to_srgb, oklab_to_srgb, predefined_to_srgb, srgb_to_lab, system_color_rgba,
+    lab_to_srgb, oklab_to_srgb_gamut_mapped, predefined_to_srgb, srgb_to_lab, system_color_rgba,
 };
 use crate::custom::{contains_var, resolve_custom_values, substitute_vars};
 use crate::{MatchedDeclaration, PseudoElement, Specificity, StyleMap, StyleSource, TokenKind};
@@ -3890,7 +3890,10 @@ fn parse_oklab_function(tokens: &[&TokenKind]) -> Option<CssColor> {
         parse_ok_axis(components[1])?,
         parse_ok_axis(components[2])?,
     ];
-    Some(css_color_from_srgb(oklab_to_srgb(oklab), alpha))
+    Some(css_color_from_srgb(
+        oklab_to_srgb_gamut_mapped(oklab),
+        alpha,
+    ))
 }
 
 fn parse_oklch_function(tokens: &[&TokenKind]) -> Option<CssColor> {
@@ -3905,7 +3908,10 @@ fn parse_oklch_function(tokens: &[&TokenKind]) -> Option<CssColor> {
     let chroma = parse_ok_chroma(components[1])?;
     let hue = parse_polar_hue(components[2])?.to_radians();
     let oklab = [lightness, chroma * hue.cos(), chroma * hue.sin()];
-    Some(css_color_from_srgb(oklab_to_srgb(oklab), alpha))
+    Some(css_color_from_srgb(
+        oklab_to_srgb_gamut_mapped(oklab),
+        alpha,
+    ))
 }
 
 fn parse_predefined_color_function(tokens: &[&TokenKind]) -> Option<CssColor> {

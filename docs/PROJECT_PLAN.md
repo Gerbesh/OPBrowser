@@ -398,11 +398,21 @@ Status: IN PROGRESS.
   of table height; nested/overlapping spans and subsequent rows have engine
   regressions, as does intrinsic colspan sizing. Frozen WPT Positioning remains
   53/100 and Static remains 187/200 without render errors.
-- NEXT improve table row/group background painting over multi-column/spanned
-  grids, refine row-height distribution and baseline rules, finish percentage/
-  absolute containing block sizing, and complete CSS paint phases. Additional
-  context triggers, overflow clipping, font fallback, multicol, vertical
-  writing and sticky remain unsupported.
+- DONE focused WPT Static v1 compatibility recovery: fix near-black OKLab/OKLCH
+  on the current 8-bit SDR output without changing bright wide-gamut clipping,
+  suppress raw text directly under HTML select, and distinguish hidden SVG defs/
+  SVG text display:contents from nested SVG containers while expanding simple
+  text references from SVG use. Three previously failing static reftests pass,
+  improving the unchanged frozen suite 187/200 -> 191/200 (93.50% -> 95.50%),
+  with zero render errors. Add color and engine regressions. These are narrow
+  slices, not complete CSS gamut mapping, HTML forms, or SVG rendering.
+- NEXT close remaining nine frozen WPT Static failures via real CSS features:
+  ICC @color-profile and PNG color management, background images, full CSS
+  group opacity/filter compositing, correct currentcolor/first-line effects,
+  link history-sensitive :visited handling, modern color conversion precision,
+  and bidirectional text/first-line painting. Distinguish contemporary
+  Rec.2020 transfer semantics from pinned historical reftest references.
+  Continue table row/group paint and CSS positioning as separate workstreams.
 
 ## M3 - Original JavaScript engine
 

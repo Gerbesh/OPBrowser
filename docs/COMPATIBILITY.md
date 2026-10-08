@@ -143,7 +143,20 @@ the accumulated extra track heights; vertical border-spacing and overlapping
 spans are covered by dedicated regressions. Frozen WPT Static stays
 187/200 and Positioning stays 53/100, both with zero render errors. CSS
 row-height distribution, row-group painting and baseline corner cases remain
-partial.
+partial. Subsequent WPT Static improvements now include limited near-black
+OKLab/OKLCH gamut correction, direct select text suppression, and basic SVG
+definitions/use and display:contents paint filtering. With the exact same
+frozen Static v1 manifest, 191/200 (95.50%) now pass, up from 187/200 (93.50%);
+Positioning remains 53/100 (53.00%). Neither suite has render errors.
+The nine remaining static failures concern ICC color profiles or tagged
+images, color-mix(:visited) with history state, composited filters and
+opacity, first-line currentcolor/shadows, Rec.2020 color references,
+XYZ fractional precision/reftest fuzziness and bidi first-line painting.
+W3C CSS Color 4 now specifies gamma 2.4 for Rec.2020, while frozen
+reference values in two cases appear to target an older transfer function:
+they were not modified or made to pass through special-case constants.
+The WPT probe remains pixel-exact and neither the manifest nor its thresholds
+have changed.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves

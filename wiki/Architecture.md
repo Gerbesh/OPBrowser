@@ -67,6 +67,14 @@ measuring non-spanning cells, the final covered row absorbs missing height,
 and later cell paint ranges are translated to updated row origins. This
 handles overlapping rowspans and vertical border-spacing, but exact CSS
 row-height distribution and complex row-group backgrounds remain partial.
+The latest limited static compatibility slice suppresses raw child text in
+select elements; it recognizes non-rendering SVG defs, display:contents
+restrictions on SVG text/root and basic SVG use references to text definitions.
+These rules currently re-use the inline text renderer, rather than a complete
+SVG viewport and glyph positioning engine. The CSS color path now protects
+near-black OKLab/OKLCH output from artificial chromatic clipping artifacts
+while retaining bright wide-gamut conversion until full gamut mapping is
+implemented consistently across color spaces.
 This is not full CSS stacking: additional context triggers, other auto-z
 paint-phase details and exact interleaving remain future work. Win32 drawing
 never decides paint order.

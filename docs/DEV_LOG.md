@@ -2434,3 +2434,30 @@ This file is append-only project history.
   distribution, row-group backgrounds and baseline corner cases remain future
   work.
 
+## 2026-10-08 - WPT Static near-black colors, select text, and SVG text references
+
+- Re-run pinned Static v1 baseline (187/200) and inspect all 13 failures.
+- Diagnose OKLab/OKLCH with 0.0001% lightness: direct sRGB component clipping
+  made visible colored pixels rather than black. Add dark-end chroma reduction
+  only where achromatic output rounds to black in an 8-bit surface. Preserve
+  bright out-of-gamut color handling for two already passing Display P3 green
+  references; the initial unrestricted chroma-mapping prototype regressed
+  those cases, so the final logic remains intentionally limited.
+- Diagnose the 239-pixel select reftest difference to a directly rendered text
+  node inside select without option; suppress that raw text in collection while
+  preserving visible sibling content and hidden option handling.
+- Diagnose the SVG reftest: defs and display:contents SVG text were being
+  painted as regular text, while use did not expand the referenced text.
+  Add bounded SVG ancestry and id lookup with basic use-to-text expansion,
+  and limit rendering for SVG display:contents where required.
+- Add focused engine regressions for select text and SVG definitions/use
+  behavior, plus a color regression checking black at near-zero OKLab/OKLCH
+  and preserved bright wide-gamut results. Pinned Static v1 now passes
+  191/200 (95.50%), up from 187/200 (93.50%). Nine static tests remain.
+- The remaining features include ICC color handling, tagged PNG backgrounds,
+  full opacity/filter compositing, CSS :visited state, first-line effects and
+  bidi. No WPT fixtures, thresholds or reference images were altered.
+  Current CSS Color 4 Rec.2020 transfer is gamma 2.4, which differs from
+  the expected colors in two pinned references. Further full-spec work is
+  required for legitimate 200/200.
+

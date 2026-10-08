@@ -829,6 +829,51 @@ mod tests {
     }
 
     #[test]
+    fn raw_select_text_does_not_render_as_page_content() {
+        let html = "<style>.none{display:none} .red{color:red}</style>          <div>visible before</div><select class='red' size='4'>stray raw text</select>          <select class='red' size='4'><option class='none'>hidden option</option></select>          <div>visible after</div>";
+        let page = Engine::new().render_html(html, 800, 600);
+        let visible: Vec<&str> = page
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            visible.iter().any(|text| text.contains("visible before")),
+            "{visible:?}"
+        );
+        assert!(
+            visible.iter().any(|text| text.contains("visible after")),
+            "{visible:?}"
+        );
+        assert!(
+            !visible.iter().any(|text| text.contains("stray raw text")),
+            "{visible:?}"
+        );
+        assert!(
+            !visible.iter().any(|text| text.contains("hidden option")),
+            "{visible:?}"
+        );
+    }
+
+    #[test]
+    fn svg_defs_use_and_contents_do_not_leak_hidden_text() {
+        let html = "<svg><defs><text id='letter'>S</text></defs>            <text style='display:contents'>FAIL</text>            <svg style='display:contents'><text>P</text></svg>            <g style='display:contents'><text>A</text></g>            <use xlink:href='#letter' style='display:contents'></use>            <text>S</text></svg>            <svg style='display:contents'><text>FAIL</text></svg>";
+        let page = Engine::new().render_html(html, 800, 600);
+        let text = page
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert_eq!(text.replace(' ', ""), "PASS");
+    }
+
+    #[test]
     fn intrinsic_table_tracks_and_spacing_reach_display_list() {
         let display_list = Engine::new().render_html(
             "<style>

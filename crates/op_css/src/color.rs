@@ -262,6 +262,41 @@ pub(crate) fn oklab_to_srgb(oklab: Vec3) -> Vec3 {
     xyz_d65_to_srgb(multiply(LMS_TO_XYZ_D65, linear_lms))
 }
 
+/// Keep near-black OKLab/OKLCH colors from turning into bright colored pixels
+/// when clipping out-of-gamut chroma. This is a limited dark-end gamut correction;
+/// general wide-gamut colors still follow the existing direct sRGB clipping path.
+pub(crate) fn oklab_to_srgb_gamut_mapped(oklab: Vec3) -> Vec3 {
+    if oklab[0] <= 0.0 {
+        return [0.0; 3];
+    }
+    if oklab[0] >= 1.0 {
+        return [1.0; 3];
+    }
+    let direct = oklab_to_srgb(oklab);
+    // A genuinely near-black neutral should round to black on our 8-bit
+    // framebuffer. High chroma must not turn it into visibly green/red pixels.
+    // Keep the old direct conversion for brighter/wide-gamut colors until the
+    // same gamut mapping is implemented across *all* CSS color spaces.
+    let neutral = oklab_to_srgb([oklab[0], 0.0, 0.0]);
+    if neutral.iter().any(|&value| value >= 0.5 / 255.0)
+        || direct.iter().all(|v| (0.0..=1.0).contains(v))
+    {
+        return direct;
+    }
+    let mut low = 0.0_f64;
+    let mut high = 1.0_f64;
+    for _ in 0..32 {
+        let mid = (low + high) * 0.5;
+        let candidate = oklab_to_srgb([oklab[0], oklab[1] * mid, oklab[2] * mid]);
+        if candidate.iter().all(|v| (-1e-9..=1.0 + 1e-9).contains(v)) {
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+    oklab_to_srgb([oklab[0], oklab[1] * low, oklab[2] * low])
+}
+
 pub(crate) fn predefined_to_srgb(space: &str, components: Vec3) -> Option<Vec3> {
     let normalized = space.to_ascii_lowercase();
     let srgb = match normalized.as_str() {
@@ -336,6 +371,23 @@ mod tests {
     fn oklab_examples_land_on_expected_srgb_bytes() {
         assert_eq!(bytes(oklab_to_srgb([0.5, 0.05, 0.0])), [124, 87, 98]);
         assert_eq!(bytes(oklab_to_srgb([0.5, 0.2, 0.0])), [180, 6, 95]);
+    }
+
+    #[test]
+    fn dark_oklab_gamut_reduction_preserves_black_and_wide_gamut_green() {
+        let nearly_black = [0.000_001, 0.15, 0.15];
+        assert_eq!(bytes(oklab_to_srgb_gamut_mapped(nearly_black)), [0, 0, 0]);
+        let angle = 45.0_f64.to_radians();
+        let nearly_black_polar = [0.000_001, 0.2 * angle.cos(), 0.2 * angle.sin()];
+        assert_eq!(
+            bytes(oklab_to_srgb_gamut_mapped(nearly_black_polar)),
+            [0, 0, 0]
+        );
+        let wide_gamut_green = [0.84883, -0.3042, 0.20797];
+        assert_eq!(
+            bytes(oklab_to_srgb_gamut_mapped(wide_gamut_green)),
+            bytes(oklab_to_srgb(wide_gamut_green))
+        );
     }
 
     #[test]

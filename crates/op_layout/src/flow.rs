@@ -3752,9 +3752,24 @@ impl<'a> Context<'a, '_> {
         items: &mut Vec<Item<'a>>,
     ) {
         let (containing_x, containing_width) = containing;
+        // Raw text directly under a select is not a rendered option label.
+        // The control's visible value comes from option elements, not text nodes.
+        let select_parent = self
+            .document
+            .element(parent)
+            .is_some_and(|element| element.tag_name == "select");
         let mut index = 0usize;
         while index < children.len() {
             let child = children[index];
+            if select_parent
+                && self
+                    .document
+                    .node(child)
+                    .is_some_and(|node| matches!(node.kind, NodeKind::Text(_)))
+            {
+                index = index.saturating_add(1);
+                continue;
+            }
             if !self.table_internal_node(child) {
                 self.collect(
                     child,
@@ -3800,6 +3815,45 @@ impl<'a> Context<'a, '_> {
             .is_some_and(is_table_internal_display)
     }
 
+    fn has_svg_ancestor(&self, id: NodeId) -> bool {
+        let mut parent = self.document.node(id).and_then(|node| node.parent);
+        while let Some(ancestor) = parent {
+            if self
+                .document
+                .element(ancestor)
+                .is_some_and(|element| element.tag_name == "svg")
+            {
+                return true;
+            }
+            parent = self.document.node(ancestor).and_then(|node| node.parent);
+        }
+        false
+    }
+
+    fn svg_use_target(&self, reference: &str) -> Option<NodeId> {
+        let target_id = reference.strip_prefix('#')?;
+        if target_id.is_empty() {
+            return None;
+        }
+        let mut stack = vec![self.document.root()];
+        let mut inspected = 0usize;
+        while let Some(id) = stack.pop() {
+            inspected += 1;
+            if inspected > 20_000 {
+                return None;
+            }
+            if self
+                .document
+                .element(id)
+                .is_some_and(|element| attribute(element, "id") == Some(target_id))
+            {
+                return Some(id);
+            }
+            stack.extend(self.document.children(id).iter().rev().copied());
+        }
+        None
+    }
+
     fn collect(
         &mut self,
         id: NodeId,
@@ -3825,6 +3879,37 @@ impl<'a> Context<'a, '_> {
                 let tag = element.tag_name.as_str();
                 let display = self.element_display(id, tag);
                 if display == Display::None {
+                    return;
+                }
+                let inside_svg = self.has_svg_ancestor(id);
+                // SVG definitions are non-rendering resources. display:contents
+                // unboxes nested SVG containers, but an outermost SVG has no
+                // SVG painting context once its own box is removed.
+                if (inside_svg && tag == "defs")
+                    || (inside_svg && tag == "text" && display == Display::Contents)
+                    || (!inside_svg && tag == "svg" && display == Display::Contents)
+                {
+                    return;
+                }
+                if inside_svg && tag == "use" {
+                    let reference =
+                        attribute(element, "href").or_else(|| attribute(element, "xlink:href"));
+                    if let Some(target) = reference.and_then(|value| self.svg_use_target(value))
+                        && self
+                            .document
+                            .element(target)
+                            .is_some_and(|ref_element| ref_element.tag_name == "text")
+                    {
+                        let children = self.document.children(target).to_vec();
+                        self.collect_children(
+                            target,
+                            &children,
+                            href,
+                            inherited,
+                            (containing_x, containing_width),
+                            items,
+                        );
+                    }
                     return;
                 }
                 let mut current = self.element_style(id, tag, inherited);
