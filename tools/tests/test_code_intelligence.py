@@ -4,7 +4,6 @@ from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import code_intelligence as ci
@@ -26,7 +25,7 @@ class CodeIntelligenceTests(unittest.TestCase):
 
     def test_rejects_stale_symbol_and_single_crate_slice(self):
         with TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             for name in ("a", "b"):
                 folder = root / "crates" / name / "src"
                 folder.mkdir(parents=True)
@@ -48,18 +47,19 @@ class CodeIntelligenceTests(unittest.TestCase):
             spec_path.parent.mkdir()
             spec_path.write_text(json.dumps(spec), encoding="utf-8")
             found = {"a": None, "b": None}
-            with patch.object(ci, "ROOT", root):
-                self.assertIn("a::a_step", ci.slices_report(found))
-                spec["slices"][0]["steps"][1]["symbol"] = "does_not_exist"
-                spec_path.write_text(json.dumps(spec), encoding="utf-8")
-                with self.assertRaisesRegex(ValueError, "Stale slice anchor"):
-                    ci.slices_report(found)
-                spec["slices"][0]["steps"][1] = {
-                    "path": "crates/a/src/lib.rs", "symbol": "a_step"
-                }
-                spec_path.write_text(json.dumps(spec), encoding="utf-8")
-                with self.assertRaisesRegex(ValueError, "two crates"):
-                    ci.slices_report(found)
+            if not (root / "crates/a/src/lib.rs").resolve().is_relative_to(root):
+                self.fail("temporary test root is not canonical")
+            self.assertIn("a::a_step", ci.slices_report(found, root=root))
+            spec["slices"][0]["steps"][1]["symbol"] = "does_not_exist"
+            spec_path.write_text(json.dumps(spec), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Stale slice anchor"):
+                ci.slices_report(found, root=root)
+            spec["slices"][0]["steps"][1] = {
+                "path": "crates/a/src/lib.rs", "symbol": "a_step"
+            }
+            spec_path.write_text(json.dumps(spec), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "two crates"):
+                ci.slices_report(found, root=root)
 
     def test_local_wiki_references_resolve(self):
         self.assertEqual(ci.wiki_link_errors(), [])

@@ -50,8 +50,11 @@ def graph_report(found):
     return "\n".join(rows)
 
 
-def slices_report(found):
-    manifest = json.loads((ROOT / "tools/code_slices.json").read_text(encoding="utf-8"))
+def slices_report(found, *, root=None):
+    # Explicit, canonical source root makes isolated tests deterministic on
+    # Windows runners where temporary paths can have different spellings.
+    root = Path(root if root is not None else ROOT).resolve()
+    manifest = json.loads((root / "tools/code_slices.json").read_text(encoding="utf-8"))
     if manifest.get("schema_version") != 1:
         raise ValueError("Unsupported code slice manifest")
     ids = set()
@@ -72,8 +75,8 @@ def slices_report(found):
         for step in spec["steps"]:
             path = step["path"]
             symbol = step["symbol"]
-            resolved = (ROOT / path).resolve()
-            if not resolved.is_relative_to(ROOT) or not path.startswith("crates/") or not resolved.is_file():
+            resolved = (root / path).resolve()
+            if not resolved.is_relative_to(root) or not path.startswith("crates/") or not resolved.is_file():
                 raise ValueError(f"Missing/out-of-workspace source: {path}")
             if path.split("/")[1] not in found:
                 raise ValueError(f"Unknown crate for {path}")

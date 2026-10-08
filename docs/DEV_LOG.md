@@ -2756,3 +2756,22 @@ This file is append-only project history.
   conformance: no capture/bubble, preventDefault, keyboard activation,
   full element hit-testing, class/style mutation or HTML5test score.
 
+## 2026-10-08 - Fix Windows GitHub Actions Code Slicer validator failure
+
+- Investigated five failed main-branch Actions runs (74f48ec through
+  bbb6ce1). All Windows/Rust jobs stopped at Python unit test
+  `test_rejects_stale_symbol_and_single_crate_slice`, before Rust checks.
+  The parallel compatibility job succeeded; no Rust failure was reported.
+- Cause: temporary fixture's source root was patched globally and compared
+  without normalizing path identity on a clean Windows runner. The fixture
+  path was rejected as outside the declared root. The user saw repeated
+  GitHub failure notifications after every push.
+- Fix: give `slices_report` an explicit optional source root and resolve
+  it canonically. Tests pass that root directly, avoiding global state
+  patching and dependency on Windows temporary directory spelling.
+  Production default still uses the repository root; generated outputs
+  remain unchanged.
+- Verify Python suite and `code_intelligence.py --check` locally,
+  including invocation from a different working directory. Await fresh
+  hosted Windows CI confirmation after push.
+
