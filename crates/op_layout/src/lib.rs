@@ -102,6 +102,8 @@ pub struct PaintKey {
 pub struct PaintGroup {
     pub key: PaintKey,
     pub parent: Option<PaintKey>,
+    /// Inline boxes paint their own fragment backgrounds before atomic children.
+    pub inline_owner: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,6 +156,10 @@ pub enum LayoutItem {
 }
 
 impl LayoutItem {
+    pub fn with_optional_paint_key(self, key: Option<PaintKey>) -> Self {
+        key.map_or(self.clone(), |key| self.positioned(key))
+    }
+
     pub fn positioned(self, key: PaintKey) -> Self {
         match self {
             Self::Text(index) => Self::PositionedText(index, key),

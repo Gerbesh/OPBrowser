@@ -1978,6 +1978,186 @@ mod tests {
     }
 
     #[test]
+    fn positioned_inline_background_and_text_obey_explicit_z_index() {
+        let html = r#"<div style="position:relative">
+            <span style="position:relative;z-index:5;background:red">HIGH</span>
+            <span style="position:relative;z-index:1;background:lime">LOW</span>
+            <div style="position:absolute;top:0;left:0;z-index:2;background:blue;width:50px;height:30px"></div>
+        </div>"#;
+        let mut engine = Engine::new();
+        let first = engine.set_html_page(html, 800, 600);
+        let inspect = |commands: &[PaintCommand]| {
+            commands
+                .iter()
+                .filter_map(|item| match item {
+                    PaintCommand::FillRect { color, .. }
+                        if *color == (op_paint::Color { r: 255, g: 0, b: 0 }) =>
+                    {
+                        Some("high-bg")
+                    }
+                    PaintCommand::FillRect { color, .. }
+                        if *color == (op_paint::Color { r: 0, g: 255, b: 0 }) =>
+                    {
+                        Some("low-bg")
+                    }
+                    PaintCommand::FillRect { color, .. }
+                        if *color == (op_paint::Color { r: 0, g: 0, b: 255 }) =>
+                    {
+                        Some("middle-bg")
+                    }
+                    PaintCommand::Text { text, .. } if text.contains("HIGH") => Some("high-text"),
+                    PaintCommand::Text { text, .. } if text.contains("LOW") => Some("low-text"),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            inspect(&first.commands),
+            ["low-bg", "low-text", "middle-bg", "high-bg", "high-text"]
+        );
+        engine.reflow(330, 600).unwrap();
+        assert_eq!(
+            inspect(&engine.reflow(800, 600).unwrap().display_list.commands),
+            ["low-bg", "low-text", "middle-bg", "high-bg", "high-text"]
+        );
+    }
+
+    #[test]
+    fn positioned_inline_context_keeps_high_child_below_outside_sibling() {
+        let html = r#"<div style="position:relative">
+            <span style="position:relative;z-index:1;background:red">PARENT
+              <span style="position:relative;z-index:999;background:lime">CHILD</span>
+            </span>
+            <div style="position:absolute;top:0;left:0;z-index:2;background:blue;width:50px;height:30px"></div>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let colors: Vec<_> = page
+            .commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::FillRect { color, .. }
+                    if (color.r, color.g, color.b) == (255, 0, 0) =>
+                {
+                    Some("parent")
+                }
+                PaintCommand::FillRect { color, .. }
+                    if (color.r, color.g, color.b) == (0, 255, 0) =>
+                {
+                    Some("child")
+                }
+                PaintCommand::FillRect { color, .. }
+                    if (color.r, color.g, color.b) == (0, 0, 255) =>
+                {
+                    Some("sibling")
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(colors, ["parent", "child", "sibling"]);
+    }
+
+    #[test]
+    fn inline_z_auto_does_not_trap_explicitly_stacked_descendants() {
+        let html = r#"<div style="position:relative">
+            <span style="position:relative;z-index:auto;background:red">PARENT
+              <span style="position:relative;z-index:99;background:lime">CHILD</span>
+            </span>
+            <div style="position:absolute;top:0;left:0;z-index:2;background:blue;width:50px;height:30px"></div>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let colors: Vec<_> = page
+            .commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::FillRect { color, .. }
+                    if (color.r, color.g, color.b) == (255, 0, 0) =>
+                {
+                    Some("parent")
+                }
+                PaintCommand::FillRect { color, .. }
+                    if (color.r, color.g, color.b) == (0, 255, 0) =>
+                {
+                    Some("child")
+                }
+                PaintCommand::FillRect { color, .. }
+                    if (color.r, color.g, color.b) == (0, 0, 255) =>
+                {
+                    Some("sibling")
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(colors, ["parent", "sibling", "child"]);
+    }
+
+    #[test]
+    fn wrapped_positioned_inline_keeps_all_fragments_in_one_paint_group() {
+        let html = r#"<div style="position:relative;width:180px">
+            <span style="position:relative;z-index:4;background:red">
+            These many words have to wrap over several lines within a narrow parent and retain their painted fragments together
+            </span>
+            <div style="position:absolute;z-index:2;top:0;left:0;background:blue;width:38px;height:20px"></div>
+        </div>"#;
+        let page = Engine::new().render_html(html, 320, 600);
+        let blue = page
+            .commands
+            .iter()
+            .position(|command| {
+                matches!(
+                    command, PaintCommand::FillRect { color, .. }
+                    if *color == (op_paint::Color {r:0,g:0,b:255})
+                )
+            })
+            .expect("middle stacking context");
+        let red_fragments: Vec<_> = page
+            .commands
+            .iter()
+            .enumerate()
+            .filter_map(|(i, command)| {
+                matches!(command, PaintCommand::FillRect { color, .. }
+                if *color == (op_paint::Color {r:255,g:0,b:0}))
+                .then_some(i)
+            })
+            .collect();
+        assert!(red_fragments.len() >= 2, "the inline should have wrapped");
+        assert!(red_fragments.iter().all(|i| *i > blue));
+    }
+
+    #[test]
+    fn atomic_inline_child_uses_parent_inline_stacking_level() {
+        let html = r#"<div style="position:relative">
+            <span style="position:relative;z-index:5;background:red">
+                <span style="display:inline-block;background:lime;padding:3px">ATOMIC</span>
+            </span>
+            <div style="position:absolute;z-index:2;top:0;left:0;background:blue;width:50px;height:30px"></div>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let colors: Vec<_> = page
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::FillRect { color, .. }
+                    if (color.r, color.g, color.b) == (0, 0, 255) =>
+                {
+                    Some("outside")
+                }
+                PaintCommand::FillRect { color, .. }
+                    if (color.r, color.g, color.b) == (255, 0, 0) =>
+                {
+                    Some("parent")
+                }
+                PaintCommand::FillRect { color, .. }
+                    if (color.r, color.g, color.b) == (0, 255, 0) =>
+                {
+                    Some("atomic")
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(colors, ["outside", "parent", "atomic"]);
+    }
+
+    #[test]
     fn relative_table_caption_overlays_preceding_absolute_indicator() {
         let html = "<div style='display:inline-block;position:relative;height:200px'>\
             <div style='position:absolute;left:0;top:100px;width:50px;height:50px;background:red'></div>\

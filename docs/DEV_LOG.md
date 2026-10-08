@@ -2333,3 +2333,24 @@ This file is append-only project history.
   38/100 (38.00%), with no render errors. Auto-z edge cases, positioned inline
   contexts and full CSS painting phase interleaving remain unimplemented.
 
+## 2026-10-08 - Relative inline z-index and atomic descendants
+
+- Give relative inline boxes an optional PaintKey. Traverse InlineBoxes ancestry
+  to tag fragment backgrounds, text, and images with the nearest positioned key.
+  This retains layering across wraps and keeps nested explicit-z spans atomic.
+- Auto-z relative inline groups do not trap explicitly stacked children; those
+  children retain their own ancestor stacking-context relationships.
+- Associate ordinary nested InlineAtomic decoration/text/image output with the
+  enclosing inline key, preserving independently positioned nested records.
+  Use PaintGroup.inline_owner to paint the relative inline background before
+  nested inline-block backgrounds without reversing ordinary block paint order.
+- Fix an index-out-of-bounds panic: local inline-block, inline-flex, and
+  inline-table contexts now clear the outer inline box arena reference before
+  formatting independent content.
+- Add five engine regressions: explicit z-index layering and reflow, nested
+  explicit-z containment, auto-z escape, wrapped fragment grouping, and atomic
+  inline-block ordering. All Rust workspace tests and strict Clippy passed.
+- Frozen WPT Static v1 remained 187/200 (93.50%); WPT Positioning v1 remained
+  38/100 (38.00%); zero render errors on both. Full CSS paint ordering
+  and all stacking-context triggers remain future work.
+

@@ -38,8 +38,15 @@ records; `PaintGroup` links positioned atomic block contexts through ancestors.
 The platform-neutral painter traverses child groups iteratively so a high-z
 descendant cannot escape its lower-z parent. Negative root groups precede normal
 block painting, while nested negative groups follow their parent's background.
-The complete CSS painting model, including auto-z subtleties and positioned
-inline contexts, remains future work. Win32 drawing never decides paint order.
+Relative inline elements now stamp their decoration fragments, text and
+images with the nearest positioned inline paint key, including split lines.
+An explicit inline z-index is an atomic parent context; auto-z does not trap
+explicitly stacked descendants. PaintGroup also records inline ownership so
+the inline ancestor background precedes its atomic inline-block descendants.
+Independent inline formatting contexts reset outer inline-arena indices.
+This is not full CSS stacking: additional context triggers, auto-z details,
+and exact painting interleaving remain future work. Win32 drawing never
+decides paint order.
 
 External HTML travels from address input through a worker-owned Engine and op_net
 into the same original renderer. Structural containers preserve nested heading /

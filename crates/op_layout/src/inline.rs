@@ -13,6 +13,7 @@ pub(super) struct InlineBoxStyle {
     pub weight: FontWeight,
     pub font_style: FontStyle,
     pub positioned: bool,
+    pub paint_key: Option<super::PaintKey>,
     pub offset_x: i32,
     pub offset_y: i32,
     pub margin_right: i32,
@@ -112,6 +113,19 @@ impl InlineBoxes {
     }
     pub(super) fn parent(&self, id: usize) -> Option<usize> {
         self.nodes[id].parent
+    }
+
+    /// The innermost positioned inline owns the paint of its ordinary descendants.
+    /// A nested absolute/fixed output retains its own key when merged into this line.
+    pub(super) fn paint_key(&self, mut id: Option<usize>) -> Option<super::PaintKey> {
+        while let Some(current) = id {
+            let node = &self.nodes[current];
+            if let Some(key) = node.style.paint_key {
+                return Some(key);
+            }
+            id = node.parent;
+        }
+        None
     }
 
     pub(super) fn positioned_ancestor(&self, mut id: Option<usize>) -> Option<op_dom::NodeId> {
@@ -1047,9 +1061,14 @@ impl<'a, 'm> Lines<'a, 'm> {
                 x = x.saturating_add(style.margin_left);
                 let decoration = self.decorations.len();
                 let (dx, dy) = self.inline_boxes.visual_offset(Some(id));
+                let paint_key = self.inline_boxes.paint_key(Some(id));
                 self.decorations.push(BoxDecoration {
-                    paint_layer: DecorationPaintLayer::Inline,
-                    paint_key: None,
+                    paint_layer: if paint_key.is_some() {
+                        DecorationPaintLayer::PositionedInline
+                    } else {
+                        DecorationPaintLayer::Inline
+                    },
+                    paint_key,
                     x: x.saturating_add(dx),
                     y: baseline
                         .saturating_sub(metrics.ascent)
@@ -1081,9 +1100,14 @@ impl<'a, 'm> Lines<'a, 'm> {
                         let bottom = box_style.bottom_extra();
                         x = x.saturating_add(box_style.margin_left);
                         let (dx, dy) = self.inline_boxes.visual_offset(style.boxes);
+                        let paint_key = self.inline_boxes.paint_key(style.boxes);
                         self.decorations.push(BoxDecoration {
-                            paint_layer: DecorationPaintLayer::Inline,
-                            paint_key: None,
+                            paint_layer: if paint_key.is_some() {
+                                DecorationPaintLayer::PositionedInline
+                            } else {
+                                DecorationPaintLayer::Inline
+                            },
+                            paint_key,
                             x: x.saturating_add(dx),
                             y: (baseline - bottom - image.height - top).saturating_add(dy),
                             width: image.width.saturating_add(left).saturating_add(right),
@@ -1098,7 +1122,10 @@ impl<'a, 'm> Lines<'a, 'm> {
                     }
                     if let Some(pixels) = image.image {
                         let (dx, dy) = self.inline_boxes.visual_offset(style.boxes);
-                        self.order.push(LayoutItem::Image(self.image_boxes.len()));
+                        let key = self.inline_boxes.paint_key(style.boxes);
+                        self.order.push(
+                            LayoutItem::Image(self.image_boxes.len()).with_optional_paint_key(key),
+                        );
                         self.image_boxes.push(ImageBox {
                             x: x.saturating_add(dx),
                             y: (baseline
@@ -1121,6 +1148,19 @@ impl<'a, 'm> Lines<'a, 'm> {
                 }
                 PreparedBox::Atomic(mut atomic, style, vertical_align) => {
                     let (dx, dy) = self.inline_boxes.visual_offset(style.boxes);
+                    if let Some(key) = self.inline_boxes.paint_key(style.boxes) {
+                        // Only ordinary atomic output joins the enclosing inline
+                        // group. Independently positioned children keep their keys.
+                        for decoration in &mut atomic.decorations {
+                            if decoration.paint_key.is_none() {
+                                decoration.paint_key = Some(key);
+                                decoration.paint_layer = decoration.paint_layer.positioned();
+                            }
+                        }
+                        for item in &mut atomic.order {
+                            *item = item.clone().positioned(key);
+                        }
+                    }
                     let top = match vertical_align {
                         VerticalAlign::Baseline => baseline.saturating_sub(atomic.baseline),
                         VerticalAlign::Top => self.y,
@@ -1165,7 +1205,9 @@ impl<'a, 'm> Lines<'a, 'm> {
                         continue;
                     }
                     let (dx, dy) = self.inline_boxes.visual_offset(text.style.boxes);
-                    self.order.push(LayoutItem::Text(self.text_boxes.len()));
+                    let key = self.inline_boxes.paint_key(text.style.boxes);
+                    self.order
+                        .push(LayoutItem::Text(self.text_boxes.len()).with_optional_paint_key(key));
                     self.text_boxes.push(TextBox {
                         x: x.saturating_add(dx),
                         y: (baseline - text.metrics.ascent).saturating_add(dy),

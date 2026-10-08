@@ -460,9 +460,20 @@ root groups precede in-flow block backgrounds, while negative child groups come
 after their atomic parent's block background but before its inline foreground.
 Sibling groups are sorted by local (z-index, DOM order). This fixes large child-z
 escaping a low-z parent and foster-parent source-order ties, without recursion.
-Full CSS stacking remains incomplete: auto-z relative/absolute positioning is
-still simplified, positioned inline contexts and non-position stacking triggers
-are incomplete, and some CSS background/inline interleaving remains coarse.
+The following positioned-inline paint slice attaches a PaintKey to
+InlineBoxStyle for relative inline elements. InlineBoxes walks its parent
+arena path to find the innermost positioned key; Lines emits fragment
+backgrounds, text, and images into that group across wraps. Nested
+positioned spans preserve their own keys, and a relative span with z-index:auto
+does not isolate explicitly stacked descendants. Atomically formatted inline-block
+descendants join the enclosing inline group only for their ordinary outputs,
+retaining their independently positioned keys. Local table/block/flex inline
+formatters clear caller-owned inline arena indices before entering new contexts;
+this also fixes an index-out-of-bounds panic in nested inline-block content.
+PaintGroup.inline_owner keeps the inline ancestor background behind its atomic
+block descendants. Full CSS stacking remains incomplete: auto-z placement,
+positioned inline-block owners and non-position stacking triggers are partial,
+and some CSS background/inline interleaving remains coarse.
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore

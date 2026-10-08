@@ -138,10 +138,7 @@ fn collect_paint_groups(
             if let Some(style) = styles.style_for(node)
                 && style.position != Position::Static
                 && (style.z_index.is_some() || style.position == Position::Fixed)
-                && !matches!(
-                    style.display,
-                    Display::None | Display::Contents | Display::Inline
-                )
+                && !matches!(style.display, Display::None | Display::Contents)
                 && let Some(&index) = dom_order.get(&node)
             {
                 let parent_key = PaintKey {
@@ -158,7 +155,17 @@ fn collect_paint_groups(
     }
     groups
         .into_iter()
-        .map(|(key, parent)| PaintGroup { key, parent })
+        .map(|(key, parent)| {
+            let inline_owner = node_by_order
+                .get(key.source_order)
+                .and_then(|node| styles.style_for(*node))
+                .is_some_and(|style| style.display == Display::Inline);
+            PaintGroup {
+                key,
+                parent,
+                inline_owner,
+            }
+        })
         .collect()
 }
 
@@ -1201,6 +1208,8 @@ impl<'a> Context<'a, '_> {
         mut style: Style,
         containing_width: i32,
     ) -> InlineAtomic {
+        // Inline box arena indices belong to the caller, not this local context.
+        style.inline.boxes = None;
         let children = self.document.children(id).to_vec();
         let margin_left = resolve_margin(style.margin.left, containing_width).unwrap_or(0);
         let margin_right = resolve_margin(style.margin.right, containing_width).unwrap_or(0);
@@ -1321,6 +1330,7 @@ impl<'a> Context<'a, '_> {
         mut style: Style,
         containing_width: i32,
     ) -> InlineAtomic {
+        style.inline.boxes = None;
         let margin_left = resolve_margin(style.margin.left, containing_width).unwrap_or(0);
         let margin_right = resolve_margin(style.margin.right, containing_width).unwrap_or(0);
         let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
@@ -1409,6 +1419,7 @@ impl<'a> Context<'a, '_> {
         mut style: Style,
         containing_width: i32,
     ) -> InlineAtomic {
+        style.inline.boxes = None;
         let margin_left = resolve_margin(style.margin.left, containing_width).unwrap_or(0);
         let margin_right = resolve_margin(style.margin.right, containing_width).unwrap_or(0);
         let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
@@ -3516,6 +3527,7 @@ impl<'a> Context<'a, '_> {
                         resolve_inline_box_style(id, None, current, containing_width)
                             .map(|mut box_style| {
                                 if current.position == Position::Relative {
+                                    box_style.paint_key = Some(self.paint_group(id, current));
                                     let (dx, dy) = relative_position_offset(
                                         current,
                                         containing_width,
@@ -4166,6 +4178,7 @@ fn resolve_inline_box_style(
             weight: style.inline.weight,
             font_style: style.inline.font_style,
             positioned: pseudo.is_none() && style.position == Position::Relative,
+            paint_key: None,
             offset_x: 0,
             offset_y: 0,
             margin_right,

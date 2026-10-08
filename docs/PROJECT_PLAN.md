@@ -355,10 +355,19 @@ Status: IN PROGRESS.
   Negative root groups paint beneath in-flow blocks; equal-z siblings follow final DOM
   preorder after parser reparenting. New integration regressions added with stable
   WPT Static 187/200 and Positioning 38/100 on the frozen subsets.
-- NEXT CSS auto-z/non-atomic positioned behavior, inline stacking contexts,
-  additional stacking-context triggers and exact CSS painting phases; plus positioned
-  inline fragmentation, overflow clipping, font fallback and line-height cases.
-  Multicol, vertical writing and sticky remain unsupported.
+- DONE first positioned inline paint groups: relative inline box fragments (including
+  wrapped continuations) now carry paint keys for backgrounds, text, and images;
+  explicit z-index isolates nested positioned spans, while auto-z preserves
+  descendants' participation in the surrounding context. Atomic inline-block
+  children join their ancestor's paint group without losing separately positioned
+  children; local inline arena indices no longer leak into independent contexts.
+  Regressions cover layering, nested inline groups, auto-z, wrapping, atomic
+  backgrounds and retained reflow. Frozen WPT Static 187/200 and Positioning
+  38/100 remain unchanged with zero render errors.
+- NEXT refine auto-z placement and complete inline-block's own positioning,
+  all CSS stacking-context triggers and exact paint phase ordering; plus overflow
+  clipping, font fallback and line-height cases. Multicol, vertical writing and
+  sticky remain unsupported.
 
 ## M3 - Original JavaScript engine
 

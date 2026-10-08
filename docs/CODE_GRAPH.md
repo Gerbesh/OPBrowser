@@ -955,8 +955,15 @@ produces `BoxDecoration::paint_key` and positioned `LayoutItem` variants.
 positioned ancestors with explicit z-index (and fixed-position ancestors),
 including contexts without their own visible output. `op_paint` reconstructs
 the child groups by parent key and traverses them iteratively with CSS-like
-negative/background/foreground/positive phases. This remains a limited
-block-context model, not the full CSS painting algorithm.
+negative/background/foreground/positive phases. InlineBoxStyle now carries an
+optional PaintKey for positioned relative inline elements; InlineBoxes resolves
+the innermost ancestor key and Lines tags inline decorations, text/images and
+ordinary atomic outputs. LayoutItem.with_optional_paint_key leaves in-flow
+items untouched when no inline key exists. PaintGroup.inline_owner identifies
+contexts where the inline background must precede nested atomic block
+decorations. Independently formatted inline-block/table/flex boxes clear outer
+inline arena indices before constructing local Context instances. The result
+is an initial inline-context slice, not the full CSS painting algorithm.
 
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting

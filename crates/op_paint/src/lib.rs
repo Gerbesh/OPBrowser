@@ -85,8 +85,12 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
 
     // Parent keys identify atomic contexts, even when the parent has no pixels.
     let mut parents = std::collections::HashMap::new();
+    let mut inline_owners = std::collections::HashSet::new();
     for group in &layout.paint_groups {
         parents.insert(group.key, group.parent);
+        if group.inline_owner {
+            inline_owners.insert(group.key);
+        }
     }
     for key in layout
         .box_decorations
@@ -118,12 +122,12 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
     while let Some((context, foreground)) = pending.pop() {
         if !foreground {
             if context.is_some() {
-                emit_backgrounds(
-                    layout,
-                    &mut commands,
-                    op_layout::DecorationPaintLayer::PositionedBlock,
-                    context,
-                );
+                let layer = if context.is_some_and(|key| inline_owners.contains(&key)) {
+                    op_layout::DecorationPaintLayer::PositionedInline
+                } else {
+                    op_layout::DecorationPaintLayer::PositionedBlock
+                };
+                emit_backgrounds(layout, &mut commands, layer, context);
             }
             pending.push((context, true));
             if let Some(siblings) = children.get(&context) {
@@ -141,7 +145,9 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
                     None,
                 );
             }
-            let layer = if context.is_some() {
+            let layer = if context.is_some_and(|key| inline_owners.contains(&key)) {
+                op_layout::DecorationPaintLayer::PositionedBlock
+            } else if context.is_some() {
                 op_layout::DecorationPaintLayer::PositionedInline
             } else {
                 op_layout::DecorationPaintLayer::Inline

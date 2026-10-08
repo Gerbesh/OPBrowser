@@ -107,8 +107,14 @@ Test262 Parser 523/1983). The next pass adds atomic positioned block contexts
 using parent paint groups, corrects negative root stacking relative to normal
 block backgrounds, and uses final DOM preorder for same-level ties after HTML
 foster parenting. Pinned WPT Static and Positioning remain 187/200 and 38/100,
-both with zero render errors. Full CSS stacking still requires auto-z nuances,
-positioned inline contexts, additional context triggers and complete paint phases.
+both with zero render errors. The subsequent inline pass tags relative inline
+fragments and text/images with paint groups, handles nested inline z-index and
+auto-z descendants, and fixes cross-context inline-block arena indices and
+parent/atomic background paint order. Its five end-to-end regressions pass,
+and the same frozen WPT Static/Positioning scores remain 187/200 and 38/100
+with zero render errors. Full CSS stacking still requires remaining auto-z
+nuances, positioned atomic-inline owner cases, additional context triggers
+and complete paint phases.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves
