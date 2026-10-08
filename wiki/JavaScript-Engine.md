@@ -234,3 +234,19 @@ cannot overwrite document.readyState.
 This is initial-load-only scheduling. There is no interactive event loop,
 post-presentation async delivery, microtasks, timers, document.write,
 general Web APIs or module lifecycle.
+
+## M4.9: retained one-shot timers and post-paint updates
+
+The window/global scope exposes setTimeout(callable, delay, ...args)
+and clearTimeout(handle). Callbacks run on the original page worker
+after the specified deadline, not during HTML parsing. Timer callbacks
+may update textContent and trigger an unsolicited reflow/presentation
+without requiring clicks, navigation or resize. Delay is capped at
+60 seconds, at most 64 timer jobs may be pending, and a page cannot
+schedule more than 512 timer IDs. Only the first 16 due jobs run per
+worker tick. New navigation drops the previous page's timers.
+
+Timers do not create their own threads. Unlike a complete browser
+event loop, there are no Promise microtasks, setInterval, nested
+throttling, string-based timer evaluation or post-presentation async
+network fetch scheduling.

@@ -285,6 +285,42 @@ impl Engine {
         Some(prepared.render(width, height))
     }
 
+    /// How long until the current page's earliest queued JavaScript task.
+    /// No task from a previous navigation is retained.
+    pub fn next_timer_wait(&self) -> Option<std::time::Duration> {
+        self.active_document
+            .as_ref()?
+            .runtime
+            .as_ref()?
+            .next_timer_wait()
+    }
+
+    /// Deliver bounded due timer callbacks on the page-owning engine thread.
+    /// Returns a reflow only when a callback actually mutated the DOM.
+    pub fn tick_timers(&mut self, width: i32, height: i32) -> Option<RenderedPage> {
+        let prepared = self.active_document.as_mut()?;
+        let runtime = prepared.runtime.as_mut()?;
+        let fired = runtime.run_due_timers(16);
+        prepared.scripts.failed += fired.failed;
+        let mut changes = 0;
+        for mutation in runtime.take_dom_mutations() {
+            if let Some(node) = prepared.document.node_id(mutation.node)
+                && prepared
+                    .document
+                    .set_text_content(node, &mutation.text_content)
+            {
+                changes += 1;
+            }
+        }
+        if changes == 0 {
+            return None;
+        }
+        prepared.scripts.mutations += changes;
+        prepared.computed_styles =
+            compute_styles(&prepared.document, &prepared.style_collection.styles);
+        Some(prepared.render(width, height))
+    }
+
     /// Rebuild only layout/paint from the current DOM and shared image pixels.
     pub fn reflow(&self, width: i32, height: i32) -> Option<RenderedPage> {
         Some(self.active_document.as_ref()?.render(width, height))
@@ -433,6 +469,54 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn click_schedules_timer_then_tick_repaints_page() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<div id='button' style='display:block;width:160px;height:55px;background:#ddd'>Press</div>\
+             <p id='result'>Idle</p>\
+             <script>document.getElementById('button').addEventListener('click',function(){\
+             setTimeout(function(){document.getElementById('result').textContent='Delayed';},0);\
+             });</script>",
+            800,600,
+        );
+        let prepared = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_backgrounds_and_resources(
+            &prepared.document,
+            800,
+            600,
+            (&prepared.images.elements, &prepared.images.backgrounds),
+            &prepared.images.generated,
+            &prepared.computed_styles,
+            &mut text::Measurer::new(),
+        );
+        let region = layout
+            .click_regions
+            .iter()
+            .find(|region| {
+                prepared
+                    .document
+                    .element(region.node)
+                    .is_some_and(|element| {
+                        element
+                            .attributes
+                            .iter()
+                            .any(|attr| attr.name == "id" && attr.value == "button")
+                    })
+            })
+            .unwrap();
+        let (x, y) = (region.x + 5, region.y + 5);
+        let initial = engine.click_at(x, y, 800, 600).unwrap();
+        assert!(contains_text(&initial.display_list, "Idle"));
+        assert!(engine.next_timer_wait().is_some());
+        let after = engine
+            .tick_timers(800, 600)
+            .expect("click timer updated page");
+        assert!(contains_text(&after.display_list, "Delayed"));
+        assert!(!contains_text(&after.display_list, "Idle"));
+        assert_eq!(engine.active_script_report().unwrap().mutations, 1);
+    }
 
     #[test]
     fn native_dom_click_dispatch_changes_retained_page_text() {

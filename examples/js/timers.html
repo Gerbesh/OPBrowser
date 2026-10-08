@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><title>OPBrowser timeout demo</title></head>
+<body>
+<h1>OPBrowser one-shot timers</h1>
+<p id="status">Waiting for automatic timer...</p>
+<div id="button" style="width:220px;height:55px;padding:12px;background:#d1fae5">Click to schedule</div>
+<script>
+setTimeout(function(){
+  document.getElementById("status").textContent="Automatic timer fired after load";
+},450);
+document.getElementById("button").addEventListener("click",function(){
+  document.getElementById("status").textContent="Click registered, waiting...";
+  setTimeout(function(){
+    document.getElementById("status").textContent="Click timer fired without further input";
+  },650);
+});
+</script>
+</body>
+</html>

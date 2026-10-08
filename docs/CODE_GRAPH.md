@@ -1239,3 +1239,20 @@ interactive after parsing and complete after pending async work. The
 engine fires DOMContentLoaded only after deferred scripts execute and
 window load after async completion, applying mutations before layout.
 There is no independent event loop or post-presentation async dispatch.
+
+## M4.9: timer-driven repaint after page presentation
+
+The retained JsRuntime keeps a Vec<PendingTimer> with monotonic Instant
+deadlines and stable numeric handles, exposing setTimeout and clearTimeout
+through window/global bindings. JsRuntime::next_timer_wait returns the
+earliest timer deadline; run_due_timers executes a bounded number of
+callback closures on the engine thread, without an OS thread for each
+timer. Timer callback failures are counted but do not stop later tasks.
+
+The browser worker in op_browser::main calls recv_timeout to process
+commands or wake for a timer, and Engine::tick_timers applies detached
+DomTextMutation records, recalculates computed CSS, creates a paint
+display list and sends a non-navigation reflow to Win32. Replacing
+PreparedDocument with a new navigation drops the entire prior timer
+queue. This is a small macrotask scheduler, not a browser event loop
+with microtasks, timers from network services or setInterval.

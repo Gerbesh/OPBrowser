@@ -4,12 +4,19 @@ use crate::{
     bytecode::{FunctionTemplate, Instruction, TryTemplate},
     compile_script,
 };
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 const DEFAULT_INSTRUCTION_BUDGET: usize = 1_000_000;
 const DEFAULT_OBJECT_BUDGET: usize = 100_000;
 const DEFAULT_ENVIRONMENT_BUDGET: usize = 100_000;
 const DEFAULT_CALL_DEPTH_BUDGET: usize = 64;
+const MAX_PENDING_TIMERS: usize = 64;
+const MAX_TOTAL_TIMERS: u32 = 512;
+const MAX_TIMER_DELAY_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct EnvironmentId(usize);
@@ -55,6 +62,8 @@ enum BuiltinFunction {
     EventPreventDefault,
     LifecycleAddEventListener,
     LifecycleRemoveEventListener,
+    SetTimeout,
+    ClearTimeout,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +110,20 @@ pub struct DomElementSnapshot {
     pub text_content: String,
 }
 
+#[derive(Debug, Clone)]
+struct PendingTimer {
+    id: u32,
+    due: Instant,
+    callback: JsValue,
+    arguments: Vec<JsValue>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TimerReport {
+    pub fired: usize,
+    pub failed: usize,
+}
+
 /// A host mutation applied by the browser only after VM execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomTextMutation {
@@ -131,6 +154,8 @@ pub struct JsRuntime {
     dom_onclick: HashMap<usize, JsValue>,
     dom_document: Option<ObjectId>,
     lifecycle_listeners: HashMap<(ObjectId, String, bool), Vec<JsValue>>,
+    timers: Vec<PendingTimer>,
+    next_timer_id: u32,
 }
 
 impl Default for JsRuntime {
@@ -199,6 +224,8 @@ impl Default for JsRuntime {
             dom_onclick: HashMap::new(),
             dom_document: None,
             lifecycle_listeners: HashMap::new(),
+            timers: Vec::new(),
+            next_timer_id: 1,
         };
 
         runtime.install_global_binding(
@@ -254,6 +281,8 @@ impl JsRuntime {
         self.dom_click_capture_listeners.clear();
         self.dom_onclick.clear();
         self.lifecycle_listeners.clear();
+        self.timers.clear();
+        self.next_timer_id = 1;
         for element in elements.into_iter().take(4096) {
             self.dom_ids.entry(element.id).or_insert(element.node);
             self.dom_text.insert(element.node, element.text_content);
@@ -314,10 +343,64 @@ impl JsRuntime {
             false,
             VariableKind::Const,
         );
+        for (name, builtin) in [
+            ("setTimeout", BuiltinFunction::SetTimeout),
+            ("clearTimeout", BuiltinFunction::ClearTimeout),
+        ] {
+            let function = self.allocate_lifecycle_method(name, builtin)?;
+            self.object_mut(self.global_object)?
+                .properties
+                .insert(name.into(), JsValue::Object(function));
+            self.install_global_binding(
+                name,
+                JsValue::Object(function),
+                false,
+                VariableKind::Const,
+            );
+        }
         Ok(())
     }
+    /// The host decides when to wake the page worker; no VM timer spawns threads.
+    pub fn next_timer_wait(&self) -> Option<Duration> {
+        self.timers
+            .iter()
+            .map(|timer| timer.due.saturating_duration_since(Instant::now()))
+            .min()
+    }
 
-    /// Refresh reachable DOM elements without resetting the page VM or listeners.
+    /// Run at most max_callbacks due tasks on the page-owning thread.
+    /// A timer removed by clearTimeout in an earlier callback never fires.
+    pub fn run_due_timers(&mut self, max_callbacks: usize) -> TimerReport {
+        let mut report = TimerReport::default();
+        for _ in 0..max_callbacks.min(16) {
+            let now = Instant::now();
+            let Some((index, _)) = self
+                .timers
+                .iter()
+                .enumerate()
+                .filter(|(_, timer)| timer.due <= now)
+                .min_by_key(|(_, timer)| (timer.due, timer.id))
+            else {
+                break;
+            };
+            let timer = self.timers.swap_remove(index);
+            report.fired += 1;
+            let mut steps = 0;
+            match self.call_value(
+                timer.callback,
+                JsValue::Object(self.global_object),
+                timer.arguments,
+                &mut steps,
+                0,
+            ) {
+                Ok(CallOutcome::Value(_)) => {}
+                Ok(CallOutcome::Thrown(_)) | Err(_) => report.failed += 1,
+            }
+        }
+        report
+    }
+
+    /// Construct one of the document/window host methods.
     fn allocate_lifecycle_method(
         &mut self,
         name: &str,
@@ -1100,6 +1183,45 @@ impl JsRuntime {
     ) -> Result<CallOutcome, JsError> {
         if matches!(
             builtin,
+            BuiltinFunction::SetTimeout | BuiltinFunction::ClearTimeout
+        ) {
+            if matches!(builtin, BuiltinFunction::ClearTimeout) {
+                let id = arguments
+                    .first()
+                    .map(JsValue::to_number)
+                    .unwrap_or(f64::NAN);
+                if id.is_finite() && id >= 1.0 && id <= f64::from(u32::MAX) {
+                    self.timers.retain(|timer| f64::from(timer.id) != id);
+                }
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
+            let Some(JsValue::Object(callback)) = arguments.first() else {
+                return Err(JsError::type_error("setTimeout requires a function"));
+            };
+            if self.object(*callback)?.function.is_none() {
+                return Err(JsError::type_error("setTimeout callback must be callable"));
+            }
+            if self.timers.len() >= MAX_PENDING_TIMERS || self.next_timer_id > MAX_TOTAL_TIMERS {
+                return Err(JsError::execution_limit("timer budget exceeded"));
+            }
+            let raw_delay = arguments.get(1).map(JsValue::to_number).unwrap_or(0.0);
+            let delay_ms = if raw_delay.is_nan() || raw_delay <= 0.0 {
+                0
+            } else {
+                raw_delay.min(MAX_TIMER_DELAY_MS as f64) as u64
+            };
+            let id = self.next_timer_id;
+            self.next_timer_id += 1;
+            self.timers.push(PendingTimer {
+                id,
+                due: Instant::now() + Duration::from_millis(delay_ms),
+                callback: JsValue::Object(*callback),
+                arguments: arguments.into_iter().skip(2).collect(),
+            });
+            return Ok(CallOutcome::Value(JsValue::Number(f64::from(id))));
+        }
+        if matches!(
+            builtin,
             BuiltinFunction::EventStopPropagation | BuiltinFunction::EventPreventDefault
         ) {
             let JsValue::Object(event) = this_value else {
@@ -1330,7 +1452,9 @@ impl JsRuntime {
             | BuiltinFunction::EventStopPropagation
             | BuiltinFunction::EventPreventDefault
             | BuiltinFunction::LifecycleAddEventListener
-            | BuiltinFunction::LifecycleRemoveEventListener => {
+            | BuiltinFunction::LifecycleRemoveEventListener
+            | BuiltinFunction::SetTimeout
+            | BuiltinFunction::ClearTimeout => {
                 unreachable!("handled above")
             }
         };

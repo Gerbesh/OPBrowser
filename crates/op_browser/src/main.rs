@@ -124,12 +124,45 @@ fn main() {
     let (commands, requests) = mpsc::channel::<LoadCommand>();
     let (responses, results) = mpsc::channel::<LoadResult>();
     std::thread::spawn(move || {
-        while let Ok(command) = requests.recv() {
+        let mut last_viewport = (width, height);
+        loop {
+            // Park without polling when there are no timers. Otherwise
+            // wait for the earliest deadline or the next native command.
+            let next_command = match engine.next_timer_wait() {
+                Some(wait) => requests.recv_timeout(wait.max(std::time::Duration::from_millis(1))),
+                None => requests
+                    .recv()
+                    .map_err(|_| mpsc::RecvTimeoutError::Disconnected),
+            };
+            let command = match next_command {
+                Ok(command) => command,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if let Some(page) = engine.tick_timers(last_viewport.0, last_viewport.1) {
+                        let history = engine.navigation();
+                        if responses
+                            .send(LoadResult {
+                                page: Ok(Some(page)),
+                                back: history.can_go_back(),
+                                forward: history.can_go_forward(),
+                                reload: history.current().is_some(),
+                                viewport: last_viewport,
+                                reflow: true,
+                            })
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+            };
             let LoadCommand {
                 event,
                 width,
                 height,
             } = command;
+            last_viewport = (width, height);
             let reflow = matches!(
                 event,
                 NavigationEvent::Resize | NavigationEvent::Click { .. }

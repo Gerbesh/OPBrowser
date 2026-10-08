@@ -59,3 +59,11 @@ See [Project Overview](Project-Overview.md), [Architecture](Architecture.md),
 Initial document.readyState and DOMContentLoaded/load sequencing is
 available with bounded document/window listeners; this does not yet
 imply a full browser event loop or resource-aware load timing.
+
+## M4.9: timeouts and a page worker task pump
+
+OPBrowser now keeps a bounded setTimeout/clearTimeout task queue on the
+page's retained JS VM and wakes the browser worker when one-shot
+callbacks are due. Callback DOM changes can repaint the page without
+native input. Script tasks are still single-threaded within the page.
+No setInterval, Promise microtasks or general browser task loop yet.

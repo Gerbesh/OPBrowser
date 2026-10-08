@@ -2844,3 +2844,17 @@ This file is append-only project history.
   immutable readyState and defer listeners registered before DOMContentLoaded.
 - Full event loop, timers, modules, document.write, post-presentation async
   work and script-resource events remain future work.
+
+## 2026-10-08 - M4.9 one-shot page task queue
+
+- Added a bounded JS timeout task scheduler owned by the current
+  page VM, with setTimeout, clearTimeout, numeric IDs and extra args.
+- Replaced the engine worker's indefinite blocking receive with a
+  bounded timer-aware recv_timeout; due callbacks run only on the
+  page-owning thread. Updated DOM/style/layout changes are pushed
+  as reflow results to Win32 without any user interaction.
+- Added tests for post-load ordering, cancellation, timeout arguments,
+  exceptions, deadlines, page-reset isolation and click-to-timeout
+  repaint. No new web engine dependencies or per-timer threads.
+- Documented absent setInterval, Promise microtasks and proper
+  async subresource delivery after first paint.

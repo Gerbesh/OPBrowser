@@ -48,6 +48,8 @@ execution at parser/end-of-load polling points). An independent event loop,
 document.write and broad Web APIs are **not** implemented. M4.8 now adds
 host-owned document.readyState transitions and initial-load DOMContentLoaded/
 window load event delivery after the parser/defer/async boundaries.
+M4.9 adds page-owned setTimeout/clearTimeout with bounded task pumping
+on the engine worker, so callbacks can repaint after presentation.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 

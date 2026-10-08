@@ -510,3 +510,103 @@ fn deferred_script_registers_dom_content_loaded_before_dispatch() {
     assert_eq!(engine.active_script_report().unwrap().failed, 0);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn timers_fire_only_after_initial_page_load_when_worker_ticks() {
+    let mut engine = Engine::new();
+    let initial = engine.set_html_page(
+        "<p id='output'>Before</p><script>\
+         var history='script-';\
+         window.addEventListener('load',function(){history=history+'load-';});\
+         setTimeout(function(){\
+         document.getElementById('output').textContent=history+document.readyState;\
+         },0);</script>",
+        800,
+        600,
+    );
+    assert!(initial.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("Before")
+    )));
+    assert!(engine.next_timer_wait().is_some());
+    let painted = engine.tick_timers(800, 600).expect("timer updated DOM");
+    assert!(painted.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..}
+            if text.contains("script-load-complete")
+    )));
+    assert!(engine.next_timer_wait().is_none());
+    assert_eq!(engine.active_script_report().unwrap().mutations, 1);
+}
+
+#[test]
+fn timer_cancellation_and_callback_arguments_preserve_single_vm() {
+    let mut engine = Engine::new();
+    engine.set_html_page(
+        "<p id='output'>Before</p><script>\
+         var first=setTimeout(function(a,b){\
+         clearTimeout(second);\
+         document.getElementById('output').textContent=a+b;\
+         },0,'YES','-OK');\
+         var second=setTimeout(function(){\
+         document.getElementById('output').textContent='SHOULD-NOT-RUN';\
+         },0);</script>",
+        800,
+        600,
+    );
+    let page = engine
+        .tick_timers(800, 600)
+        .expect("first timer changes text");
+    assert!(page.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("YES-OK")
+    )));
+    assert!(engine.next_timer_wait().is_none());
+    assert!(engine.tick_timers(800, 600).is_none());
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn delayed_timers_and_failed_callbacks_do_not_block_next_task() {
+    let mut engine = Engine::new();
+    engine.set_html_page(
+        "<p id='output'>Before</p><script>\
+         setTimeout(function(){throw 'error';},0);\
+         setTimeout(function(){document.getElementById('output').textContent='RECOVER';},25);\
+         </script>",
+        800,
+        600,
+    );
+    assert!(engine.tick_timers(800, 600).is_none());
+    assert_eq!(engine.active_script_report().unwrap().failed, 1);
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    let page = engine.tick_timers(800, 600).expect("later timer fired");
+    assert!(page.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("RECOVER")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 1);
+}
+
+#[test]
+fn replacing_document_discards_timer_callbacks_from_old_page() {
+    let mut engine = Engine::new();
+    engine.set_html_page(
+        "<p id='output'>Old</p>\
+         <script>setTimeout(function(){\
+         document.getElementById('output').textContent='WRONG';\
+         },0);</script>",
+        800,
+        600,
+    );
+    engine.set_html_page("<p id='output'>New</p>", 800, 600);
+    assert!(engine.next_timer_wait().is_none());
+    assert!(engine.tick_timers(800, 600).is_none());
+    assert!(
+        engine
+            .reflow(800, 600)
+            .unwrap()
+            .display_list
+            .commands
+            .iter()
+            .any(|cmd| matches!(
+                cmd, op_paint::PaintCommand::Text {text,..} if text.contains("New")
+            ))
+    );
+}

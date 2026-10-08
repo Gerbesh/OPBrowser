@@ -780,3 +780,28 @@ counts must not be mislabeled as external conformance percentages.
 - LIMITATION no independent event loop, resource-aware load completion,
   bubbling of lifecycle events, document.write or general Web APIs.
 - NEXT implement a real task queue and interactive async resource completion.
+
+## M4.9 - Page-owned timeout task queue and post-presentation repaint (2026-10-08)
+
+- DONE minimal own one-shot timer queue in the retained op_js runtime.
+  setTimeout(function, delay, ...args) schedules callable closures and
+  returns a numeric id; clearTimeout(id) cancels pending tasks.
+- DONE timer deadlines use std::time::Instant and stay inside the page VM.
+  No per-timer OS threads are created. A Win32 page worker waits on
+  navigation requests with a bounded recv_timeout and executes due
+  callbacks on the single page-owning engine thread.
+- DONE after callback textContent mutations, the engine recomputes
+  styles and layout, then sends a reflow paint result to Win32 even
+  without mouse or keyboard activity.
+- DONE per-page limits: 64 simultaneously pending timers, 512 scheduled
+  timers total, at most 16 callbacks per pump, and delay clamped to 60s.
+  Reload/new navigation discards all old page timers.
+- DONE engine/VM regressions cover post-load firing, timer cancellation,
+  callback arguments, delayed tasks, error isolation, navigation reset
+  and click-triggered delayed DOM repaint.
+- LIMITATION only function callbacks (no eval/string timers),
+  setInterval, Promise/microtask queues, task priority, nested timeout
+  throttling, offscreen/background throttling and independent async
+  script completion after first paint are not yet implemented.
+- NEXT unify browser task scheduling across timers, resource fetches,
+  input and future microtasks; add interval policy and background tabs.

@@ -1137,3 +1137,23 @@ Status: IMPLEMENTED for initial-load-only lifecycle events.
 
 Tests cover readyState immutability, event fields/receivers, property
 handlers and deferred registration. There is no independent event loop.
+
+## S13 - JS timeout to live page pixels (M4.9)
+
+Status: IMPLEMENTED for bounded one-shot function timers.
+
+    setTimeout(fn, delay, ...args) in op_js::JsRuntime
+      -> PendingTimer (Instant deadline, numeric ID)
+      -> Engine::next_timer_wait
+      -> op_browser worker recv_timeout and Engine::tick_timers
+      -> JsRuntime::run_due_timers (bounded JS callback execution)
+      -> DomTextMutation / Document::set_text_content
+      -> style recompute and retained render
+      -> UI Poll receives reflow / Win32 GDI
+
+A real click can schedule a callback after the page has been painted.
+Timer handles are page-owned and are discarded on navigation. Verified
+by tests for callback arguments, cancellation, deadlines, errors and
+native click-to-timer-to-display-list repaint. Does not include
+setInterval, Promise microtasks, string evaluation, background tab
+throttling or post-presentation async network resource completion.
