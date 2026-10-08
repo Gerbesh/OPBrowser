@@ -84,10 +84,22 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
         color: Color::WHITE,
     });
 
-    // First paint normal flow, then the initial foreground phase for
-    // absolute/fixed descendants. Within each phase blocks precede inlines,
-    // then text/images. Full stacking contexts and z-index come later.
-    for positioned in [false, true] {
+    // Sort positioned paint groups by z-index, then DOM creation order.
+    // This is a flat approximation: nested stacking contexts and negative
+    // layers behind in-flow content require a future stacking tree.
+    let mut keys: Vec<_> = layout
+        .box_decorations
+        .iter()
+        .filter_map(|decoration| decoration.paint_key)
+        .chain(layout.order.iter().filter_map(|item| match item {
+            LayoutItem::PositionedText(_, key) | LayoutItem::PositionedImage(_, key) => Some(*key),
+            LayoutItem::Text(_) | LayoutItem::Image(_) => None,
+        }))
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    for paint_key in std::iter::once(None).chain(keys.into_iter().map(Some)) {
+        let positioned = paint_key.is_some();
         let layers = if positioned {
             [
                 op_layout::DecorationPaintLayer::PositionedBlock,
@@ -101,22 +113,24 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
         };
         for layer in layers {
             for decoration in &layout.box_decorations {
-                if decoration.paint_layer == layer {
+                if decoration.paint_layer == layer && decoration.paint_key == paint_key {
                     push_box_decoration(&mut commands, decoration);
                 }
             }
         }
 
         for item in &layout.order {
-            let item_is_positioned = matches!(
-                item,
-                LayoutItem::PositionedText(_) | LayoutItem::PositionedImage(_)
-            );
-            if item_is_positioned != positioned {
+            let item_key = match item {
+                LayoutItem::Text(_) | LayoutItem::Image(_) => None,
+                LayoutItem::PositionedText(_, key) | LayoutItem::PositionedImage(_, key) => {
+                    Some(*key)
+                }
+            };
+            if item_key != paint_key {
                 continue;
             }
             match *item {
-                LayoutItem::Text(index) | LayoutItem::PositionedText(index) => {
+                LayoutItem::Text(index) | LayoutItem::PositionedText(index, _) => {
                     let Some(text_box) = layout.text_boxes.get(index) else {
                         continue;
                     };
@@ -138,7 +152,7 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
                         links: text_box.links.clone(),
                     });
                 }
-                LayoutItem::Image(index) | LayoutItem::PositionedImage(index) => {
+                LayoutItem::Image(index) | LayoutItem::PositionedImage(index, _) => {
                     let Some(image_box) = layout.image_boxes.get(index) else {
                         continue;
                     };
@@ -289,13 +303,84 @@ mod tests {
                 visible: true,
                 href: None,
             }],
-            order: vec![LayoutItem::PositionedImage(0), LayoutItem::Text(0)],
+            order: vec![
+                LayoutItem::PositionedImage(
+                    0,
+                    op_layout::PaintKey {
+                        z_index: 0,
+                        source_order: 1,
+                    },
+                ),
+                LayoutItem::Text(0),
+            ],
         };
         let result = build_display_list(&layout, 60);
         assert!(matches!(&result.commands[1], PaintCommand::Text { text, .. } if text == "normal"));
         assert!(
             matches!(&result.commands[2], PaintCommand::Image { image, .. } if Arc::ptr_eq(image, &raster))
         );
+    }
+
+    #[test]
+    fn positioned_groups_sort_by_z_index_and_stable_source_order() {
+        use op_layout::{ImageBox, PaintKey};
+        let raster =
+            Arc::new(RasterImage::from_premultiplied_bgra(1, 1, vec![0, 0, 0, 255]).unwrap());
+        let image = |x| ImageBox {
+            x,
+            y: 0,
+            width: 1,
+            height: 1,
+            image: raster.clone(),
+            visible: true,
+            href: None,
+        };
+        let layout = LayoutTree {
+            viewport_width: 100,
+            content_height: 20,
+            box_decorations: vec![],
+            text_boxes: vec![],
+            image_boxes: vec![image(10), image(20), image(30), image(40)],
+            order: vec![
+                LayoutItem::PositionedImage(
+                    0,
+                    PaintKey {
+                        z_index: 5,
+                        source_order: 2,
+                    },
+                ),
+                LayoutItem::PositionedImage(
+                    1,
+                    PaintKey {
+                        z_index: -2,
+                        source_order: 7,
+                    },
+                ),
+                LayoutItem::PositionedImage(
+                    2,
+                    PaintKey {
+                        z_index: 0,
+                        source_order: 1,
+                    },
+                ),
+                LayoutItem::PositionedImage(
+                    3,
+                    PaintKey {
+                        z_index: 5,
+                        source_order: 1,
+                    },
+                ),
+            ],
+        };
+        let ordered_x: Vec<_> = build_display_list(&layout, 20)
+            .commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::Image { x, .. } => Some(*x),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ordered_x, [20, 30, 40, 10]);
     }
 
     #[test]
@@ -312,6 +397,7 @@ mod tests {
         };
         let decoration = |layer, y, color| BoxDecoration {
             paint_layer: layer,
+            paint_key: None,
             x: 10,
             y,
             width: 40,
@@ -410,6 +496,7 @@ mod tests {
             content_height: 120,
             box_decorations: vec![BoxDecoration {
                 paint_layer: op_layout::DecorationPaintLayer::Block,
+                paint_key: None,
                 x: 20,
                 y: 30,
                 width: 200,

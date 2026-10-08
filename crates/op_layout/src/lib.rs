@@ -90,9 +90,18 @@ impl DecorationPaintLayer {
     }
 }
 
+/// The first flat stacking-group key: integer z-index followed by DOM order.
+/// Not yet a nested CSS stacking context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PaintKey {
+    pub z_index: i32,
+    pub source_order: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoxDecoration {
     pub paint_layer: DecorationPaintLayer,
+    pub paint_key: Option<PaintKey>,
     pub x: i32,
     pub y: i32,
     pub width: i32,
@@ -134,15 +143,17 @@ pub struct LinkSpan {
 pub enum LayoutItem {
     Text(usize),
     Image(usize),
-    PositionedText(usize),
-    PositionedImage(usize),
+    PositionedText(usize, PaintKey),
+    PositionedImage(usize, PaintKey),
 }
 
 impl LayoutItem {
-    pub fn positioned(self) -> Self {
+    pub fn positioned(self, key: PaintKey) -> Self {
         match self {
-            Self::Text(index) | Self::PositionedText(index) => Self::PositionedText(index),
-            Self::Image(index) | Self::PositionedImage(index) => Self::PositionedImage(index),
+            Self::Text(index) => Self::PositionedText(index, key),
+            Self::Image(index) => Self::PositionedImage(index, key),
+            Self::PositionedText(index, existing) => Self::PositionedText(index, existing),
+            Self::PositionedImage(index, existing) => Self::PositionedImage(index, existing),
         }
     }
 
@@ -150,8 +161,8 @@ impl LayoutItem {
         match self {
             Self::Text(index) => Self::Text(index + text_base),
             Self::Image(index) => Self::Image(index + image_base),
-            Self::PositionedText(index) => Self::PositionedText(index + text_base),
-            Self::PositionedImage(index) => Self::PositionedImage(index + image_base),
+            Self::PositionedText(index, key) => Self::PositionedText(index + text_base, key),
+            Self::PositionedImage(index, key) => Self::PositionedImage(index + image_base, key),
         }
     }
 }

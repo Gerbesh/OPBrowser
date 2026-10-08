@@ -371,6 +371,8 @@ impl BorderSpacing {
 pub struct ComputedStyle {
     pub display: Display,
     pub position: Position,
+    /// `auto` is None; integer stacking levels are only effective on positioned boxes.
+    pub z_index: Option<i32>,
     pub float_side: FloatSide,
     pub clear: Clear,
     pub inset: InsetEdges,
@@ -477,6 +479,7 @@ impl ComputedStyle {
         Self {
             display: Display::Inline,
             position: Position::Static,
+            z_index: None,
             float_side: FloatSide::None,
             clear: Clear::None,
             inset: InsetEdges::AUTO,
@@ -1473,6 +1476,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
         Some(parent) => ComputedStyle {
             display: initial.display,
             position: initial.position,
+            z_index: initial.z_index,
             float_side: initial.float_side,
             clear: initial.clear,
             inset: initial.inset,
@@ -1666,6 +1670,10 @@ fn apply_author_declarations(
             parent_style.map(|parent| parent.position),
             Position::Static,
         );
+    }
+    if let Some((_, value)) = winning_value(declarations, "z-index", parse_z_index) {
+        style.z_index =
+            resolve_non_inherited(value, parent_style.map(|parent| parent.z_index), None);
     }
     if let Some((_, value)) = winning_value(declarations, "float", parse_float) {
         style.float_side = resolve_non_inherited(
@@ -2027,6 +2035,19 @@ fn parse_position(tokens: &[TokenKind]) -> Option<Specified<Position>> {
         "unset" => Some(Specified::Unset),
         _ => None,
     }
+}
+
+fn parse_z_index(tokens: &[TokenKind]) -> Option<Specified<Option<i32>>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| None));
+    }
+    if single_ident(tokens).is_some_and(|word| word.eq_ignore_ascii_case("auto")) {
+        return Some(Specified::Value(None));
+    }
+    let TokenKind::Number(value) = single_significant_token(tokens)? else {
+        return None;
+    };
+    Some(Specified::Value(Some(value.parse::<i32>().ok()?)))
 }
 
 fn parse_float(tokens: &[TokenKind]) -> Option<Specified<FloatSide>> {
@@ -4910,6 +4931,43 @@ mod tests {
         assert_eq!(style.inset.left, Some(LengthPercentage::Percent(0.25)));
         assert_eq!(style.inset.right, Some(LengthPercentage::Px(4.0)));
         assert_eq!(style.inset.bottom, None);
+    }
+
+    #[test]
+    fn z_index_supports_integers_and_non_inherited_css_wide_keywords() {
+        let document = parse_document(
+            r#"<div id='parent' style='position:relative;z-index:7'>
+                <div id='child'></div>
+                <div id='negative' style='position:absolute;z-index:-2'></div>
+                <div id='inherited' style='z-index:inherit'></div>
+                <div id='initial' style='z-index:initial'></div>
+                <div id='unset' style='z-index:unset'></div>
+                <div id='auto' style='z-index:auto'></div>
+                <div id='decimal' style='z-index:1.5'></div>
+                <div id='dimension' style='z-index:3px'></div>
+               </div>"#,
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        for (name, expected) in [
+            ("parent", Some(7)),
+            ("child", None),
+            ("negative", Some(-2)),
+            ("inherited", Some(7)),
+            ("initial", None),
+            ("unset", None),
+            ("auto", None),
+            ("decimal", None),
+            ("dimension", None),
+        ] {
+            assert_eq!(
+                computed
+                    .style_for(find_by_id(&document, name))
+                    .unwrap()
+                    .z_index,
+                expected,
+                "{name}"
+            );
+        }
     }
 
     #[test]

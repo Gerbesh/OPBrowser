@@ -1049,6 +1049,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                 let (dx, dy) = self.inline_boxes.visual_offset(Some(id));
                 self.decorations.push(BoxDecoration {
                     paint_layer: DecorationPaintLayer::Inline,
+                    paint_key: None,
                     x: x.saturating_add(dx),
                     y: baseline
                         .saturating_sub(metrics.ascent)
@@ -1082,6 +1083,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                         let (dx, dy) = self.inline_boxes.visual_offset(style.boxes);
                         self.decorations.push(BoxDecoration {
                             paint_layer: DecorationPaintLayer::Inline,
+                            paint_key: None,
                             x: x.saturating_add(dx),
                             y: (baseline - bottom - image.height - top).saturating_add(dy),
                             width: image.width.saturating_add(left).saturating_add(right),

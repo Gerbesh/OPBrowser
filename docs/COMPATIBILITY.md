@@ -103,7 +103,11 @@ phases. Out-of-flow absolute/fixed content now overlays normal-flow text, and st
 relative table captions can cover earlier absolute siblings. Position-relative parents
 with nested absolute children preserve their in-flow text underneath those descendants.
 The frozen suite scores remain unchanged (WPT Static 187/200, Positioning 38/100,
-Test262 Parser 523/1983). Full z-index and nested stacking contexts remain unsupported.
+Test262 Parser 523/1983). The later flat z-index slice sorts positioned
+paint groups by signed integer stacking level and node creation order. Pinned WPT Static
+and Positioning remain 187/200 and 38/100, with zero render errors. Full nested atomic
+stacking contexts, negative layers behind normal flow and positioned inline grouping
+remain unsupported.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves

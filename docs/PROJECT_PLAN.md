@@ -346,9 +346,13 @@ Status: IN PROGRESS.
   Relative parents with positioned descendants preserve their ordinary internal text phase
   instead of incorrectly obscuring nested absolute children. Added engine and paint regressions;
   WPT Static v1 remains 187/200 and Positioning v1 remains 38/100 on frozen manifests.
-- NEXT tree-structured stacking contexts with source-order groups and computed z-index,
-  negative stacking levels, positioned inline fragmentation, overflow clipping, font fallback
-  and remaining line-height cases; unsupported multicol/vertical writing and sticky remain.
+- DONE first flat positioned z-index slice: non-inherited CSS integer/auto/global keywords,
+  PaintKey propagation to decorations/text/images, sorted z-level and source-order groups.
+  CSS and end-to-end paint regressions added; pinned WPT Static 187/200 and Positioning
+  38/100 remain unchanged.
+- NEXT nested atomic stacking contexts and negative-level interleaving with normal flow,
+  true post-reparent DOM order, inline positioned fragmentation, overflow clipping,
+  font fallback and remaining line-height cases; multicol, vertical writing and sticky remain.
 
 ## M3 - Original JavaScript engine
 

@@ -449,6 +449,13 @@ text on top of their absolute children. This prevents foreground paint reversals
 not provide CSS source-order stacking contexts, negative z-index or interleaved sibling
 foreground paint groups. Pinned WPT Static and Positioning remain 187/200 and 38/100.
 
+The flat z-index follow-up computes a non-inherited signed integer or auto value in
+the CSS cascade, passes PaintKey to positioned block/inline decorations and text/images,
+and sorts unique paint groups by level and source node index. Nested positioned
+records retain their own key rather than inheriting the enclosing output range.
+This is not a full stacking-context tree: negative levels still paint above
+normal content, nested contexts are not atomic, and source indices track node creation.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus

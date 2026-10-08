@@ -32,6 +32,12 @@ The current tree builder and layout are early subsets, not complete WHATWG/CSS
 implementations. Compatibility work will progressively replace subset behavior with
 specification-defined algorithms.
 
+Positioned output carries a flat `PaintKey` containing a signed CSS z-index and
+node creation index. The original CSS subsystem parses and cascades z-index,
+layout tags eligible positioned fragments, and op_paint sorts their paint groups.
+Nested atomic stacking contexts and negative-level interleaving with normal
+flow are not yet supported. Win32 drawing does not decide CSS paint order.
+
 External HTML travels from address input through a worker-owned Engine and op_net
 into the same original renderer. Structural containers preserve nested heading /
 paragraph defaults. Windows WinHTTP supplies HTTP/TLS/proxy/framing/decompression

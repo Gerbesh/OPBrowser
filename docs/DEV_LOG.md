@@ -2304,3 +2304,16 @@ This file is append-only project history.
   EXE: **1,058,816 bytes**; SHA-256
   `9D91731725C606C1FDD0C6B73A39BE27B38AF1ACDBE98060B096AB632A814304`.
 
+## 2026-10-08 - Flat positioned z-index paint ordering
+
+- Complete previously started computed `z-index`: signed integer levels, auto,
+  inherit/initial/unset CSS keywords and rejection of fractional/dimension values.
+- Carry the level into layout Style and tag positioned block/inline decorations,
+  text and images with PaintKey, preserving nested independently positioned keys.
+- Sort positioned paint groups by level and node creation order, then paint each
+  group's decorations followed by text and images. Static outputs remain normal.
+- CSS cascade, native paint order, reflow and same-level tie regressions added.
+- Frozen WPT Static 187/200 (93.50%) and Positioning 38/100 (38.00%);
+  zero render errors. Negative groups still paint over normal flow; nested atomic
+  stacking contexts and real DOM-order painting remain future work.
+

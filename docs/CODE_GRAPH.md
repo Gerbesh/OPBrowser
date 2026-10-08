@@ -947,6 +947,13 @@ the styled inline formatter or BlockContent::ImageAlt normal block path. Mixed g
 failures omit anonymous images while preserving empty pseudo decorations.
 Next: sliced inline decoration edges and broader computed values.
 
+Flat positioned paint metadata flows from `op_css::ComputedStyle::z_index`
+through `op_layout::flow::Style` and `Context::mark_positioned_outputs_since`
+into `BoxDecoration::paint_key` and positioned `LayoutItem` variants.
+`op_paint::build_display_list` sorts unique `PaintKey { z_index, source_order }`
+values before emitting each group's decorations, text and images. This is a
+transitional ordering key, not an atomic nested CSS stacking-context graph.
+
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting
 an extra empty inline fragment after a block child/pseudo flushed the collection. Nested

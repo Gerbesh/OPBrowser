@@ -219,6 +219,7 @@ struct Style {
     text_align: TextAlign,
     vertical_align: VerticalAlign,
     position: Position,
+    z_index: Option<i32>,
     inset: InsetEdges,
     float_side: FloatSide,
     clear: Clear,
@@ -551,12 +552,15 @@ impl<'a> Context<'a, '_> {
         }
     }
 
-    fn mark_positioned_outputs_since(&mut self, start: OutputStart) {
+    fn mark_positioned_outputs_since(&mut self, start: OutputStart, key: PaintKey) {
         for decoration in &mut self.decorations[start.decorations..] {
-            decoration.paint_layer = decoration.paint_layer.positioned();
+            if decoration.paint_key.is_none() {
+                decoration.paint_layer = decoration.paint_layer.positioned();
+                decoration.paint_key = Some(key);
+            }
         }
         for item in &mut self.order[start.order..] {
-            *item = item.clone().positioned();
+            *item = item.clone().positioned(key);
         }
     }
 
@@ -836,7 +840,13 @@ impl<'a> Context<'a, '_> {
         }
 
         // Non-auto positioned descendants participate in foreground painting.
-        self.mark_positioned_outputs_since(output_start);
+        self.mark_positioned_outputs_since(
+            output_start,
+            PaintKey {
+                z_index: style.z_index.unwrap_or(0),
+                source_order: id.index(),
+            },
+        );
 
         self.y = saved_y;
         self.pending_margin = saved_margin;
@@ -915,6 +925,7 @@ impl<'a> Context<'a, '_> {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
                 paint_layer: DecorationPaintLayer::Block,
+                paint_key: None,
                 x: border_x,
                 y: border_y,
                 width: used.border_width,
@@ -1087,11 +1098,22 @@ impl<'a> Context<'a, '_> {
                 || self.order[output_start.order..].iter().any(|item| {
                     matches!(
                         item,
-                        LayoutItem::PositionedText(_) | LayoutItem::PositionedImage(_)
+                        LayoutItem::PositionedText(_, _) | LayoutItem::PositionedImage(_, _)
                     )
                 });
             if !has_positioned_descendants {
-                self.mark_positioned_outputs_since(output_start);
+                let id = match content {
+                    BlockContent::Element(id)
+                    | BlockContent::Generated(id, _)
+                    | BlockContent::ImageAlt(id) => id,
+                };
+                self.mark_positioned_outputs_since(
+                    output_start,
+                    PaintKey {
+                        z_index: style.z_index.unwrap_or(0),
+                        source_order: id.index(),
+                    },
+                );
             }
         }
     }
@@ -1747,6 +1769,7 @@ impl<'a> Context<'a, '_> {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
                 paint_layer: DecorationPaintLayer::Block,
+                paint_key: None,
                 x: border_x,
                 y: border_y,
                 width: used.border_width,
@@ -2829,6 +2852,7 @@ impl<'a> Context<'a, '_> {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
                 paint_layer: DecorationPaintLayer::Block,
+                paint_key: None,
                 x,
                 y: row_top,
                 width: slot_width.max(1),
@@ -3928,6 +3952,7 @@ impl<'a> Context<'a, '_> {
         if let Some(box_style) = box_style {
             self.decorations.push(BoxDecoration {
                 paint_layer: DecorationPaintLayer::Block,
+                paint_key: None,
                 x,
                 y: self.y,
                 width: outer_width,
@@ -4990,6 +5015,7 @@ fn computed_style(style: ComputedStyle) -> Style {
         text_align: style.text_align,
         vertical_align: style.vertical_align,
         position: style.position,
+        z_index: style.z_index,
         inset: style.inset,
         float_side: style.float_side,
         clear: style.clear,
@@ -5142,6 +5168,7 @@ fn default_style() -> Style {
         text_align: TextAlign::Start,
         vertical_align: VerticalAlign::Baseline,
         position: Position::Static,
+        z_index: None,
         inset: InsetEdges::AUTO,
         float_side: FloatSide::None,
         clear: Clear::None,
@@ -5185,6 +5212,7 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         text_align: inherited.text_align,
         vertical_align: VerticalAlign::Baseline,
         position: Position::Static,
+        z_index: None,
         inset: InsetEdges::AUTO,
         float_side: FloatSide::None,
         clear: Clear::None,

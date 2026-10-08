@@ -1853,6 +1853,41 @@ mod tests {
     }
 
     #[test]
+    fn positioned_z_index_changes_actual_background_paint_order() {
+        // The source order intentionally contradicts the stacking levels.
+        let html = r#"<div style='position:relative;height:90px'>
+            <div style='position:absolute;top:0;left:0;width:60px;height:40px;background:red;z-index:8'></div>
+            <div style='position:absolute;top:0;left:0;width:60px;height:40px;background:lime;z-index:-2'></div>
+            <div style='position:absolute;top:0;left:0;width:60px;height:40px;background:blue;z-index:2'></div>
+            </div>"#;
+        let mut engine = Engine::new();
+        let original = engine.set_html_page(html, 800, 600);
+        let order = |commands: &[PaintCommand]| {
+            commands
+                .iter()
+                .filter_map(|command| match command {
+                    PaintCommand::FillRect {
+                        color,
+                        width: 60,
+                        height: 40,
+                        ..
+                    } => Some((color.r, color.g, color.b)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            order(&original.commands),
+            [(0, 255, 0), (0, 0, 255), (255, 0, 0)]
+        );
+        engine.reflow(420, 600).unwrap();
+        assert_eq!(
+            order(&engine.reflow(800, 600).unwrap().display_list.commands),
+            [(0, 255, 0), (0, 0, 255), (255, 0, 0)]
+        );
+    }
+
+    #[test]
     fn relative_table_caption_overlays_preceding_absolute_indicator() {
         let html = "<div style='display:inline-block;position:relative;height:200px'>\
             <div style='position:absolute;left:0;top:100px;width:50px;height:50px;background:red'></div>\
