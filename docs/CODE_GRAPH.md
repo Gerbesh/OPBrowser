@@ -16,7 +16,23 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
-## M4.15: native JSON -> original VM object -> Promise -> DOM repaint
+## M4.16: pinned Test262 runtime probe -> original VM -> standard globals
+
+The separate op_js bin/test262_runtime_probe evaluates each pinned
+Test262 fixture against a fresh original JsRuntime after injecting a
+small original-JS assertion/Test262Error bootstrap. Metadata-aware
+skip reasons and expected runtime-negative exception types produce a
+per-case JSON report plus an independent, scoped runtime percentage.
+tools/compatibility.ps1 runs it separately from test262_probe and WPT.
+
+JsRuntime::install_standard_primitives exposes Object, Array,
+Boolean, Number, String, isNaN, isFinite, Number constants and
+Infinity/NaN. JsValue::to_number parses 0x/0o/0b numeric strings.
+The 91-case locked arithmetic/equality suite measures these changes
+as 18->59 passes without hiding the remaining 32 failures. No
+strict-mode/modern-ES coverage or complete boxed primitive semantics.
+
+## M4.15: native JSON → original VM object → Promise → DOM repaint
 
 op_js::json implements strict bounded parsing, independent of JS eval.
 The runtime exposes native JsonParse and JsonStringify builtins, creates

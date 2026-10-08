@@ -2,7 +2,8 @@ param(
     [string]$Test262Path = "",
     [string]$WptPath = "",
     [string]$OutputDir = "artifacts/compatibility",
-    [switch]$ExternalOnly
+    [switch]$ExternalOnly,
+    [switch]$RuntimeOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,21 +64,38 @@ try {
 
     if ($Test262Path) {
         $ResolvedTest262 = (Resolve-Path $Test262Path).Path
-        $Test262Manifest = Join-Path $RepoRoot "compat\test262-parser-v1.txt"
-        $Test262Json = Join-Path $ResolvedOutput "test262-parser-v1.json"
-        Write-Host ""
-        Write-Host "== Test262 parser subset v1 =="
-        & $Cargo run -p op_js --quiet --bin test262_probe -- $ResolvedTest262 --manifest $Test262Manifest --json-out $Test262Json
-        if ($LASTEXITCODE -ne 0) {
-            throw "Test262 parser subset failed with exit code $LASTEXITCODE"
+        if (-not $RuntimeOnly) {
+            $Test262Manifest = Join-Path $RepoRoot "compat\test262-parser-v1.txt"
+            $Test262Json = Join-Path $ResolvedOutput "test262-parser-v1.json"
+            Write-Host ""
+            Write-Host "== Test262 parser subset v1 =="
+            & $Cargo run -p op_js --quiet --bin test262_probe -- $ResolvedTest262 --manifest $Test262Manifest --json-out $Test262Json
+            if ($LASTEXITCODE -ne 0) {
+                throw "Test262 parser subset failed with exit code $LASTEXITCODE"
+            }
+            $Metric = Get-Content $Test262Json -Raw | ConvertFrom-Json
+            Write-ShieldsBadge -Path (Join-Path $ResolvedOutput "test262-parser-v1-badge.json") -Label "Test262 parser v1" -Percent $Metric.percent -Passed $Metric.passed -Total $Metric.total
+            $Summary += ("- Test262 parser v1: **{0:N2}%** ({1}/{2}), upstream {3}" -f $Metric.percent, $Metric.passed, $Metric.total, $Metric.upstream)
+        } else {
+            $Summary += "- Test262 parser v1: not run (RuntimeOnly)"
         }
-        $Metric = Get-Content $Test262Json -Raw | ConvertFrom-Json
-        Write-ShieldsBadge -Path (Join-Path $ResolvedOutput "test262-parser-v1-badge.json") -Label "Test262 parser v1" -Percent $Metric.percent -Passed $Metric.passed -Total $Metric.total
-        $Summary += ("- Test262 parser v1: **{0:N2}%** ({1}/{2}), upstream {3}" -f $Metric.percent, $Metric.passed, $Metric.total, $Metric.upstream)
+
+        $RuntimeManifest = Join-Path $RepoRoot "compat\test262-runtime-v1.txt"
+        $RuntimeJson = Join-Path $ResolvedOutput "test262-runtime-v1.json"
+        Write-Host ""
+        Write-Host "== Test262 runtime classic-script subset v1 =="
+        & $Cargo run -p op_js --quiet --bin test262_runtime_probe -- $ResolvedTest262 --manifest $RuntimeManifest --json-out $RuntimeJson
+        if ($LASTEXITCODE -ne 0) {
+            throw "Test262 runtime probe failed with exit code $LASTEXITCODE"
+        }
+        $RuntimeMetric = Get-Content $RuntimeJson -Raw | ConvertFrom-Json
+        Write-ShieldsBadge -Path (Join-Path $ResolvedOutput "test262-runtime-v1-badge.json") -Label "Test262 runtime v1" -Percent $RuntimeMetric.percent -Passed $RuntimeMetric.passed -Total $RuntimeMetric.attempted
+        $Summary += ("- Test262 runtime v1: **{0:N2}%** ({1}/{2} attempted); {3} explicitly skipped; pinned revision verified={4}. Narrow classic-script sample only." -f $RuntimeMetric.percent, $RuntimeMetric.passed, $RuntimeMetric.attempted, $RuntimeMetric.skipped, $RuntimeMetric.revision_verified)
     } else {
         Write-Host ""
-        Write-Host "Test262 parser subset skipped. Pass -Test262Path <path-to-test262-test>."
+        Write-Host "Test262 parser and runtime subsets skipped. Pass -Test262Path <path-to-test262-test>."
         $Summary += "- Test262 parser v1: not run"
+        $Summary += "- Test262 runtime v1: not run"
     }
 
     if ($WptPath) {

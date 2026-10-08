@@ -118,3 +118,16 @@ Overall readiness toward a production-quality independent modern
 browser is approximately 10-15% as a qualitative engineering opinion,
 not a measured compatibility score. Pinned external subsets remain
 WPT Static 197/200, Positioning 53/100, Test262 Parser 523/1983.
+
+## M4.16: executable Test262 baseline
+
+A separate pinned runtime suite now executes original VM scripts
+instead of merely parsing them. The narrow arithmetic/equality
+classic-script manifest passes 59/91 cases (64.84%), with 32 failed
+and zero skipped in that sample. The original JS interpreter gained
+callable Boolean/Number/String/Object/Array, isNaN/isFinite, Number
+constants and numeric radix conversions.
+
+This result covers only those 91 files. Full JS Runtime Test262
+conformance, strict/module semantics, boxing and core Web APIs remain
+unmeasured or incomplete. See docs/COMPATIBILITY.md for scope.

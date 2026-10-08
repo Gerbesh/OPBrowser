@@ -372,3 +372,27 @@ observable behavior exists; stubs added only to increase a score are forbidden.
 Compatibility work is tracked beside startup time, private memory, retained-tab memory and
 page-load/reflow timing. A higher score obtained by making the browser pathologically heavy is
 still an engineering regression.
+
+## Test262 Runtime v1 (M4.16, independent of parser v1)
+
+The new op_js/test262_runtime_probe executes 91 selected upstream
+addition/equality classic-script tests against a fresh OPBrowser JS
+runtime per case. The suite uses a pinned Test262 revision
+c8c798898646638cd0c24879f8e0374e847e7d74, checks local Git
+revision when available, and writes a per-case machine-readable JSON
+pass/fail/skip report. Parse-only negatives, unsupported test includes,
+modules, async and strict-only tests are explicitly skipped, not
+credited as passes. Remaining script parse failures count as FAIL.
+
+- Before basic global primitive constructors: 18/91 (19.78%).
+- After M4.16 Boolean/Number/String/Object/Array/isNaN/isFinite,
+  Number constants and radix conversion: **59/91 (64.84%)**.
+- These 91 files are concentrated in ES legacy arithmetic/equality:
+  their result is NOT a score for all JS runtime semantics, modern ES
+  or modern websites. The 2000-case Test262 parser metric remains
+  separate and unchanged pending its next external run.
+
+Use tools/compatibility.ps1 -ExternalOnly -RuntimeOnly -Test262Path <pinned-Test262-test-path>
+to run only the pinned runtime subset, or omit -RuntimeOnly
+to rerun both Test262 v1 subsets. The runtime JSON reports failed
+file paths and reasons for new conformance work.

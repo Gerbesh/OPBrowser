@@ -55,3 +55,36 @@ py -3 tools/build_compat_manifests.py `
 
 If selection semantics change rather than merely refreshing upstream, create a new manifest
 version instead of silently redefining v1.
+
+## Test262 runtime v1 (M4.16)
+
+- Manifest: test262-runtime-v1.txt, 91 pinned paths from the same Test262
+  revision as the parser sample. It selects S-prefix matches in the
+  addition/equals/strict-equals directories, including the three
+  lowercase symbol cases present in the Windows glob selection.
+- This is a small deliberately narrow arithmetic/equality executable
+  sample, NOT full Test262 runtime coverage. It is separate from the
+  independent 2000-case parse-expectation manifest and static WPT.
+- Uses a fresh original JsRuntime per test, a minimal self-hosted
+  Test262Error/assert/$ERROR/assorted assertions bootstrap and metadata
+  checks. Unsupported includes, modules, async, onlyStrict and
+  parse-negative cases are SKIP, never PASS. All other failed parses,
+  runtime assertions or wrong expected errors are FAIL. Negative
+  runtime tests must throw the expected error type.
+- Manifest and observed git checkout revision must match; a copied
+  tree without git metadata is reported as unverified in JSON.
+- tools/compatibility.ps1 -RuntimeOnly runs this narrow runtime sample
+  without requiring the separate 2000-file parser checkout. By default,
+  supplying -Test262Path runs both independently.
+- JSON output includes case-by-case status/reasons and exact
+  skipped/attempted/passed/failed counts. Run with:
+
+    cargo run -p op_js --bin test262_runtime_probe --       target/test262-upstream/test --manifest compat/test262-runtime-v1.txt       --json-out artifacts/compatibility/test262-runtime-v1.json
+
+- Checkout Test262 revision c8c798898646638cd0c24879f8e0374e847e7d74
+  before running. The 9 October 2026 M4.16 baseline after the new
+  standard primitive builtins is 59/91 = 64.84%, with 32 FAIL and
+  0 SKIP. Earlier baseline before the builtins was 18/91 = 19.78%.
+- Scope caveats: classic non-strict scripts only, subset of Test262
+  harness helpers, no includes such as propertyHelper or agent,
+  no automatic strict-mode variant, no host APIs.

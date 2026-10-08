@@ -84,6 +84,13 @@ enum BuiltinFunction {
     HeadersDelete,
     JsonParse,
     JsonStringify,
+    ObjectConstructor,
+    ArrayConstructor,
+    BooleanConstructor,
+    NumberConstructor,
+    StringConstructor,
+    IsNaN,
+    IsFinite,
 }
 
 #[derive(Debug, Clone)]
@@ -307,6 +314,9 @@ impl Default for JsRuntime {
                 reference_error_prototype,
             )
             .expect("built-in ReferenceError constructor must fit initial runtime budgets");
+        runtime
+            .install_standard_primitives()
+            .expect("standard primitive builtins must fit initial VM budgets");
         // Promise reactions use the original FIFO microtask queue.
         let microtask = runtime
             .allocate_lifecycle_method("queueMicrotask", BuiltinFunction::QueueMicrotask)
@@ -530,6 +540,66 @@ impl JsRuntime {
                 ("headers".into(), JsValue::Object(headers)),
             ]),
         )
+    }
+
+    fn install_standard_primitives(&mut self) -> Result<(), JsError> {
+        for (name, builtin) in [
+            ("Object", BuiltinFunction::ObjectConstructor),
+            ("Array", BuiltinFunction::ArrayConstructor),
+            ("Boolean", BuiltinFunction::BooleanConstructor),
+            ("Number", BuiltinFunction::NumberConstructor),
+            ("String", BuiltinFunction::StringConstructor),
+            ("isNaN", BuiltinFunction::IsNaN),
+            ("isFinite", BuiltinFunction::IsFinite),
+        ] {
+            let id = self.allocate_lifecycle_method(name, builtin)?;
+            self.object_mut(id)?
+                .properties
+                .insert("length".into(), JsValue::Number(1.0));
+            if name == "Object" {
+                let prototype = self.object_prototype;
+                self.object_mut(id)?
+                    .properties
+                    .insert("prototype".into(), JsValue::Object(prototype));
+            } else if name == "Array" {
+                let prototype = self.array_prototype;
+                self.object_mut(id)?
+                    .properties
+                    .insert("prototype".into(), JsValue::Object(prototype));
+            }
+            self.install_global_binding(name, JsValue::Object(id), true, VariableKind::Var);
+        }
+        if let Some(JsValue::Object(number_id)) = self.global("Number").cloned() {
+            self.object_mut(number_id)?
+                .properties
+                .extend(HashMap::from([
+                    ("MAX_VALUE".into(), JsValue::Number(f64::MAX)),
+                    ("MIN_VALUE".into(), JsValue::Number(f64::from_bits(1))),
+                    ("POSITIVE_INFINITY".into(), JsValue::Number(f64::INFINITY)),
+                    (
+                        "NEGATIVE_INFINITY".into(),
+                        JsValue::Number(f64::NEG_INFINITY),
+                    ),
+                    ("NaN".into(), JsValue::Number(f64::NAN)),
+                    ("EPSILON".into(), JsValue::Number(f64::EPSILON)),
+                    (
+                        "MAX_SAFE_INTEGER".into(),
+                        JsValue::Number(9_007_199_254_740_991.0),
+                    ),
+                    (
+                        "MIN_SAFE_INTEGER".into(),
+                        JsValue::Number(-9_007_199_254_740_991.0),
+                    ),
+                ]));
+        }
+        self.install_global_binding("NaN", JsValue::Number(f64::NAN), false, VariableKind::Const);
+        self.install_global_binding(
+            "Infinity",
+            JsValue::Number(f64::INFINITY),
+            false,
+            VariableKind::Const,
+        );
+        Ok(())
     }
 
     fn install_json_methods(&mut self) -> Result<(), JsError> {
@@ -1675,6 +1745,90 @@ impl JsRuntime {
         this_value: JsValue,
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
+        match builtin {
+            BuiltinFunction::BooleanConstructor => {
+                return Ok(CallOutcome::Value(JsValue::Boolean(
+                    arguments.first().is_some_and(JsValue::is_truthy),
+                )));
+            }
+            BuiltinFunction::NumberConstructor => {
+                return Ok(CallOutcome::Value(JsValue::Number(
+                    arguments.first().map(JsValue::to_number).unwrap_or(0.0),
+                )));
+            }
+            BuiltinFunction::StringConstructor => {
+                return Ok(CallOutcome::Value(JsValue::String(
+                    arguments
+                        .first()
+                        .map(JsValue::to_js_string)
+                        .unwrap_or_default(),
+                )));
+            }
+            BuiltinFunction::IsNaN => {
+                return Ok(CallOutcome::Value(JsValue::Boolean(
+                    arguments
+                        .first()
+                        .unwrap_or(&JsValue::Undefined)
+                        .to_number()
+                        .is_nan(),
+                )));
+            }
+            BuiltinFunction::IsFinite => {
+                return Ok(CallOutcome::Value(JsValue::Boolean(
+                    arguments
+                        .first()
+                        .unwrap_or(&JsValue::Undefined)
+                        .to_number()
+                        .is_finite(),
+                )));
+            }
+            BuiltinFunction::ObjectConstructor => {
+                if let Some(JsValue::Object(id)) = arguments.first() {
+                    return Ok(CallOutcome::Value(JsValue::Object(*id)));
+                }
+                let id = self.allocate_object(
+                    ObjectKind::Ordinary,
+                    Some(self.object_prototype),
+                    HashMap::new(),
+                )?;
+                return Ok(CallOutcome::Value(JsValue::Object(id)));
+            }
+            BuiltinFunction::ArrayConstructor => {
+                let mut props = HashMap::new();
+                let length = if arguments.len() == 1 {
+                    match &arguments[0] {
+                        JsValue::Number(n) => {
+                            if !n.is_finite()
+                                || *n < 0.0
+                                || n.fract() != 0.0
+                                || *n > u32::MAX as f64
+                            {
+                                return Err(JsError::type_error("invalid array length"));
+                            }
+                            *n
+                        }
+                        value => {
+                            props.insert("0".into(), value.clone());
+                            1.0
+                        }
+                    }
+                } else {
+                    for (index, value) in arguments.iter().enumerate() {
+                        props.insert(index.to_string(), value.clone());
+                    }
+                    arguments.len() as f64
+                };
+                // Protect bounded memory and Promise array-like iteration.
+                if length > 4096.0 {
+                    return Err(JsError::execution_limit("Array length budget exceeded"));
+                }
+                props.insert("length".into(), JsValue::Number(length));
+                let id =
+                    self.allocate_object(ObjectKind::Array, Some(self.array_prototype), props)?;
+                return Ok(CallOutcome::Value(JsValue::Object(id)));
+            }
+            _ => {}
+        }
         if builtin == BuiltinFunction::JsonParse {
             if arguments
                 .get(1)
@@ -2122,7 +2276,14 @@ impl JsRuntime {
             | BuiltinFunction::HeadersAppend
             | BuiltinFunction::HeadersDelete
             | BuiltinFunction::JsonParse
-            | BuiltinFunction::JsonStringify => {
+            | BuiltinFunction::JsonStringify
+            | BuiltinFunction::ObjectConstructor
+            | BuiltinFunction::ArrayConstructor
+            | BuiltinFunction::BooleanConstructor
+            | BuiltinFunction::NumberConstructor
+            | BuiltinFunction::StringConstructor
+            | BuiltinFunction::IsNaN
+            | BuiltinFunction::IsFinite => {
                 unreachable!("handled above")
             }
         };
@@ -2782,6 +2943,31 @@ mod tests {
             JsValue::Number(1.0)
         );
         assert_eq!(runtime.global("x"), Some(&JsValue::Number(5.0)));
+    }
+
+    #[test]
+    fn standard_number_boolean_string_object_and_array_initial_slice() {
+        let mut vm = JsRuntime::new();
+        let result = vm
+            .eval_script(
+                "Boolean(0) === false && Boolean('x') === true && \
+             Number() === 0 && Number('0xff') === 255 && \
+             Number('0b101') === 5 && Number('0o11') === 9 && \
+             String() === '' && String(42) === '42' && \
+             isNaN('bad') && !isNaN('12') && \
+             isFinite('0xf') && !isFinite(Infinity) && \
+             Number.POSITIVE_INFINITY === Infinity && \
+             Number.NEGATIVE_INFINITY === -Infinity && \
+             Number.MAX_VALUE > 1 && Number.MIN_VALUE > 0 && \
+             Array(3).length === 3 && Array('a')[0] === 'a' && \
+             Object().x === undefined && Object({x:5}).x === 5",
+            )
+            .unwrap();
+        assert_eq!(result, JsValue::Boolean(true));
+        let error = vm.eval_script("Array(-1);").unwrap_err();
+        assert_eq!(error.kind, JsErrorKind::Type);
+        let error = vm.eval_script("Array(10000);").unwrap_err();
+        assert_eq!(error.kind, JsErrorKind::ExecutionLimit);
     }
 
     #[test]

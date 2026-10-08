@@ -10,6 +10,7 @@ externally measured web-compatibility score.
 | WPT Static v1 strict | 197/200 (98.50%) | 200 selected static reftests |
 | WPT Positioning v1 strict | 53/100 (53.00%) | 100 selected positioning cases |
 | Test262 Parser v1 | 523/1983 (26.37%) | Parse-only tests, not JS execution |
+| Test262 Runtime v1 (M4.16) | 59/91 (64.84%) | Narrow, pinned classic arithmetic/equality subset only |
 
 These are recorded baselines, not a freshly rerun WPT/Test262 result.
 See COMPATIBILITY.md and compat/upstream.env for methodology.
@@ -25,8 +26,9 @@ full declared end goal rather than passing percentage of milestones.
   static-suite successes; broader layout, typography, responsive modes and
   complex positioning are unfinished.
 - JavaScript: original parser, bytecode, VM, closures, events, Promise, JSON;
-  parser has only 26.37% on the selected sample, with no comprehensive
-  runtime-conformance percentage yet.
+  parser has only 26.37% on the selected sample. A separate narrow
+  runtime sample achieves 59/91, without providing a comprehensive
+  modern-ECMAScript conformance percentage.
 - DOM/Web APIs: getElementById/textContent, partial listeners, timers and
   bounded same-origin GET; DOM tree editing, storage, streams, workers and
   numerous standard APIs remain absent.

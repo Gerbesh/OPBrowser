@@ -16,6 +16,22 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S20 - Pinned Test262 runtime case -> own VM -> machine-readable verdict (M4.16)
+
+Status: IMPLEMENTED narrow executable classic-script sample.
+
+Test262 fixture -> committed 91-path manifest -> metadata skip/negative
+phase handling -> Test262Error/assert self-hosted bootstrap ->
+JsRuntime::eval_script -> ordinary bytecode runtime / standard globals ->
+pass / fail with exact failure cause or explicit SKIP ->
+case-by-case JSON and tools/compatibility.ps1 independent percentage.
+
+Numeric global calls and 0x/0b/0o coercions exercise original VM
+builtins instead of delegating evaluation to an external engine.
+Script-mode-only, no full Test262 harness, strict, async or modules.
+This same-crate benchmark is documented manually: the generated Code Slicer
+intentionally requires cross-crate feature paths.
+
 ## S19 - strict JSON response -> Promise -> native pixels (M4.15)
 
 Status: IMPLEMENTED bounded strict JSON and array-like combinators.

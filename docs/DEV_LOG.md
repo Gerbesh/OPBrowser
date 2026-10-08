@@ -2956,3 +2956,20 @@ This file is append-only project history.
 - Added parser/VM/native-engine regressions including JSON-to-DOM repaint.
 - Incomplete: JSON callback hooks, canonical number formatting, iterators,
   full AggregateError, CORS/streams/cookies/abort.
+
+## 2026-10-09 - M4.16 executable Test262 and primitive standard functions
+
+- Added independent op_js/test262_runtime_probe operating on pinned
+  upstream fixture files with fresh VM, minimal assertions, negative
+  runtime expectation handling, explicit SKIPs and per-file JSON status.
+  Integrated its result into compatibility.ps1 and verified source
+  checkout hash against the committed manifest revision.
+- Native standard globals Object, Array, Boolean, Number, String,
+  isNaN and isFinite plus Number numeric constants and radix string
+  conversions. Not yet full constructors/boxing/prototype semantics.
+- Reproducible runtime suite baseline rose from 18/91 to 59/91 on
+  unchanged fixture paths. Distinguish this narrow runtime score from
+  Test262 Parser v1 523/1983.
+- Known failures remain visible for eval, Date, Symbol, coercion and
+  unimplemented syntax. Next step should expand runtime coverage
+  deliberately, not cherry-pick only tests that pass.

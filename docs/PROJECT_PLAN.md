@@ -975,3 +975,27 @@ counts must not be mislabeled as external conformance percentages.
   AggregateError class, species/thenable conformance or unlimited jobs.
 - NEXT M4.16: runtime Test262 harness; language/property/array/string
   conformance, callback JSON semantics and broader modern DOM support.
+
+## M4.16 - Pinned executable Test262 subset and primitive globals (2026-10-09)
+
+- DONE independent Test262 runtime probe: fresh original VM per fixture,
+  pinned 91-file manifest drawn from upstream arithmetic/equality,
+  minimal assertion/Test262Error/$ERROR helpers, metadata-aware
+  module/async/strict/unsupported-include/parse-negative SKIPs, per-case
+  FAIL reasons and JSON report with a verified upstream git commit.
+- DONE tools/compatibility.ps1 now reports a separate runtime score
+  alongside the existing parser subset, never combining their totals.
+- DONE native Boolean/Number/String conversion functions, isNaN/isFinite,
+  Object() allocation/identity and Array() basic construction, global
+  Infinity/NaN and standard Number constants. Numeric conversion
+  accepts 0x/0b/0o prefixes. Bounded arrays cannot allocate huge lengths.
+- DONE fixture measurement 18/91 (19.78%) -> 59/91 (64.84%) on the
+  unchanged pinned manifest. This is a narrow arithmetic/equality
+  classic-script subset, not broad Test262 conformance.
+- LIMITATION Boolean/Number/String functions do not yet construct boxed
+  objects under new; full Object.prototype, Date, eval, Symbol and true
+  ToPrimitive/valueOf semantics are not implemented. 32 tests remain
+  FAIL. No broad ECMAScript runtime score can be inferred.
+- NEXT M4.17: object/primitive coercion and boxing, correct property
+  descriptors/enumeration, plus modern expression syntax; broaden
+  the pinned runtime subset by creating version 2, never altering v1.

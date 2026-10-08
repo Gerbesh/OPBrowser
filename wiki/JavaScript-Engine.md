@@ -406,3 +406,21 @@ true insertion-order enumeration and ECMAScript canonical number
 formatting are missing. The VM cannot represent unpaired UTF-16
 surrogates as values. Promise combinators do not yet support arbitrary
 iterables or a fully native AggregateError class.
+
+## M4.16: real Test262 runtime execution and basic global constructors
+
+The original JS interpreter now implements basic callable Object,
+Array, Boolean, Number and String builtins, isNaN/isFinite and Number
+static numeric constants. String-to-number coercion accepts the
+standard hexadecimal, binary and octal prefixes.
+
+An independent Test262 runtime probe now executes 91 pinned upstream
+classic-script arithmetic/equality fixtures, each in a fresh VM, with
+a small self-hosted assertion bootstrap and explicit pass/fail/skip
+cases. Its first 18/91 score rose to 59/91 (64.84%) on unchanged
+fixture paths after implementing the above builtins. This narrow
+metric must not be confused with the 523/1983 parser-only metric.
+
+Limitations: boxed primitive constructors, full Object/Array prototype
+methods, Date, eval, Symbol and modern ES features remain incomplete.
+Only the supported classic-script assertion helpers are supplied.

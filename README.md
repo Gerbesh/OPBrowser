@@ -58,6 +58,10 @@ real HTTP statuses, reason phrases, redirect URL, and filtered Headers
 into Response; HTTP 404/500 fulfill with ok=false. M4.14 adds a bounded
 Headers constructor, Request, safe GET RequestInit headers and manual
 per-hop same-origin redirect checks, including redirect:error.
+M4.16 adds a 91-case pinned Test262 classic-script runtime probe and
+basic Object/Array/Boolean/Number/String/isNaN/isFinite globals.
+See docs/COMPATIBILITY.md for the separate **59/91 (64.84%)** narrow
+runtime result, which must not be confused with full JS conformance.
 M4.15 adds strict native JSON.parse/stringify, async Response.json and
 bounded self-hosted Promise.all/race/allSettled/any. Complete Fetch/CORS,
 credentials, streams, caching, abort and ECMAScript Promise conformance
