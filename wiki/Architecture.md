@@ -56,7 +56,12 @@ An absolute cell descendant can use a positioned table ancestor as its
 containing block. Auto table columns use content-derived preferred widths
 (including pixel-sized descendant blocks), rather than always filling the
 containing block. Empty absolute-only row tracks suppress stray section pixels.
-Some table wrapper metrics and complex spanning backgrounds remain approximate.
+The auto-width table wrapper now shares its preferred/minimum intrinsic width
+decision with column layout before calculating backgrounds, borders or captions;
+horizontal border-spacing and box extras contribute to the final width. Explicit
+table widths stay authoritative; fixed layout without an explicit width still
+follows the auto-width intrinsic sizing path. Empty or complex spanned tables
+and multi-row group backgrounds remain approximate.
 This is not full CSS stacking: additional context triggers, other auto-z
 paint-phase details and exact interleaving remain future work. Win32 drawing
 never decides paint order.

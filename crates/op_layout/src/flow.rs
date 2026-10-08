@@ -1811,7 +1811,45 @@ impl<'a> Context<'a, '_> {
     ) -> TableBoxMetrics {
         self.block_epoch = self.block_epoch.saturating_add(1);
         let children = self.table_fixup_expand_structural_contents(children);
-        let used = resolve_block_horizontal(style, containing_width);
+        let grid = self.build_table_grid(&children, inherited_from);
+        let mut style = style;
+        let auto_width = style.width.is_none();
+        let mut used = resolve_block_horizontal(style, containing_width);
+        if auto_width && grid.columns > 0 {
+            // The table wrapper and its columns must share the same intrinsic
+            // width decision. Otherwise the column grid shrinks while the table
+            // background, captions and inline-table metrics still span the parent.
+            let (horizontal_spacing, _) = used_table_spacing(style);
+            let intrinsic = self.table_intrinsic_columns(
+                &children,
+                &grid,
+                style,
+                used.content_width.max(1),
+                horizontal_spacing,
+            );
+            let total_spacing =
+                horizontal_spacing.saturating_mul(intrinsic.len().saturating_add(1) as i32);
+            let minimum = intrinsic
+                .iter()
+                .map(|column| column.min)
+                .fold(0, i32::saturating_add);
+            let preferred = intrinsic
+                .iter()
+                .map(|column| column.max)
+                .fold(0, i32::saturating_add);
+            let content_width = preferred
+                .saturating_add(total_spacing)
+                .min(used.content_width)
+                .max(minimum.saturating_add(total_spacing))
+                .max(1);
+            let specified_width = if style.box_sizing == BoxSizing::BorderBox {
+                content_width.saturating_add(used.border_width.saturating_sub(used.content_width))
+            } else {
+                content_width
+            };
+            style.width = Some(LengthPercentage::Px(specified_width as f32));
+            used = resolve_block_horizontal(style, containing_width);
+        }
         let margin_top = resolve_vertical_margin(style.margin.top, containing_width);
         let margin_bottom = resolve_vertical_margin(style.margin.bottom, containing_width);
 
@@ -1872,12 +1910,10 @@ impl<'a> Context<'a, '_> {
             .saturating_add(used.border.top.width)
             .saturating_add(used.padding.top);
 
-        let grid = self.build_table_grid(&children, inherited_from);
         let mut first_row_baseline = None;
         if grid.row_count > 0 && grid.columns > 0 {
             let (horizontal_spacing, vertical_spacing) = used_table_spacing(style);
-            let column_widths = if style.table_layout == TableLayout::Fixed && style.width.is_some()
-            {
+            let column_widths = if style.table_layout == TableLayout::Fixed && !auto_width {
                 self.fixed_table_column_widths(
                     &children,
                     &grid,

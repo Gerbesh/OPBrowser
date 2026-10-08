@@ -381,11 +381,19 @@ Status: IN PROGRESS.
   descendants. New geometry/empty-row/containing-block tests added. Frozen WPT
   Positioning v1 improved 38/100 -> 53/100, Static v1 held at 187/200, both
   without render errors.
+- DONE auto-width table wrapper consistency: table_box now resolves its own
+  intrinsic width before painting its background, borders, and captions, using
+  the same column min/preferred measurements as the grid. Horizontal
+  border-spacing and box padding/border remain in the wrapper width, while
+  explicitly sized tables remain authoritative. For table-layout:fixed with
+  width:auto the engine keeps the automatic intrinsic algorithm. Six regressions
+  cover narrow one/two-column tables, spacing/extras, explicit widths, fixed
+  layout with auto width, and min-width. Frozen WPT Static 187/200 and
+  Positioning 53/100 remain unchanged with zero render errors.
 - NEXT improve table row/group background painting over multi-column/spanned
-  grids, align auto table wrapper metrics to the computed column widths, handle
-  more absolute containing-block percentage cases, and complete CSS paint phases.
-  Additional context triggers, overflow clipping, font fallback, multicol, vertical
-  writing and sticky remain unsupported.
+  grids, finish percentage/absolute containing block sizing, and complete CSS
+  paint phases. Additional context triggers, overflow clipping, font fallback,
+  multicol, vertical writing and sticky remain unsupported.
 
 ## M3 - Original JavaScript engine
 

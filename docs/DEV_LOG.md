@@ -2397,3 +2397,20 @@ This file is append-only project history.
   errors on either suite. Further work remains for complex table spanning,
   row backgrounds, auto wrapper sizing, and exact CSS painting phases.
 
+## 2026-10-08 - Auto table wrapper intrinsic-width alignment
+
+- Fixed a real render inconsistency: auto table grid columns were already
+  shrink-to-intrinsic, but the outer table background/borders and captions
+  kept the parent's full available width. A 60px table painted as 300px.
+- Resolve the wrapper's content width from the intrinsic column minimum and
+  preferred widths before laying out its captions, border/background or cells.
+  Include the table's horizontal border spacing, padding and border extras
+  in the final geometry. Preserve authored explicit widths and min-width.
+- Prevent table-layout:fixed with width:auto from accidentally switching to
+  the fixed track algorithm after internal width resolution.
+- Six engine regression tests cover one/two-column shrink-wrap, border-spacing
+  and extras, authored table width, fixed-layout auto width and min-width.
+- Frozen WPT Static v1 stays 187/200 (93.50%), Positioning v1 stays
+  53/100 (53.00%), zero render errors. More table sizing and row background
+  work remains.
+

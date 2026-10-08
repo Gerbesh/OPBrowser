@@ -922,6 +922,178 @@ mod tests {
     }
 
     #[test]
+    fn auto_table_wrapper_shrinks_to_explicit_cell_descendant_width() {
+        let html = r#"<div style="width:300px">
+          <table style="border-spacing:0;background:lime">
+            <tr><td style="padding:0"><div style="width:60px;height:20px;background:blue"></div></td></tr>
+          </table>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let green = page
+            .commands
+            .iter()
+            .find_map(|item| match item {
+                PaintCommand::FillRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                } if (color.r, color.g, color.b) == (0, 255, 0) => Some((*x, *y, *width, *height)),
+                _ => None,
+            })
+            .expect("table background");
+        let blue = page
+            .commands
+            .iter()
+            .find_map(|item| match item {
+                PaintCommand::FillRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                } if (color.r, color.g, color.b) == (0, 0, 255) => Some((*x, *y, *width, *height)),
+                _ => None,
+            })
+            .expect("cell's sized block");
+        assert_eq!(green.2, 60);
+        assert_eq!(blue.2, 60);
+        assert_eq!((green.0, green.1), (blue.0, blue.1));
+    }
+
+    #[test]
+    fn auto_table_two_column_width_matches_intrinsic_tracks() {
+        let html = r#"<div style="width:300px">
+            <table style="border-spacing:0;background:lime">
+              <tr><td style="padding:0"><div style="width:40px;height:20px;background:red"></div></td>
+                  <td style="padding:0"><div style="width:50px;height:20px;background:blue"></div></td></tr>
+            </table>
+          </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let rect = |color: (u8, u8, u8)| {
+            page.commands
+                .iter()
+                .find_map(|item| match item {
+                    PaintCommand::FillRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        color: c,
+                    } if (c.r, c.g, c.b) == color => Some((*x, *y, *width, *height)),
+                    _ => None,
+                })
+                .expect("paint rectangle")
+        };
+        let table = rect((0, 255, 0));
+        let left = rect((255, 0, 0));
+        let right = rect((0, 0, 255));
+        assert_eq!(table.2, 90);
+        assert_eq!(right.0, left.0 + left.2);
+        assert_eq!(table.0 + table.2, right.0 + right.2);
+    }
+
+    #[test]
+    fn auto_table_width_includes_spacing_padding_and_border() {
+        let html = r#"<div style="width:300px">
+          <table style="border-spacing:5px 0;padding:0 3px;border:2px solid black;background:lime">
+            <tr><td style="padding:0"><div style="width:40px;height:20px;background:red"></div></td>
+                <td style="padding:0"><div style="width:50px;height:20px;background:blue"></div></td></tr>
+          </table>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let rect = |color: (u8, u8, u8)| {
+            page.commands
+                .iter()
+                .find_map(|item| match item {
+                    PaintCommand::FillRect {
+                        x, width, color: c, ..
+                    } if (c.r, c.g, c.b) == color => Some((*x, *width)),
+                    _ => None,
+                })
+                .expect("paint rectangle")
+        };
+        let table = rect((0, 255, 0));
+        let left = rect((255, 0, 0));
+        let right = rect((0, 0, 255));
+        assert_eq!(table.1, 115); // 40+50 + three 5px spacings + 6px padding + 4px border.
+        assert_eq!(left.1, 40);
+        assert_eq!(right.1, 50);
+        assert_eq!(right.0, left.0 + left.1 + 5);
+        assert_eq!(left.0, table.0 + 2 + 3 + 5);
+    }
+
+    #[test]
+    fn table_explicit_width_remains_authoritative() {
+        let html = r#"<div style="width:300px">
+          <table style="width:200px;border-spacing:0;background:lime">
+            <tr><td style="padding:0"><div style="width:40px;height:20px;background:blue"></div></td></tr>
+          </table>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let width = page
+            .commands
+            .iter()
+            .find_map(|item| match item {
+                PaintCommand::FillRect { width, color, .. }
+                    if (color.r, color.g, color.b) == (0, 255, 0) =>
+                {
+                    Some(*width)
+                }
+                _ => None,
+            })
+            .expect("table");
+        assert_eq!(width, 200);
+    }
+
+    #[test]
+    fn fixed_table_layout_with_auto_width_uses_intrinsic_sizing() {
+        let html = r#"<div style="width:300px">
+          <table style="table-layout:fixed;border-spacing:0;background:lime">
+            <tr><td style="padding:0"><div style="width:60px;height:20px"></div></td></tr>
+          </table>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let width = page
+            .commands
+            .iter()
+            .find_map(|item| match item {
+                PaintCommand::FillRect { width, color, .. }
+                    if (color.r, color.g, color.b) == (0, 255, 0) =>
+                {
+                    Some(*width)
+                }
+                _ => None,
+            })
+            .expect("table background");
+        assert_eq!(width, 60);
+    }
+
+    #[test]
+    fn auto_table_preserves_min_width_constraint() {
+        let html = r#"<div style="width:300px">
+          <table style="min-width:100px;border-spacing:0;background:lime">
+            <tr><td style="padding:0"><div style="width:60px;height:20px"></div></td></tr>
+          </table>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let width = page
+            .commands
+            .iter()
+            .find_map(|item| match item {
+                PaintCommand::FillRect { width, color, .. }
+                    if (color.r, color.g, color.b) == (0, 255, 0) =>
+                {
+                    Some(*width)
+                }
+                _ => None,
+            })
+            .expect("table background");
+        assert_eq!(width, 100);
+    }
+
+    #[test]
     fn inline_table_reaches_paint_as_an_atomic_inline_context() {
         let display_list = Engine::new().render_html(
             "<style>

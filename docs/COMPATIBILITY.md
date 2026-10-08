@@ -128,8 +128,15 @@ table-row/section backgrounds, suppresses backgrounds on effectively empty
 absolute-only row tracks, and uses intrinsic pixel widths from block descendants
 for auto table columns. On the unchanged manifests WPT Positioning improves
 from 38/100 to 53/100 (53.00%) while WPT Static remains 187/200 (93.50%);
-both suites have zero render errors. Full table sizing, percent insets, row
-spans, and multi-column group painting remain incomplete.
+both suites have zero render errors. The next auto-table wrapper correction
+aligns painted table backgrounds/borders and caption widths with intrinsic
+column tracks for width:auto, including horizontal border-spacing, table
+padding and border. Explicit widths, minimum widths and fixed table-layout
+with automatic width have engine regressions. Frozen WPT Static remains
+187/200 (93.50%), Positioning remains 53/100 (53.00%), zero render errors:
+the new work fixes additional cases outside the frozen subsets. Full table
+sizing, percent insets, row spans, and multi-column group painting remain
+incomplete.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves

@@ -980,6 +980,13 @@ source-ordered relative row/section backgrounds and skips background on empty
 rows whose only contents are absolute. layout_table_cell temporarily adds the
 nearest relative table section/row/cell to the positioning stack for absolute
 children. The fixed manifest moves Positioning WPT 38/100 to 53/100.
+The later table wrapper consistency slice moves the grid's intrinsic
+min/preferred width computation ahead of wrapper caption/background geometry
+in table_box. For width:auto, it resolves the shared content width including
+horizontal table spacing and box extras, then passes that same content width to
+column layout. The original auto-width flag preserves auto layout when
+table-layout:fixed is requested without a definite author width. No additional
+engine module or dependency is introduced.
 
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting

@@ -496,9 +496,19 @@ backgrounds with position:relative receive their own positioned paint key.
 During cell layout the nearest relative table ancestor contributes the absolute
 containing-block origin, with the later relative visual translation preserved.
 This closes 15 more frozen Positioning WPT tests, from 38/100 to 53/100.
-Limitations: auto table wrapper width may still differ from intrinsic cell
-tracks, row-group paint beyond basic span/grid cases is approximate, and
-percent-based absolute containing heights remain incomplete.
+The subsequent auto-wrapper pass computes a single intrinsic width choice
+before constructing the table's outer border/background and captions. This
+makes its wrapper width agree with the column tracks, instead of previously
+letting a 60px content grid occupy an accidental 300px painted wrapper.
+The size includes outer and inter-column border-spacing, horizontal padding
+and border, and respects the existing box-sizing/min-width and explicit-width
+path. A width:auto table with table-layout:fixed still uses the auto algorithm
+rather than silently switching to fixed tracks when the internal preferred
+width becomes definite. Six engine regressions cover these cases. Frozen WPT
+Static/Positioning remain 187/200 and 53/100 with zero render errors.
+Limitations: row-group paint beyond basic span/grid cases is approximate,
+empty tables without intrinsic tracks and complex percentage widths need work,
+and percent-based absolute containing heights remain incomplete.
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
