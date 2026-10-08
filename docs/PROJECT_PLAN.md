@@ -805,3 +805,27 @@ counts must not be mislabeled as external conformance percentages.
   script completion after first paint are not yet implemented.
 - NEXT unify browser task scheduling across timers, resource fetches,
   input and future microtasks; add interval policy and background tabs.
+
+## M4.10 - Repeating timers and bounded microtask checkpoints (2026-10-08)
+
+- DONE setInterval(callable, delay, ...args) and clearInterval(id) share the
+  existing retained page task queue and numeric handle namespace with
+  setTimeout and clearTimeout; either clear method cancels either timer.
+- DONE repeated callbacks requeue their own interval before invocation,
+  permitting clearInterval from inside the callback. Repeats are scheduled
+  from the end of the preceding execution rather than catching up missed
+  ticks. The minimum interval is 4ms.
+- DONE queueMicrotask(function) uses its own FIFO queue and runs after a
+  classic script, DOM event dispatch, or timer callback, before the next
+  timer job. Microtasks queued inside a checkpoint join the same FIFO.
+- DONE bounded resource policy: at most 256 queued microtasks, 1024 queued
+  in total per page, and 256 executed per checkpoint. Outstanding bounded
+  work wakes the existing page worker; no extra threads or busy polling.
+- DONE tests for interval self-cancellation and navigation reset, timeout/
+  interval cross-cancellation, FIFO microtask order, macrotask ordering,
+  DOM click checkpoints, and recursive microtask budget exhaustion.
+- LIMITATION this is still not full browser event-loop scheduling: Promise
+  jobs, MutationObserver, post-presentation async fetches, event-source
+  arbitration, and background tab throttling are not implemented.
+- NEXT integrate resource completions into the same event loop and add
+  more ECMAScript runtime support; do not claim Promise compatibility yet.

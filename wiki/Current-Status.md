@@ -67,3 +67,12 @@ page's retained JS VM and wakes the browser worker when one-shot
 callbacks are due. Callback DOM changes can repaint the page without
 native input. Script tasks are still single-threaded within the page.
 No setInterval, Promise microtasks or general browser task loop yet.
+
+## M4.10: intervals and queued microtasks
+
+setInterval/clearInterval are available in the window/global scope,
+using the same handles as setTimeout/clearTimeout. An interval may
+cancel itself. queueMicrotask(function) runs callbacks in FIFO order
+after the current script/event/timer task, before the next timer.
+Recursive enqueuing is bounded and cannot monopolize the worker
+indefinitely. Promise and async network event jobs remain unsupported.

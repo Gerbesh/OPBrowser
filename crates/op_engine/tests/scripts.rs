@@ -610,3 +610,101 @@ fn replacing_document_discards_timer_callbacks_from_old_page() {
             ))
     );
 }
+
+#[test]
+fn interval_self_cancel_runs_twice_without_orphaned_tasks() {
+    let mut engine = Engine::new();
+    engine.set_html_page(
+        "<p id='out'>Waiting</p><script>\
+         var ticks=0;var id=setInterval(function(){\
+           ticks=ticks+1;\
+           document.getElementById('out').textContent='Tick-'+ticks;\
+           if(ticks==2){clearInterval(id);}\
+         },4);</script>",
+        800,
+        600,
+    );
+    assert!(engine.tick_timers(800, 600).is_none());
+    std::thread::sleep(std::time::Duration::from_millis(15));
+    let page = engine.tick_timers(800, 600).expect("first interval");
+    assert!(page.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("Tick-1")
+    )));
+    std::thread::sleep(std::time::Duration::from_millis(15));
+    let page = engine.tick_timers(800, 600).expect("second interval");
+    assert!(page.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("Tick-2")
+    )));
+    assert!(engine.next_timer_wait().is_none());
+    assert!(engine.tick_timers(800, 600).is_none());
+}
+
+#[test]
+fn clear_timeout_also_cancels_interval_and_clear_interval_cancels_timeout() {
+    let mut engine = Engine::new();
+    engine.set_html_page(
+        "<p id='out'>Safe</p><script>\
+         var id=setInterval(function(){document.getElementById('out').textContent='BAD';},4);\
+         clearTimeout(id);\
+         var once=setTimeout(function(){document.getElementById('out').textContent='BAD';},0);\
+         clearInterval(once);</script>",
+        800,
+        600,
+    );
+    assert!(engine.next_timer_wait().is_none());
+    std::thread::sleep(std::time::Duration::from_millis(8));
+    assert!(engine.tick_timers(800, 600).is_none());
+}
+
+#[test]
+fn microtask_checkpoint_is_fifo_and_runs_before_timer_macrotask() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        "<p id='out'>Waiting</p><script>\
+         var log='S';\
+         setTimeout(function(){log=log+'T';document.getElementById('out').textContent=log;},0);\
+         queueMicrotask(function(){log=log+'A';queueMicrotask(function(){\
+            log=log+'B';document.getElementById('out').textContent=log;});});\
+         queueMicrotask(function(){log=log+'C';});\
+         </script>",
+        800,
+        600,
+    );
+    // FIFO microtasks: A, C, B (B was queued by A).
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("SACB")
+    )));
+    let next = engine
+        .tick_timers(800, 600)
+        .expect("timer follows microtasks");
+    assert!(next.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("SACBT")
+    )));
+}
+
+#[test]
+fn microtasks_from_timer_run_before_next_due_timer() {
+    let mut engine = Engine::new();
+    engine.set_html_page(
+        "<p id='out'>Waiting</p><script>\
+         var log='';\
+         setTimeout(function(){log=log+'A';queueMicrotask(function(){log=log+'M';});},0);\
+         setTimeout(function(){document.getElementById('out').textContent=log+'B';},0);\
+         </script>",
+        800,
+        600,
+    );
+    let page = engine.tick_timers(800, 600).expect("two timers");
+    assert!(page.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("AMB")
+    )));
+}
+
+#[test]
+fn interval_does_not_survive_navigation() {
+    let mut engine = Engine::new();
+    engine.set_html_page("<script>setInterval(function(){},4);</script>", 800, 600);
+    assert!(engine.next_timer_wait().is_some());
+    engine.set_html_page("<p>New page</p>", 800, 600);
+    assert!(engine.next_timer_wait().is_none());
+}

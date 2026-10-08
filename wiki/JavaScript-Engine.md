@@ -250,3 +250,16 @@ Timers do not create their own threads. Unlike a complete browser
 event loop, there are no Promise microtasks, setInterval, nested
 throttling, string-based timer evaluation or post-presentation async
 network fetch scheduling.
+
+## M4.10: interval and microtask support
+
+OPBrowser now exposes setInterval, clearInterval and queueMicrotask
+alongside setTimeout/clearTimeout. Both timer removal methods cancel
+either kind of timer. Intervals use a 4ms minimum and a shared bounded
+numeric ID pool, and can cancel their own next firing. Microtasks are
+FIFO and run after each classic-script, DOM event or timer task before
+the next macrotask, with per-page and per-checkpoint limits.
+
+This is a limited VM job queue. Promise and MutationObserver jobs,
+general async network completions after initial painting and hidden
+tab throttling are outside the supported feature set.

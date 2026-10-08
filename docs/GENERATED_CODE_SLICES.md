@@ -108,8 +108,8 @@ op_paint::build_display_list
 
 - [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L141)
-- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L273)
-- [`op_js::DomGetElementById`](../crates/op_js/src/runtime.rs#L58)
+- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L284)
+- [`op_js::DomGetElementById`](../crates/op_js/src/runtime.rs#L61)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
 - [`op_engine::render`](../crates/op_engine/src/lib.rs#L112)
@@ -135,7 +135,7 @@ op_engine::prepare_source
 - [`op_net::resolve_script_source`](../crates/op_net/src/scripts.rs#L14)
 - [`op_net::load_script_for_page`](../crates/op_net/src/lib.rs#L145)
 - [`op_net::load_script`](../crates/op_net/src/http.rs#L196)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L708)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L761)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L222)
 
@@ -161,7 +161,7 @@ op_engine::compute_styles
 - [`op_engine::click_at`](../crates/op_engine/src/lib.rs#L251)
 - [`op_layout::click_regions`](../crates/op_layout/src/flow.rs#L71)
 - [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L573)
-- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L499)
+- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L549)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::compute_styles`](../crates/op_engine/src/lib.rs#L3)
 
@@ -184,8 +184,8 @@ op_engine::prepare_source
 - [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L141)
 - [`op_engine::ParserScriptRunner`](../crates/op_engine/src/scripts.rs#L146)
-- [`op_js::refresh_dom_snapshot`](../crates/op_js/src/runtime.rs#L486)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L708)
+- [`op_js::refresh_dom_snapshot`](../crates/op_js/src/runtime.rs#L536)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L761)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L222)
 
@@ -212,7 +212,7 @@ op_dom::set_text_content
 - [`op_net::load_script_for_page`](../crates/op_net/src/lib.rs#L145)
 - [`op_engine::drain_ready`](../crates/op_engine/src/scripts.rs#L165)
 - [`op_engine::evaluate_loaded`](../crates/op_engine/src/scripts.rs#L201)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L708)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L761)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 
 Concurrent fetch and initial-load JS polling only; no event loop, DOMContentLoaded, module scripts or SRI.
@@ -233,13 +233,13 @@ op_engine::prepare_source
 
 - [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
 - [`op_engine::advance_state`](../crates/op_engine/src/scripts.rs#L186)
-- [`op_js::set_document_ready_state`](../crates/op_js/src/runtime.rs#L424)
+- [`op_js::set_document_ready_state`](../crates/op_js/src/runtime.rs#L474)
 - [`op_engine::dispatch_lifecycle`](../crates/op_engine/src/scripts.rs#L206)
-- [`op_js::dispatch_lifecycle_event`](../crates/op_js/src/runtime.rs#L437)
+- [`op_js::dispatch_lifecycle_event`](../crates/op_js/src/runtime.rs#L487)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L222)
 
-Initial-load-only readyState and DOMContentLoaded/load; one-shot timers exist separately, but no complete event loop or post-presentation async fetch.
+Initial-load-only readyState and DOMContentLoaded/load; timers and microtasks exist separately but no Promise or post-presentation async fetch.
 
 ## S13 — Retained JavaScript one-shot timeout to native reflow
 
@@ -256,16 +256,44 @@ op_engine::render
 op_platform_win::present_reflow
 ```
 
-- [`op_js::SetTimeout`](../crates/op_js/src/runtime.rs#L65)
-- [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L364)
+- [`op_js::SetTimeout`](../crates/op_js/src/runtime.rs#L68)
+- [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L380)
 - [`op_browser::recv_timeout`](../crates/op_browser/src/main.rs#L132)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L300)
-- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L373)
+- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L392)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::render`](../crates/op_engine/src/lib.rs#L112)
 - [`op_platform_win::present_reflow`](../crates/op_platform_win/src/lib.rs#L261)
 
-One-shot function timers only; no interval, Promise microtasks, independent network event tasks or background throttling.
+Bounded timeout/interval and queueMicrotask jobs now exist; no Promise jobs, network event tasks or background throttling.
+
+## S14 — Repeating timers and FIFO microtask checkpoints to native paint
+
+Status: **M4.10 bounded intervals and VM microtasks**.
+
+```text
+op_js::SetInterval
+op_js::QueueMicrotask
+op_js::next_timer_wait
+op_browser::recv_timeout
+op_js::run_due_timers
+op_js::drain_microtasks
+op_engine::tick_timers
+op_dom::set_text_content
+op_platform_win::present_reflow
+```
+
+- [`op_js::SetInterval`](../crates/op_js/src/runtime.rs#L70)
+- [`op_js::QueueMicrotask`](../crates/op_js/src/runtime.rs#L72)
+- [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L380)
+- [`op_browser::recv_timeout`](../crates/op_browser/src/main.rs#L132)
+- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L392)
+- [`op_js::drain_microtasks`](../crates/op_js/src/runtime.rs#L394)
+- [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L300)
+- [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
+- [`op_platform_win::present_reflow`](../crates/op_platform_win/src/lib.rs#L261)
+
+Intervals and bounded FIFO microtasks; no Promise resolution jobs or network tasks after initial page paint.
 
 ## S6 — WPT image comparison and reporting
 

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><title>OPBrowser interval and microtask demo</title></head>
+<body>
+<h1>Timers and microtask checkpoints</h1>
+<p id="state">Waiting</p>
+<p id="history">No tasks yet</p>
+<script>
+var count = 0;
+var order = "script-";
+queueMicrotask(function() {
+  order = order + "microtask-";
+  document.getElementById("history").textContent = order;
+});
+var interval = setInterval(function() {
+  count = count + 1;
+  document.getElementById("state").textContent = "Interval tick " + count;
+  if (count == 3) {
+    clearInterval(interval);
+    queueMicrotask(function() {
+      document.getElementById("history").textContent = order + "interval-stopped";
+    });
+  }
+}, 300);
+</script>
+</body>
+</html>

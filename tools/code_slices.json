@@ -208,7 +208,7 @@
         {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
         {"path": "crates/op_engine/src/lib.rs", "symbol": "prepare_source"}
       ],
-      "limitation": "Initial-load-only readyState and DOMContentLoaded/load; one-shot timers exist separately, but no complete event loop or post-presentation async fetch."
+      "limitation": "Initial-load-only readyState and DOMContentLoaded/load; timers and microtasks exist separately but no Promise or post-presentation async fetch."
     },
     {
       "id": "S13",
@@ -224,7 +224,24 @@
         {"path": "crates/op_engine/src/lib.rs", "symbol": "render"},
         {"path": "crates/op_platform_win/src/lib.rs", "symbol": "present_reflow"}
       ],
-      "limitation": "One-shot function timers only; no interval, Promise microtasks, independent network event tasks or background throttling."
+      "limitation": "Bounded timeout/interval and queueMicrotask jobs now exist; no Promise jobs, network event tasks or background throttling."
+    },
+    {
+      "id": "S14",
+      "title": "Repeating timers and FIFO microtask checkpoints to native paint",
+      "status": "M4.10 bounded intervals and VM microtasks",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "SetInterval"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "QueueMicrotask"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "next_timer_wait"},
+        {"path": "crates/op_browser/src/main.rs", "symbol": "recv_timeout"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "run_due_timers"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "drain_microtasks"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "tick_timers"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "present_reflow"}
+      ],
+      "limitation": "Intervals and bounded FIFO microtasks; no Promise resolution jobs or network tasks after initial page paint."
     },
     {
       "id": "S6",

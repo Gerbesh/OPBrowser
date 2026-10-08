@@ -5,7 +5,7 @@ use crate::{
     compile_script,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -17,6 +17,9 @@ const DEFAULT_CALL_DEPTH_BUDGET: usize = 64;
 const MAX_PENDING_TIMERS: usize = 64;
 const MAX_TOTAL_TIMERS: u32 = 512;
 const MAX_TIMER_DELAY_MS: u64 = 60_000;
+const MIN_INTERVAL_DELAY_MS: u64 = 4;
+const MAX_PENDING_MICROTASKS: usize = 256;
+const MAX_TOTAL_MICROTASKS: u32 = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct EnvironmentId(usize);
@@ -64,6 +67,9 @@ enum BuiltinFunction {
     LifecycleRemoveEventListener,
     SetTimeout,
     ClearTimeout,
+    SetInterval,
+    ClearInterval,
+    QueueMicrotask,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +122,7 @@ struct PendingTimer {
     due: Instant,
     callback: JsValue,
     arguments: Vec<JsValue>,
+    interval: Option<Duration>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -156,6 +163,8 @@ pub struct JsRuntime {
     lifecycle_listeners: HashMap<(ObjectId, String, bool), Vec<JsValue>>,
     timers: Vec<PendingTimer>,
     next_timer_id: u32,
+    microtasks: VecDeque<JsValue>,
+    microtasks_scheduled: u32,
 }
 
 impl Default for JsRuntime {
@@ -226,6 +235,8 @@ impl Default for JsRuntime {
             lifecycle_listeners: HashMap::new(),
             timers: Vec::new(),
             next_timer_id: 1,
+            microtasks: VecDeque::new(),
+            microtasks_scheduled: 0,
         };
 
         runtime.install_global_binding(
@@ -283,6 +294,8 @@ impl JsRuntime {
         self.lifecycle_listeners.clear();
         self.timers.clear();
         self.next_timer_id = 1;
+        self.microtasks.clear();
+        self.microtasks_scheduled = 0;
         for element in elements.into_iter().take(4096) {
             self.dom_ids.entry(element.id).or_insert(element.node);
             self.dom_text.insert(element.node, element.text_content);
@@ -346,6 +359,9 @@ impl JsRuntime {
         for (name, builtin) in [
             ("setTimeout", BuiltinFunction::SetTimeout),
             ("clearTimeout", BuiltinFunction::ClearTimeout),
+            ("setInterval", BuiltinFunction::SetInterval),
+            ("clearInterval", BuiltinFunction::ClearInterval),
+            ("queueMicrotask", BuiltinFunction::QueueMicrotask),
         ] {
             let function = self.allocate_lifecycle_method(name, builtin)?;
             self.object_mut(self.global_object)?
@@ -362,6 +378,9 @@ impl JsRuntime {
     }
     /// The host decides when to wake the page worker; no VM timer spawns threads.
     pub fn next_timer_wait(&self) -> Option<Duration> {
+        if !self.microtasks.is_empty() {
+            return Some(Duration::ZERO);
+        }
         self.timers
             .iter()
             .map(|timer| timer.due.saturating_duration_since(Instant::now()))
@@ -372,6 +391,7 @@ impl JsRuntime {
     /// A timer removed by clearTimeout in an earlier callback never fires.
     pub fn run_due_timers(&mut self, max_callbacks: usize) -> TimerReport {
         let mut report = TimerReport::default();
+        report.failed += self.drain_microtasks();
         for _ in 0..max_callbacks.min(16) {
             let now = Instant::now();
             let Some((index, _)) = self
@@ -384,6 +404,12 @@ impl JsRuntime {
                 break;
             };
             let timer = self.timers.swap_remove(index);
+            // Reinsert before callback so clearInterval can cancel itself.
+            if let Some(period) = timer.interval {
+                let mut next = timer.clone();
+                next.due = Instant::now() + period;
+                self.timers.push(next);
+            }
             report.fired += 1;
             let mut steps = 0;
             match self.call_value(
@@ -396,8 +422,32 @@ impl JsRuntime {
                 Ok(CallOutcome::Value(_)) => {}
                 Ok(CallOutcome::Thrown(_)) | Err(_) => report.failed += 1,
             }
+            report.failed += self.drain_microtasks();
         }
         report
+    }
+
+    /// FIFO checkpoint after a top-level job. Tasks queued by tasks also
+    /// run in this checkpoint, within the bounded per-checkpoint budget.
+    pub fn drain_microtasks(&mut self) -> usize {
+        let mut failed = 0;
+        for _ in 0..MAX_PENDING_MICROTASKS {
+            let Some(callback) = self.microtasks.pop_front() else {
+                break;
+            };
+            let mut steps = 0;
+            match self.call_value(
+                callback,
+                JsValue::Object(self.global_object),
+                Vec::new(),
+                &mut steps,
+                0,
+            ) {
+                Ok(CallOutcome::Value(_)) => {}
+                Ok(CallOutcome::Thrown(_)) | Err(_) => failed += 1,
+            }
+        }
+        failed
     }
 
     /// Construct one of the document/window host methods.
@@ -691,6 +741,9 @@ impl JsRuntime {
         self.object_mut(event)?
             .properties
             .insert("eventPhase".into(), JsValue::Number(0.0));
+        // DOM event callbacks constitute one task. Flush queued microtasks
+        // after all listeners have run, not between capture and bubble.
+        let _ = self.drain_microtasks();
         Ok(())
     }
 
@@ -712,16 +765,21 @@ impl JsRuntime {
 
     pub fn execute(&mut self, script: &CompiledScript) -> Result<JsValue, JsError> {
         let mut steps = 0usize;
-        match self.run_code(&script.code, self.global_env, &mut steps, 0)? {
-            RunOutcome::Complete(value) | RunOutcome::Returned(value) => Ok(value),
-            RunOutcome::Thrown(value) => {
+        let outcome = self.run_code(&script.code, self.global_env, &mut steps, 0);
+        let result = match outcome {
+            Ok(RunOutcome::Complete(value) | RunOutcome::Returned(value)) => Ok(value),
+            Ok(RunOutcome::Thrown(value)) => {
                 Err(JsError::exception(self.describe_thrown_value(&value)))
             }
-            RunOutcome::Break => Err(JsError::type_error("break escaped script control flow")),
-            RunOutcome::Continue => {
+            Ok(RunOutcome::Break) => Err(JsError::type_error("break escaped script control flow")),
+            Ok(RunOutcome::Continue) => {
                 Err(JsError::type_error("continue escaped script control flow"))
             }
-        }
+            Err(error) => Err(error),
+        };
+        // End-of-script microtask checkpoint; never run inline inside queueMicrotask().
+        let _ = self.drain_microtasks();
+        result
     }
 
     fn run_code(
@@ -1183,9 +1241,16 @@ impl JsRuntime {
     ) -> Result<CallOutcome, JsError> {
         if matches!(
             builtin,
-            BuiltinFunction::SetTimeout | BuiltinFunction::ClearTimeout
+            BuiltinFunction::SetTimeout
+                | BuiltinFunction::ClearTimeout
+                | BuiltinFunction::SetInterval
+                | BuiltinFunction::ClearInterval
+                | BuiltinFunction::QueueMicrotask
         ) {
-            if matches!(builtin, BuiltinFunction::ClearTimeout) {
+            if matches!(
+                builtin,
+                BuiltinFunction::ClearTimeout | BuiltinFunction::ClearInterval
+            ) {
                 let id = arguments
                     .first()
                     .map(JsValue::to_number)
@@ -1201,6 +1266,16 @@ impl JsRuntime {
             if self.object(*callback)?.function.is_none() {
                 return Err(JsError::type_error("setTimeout callback must be callable"));
             }
+            if matches!(builtin, BuiltinFunction::QueueMicrotask) {
+                if self.microtasks.len() >= MAX_PENDING_MICROTASKS
+                    || self.microtasks_scheduled >= MAX_TOTAL_MICROTASKS
+                {
+                    return Err(JsError::execution_limit("microtask budget exceeded"));
+                }
+                self.microtasks_scheduled += 1;
+                self.microtasks.push_back(JsValue::Object(*callback));
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
             if self.timers.len() >= MAX_PENDING_TIMERS || self.next_timer_id > MAX_TOTAL_TIMERS {
                 return Err(JsError::execution_limit("timer budget exceeded"));
             }
@@ -1210,13 +1285,16 @@ impl JsRuntime {
             } else {
                 raw_delay.min(MAX_TIMER_DELAY_MS as f64) as u64
             };
+            let interval = matches!(builtin, BuiltinFunction::SetInterval)
+                .then(|| Duration::from_millis(delay_ms.max(MIN_INTERVAL_DELAY_MS)));
             let id = self.next_timer_id;
             self.next_timer_id += 1;
             self.timers.push(PendingTimer {
                 id,
-                due: Instant::now() + Duration::from_millis(delay_ms),
+                due: Instant::now() + interval.unwrap_or(Duration::from_millis(delay_ms)),
                 callback: JsValue::Object(*callback),
                 arguments: arguments.into_iter().skip(2).collect(),
+                interval,
             });
             return Ok(CallOutcome::Value(JsValue::Number(f64::from(id))));
         }
@@ -1454,7 +1532,10 @@ impl JsRuntime {
             | BuiltinFunction::LifecycleAddEventListener
             | BuiltinFunction::LifecycleRemoveEventListener
             | BuiltinFunction::SetTimeout
-            | BuiltinFunction::ClearTimeout => {
+            | BuiltinFunction::ClearTimeout
+            | BuiltinFunction::SetInterval
+            | BuiltinFunction::ClearInterval
+            | BuiltinFunction::QueueMicrotask => {
                 unreachable!("handled above")
             }
         };
@@ -2857,5 +2938,41 @@ mod tests {
         );
         let error = runtime.eval_script("null.x").unwrap_err();
         assert_eq!(error.kind, crate::JsErrorKind::Type);
+    }
+    #[test]
+    fn microtasks_wait_until_click_dispatch_finishes() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: "Click".into(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            "var order='';\
+             document.getElementById('button').addEventListener('click',function(){\
+             order=order+'A';\
+             queueMicrotask(function(){order=order+'M';});\
+             order=order+'B';});",
+        )
+        .unwrap();
+        assert!(vm.dispatch_dom_click(1).unwrap());
+        assert_eq!(vm.global("order"), Some(&JsValue::String("ABM".into())));
+    }
+
+    #[test]
+    fn recursive_microtasks_are_bounded_and_worker_can_go_idle() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            "var count=0; function spin(){count=count+1;queueMicrotask(spin);}\
+             queueMicrotask(spin);",
+        )
+        .unwrap();
+        for _ in 0..5 {
+            vm.run_due_timers(16);
+        }
+        assert!(vm.next_timer_wait().is_none());
+        assert_eq!(vm.global("count"), Some(&JsValue::Number(1024.0)));
     }
 }

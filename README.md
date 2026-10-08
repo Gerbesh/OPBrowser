@@ -50,6 +50,8 @@ host-owned document.readyState transitions and initial-load DOMContentLoaded/
 window load event delivery after the parser/defer/async boundaries.
 M4.9 adds page-owned setTimeout/clearTimeout with bounded task pumping
 on the engine worker, so callbacks can repaint after presentation.
+M4.10 adds repeating setInterval/clearInterval and bounded FIFO queueMicrotask
+checkpoints. Promise jobs and post-presentation network tasks are not yet implemented.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 

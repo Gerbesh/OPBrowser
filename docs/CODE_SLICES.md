@@ -1157,3 +1157,26 @@ by tests for callback arguments, cancellation, deadlines, errors and
 native click-to-timer-to-display-list repaint. Does not include
 setInterval, Promise microtasks, string evaluation, background tab
 throttling or post-presentation async network resource completion.
+
+## S14 - JS interval and microtask checkpoints to repaint (M4.10)
+
+Status: bounded setInterval/clearInterval and queueMicrotask supported.
+
+    setInterval(fn, ms) / setTimeout(fn, ms)
+      -> PendingTimer interval: Option<Duration>
+      -> Engine::next_timer_wait / op_browser recv_timeout
+      -> JsRuntime::run_due_timers (single page worker)
+      -> callable invocation + drain_microtasks FIFO checkpoint
+      -> DomTextMutation -> Engine::tick_timers
+      -> computed styles -> display-list native repaint
+
+    queueMicrotask(fn)
+      -> VecDeque<JsValue>
+      -> script / event / timer checkpoint
+      -> callback FIFO, bounded drain
+      -> DOM update before next macrotask
+
+The page caps timer IDs, interval rate and microtask queue length/total
+enqueues. Intervals may clear themselves while executing. The source
+queue still has no Promise jobs, MutationObserver, fetch completion
+tasks, or full browser event loop prioritization.

@@ -2858,3 +2858,17 @@ This file is append-only project history.
   repaint. No new web engine dependencies or per-timer threads.
 - Documented absent setInterval, Promise microtasks and proper
   async subresource delivery after first paint.
+
+## 2026-10-08 - M4.10 repeating timers and microtask queue
+
+- Implemented repeating setInterval and clearInterval on existing page VM
+  timer queue with self-cancellation, clamped minimum interval, shared
+  numeric IDs, and error-isolated callbacks.
+- Added queueMicrotask with FIFO checkpoints after top-level classic
+  script execution, lifecycle/DOM event dispatch and every timer task.
+- Added per-page and per-checkpoint microtask budgets so recursive
+  enqueuing cannot starve the navigation and input worker indefinitely.
+- Added engine and JS VM regressions for order, cancellation, recursive
+  queue exhaustion, navigation resets, and delayed DOM mutations.
+- Promise jobs, MutationObserver, general subresource completions and
+  asynchronous rendering pipelines remain planned rather than supported.

@@ -1256,3 +1256,21 @@ display list and sends a non-navigation reflow to Win32. Replacing
 PreparedDocument with a new navigation drops the entire prior timer
 queue. This is a small macrotask scheduler, not a browser event loop
 with microtasks, timers from network services or setInterval.
+
+## M4.10: repeating timers and microtask checkpoints
+
+The retained JsRuntime now stores PendingTimer entries with an optional
+repeat Duration and a separate VecDeque of callback-only microtasks.
+setInterval shares handles and cancellation with setTimeout. Repeating
+tasks are reinserted before their callbacks, allowing cancellation from
+inside the active callback, and are scheduled from the execution time
+with a minimum 4ms interval.
+
+queueMicrotask enqueues a callable in FIFO order. JsRuntime::execute,
+finish_event_dispatch and run_due_timers drain bounded microtask
+checkpoints before the next macrotask. If the per-checkpoint limit is
+reached, next_timer_wait keeps the page worker awake to finish bounded
+pending work. Total enqueues are capped per page to stop self-enqueue
+loops. Promise resolution/reaction jobs are not implemented. Initial
+external-script workers still finalize before presentation, and no
+network-completion events enter this page task loop yet.
