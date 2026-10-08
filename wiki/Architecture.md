@@ -32,11 +32,14 @@ The current tree builder and layout are early subsets, not complete WHATWG/CSS
 implementations. Compatibility work will progressively replace subset behavior with
 specification-defined algorithms.
 
-Positioned output carries a flat `PaintKey` containing a signed CSS z-index and
-node creation index. The original CSS subsystem parses and cascades z-index,
-layout tags eligible positioned fragments, and op_paint sorts their paint groups.
-Nested atomic stacking contexts and negative-level interleaving with normal
-flow are not yet supported. Win32 drawing does not decide CSS paint order.
+Positioned output carries a `PaintKey` with signed CSS z-index and final DOM
+preorder. The original CSS subsystem computes z-index and layout tags paint
+records; `PaintGroup` links positioned atomic block contexts through ancestors.
+The platform-neutral painter traverses child groups iteratively so a high-z
+descendant cannot escape its lower-z parent. Negative root groups precede normal
+block painting, while nested negative groups follow their parent's background.
+The complete CSS painting model, including auto-z subtleties and positioned
+inline contexts, remains future work. Win32 drawing never decides paint order.
 
 External HTML travels from address input through a worker-owned Engine and op_net
 into the same original renderer. Structural containers preserve nested heading /

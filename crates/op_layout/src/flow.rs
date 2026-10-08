@@ -33,12 +33,21 @@ pub(super) fn layout(
         stack.extend(document.children(id).iter().rev());
     }
 
+    // Real tree order matters after HTML adoption-agency and foster-parenting moves.
+    let mut dom_order = HashMap::new();
+    let mut pending = vec![document.root()];
+    while let Some(node) = pending.pop() {
+        dom_order.insert(node, dom_order.len());
+        pending.extend(document.children(node).iter().rev());
+    }
+
     let mut context = Context {
         document,
         images,
         generated_images,
         computed_styles,
         measurer,
+        dom_order: &dom_order,
         inline_boxes: InlineBoxes::default(),
         viewport_width,
         viewport_height,
@@ -77,6 +86,13 @@ pub(super) fn layout(
         context.flush_pending_margin();
     }
     context.finish_deferred_inline();
+    let paint_groups = collect_paint_groups(
+        document,
+        computed_styles,
+        context.dom_order,
+        &context.decorations,
+        &context.order,
+    );
     LayoutTree {
         viewport_width,
         content_height: context.y + 24,
@@ -84,7 +100,66 @@ pub(super) fn layout(
         text_boxes: context.text,
         image_boxes: context.images_out,
         order: context.order,
+        paint_groups,
     }
+}
+
+fn collect_paint_groups(
+    document: &Document,
+    styles: &ComputedStyleMap,
+    dom_order: &HashMap<NodeId, usize>,
+    decorations: &[BoxDecoration],
+    order: &[LayoutItem],
+) -> Vec<PaintGroup> {
+    // Reconstruct context relationships after independently formatted outputs
+    // have been merged; source indices reflect final DOM preorder.
+    let mut node_by_order = vec![document.root(); dom_order.len()];
+    for (&node, &index) in dom_order {
+        node_by_order[index] = node;
+    }
+    let mut groups: HashMap<PaintKey, Option<PaintKey>> = HashMap::new();
+    let output_keys =
+        decorations
+            .iter()
+            .filter_map(|item| item.paint_key)
+            .chain(order.iter().filter_map(|item| match item {
+                LayoutItem::PositionedText(_, key) | LayoutItem::PositionedImage(_, key) => {
+                    Some(*key)
+                }
+                LayoutItem::Text(_) | LayoutItem::Image(_) => None,
+            }));
+    for key in output_keys {
+        let Some(&node) = node_by_order.get(key.source_order) else {
+            continue;
+        };
+        let mut child_key = key;
+        let mut ancestor = document.node(node).and_then(|node| node.parent);
+        while let Some(node) = ancestor {
+            if let Some(style) = styles.style_for(node)
+                && style.position != Position::Static
+                && (style.z_index.is_some() || style.position == Position::Fixed)
+                && !matches!(
+                    style.display,
+                    Display::None | Display::Contents | Display::Inline
+                )
+                && let Some(&index) = dom_order.get(&node)
+            {
+                let parent_key = PaintKey {
+                    z_index: style.z_index.unwrap_or(0),
+                    source_order: index,
+                };
+                // Invisible parents must still isolate their descendants.
+                groups.entry(child_key).or_insert(Some(parent_key));
+                child_key = parent_key;
+            }
+            ancestor = document.node(node).and_then(|node| node.parent);
+        }
+        groups.entry(child_key).or_insert(None);
+    }
+    groups
+        .into_iter()
+        .map(|(key, parent)| PaintGroup { key, parent })
+        .collect()
 }
 
 struct Context<'a, 'm> {
@@ -93,6 +168,7 @@ struct Context<'a, 'm> {
     generated_images: &'a GeneratedImageResources,
     computed_styles: &'a ComputedStyleMap,
     measurer: &'m mut dyn TextMeasurer,
+    dom_order: &'m HashMap<NodeId, usize>,
     inline_boxes: InlineBoxes,
     viewport_width: i32,
     viewport_height: i32,
@@ -552,6 +628,13 @@ impl<'a> Context<'a, '_> {
         }
     }
 
+    fn paint_group(&self, id: NodeId, style: Style) -> PaintKey {
+        PaintKey {
+            z_index: style.z_index.unwrap_or(0),
+            source_order: self.dom_order.get(&id).copied().unwrap_or(id.index()),
+        }
+    }
+
     fn mark_positioned_outputs_since(&mut self, start: OutputStart, key: PaintKey) {
         for decoration in &mut self.decorations[start.decorations..] {
             if decoration.paint_key.is_none() {
@@ -840,13 +923,7 @@ impl<'a> Context<'a, '_> {
         }
 
         // Non-auto positioned descendants participate in foreground painting.
-        self.mark_positioned_outputs_since(
-            output_start,
-            PaintKey {
-                z_index: style.z_index.unwrap_or(0),
-                source_order: id.index(),
-            },
-        );
+        self.mark_positioned_outputs_since(output_start, self.paint_group(id, style));
 
         self.y = saved_y;
         self.pending_margin = saved_margin;
@@ -1101,19 +1178,14 @@ impl<'a> Context<'a, '_> {
                         LayoutItem::PositionedText(_, _) | LayoutItem::PositionedImage(_, _)
                     )
                 });
-            if !has_positioned_descendants {
+            // Explicit z-index creates an atomic context even with nested positioned children.
+            if style.z_index.is_some() || !has_positioned_descendants {
                 let id = match content {
                     BlockContent::Element(id)
                     | BlockContent::Generated(id, _)
                     | BlockContent::ImageAlt(id) => id,
                 };
-                self.mark_positioned_outputs_since(
-                    output_start,
-                    PaintKey {
-                        z_index: style.z_index.unwrap_or(0),
-                        source_order: id.index(),
-                    },
-                );
+                self.mark_positioned_outputs_since(output_start, self.paint_group(id, style));
             }
         }
     }
@@ -1188,6 +1260,7 @@ impl<'a> Context<'a, '_> {
             generated_images,
             computed_styles,
             measurer: &mut *self.measurer,
+            dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
             viewport_height: self.viewport_height,
@@ -1274,6 +1347,7 @@ impl<'a> Context<'a, '_> {
             generated_images,
             computed_styles,
             measurer: &mut *self.measurer,
+            dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
             viewport_height: self.viewport_height,
@@ -1361,6 +1435,7 @@ impl<'a> Context<'a, '_> {
             generated_images,
             computed_styles,
             measurer: &mut *self.measurer,
+            dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
             viewport_height: self.viewport_height,
@@ -1613,6 +1688,7 @@ impl<'a> Context<'a, '_> {
             generated_images,
             computed_styles,
             measurer: &mut *self.measurer,
+            dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
             viewport_height: self.viewport_height,

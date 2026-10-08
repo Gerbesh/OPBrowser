@@ -449,12 +449,20 @@ text on top of their absolute children. This prevents foreground paint reversals
 not provide CSS source-order stacking contexts, negative z-index or interleaved sibling
 foreground paint groups. Pinned WPT Static and Positioning remain 187/200 and 38/100.
 
-The flat z-index follow-up computes a non-inherited signed integer or auto value in
-the CSS cascade, passes PaintKey to positioned block/inline decorations and text/images,
-and sorts unique paint groups by level and source node index. Nested positioned
-records retain their own key rather than inheriting the enclosing output range.
-This is not a full stacking-context tree: negative levels still paint above
-normal content, nested contexts are not atomic, and source indices track node creation.
+The first z-index slice computes a non-inherited signed integer or auto value,
+passes PaintKey to positioned block/inline decorations and text/images, and
+preserves nested positioned output keys while promoting outer block ranges.
+The following atomic-context slice enumerates final DOM preorder after HTML
+reparenting, then derives PaintGroup parents from positioned non-auto z-index
+ancestors and fixed-position ancestors. Even a paintless ancestor isolates its
+children. The painter uses an iterative depth-first context traversal: negative
+root groups precede in-flow block backgrounds, while negative child groups come
+after their atomic parent's block background but before its inline foreground.
+Sibling groups are sorted by local (z-index, DOM order). This fixes large child-z
+escaping a low-z parent and foster-parent source-order ties, without recursion.
+Full CSS stacking remains incomplete: auto-z relative/absolute positioning is
+still simplified, positioned inline contexts and non-position stacking triggers
+are incomplete, and some CSS background/inline interleaving remains coarse.
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore

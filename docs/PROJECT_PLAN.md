@@ -350,9 +350,15 @@ Status: IN PROGRESS.
   PaintKey propagation to decorations/text/images, sorted z-level and source-order groups.
   CSS and end-to-end paint regressions added; pinned WPT Static 187/200 and Positioning
   38/100 remain unchanged.
-- NEXT nested atomic stacking contexts and negative-level interleaving with normal flow,
-  true post-reparent DOM order, inline positioned fragmentation, overflow clipping,
-  font fallback and remaining line-height cases; multicol, vertical writing and sticky remain.
+- DONE initial atomic block stacking-context groups: positioned blocks with explicit z-index
+  now contain their descendants; absent parent pixels do not remove the context.
+  Negative root groups paint beneath in-flow blocks; equal-z siblings follow final DOM
+  preorder after parser reparenting. New integration regressions added with stable
+  WPT Static 187/200 and Positioning 38/100 on the frozen subsets.
+- NEXT CSS auto-z/non-atomic positioned behavior, inline stacking contexts,
+  additional stacking-context triggers and exact CSS painting phases; plus positioned
+  inline fragmentation, overflow clipping, font fallback and line-height cases.
+  Multicol, vertical writing and sticky remain unsupported.
 
 ## M3 - Original JavaScript engine
 

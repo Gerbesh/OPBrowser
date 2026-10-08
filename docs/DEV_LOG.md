@@ -2317,3 +2317,19 @@ This file is append-only project history.
   zero render errors. Negative groups still paint over normal flow; nested atomic
   stacking contexts and real DOM-order painting remain future work.
 
+## 2026-10-08 - Initial atomic block stacking contexts
+
+- Create PaintGroup relationships from positioned ancestors with explicit computed
+  z-index (or fixed positioning), using finalized DOM preorder rather than arena
+  creation order. Derived metadata includes visually empty context ancestors.
+- Promote explicit-z relative blocks as atomic groups even when they contain
+  independently positioned descendants, while preserving nested output keys.
+- Replace global flat paint ordering with an iterative parent/child traversal.
+  Negative root groups now paint below in-flow block backgrounds; negative nested
+  groups paint above their context background but below its inline foreground.
+- Add regressions for high-z descendants inside low-z parents, empty context
+  isolation, negative root-level layering, and HTML foster-parented DOM ties.
+- Frozen WPT Static v1 remained 187/200 (93.50%) and Positioning v1 remained
+  38/100 (38.00%), with no render errors. Auto-z edge cases, positioned inline
+  contexts and full CSS painting phase interleaving remain unimplemented.
+

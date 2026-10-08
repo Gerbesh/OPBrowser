@@ -947,12 +947,16 @@ the styled inline formatter or BlockContent::ImageAlt normal block path. Mixed g
 failures omit anonymous images while preserving empty pseudo decorations.
 Next: sliced inline decoration edges and broader computed values.
 
-Flat positioned paint metadata flows from `op_css::ComputedStyle::z_index`
-through `op_layout::flow::Style` and `Context::mark_positioned_outputs_since`
-into `BoxDecoration::paint_key` and positioned `LayoutItem` variants.
-`op_paint::build_display_list` sorts unique `PaintKey { z_index, source_order }`
-values before emitting each group's decorations, text and images. This is a
-transitional ordering key, not an atomic nested CSS stacking-context graph.
+Positioned paint metadata flows from `op_css::ComputedStyle::z_index` into
+`op_layout::flow::Style`, then `Context::mark_positioned_outputs_since`
+produces `BoxDecoration::paint_key` and positioned `LayoutItem` variants.
+`flow::layout` walks the finalized DOM to assign preorder source indices.
+`collect_paint_groups` derives `PaintGroup { key, parent }` metadata from
+positioned ancestors with explicit z-index (and fixed-position ancestors),
+including contexts without their own visible output. `op_paint` reconstructs
+the child groups by parent key and traverses them iteratively with CSS-like
+negative/background/foreground/positive phases. This remains a limited
+block-context model, not the full CSS painting algorithm.
 
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting

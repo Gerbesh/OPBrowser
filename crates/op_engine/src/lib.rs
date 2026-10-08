@@ -1888,6 +1888,96 @@ mod tests {
     }
 
     #[test]
+    fn child_high_z_stays_below_later_sibling_context() {
+        let html = r#"<div style="position:relative;height:100px">
+          <div style="position:relative;z-index:1;background:red;width:70px;height:60px">
+            <div style="position:absolute;z-index:999;top:0;left:0;background:lime;width:60px;height:40px"></div>
+          </div>
+          <div style="position:absolute;z-index:2;top:0;left:0;background:blue;width:55px;height:40px"></div>
+        </div>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let colors: Vec<_> = commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::FillRect { color, width, .. } if [70, 60, 55].contains(width) => {
+                    Some((color.r, color.g, color.b))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(colors, [(255, 0, 0), (0, 255, 0), (0, 0, 255)]);
+    }
+
+    #[test]
+    fn empty_stacking_context_still_contains_high_z_descendant() {
+        let html = r#"<div style="position:relative;height:100px">
+          <div style="position:relative;z-index:1;width:70px;height:60px">
+            <div style="position:absolute;z-index:999;top:0;left:0;background:lime;width:60px;height:40px"></div>
+          </div>
+          <div style="position:absolute;z-index:2;top:0;left:0;background:blue;width:55px;height:40px"></div>
+        </div>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let colors: Vec<_> = commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::FillRect { color, width, .. } if [60, 55].contains(width) => {
+                    Some((color.r, color.g, color.b))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(colors, [(0, 255, 0), (0, 0, 255)]);
+    }
+
+    #[test]
+    fn negative_positioned_context_paints_beneath_normal_block() {
+        let html = r#"<div style="position:relative;height:100px">
+          <div style="position:absolute;z-index:-1;top:0;left:0;background:blue;width:55px;height:40px"></div>
+          <div style="background:lime;width:60px;height:40px">NORMAL</div>
+        </div>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let negative = commands
+            .iter()
+            .position(|item| {
+                matches!(item,
+                    PaintCommand::FillRect { color, width:55, .. }
+                        if *color == (op_paint::Color { r:0, g:0, b:255 })
+                )
+            })
+            .unwrap();
+        let normal = commands
+            .iter()
+            .position(|item| {
+                matches!(item,
+                    PaintCommand::FillRect { color, width:60, .. }
+                        if *color == (op_paint::Color { r:0, g:255, b:0 })
+                )
+            })
+            .unwrap();
+        assert!(negative < normal);
+    }
+
+    #[test]
+    fn positioned_same_level_follows_reparented_dom_order_not_creation_order() {
+        let html = r#"<table>
+          <tr><td><div style="position:absolute;top:0;left:0;z-index:0;background:blue;width:62px;height:40px"></div></td></tr>
+          <div style="position:absolute;top:0;left:0;z-index:0;background:red;width:61px;height:40px"></div>
+        </table>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let ordered: Vec<_> = commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::FillRect { color, width, .. } if [61, 62].contains(width) => {
+                    Some((color.r, color.g, color.b))
+                }
+                _ => None,
+            })
+            .collect();
+        // Foster parenting moves the late div before the table containing blue.
+        assert_eq!(ordered, [(255, 0, 0), (0, 0, 255)]);
+    }
+
+    #[test]
     fn relative_table_caption_overlays_preceding_absolute_indicator() {
         let html = "<div style='display:inline-block;position:relative;height:200px'>\
             <div style='position:absolute;left:0;top:100px;width:50px;height:50px;background:red'></div>\

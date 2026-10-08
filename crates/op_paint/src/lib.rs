@@ -75,7 +75,6 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
     let mut commands = Vec::with_capacity(
         layout.text_boxes.len() + layout.image_boxes.len() + layout.box_decorations.len() * 5 + 1,
     );
-
     commands.push(PaintCommand::FillRect {
         x: 0,
         y: 0,
@@ -84,95 +83,148 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
         color: Color::WHITE,
     });
 
-    // Sort positioned paint groups by z-index, then DOM creation order.
-    // This is a flat approximation: nested stacking contexts and negative
-    // layers behind in-flow content require a future stacking tree.
-    let mut keys: Vec<_> = layout
+    // Parent keys identify atomic contexts, even when the parent has no pixels.
+    let mut parents = std::collections::HashMap::new();
+    for group in &layout.paint_groups {
+        parents.insert(group.key, group.parent);
+    }
+    for key in layout
         .box_decorations
         .iter()
-        .filter_map(|decoration| decoration.paint_key)
+        .filter_map(|box_| box_.paint_key)
         .chain(layout.order.iter().filter_map(|item| match item {
             LayoutItem::PositionedText(_, key) | LayoutItem::PositionedImage(_, key) => Some(*key),
             LayoutItem::Text(_) | LayoutItem::Image(_) => None,
         }))
-        .collect();
-    keys.sort_unstable();
-    keys.dedup();
-    for paint_key in std::iter::once(None).chain(keys.into_iter().map(Some)) {
-        let positioned = paint_key.is_some();
-        let layers = if positioned {
-            [
-                op_layout::DecorationPaintLayer::PositionedBlock,
-                op_layout::DecorationPaintLayer::PositionedInline,
-            ]
-        } else {
-            [
-                op_layout::DecorationPaintLayer::Block,
-                op_layout::DecorationPaintLayer::Inline,
-            ]
-        };
-        for layer in layers {
-            for decoration in &layout.box_decorations {
-                if decoration.paint_layer == layer && decoration.paint_key == paint_key {
-                    push_box_decoration(&mut commands, decoration);
-                }
-            }
-        }
+    {
+        parents.entry(key).or_insert(None);
+    }
+    let mut children: std::collections::HashMap<
+        Option<op_layout::PaintKey>,
+        Vec<op_layout::PaintKey>,
+    > = std::collections::HashMap::new();
+    for (&key, &parent) in &parents {
+        // Unregistered ancestors in hand-built fixtures fall back to the root.
+        let parent = parent.filter(|value| *value != key && parents.contains_key(value));
+        children.entry(parent).or_default().push(key);
+    }
+    for siblings in children.values_mut() {
+        siblings.sort_unstable();
+    }
 
-        for item in &layout.order {
-            let item_key = match item {
-                LayoutItem::Text(_) | LayoutItem::Image(_) => None,
-                LayoutItem::PositionedText(_, key) | LayoutItem::PositionedImage(_, key) => {
-                    Some(*key)
-                }
-            };
-            if item_key != paint_key {
-                continue;
+    // Iterative context traversal avoids Rust stack overflow on deeply nested markup.
+    // Negative children go after the context's block background, before its text.
+    let mut pending = vec![(None, false)];
+    while let Some((context, foreground)) = pending.pop() {
+        if !foreground {
+            if context.is_some() {
+                emit_backgrounds(
+                    layout,
+                    &mut commands,
+                    op_layout::DecorationPaintLayer::PositionedBlock,
+                    context,
+                );
             }
-            match *item {
-                LayoutItem::Text(index) | LayoutItem::PositionedText(index, _) => {
-                    let Some(text_box) = layout.text_boxes.get(index) else {
-                        continue;
-                    };
-                    if !text_box.visible {
-                        continue;
-                    }
-                    commands.push(PaintCommand::Text {
-                        x: text_box.x,
-                        y: text_box.y,
-                        text: text_box.text.clone(),
-                        font_size: text_box.font_size,
-                        bold: text_box.weight == FontWeight::Bold,
-                        italic: text_box.style == FontStyle::Italic,
-                        underline: text_box.decoration.underline,
-                        line_through: text_box.decoration.line_through,
-                        letter_spacing: text_box.letter_spacing,
-                        word_spacing: text_box.word_spacing,
-                        color: composite_text_color(text_box.color),
-                        links: text_box.links.clone(),
-                    });
+            pending.push((context, true));
+            if let Some(siblings) = children.get(&context) {
+                for &key in siblings.iter().rev().filter(|key| key.z_index < 0) {
+                    pending.push((Some(key), false));
                 }
-                LayoutItem::Image(index) | LayoutItem::PositionedImage(index, _) => {
-                    let Some(image_box) = layout.image_boxes.get(index) else {
-                        continue;
-                    };
-                    if !image_box.visible {
-                        continue;
-                    }
-                    commands.push(PaintCommand::Image {
-                        x: image_box.x,
-                        y: image_box.y,
-                        width: image_box.width,
-                        height: image_box.height,
-                        image: image_box.image.clone(),
-                        href: image_box.href.clone(),
-                    });
+            }
+        } else {
+            if context.is_none() {
+                // Root negative contexts belong behind in-flow block backgrounds.
+                emit_backgrounds(
+                    layout,
+                    &mut commands,
+                    op_layout::DecorationPaintLayer::Block,
+                    None,
+                );
+            }
+            let layer = if context.is_some() {
+                op_layout::DecorationPaintLayer::PositionedInline
+            } else {
+                op_layout::DecorationPaintLayer::Inline
+            };
+            emit_backgrounds(layout, &mut commands, layer, context);
+            emit_foreground(layout, &mut commands, context);
+            if let Some(siblings) = children.get(&context) {
+                for &key in siblings.iter().rev().filter(|key| key.z_index >= 0) {
+                    pending.push((Some(key), false));
                 }
             }
         }
     }
-
     DisplayList { commands }
+}
+
+fn emit_backgrounds(
+    layout: &LayoutTree,
+    commands: &mut Vec<PaintCommand>,
+    layer: op_layout::DecorationPaintLayer,
+    context: Option<op_layout::PaintKey>,
+) {
+    for decoration in &layout.box_decorations {
+        if decoration.paint_layer == layer && decoration.paint_key == context {
+            push_box_decoration(commands, decoration);
+        }
+    }
+}
+
+fn emit_foreground(
+    layout: &LayoutTree,
+    commands: &mut Vec<PaintCommand>,
+    context: Option<op_layout::PaintKey>,
+) {
+    for item in &layout.order {
+        let item_key = match item {
+            LayoutItem::Text(_) | LayoutItem::Image(_) => None,
+            LayoutItem::PositionedText(_, key) | LayoutItem::PositionedImage(_, key) => Some(*key),
+        };
+        if item_key != context {
+            continue;
+        }
+        match *item {
+            LayoutItem::Text(index) | LayoutItem::PositionedText(index, _) => {
+                let Some(text_box) = layout.text_boxes.get(index) else {
+                    continue;
+                };
+                if !text_box.visible {
+                    continue;
+                }
+                commands.push(PaintCommand::Text {
+                    x: text_box.x,
+                    y: text_box.y,
+                    text: text_box.text.clone(),
+                    font_size: text_box.font_size,
+                    bold: text_box.weight == FontWeight::Bold,
+                    italic: text_box.style == FontStyle::Italic,
+                    underline: text_box.decoration.underline,
+                    line_through: text_box.decoration.line_through,
+                    letter_spacing: text_box.letter_spacing,
+                    word_spacing: text_box.word_spacing,
+                    color: composite_text_color(text_box.color),
+                    links: text_box.links.clone(),
+                });
+            }
+            LayoutItem::Image(index) | LayoutItem::PositionedImage(index, _) => {
+                let Some(image_box) = layout.image_boxes.get(index) else {
+                    continue;
+                };
+                if !image_box.visible {
+                    continue;
+                }
+                commands.push(PaintCommand::Image {
+                    x: image_box.x,
+                    y: image_box.y,
+                    width: image_box.width,
+                    height: image_box.height,
+                    image: image_box.image.clone(),
+                    href: image_box.href.clone(),
+                });
+            }
+        }
+    }
 }
 
 fn push_box_decoration(commands: &mut Vec<PaintCommand>, decoration: &BoxDecoration) {
@@ -313,6 +365,7 @@ mod tests {
                 ),
                 LayoutItem::Text(0),
             ],
+            paint_groups: vec![],
         };
         let result = build_display_list(&layout, 60);
         assert!(matches!(&result.commands[1], PaintCommand::Text { text, .. } if text == "normal"));
@@ -371,6 +424,7 @@ mod tests {
                     },
                 ),
             ],
+            paint_groups: vec![],
         };
         let ordered_x: Vec<_> = build_display_list(&layout, 20)
             .commands
@@ -438,6 +492,7 @@ mod tests {
             text_boxes: vec![],
             image_boxes: vec![],
             order: vec![],
+            paint_groups: vec![],
         };
         let commands = build_display_list(&layout, 90).commands;
         let backgrounds: Vec<Color> = commands
@@ -547,6 +602,7 @@ mod tests {
             text_boxes: vec![],
             image_boxes: vec![],
             order: vec![],
+            paint_groups: vec![],
         };
 
         let display_list = build_display_list(&layout, 120);
@@ -655,6 +711,7 @@ mod tests {
             }],
             image_boxes: vec![],
             order: vec![LayoutItem::Text(0)],
+            paint_groups: vec![],
         };
 
         let display_list = build_display_list(&layout, 200);
@@ -697,6 +754,7 @@ mod tests {
             }],
             image_boxes: vec![],
             order: vec![LayoutItem::Text(0)],
+            paint_groups: vec![],
         };
 
         let display_list = build_display_list(&layout, 600);

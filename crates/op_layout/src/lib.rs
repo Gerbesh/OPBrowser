@@ -90,12 +90,18 @@ impl DecorationPaintLayer {
     }
 }
 
-/// The first flat stacking-group key: integer z-index followed by DOM order.
-/// Not yet a nested CSS stacking context.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// Identity and local order of a positioned paint group.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PaintKey {
     pub z_index: i32,
     pub source_order: usize,
+}
+
+/// A group and its nearest ancestor atomic stacking context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaintGroup {
+    pub key: PaintKey,
+    pub parent: Option<PaintKey>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,6 +181,7 @@ pub struct LayoutTree {
     pub text_boxes: Vec<TextBox>,
     pub image_boxes: Vec<ImageBox>,
     pub order: Vec<LayoutItem>,
+    pub paint_groups: Vec<PaintGroup>,
 }
 
 pub fn layout_document(document: &Document, viewport_width: i32) -> LayoutTree {
