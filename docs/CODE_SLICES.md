@@ -416,15 +416,21 @@ overconstrained horizontal fixed margins by preferring left in LTR/right in RTL.
 resolves auto margins to zero instead of centering against the viewport. Relative inline elements
 now retain box-stack identity even with no visible decoration. Lines emits per-fragment measured
 border/padding geometry, tracks their relative visual offsets without consuming flow space and
-identifies the nearest positioned inline ancestor for absolute descendants. Within one emitted line
-formatting run, first/last fragment padding edges (LTR/RTL) establish the positioned containing
-rectangle, including a definite height for percentage insets. Positioned blocks inside unpositioned
-inline ancestors retain the legacy static-position path, while fixed descendants remain
-viewport-anchored. Cross-run fragment accumulation across separate block splits, complex/replaced
-positioned constraints, bidi/vertical writing, multicol, sticky and stacking remain later work.
-WPT Positioning v1 stays 36/100 (36.00%) on the frozen manifest without regression; project
-regressions cover both margin equations and this new inline rectangle slice. WPT Static remains
-frozen at 187/200 for historical comparison.
+identifies the nearest positioned inline ancestor for absolute descendants. The flow context now
+accumulates fragments across separate formatting runs, including block children that split an inline.
+It defers absolute inline descendants until the complete first/last padding-edge rectangle (LTR/RTL)
+is known. Pending positioned children retain their hypothetical static coordinates, containing
+context fallback and flow width; relative block translations also shift pending positions and
+fragment bounds. Independently formatted inline-block/table/flex/floated subtrees drain their own
+deferred queues before being moved into the parent. A deferred positioned subtree can itself enqueue
+more deferred descendants, which are drained in order without affecting normal-flow placement.
+RTL absolute/fixed block-level children with both horizontal insets auto now anchor against the
+hypothetical flow width rather than the viewport width. Fixed descendants with explicit insets still
+use the viewport, and blocks inside unpositioned inline ancestors keep legacy static-position flow.
+Complex/replaced positioned constraints, bidi/vertical writing, multicol, sticky and stacking remain.
+WPT Positioning v1 stays 36/100 (36.00%) on the frozen manifest without regression; eight project
+integration tests now protect the cross-run, nested/RTL and static-position cases. WPT Static
+remains at 187/200 for historical comparison.
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore

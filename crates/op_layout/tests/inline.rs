@@ -190,6 +190,211 @@ fn non_positioned_inline_does_not_reparent_block_level_absolute_static_position(
 }
 
 #[test]
+fn split_inline_containing_block_spans_distinct_formatter_runs() {
+    let page = layout(
+        "<div style='margin:0;width:300px'><span style='position:relative;background:red'>AA<div style='height:30px'></div>BBBB<span style='position:absolute;left:0;right:0;top:0;bottom:0;background:blue'></span></span></div>",
+        800,
+        &mut Fixed,
+    );
+    let fragments: Vec<_> = page
+        .box_decorations
+        .iter()
+        .filter(|box_| box_.background == op_css::CssColor::RED.into())
+        .collect();
+    assert_eq!(fragments.len(), 2);
+    let blue = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    let first = fragments[0];
+    let last = fragments[1];
+    assert_eq!(blue.x, first.x);
+    assert_eq!(blue.y, first.y);
+    assert_eq!(blue.width, last.x + last.width - first.x);
+    assert_eq!(blue.height, last.y + last.height - first.y);
+}
+
+#[test]
+fn earlier_absolute_child_waits_for_later_split_inline_fragments() {
+    let page = layout(
+        "<div style='margin:0;width:300px'><span style='position:relative;background:red'>AA<span style='position:absolute;left:0;top:0;bottom:0;width:9px;background:blue'></span><div style='height:30px'></div>BBBB</span></div>",
+        800,
+        &mut Fixed,
+    );
+    let fragments: Vec<_> = page
+        .box_decorations
+        .iter()
+        .filter(|box_| box_.background == op_css::CssColor::RED.into())
+        .collect();
+    assert_eq!(fragments.len(), 2);
+    let blue = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    assert_eq!((blue.x, blue.y), (fragments[0].x, fragments[0].y));
+    assert_eq!(
+        blue.height,
+        fragments[1].y + fragments[1].height - fragments[0].y
+    );
+}
+
+#[test]
+fn relative_outer_block_translates_deferred_inline_descendant() {
+    let page = layout(
+        "<div style='position:relative;left:35px;top:14px;margin:0'><span style='position:relative;background:red'>AA<span style='position:absolute;left:0;top:0;width:10px;height:10px;background:blue'></span></span></div>",
+        800,
+        &mut Fixed,
+    );
+    let red = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::RED.into())
+        .unwrap();
+    let blue = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    assert_eq!((blue.x, blue.y), (red.x, red.y));
+    assert_eq!(blue.x, 67);
+}
+
+#[test]
+fn linked_and_unlinked_nested_inline_backgrounds_keep_same_green_geometry() {
+    let original = layout(
+        "<style>*{background-color:white}div *:not(:link):not(:visited){background-color:green}</style><div><a href='#'>Unvisited (<span>Green</span>)</a><a href='#'>Visited (<span>Green</span>)</a><span>Green</span></div>",
+        800,
+        &mut Fixed,
+    );
+    let reference = layout(
+        "<style>span{background-color:green}</style><div><a href='#'>Unvisited (<span>Green</span>)</a><a href='#'>Visited (<span>Green</span>)</a><span>Green</span></div>",
+        800,
+        &mut Fixed,
+    );
+    let green = op_css::CssColor::GREEN.into();
+    let tested: Vec<_> = original
+        .box_decorations
+        .iter()
+        .filter(|b| b.background == green)
+        .map(|b| (b.x, b.y, b.width, b.height))
+        .collect();
+    let expected: Vec<_> = reference
+        .box_decorations
+        .iter()
+        .filter(|b| b.background == green)
+        .map(|b| (b.x, b.y, b.width, b.height))
+        .collect();
+    assert_eq!(tested, expected);
+}
+
+#[test]
+fn rtl_static_absolute_block_uses_its_hypothetical_flow_width() {
+    for direction in ["rtl", "ltr"] {
+        let html = format!(
+            "<div style='direction:{direction};width:200px;margin:0;background:red'><div style='position:absolute;width:30px;height:10px;background:blue'></div><span>Flow</span></div>"
+        );
+        let page = layout(&html, 800, &mut Fixed);
+        let container = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == op_css::CssColor::RED.into())
+            .unwrap();
+        let child = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+            .unwrap();
+        let offset = if direction == "rtl" { 170 } else { 0 };
+        assert_eq!(child.x, container.x + offset, "{direction}");
+        assert_eq!((child.width, child.height), (30, 10));
+    }
+}
+
+#[test]
+fn rtl_fixed_static_block_uses_parent_flow_width_not_full_viewport() {
+    let page = layout(
+        "<div style='direction:rtl;width:200px;margin:0;background:red'><div style='position:fixed;width:30px;height:10px;background:blue'></div>Flow</div>",
+        800,
+        &mut Fixed,
+    );
+    let container = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::RED.into())
+        .unwrap();
+    let child = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    assert_eq!(child.x, container.x + 170);
+}
+
+#[test]
+fn rtl_split_inline_uses_later_continuation_as_left_padding_edge() {
+    let page = layout(
+        "<div style='margin:0;width:180px'>prefix <span style='direction:rtl;position:relative;background:red'>AA<div style='height:20px'></div>BBBB<span style='position:absolute;left:0;top:0;width:6px;height:8px;background:blue'></span></span></div>",
+        800,
+        &mut Fixed,
+    );
+    let reds: Vec<_> = page
+        .box_decorations
+        .iter()
+        .filter(|box_| box_.background == op_css::CssColor::RED.into())
+        .collect();
+    assert_eq!(reds.len(), 2);
+    let blue = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    assert_ne!(reds[0].x, reds[1].x);
+    assert_eq!(blue.x, reds[1].x);
+    assert_eq!(blue.y, reds[0].y);
+}
+
+#[test]
+fn nested_deferred_absolute_subtrees_finish_after_their_parent() {
+    let page = layout(
+        "<div style='margin:0'><span style='position:relative;background:red'>AAA<span style='position:absolute;left:12px;top:7px;width:80px;height:35px;background:blue'><span style='position:relative;background:#00ffff'>B<span style='position:absolute;left:3px;top:5px;width:8px;height:9px;background:green'></span></span></span></span></div>",
+        800,
+        &mut Fixed,
+    );
+    let red = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::RED.into())
+        .unwrap();
+    let blue = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    let yellow = page
+        .box_decorations
+        .iter()
+        .find(|box_| {
+            box_.background
+                == op_layout::TextColor {
+                    red: 0,
+                    green: 255,
+                    blue: 255,
+                    alpha: 255,
+                }
+        })
+        .unwrap();
+    let green = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::GREEN.into())
+        .unwrap();
+    assert_eq!((blue.x, blue.y), (red.x + 12, red.y + 7));
+    assert_eq!((green.x, green.y), (yellow.x + 3, yellow.y + 5));
+}
+
+#[test]
 fn nested_decorations_keep_outer_geometry_and_paint_order_across_text_styles() {
     let page = layout(
         "<p style='line-height:18px'><span style='padding:2px 3px;border:1px solid red;background:red'>A<span style='padding:4px 5px;border:2px solid blue;background:blue'><b>B</b></span>C</span>Z</p>",

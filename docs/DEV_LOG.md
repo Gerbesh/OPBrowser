@@ -2207,3 +2207,30 @@ This file is append-only project history.
 - Rebuilt local `target/release/op_browser.exe`: **1,056,256 bytes**, SHA-256
   `0DEE29CA9CB3A15AB2A4FDA4B4EF2EA5F880ACA04FBB2453EF6342EFE189036D`.
 
+## 2026-10-08 - Cross-run inline containing geometry and RTL static offsets
+
+- Persist positioned inline fragment rectangles at the flow-context level rather than losing
+  them after each local line-layout emission. Position-absolute children with relative inline
+  ancestors now wait until all continuations are known across intervening block descendants.
+- Add a bounded, index-drained deferred positioned queue: later absolute subtrees can enqueue
+  their own nested relative inline descendants, which are resolved in the same pass.
+  Independently formatted table, inline-block, inline-flex and atomic block subtrees drain
+  their own pending positions before being transferred to their parent output.
+- Carry deferred coordinates, fallback containing geometry and fragments through outer relative
+  block translations. The static position now includes hypothetical flow width, allowing
+  right-to-left absolutely/fixed positioned blocks with unspecified horizontal insets to anchor
+  to their hypothetical flow right edge instead of the whole viewport.
+- Eight new deterministic inline-layout regressions: spanning block-split fragments, markers
+  before the last fragment, relative translation, nested deferred descendants, RTL continuations,
+  RTL static absolute/fixed blocks and background geometry parity.
+- Pinned external metrics remain WPT Static **187/200 (93.50%)**, WPT Positioning
+  **36/100 (36.00%)**, Test262 Parser **523/1983 (26.37%)** with no new render errors.
+- Investigated an intrinsic inline font-height correction; although several failed WPT pixel
+  distances improved, it newly failed a previously passing static link-background test by one
+  pixel row. Rolled that experimental correction back rather than accepting the regression.
+  The known content-height/line-height cases remain for a dedicated typography pass.
+- Full workspace rustfmt, Clippy with -D warnings, cargo tests, Windows startup/paint smoke
+  and optimized release build passed. Rebuilt `target/release/op_browser.exe`:
+  **1,058,304 bytes**, SHA-256
+  `848E3E20616377D09A2B453CE76FBEB9175D0F50E0516778587F5F0B8C9BB25A`.
+

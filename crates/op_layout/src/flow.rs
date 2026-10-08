@@ -48,6 +48,8 @@ pub(super) fn layout(
         positioning_stack: Vec::new(),
         flow_height_stack: vec![Some(viewport_height)],
         inline_positioned: Vec::new(),
+        inline_fragments: Vec::new(),
+        deferred_inline: Vec::new(),
         block_epoch: 0,
         floats: Vec::new(),
         decorations: Vec::new(),
@@ -73,6 +75,7 @@ pub(super) fn layout(
         );
         context.flush_pending_margin();
     }
+    context.finish_deferred_inline();
     LayoutTree {
         viewport_width,
         content_height: context.y + 24,
@@ -98,6 +101,8 @@ struct Context<'a, 'm> {
     positioning_stack: Vec<PositioningContext>,
     flow_height_stack: Vec<Option<i32>>,
     inline_positioned: Vec<InlinePositioned<'a>>,
+    inline_fragments: Vec<InlineFragment>,
+    deferred_inline: Vec<DeferredInlinePositioned<'a>>,
     block_epoch: usize,
     floats: Vec<FloatBox>,
     decorations: Vec<BoxDecoration>,
@@ -158,6 +163,8 @@ struct OutputStart {
     decorations: usize,
     text: usize,
     images: usize,
+    fragments: usize,
+    deferred: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -166,6 +173,14 @@ struct InlinePositioned<'a> {
     href: Option<&'a str>,
     style: Style,
     display: Display,
+}
+
+#[derive(Clone, Copy)]
+struct DeferredInlinePositioned<'a> {
+    element: InlinePositioned<'a>,
+    static_position: (i32, i32, i32),
+    ancestor: NodeId,
+    fallback: PositioningContext,
 }
 
 impl FloatBox {
@@ -427,25 +442,56 @@ impl<'a> Context<'a, '_> {
                 LayoutItem::Image(index) => LayoutItem::Image(index + self.images_out.len()),
             }));
         let positioned = lines.positioned.clone();
-        let fragments = lines.fragments.clone();
+        self.inline_fragments.extend(lines.fragments);
         self.decorations.extend(lines.decorations);
         self.text.extend(lines.text_boxes);
         self.images_out.extend(lines.image_boxes);
 
         for marker in positioned {
             if let Some(positioned) = self.inline_positioned.get(marker.marker).copied() {
-                self.positioned_element(
-                    positioned.id,
-                    positioned.href,
-                    positioned.style,
-                    positioned.display,
-                    (marker.x, marker.y),
-                    marker
-                        .ancestor
-                        .and_then(|ancestor| Self::inline_containing_context(ancestor, &fragments)),
-                );
+                if let Some(ancestor) = marker.ancestor
+                    && positioned.style.position == Position::Absolute
+                {
+                    self.deferred_inline.push(DeferredInlinePositioned {
+                        element: positioned,
+                        static_position: (marker.x, marker.y, width),
+                        ancestor,
+                        fallback: self.current_positioning_context(),
+                    });
+                } else {
+                    self.positioned_element(
+                        positioned.id,
+                        positioned.href,
+                        positioned.style,
+                        positioned.display,
+                        (marker.x, marker.y, width),
+                        None,
+                    );
+                }
             }
         }
+    }
+
+    fn finish_deferred_inline(&mut self) {
+        let mut cursor = 0;
+        // A deferred absolute subtree can enqueue another positioned inline
+        // descendant, so drain the growing queue rather than a one-time snapshot.
+        while cursor < self.deferred_inline.len() {
+            let pending = self.deferred_inline[cursor];
+            cursor += 1;
+            let containing =
+                Self::inline_containing_context(pending.ancestor, &self.inline_fragments)
+                    .unwrap_or(pending.fallback);
+            self.positioned_element(
+                pending.element.id,
+                pending.element.href,
+                pending.element.style,
+                pending.element.display,
+                pending.static_position,
+                Some(containing),
+            );
+        }
+        self.deferred_inline.clear();
     }
 
     fn inline_containing_context(
@@ -492,12 +538,24 @@ impl<'a> Context<'a, '_> {
             decorations: self.decorations.len(),
             text: self.text.len(),
             images: self.images_out.len(),
+            fragments: self.inline_fragments.len(),
+            deferred: self.deferred_inline.len(),
         }
     }
 
     fn translate_outputs_since(&mut self, start: OutputStart, dx: i32, dy: i32) {
         if dx == 0 && dy == 0 {
             return;
+        }
+        for fragment in &mut self.inline_fragments[start.fragments..] {
+            fragment.x = fragment.x.saturating_add(dx);
+            fragment.y = fragment.y.saturating_add(dy);
+        }
+        for pending in &mut self.deferred_inline[start.deferred..] {
+            pending.static_position.0 = pending.static_position.0.saturating_add(dx);
+            pending.static_position.1 = pending.static_position.1.saturating_add(dy);
+            pending.fallback.x = pending.fallback.x.saturating_add(dx);
+            pending.fallback.y = pending.fallback.y.saturating_add(dy);
         }
         for decoration in &mut self.decorations[start.decorations..] {
             decoration.x = decoration.x.saturating_add(dx);
@@ -535,10 +593,10 @@ impl<'a> Context<'a, '_> {
         href: Option<&'a str>,
         mut style: Style,
         display: Display,
-        static_position: (i32, i32),
+        static_position: (i32, i32, i32),
         containing_override: Option<PositioningContext>,
     ) {
-        let (static_x, static_y) = static_position;
+        let (static_x, static_y, static_width) = static_position;
         self.flush_pending_margin();
         let saved_y = self.y;
         let saved_margin = self.pending_margin.take();
@@ -621,6 +679,14 @@ impl<'a> Context<'a, '_> {
                 .x
                 .saturating_add(positioning.width)
                 .saturating_sub(right)
+                .saturating_sub(used.margin_left)
+                .saturating_sub(used.border_width)
+                .saturating_sub(used.margin_right)
+        } else if style.direction == Direction::Rtl && display != Display::Inline {
+            // With both horizontal insets auto, a hypothetical block in RTL
+            // starts at the containing block's right content edge.
+            static_x
+                .saturating_add(static_width)
                 .saturating_sub(used.margin_left)
                 .saturating_sub(used.border_width)
                 .saturating_sub(used.margin_right)
@@ -1066,6 +1132,8 @@ impl<'a> Context<'a, '_> {
             positioning_stack: Vec::new(),
             flow_height_stack: vec![None],
             inline_positioned: Vec::new(),
+            inline_fragments: Vec::new(),
+            deferred_inline: Vec::new(),
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -1074,6 +1142,7 @@ impl<'a> Context<'a, '_> {
             order: Vec::new(),
         };
         let metrics = local.table_box(&children, id, style, 0, available);
+        local.finish_deferred_inline();
 
         for decoration in &mut local.decorations {
             decoration.x = decoration.x.saturating_add(margin_left);
@@ -1148,6 +1217,8 @@ impl<'a> Context<'a, '_> {
             positioning_stack: Vec::new(),
             flow_height_stack: vec![None],
             inline_positioned: Vec::new(),
+            inline_fragments: Vec::new(),
+            deferred_inline: Vec::new(),
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -1157,6 +1228,7 @@ impl<'a> Context<'a, '_> {
         };
         local.block(BlockContent::Element(id), None, style, 0, available);
         local.flush_pending_margin();
+        local.finish_deferred_inline();
 
         for decoration in &mut local.decorations {
             decoration.x = decoration.x.saturating_add(margin_left);
@@ -1230,6 +1302,8 @@ impl<'a> Context<'a, '_> {
             positioning_stack: Vec::new(),
             flow_height_stack: vec![None],
             inline_positioned: Vec::new(),
+            inline_fragments: Vec::new(),
+            deferred_inline: Vec::new(),
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -1239,6 +1313,7 @@ impl<'a> Context<'a, '_> {
         };
         local.block(BlockContent::Element(id), None, style, 0, available);
         local.flush_pending_margin();
+        local.finish_deferred_inline();
 
         for decoration in &mut local.decorations {
             decoration.x = decoration.x.saturating_add(margin_left);
@@ -1478,6 +1553,8 @@ impl<'a> Context<'a, '_> {
             positioning_stack: Vec::new(),
             flow_height_stack: vec![None],
             inline_positioned: Vec::new(),
+            inline_fragments: Vec::new(),
+            deferred_inline: Vec::new(),
             block_epoch: 0,
             floats: Vec::new(),
             decorations: Vec::new(),
@@ -1504,6 +1581,7 @@ impl<'a> Context<'a, '_> {
             );
         }
         local.flush_pending_margin();
+        local.finish_deferred_inline();
         let height = local.y.max(0);
         InlineAtomic {
             width: used
@@ -3270,7 +3348,7 @@ impl<'a> Context<'a, '_> {
                             href,
                             current,
                             display,
-                            (containing_x, static_y),
+                            (containing_x, static_y, containing_width),
                             None,
                         );
                     }

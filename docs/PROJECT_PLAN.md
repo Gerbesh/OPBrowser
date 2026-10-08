@@ -275,10 +275,12 @@ Status: IN PROGRESS.
   only at used layout geometry. Absolute/fixed non-replaced blocks now also solve horizontal and
   vertical auto margins inside definite opposing insets, including negative available space,
   one-auto-margin cases and direction-dependent horizontal overconstraint precedence.
-  An initial inline containing-block path now records relative inline fragment rectangles,
-  resolves absolute children against first/last padding edges within one inline formatting run,
-  honors LTR/RTL and visual relative offsets, and keeps fixed elements viewport-anchored.
-  Cross-run split-inline containing rectangles, complete bidi/vertical writing, multicol,
+  Inline containing blocks now record relative inline fragment rectangles, including
+  continuations across separate formatting runs and intervening block descendants.
+  Absolute descendants are resolved after all fragments are measured; nested deferred
+  positioned subtrees are drained in order, with relative visual translations retained.
+  RTL/LTR static block offsets without horizontal insets use the hypothetical flow width
+  rather than the viewport width. Complete bidi/vertical writing, multicol,
   replaced-element/complex CSS2 positioned constraints and stacking remain NEXT, followed by
   `overflow`, media queries, font faces, background images, border radius and broader flex/grid work.
 - LATER broader computed values outside the readable-static-web priority.
@@ -325,8 +327,14 @@ Status: IN PROGRESS.
   computed first/last fragment padding edges, LTR/RTL anchoring and relative visual translation;
   five new regression tests guard ordinary, nested, wrapped, RTL and legacy static-position cases.
   The unchanged pinned WPT Positioning v1 remains 36/100 (36.00%) with no regressions.
-- NEXT cross-run split-inline containing rectangles, CSS2 content-height/line-height cases,
-  remaining abspos constraints, vertical writing / multicol and sticky, then `overflow`;
+- DONE cross-run relative-inline containing rectangles: fragment tracking survives block boundaries,
+  absolute children are deferred until the full containing rectangle is known, nested deferred
+  subtrees resolve correctly, and relative ancestor visual offsets propagate to deferred geometry.
+  CSS2 RTL/static horizontal block placement uses hypothetical flow width for absolute and fixed.
+  Eight focused layout integration tests were added (36 total in the inline test suite).
+  The unchanged WPT Positioning v1 is 36/100 with no score regression.
+- NEXT CSS2 intrinsic inline content-height/line-height work (without regressing the frozen WPT
+  suite), remaining abspos constraints, vertical writing / multicol, sticky and `overflow`;
   keep WPT Static v1 frozen for historical comparability.
 
 ## M3 - Original JavaScript engine

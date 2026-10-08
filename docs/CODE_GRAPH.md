@@ -438,7 +438,13 @@ classDiagram
     class InlineFragment {
         node_id / direction
         border box / padding edge bounds
-        per-line relative inline containing geometry
+        persistent cross-run relative containing geometry
+    }
+    class DeferredInlinePositioned {
+        element identity / style / display
+        static x-y / hypothetical flow width
+        inline ancestor identity
+        fallback positioning context
     }
     class InlineStyle {
         typography
@@ -471,6 +477,8 @@ classDiagram
         current y / floats
         positioning_stack PositioningContext[]
         flow_height_stack Option<int>[]
+        inline_fragments InlineFragment[]
+        deferred_inline DeferredInlinePositioned[]
         output vectors
     }
     class PositioningContext {
