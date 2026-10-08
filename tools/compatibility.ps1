@@ -91,11 +91,24 @@ try {
         $RuntimeMetric = Get-Content $RuntimeJson -Raw | ConvertFrom-Json
         Write-ShieldsBadge -Path (Join-Path $ResolvedOutput "test262-runtime-v1-badge.json") -Label "Test262 runtime v1" -Percent $RuntimeMetric.percent -Passed $RuntimeMetric.passed -Total $RuntimeMetric.attempted
         $Summary += ("- Test262 runtime v1: **{0:N2}%** ({1}/{2} attempted); {3} explicitly skipped; pinned revision verified={4}. Narrow classic-script sample only." -f $RuntimeMetric.percent, $RuntimeMetric.passed, $RuntimeMetric.attempted, $RuntimeMetric.skipped, $RuntimeMetric.revision_verified)
+
+        $RuntimeV2Manifest = Join-Path $RepoRoot "compat\test262-runtime-v2.txt"
+        $RuntimeV2Json = Join-Path $ResolvedOutput "test262-runtime-v2.json"
+        Write-Host ""
+        Write-Host "== Test262 runtime broader sample v2 =="
+        & $Cargo run -p op_js --quiet --bin test262_runtime_probe -- $ResolvedTest262 --manifest $RuntimeV2Manifest --json-out $RuntimeV2Json
+        if ($LASTEXITCODE -ne 0) {
+            throw "Test262 runtime v2 probe failed with exit code $LASTEXITCODE"
+        }
+        $RuntimeV2Metric = Get-Content $RuntimeV2Json -Raw | ConvertFrom-Json
+        Write-ShieldsBadge -Path (Join-Path $ResolvedOutput "test262-runtime-v2-badge.json") -Label "Test262 runtime v2" -Percent $RuntimeV2Metric.percent -Passed $RuntimeV2Metric.passed -Total $RuntimeV2Metric.attempted
+        $Summary += ("- Test262 runtime v2: **{0:N2}%** ({1}/{2} attempted); {3} explicitly skipped among {4} listed in 25 families; pinned revision verified={5}. Not full ECMAScript coverage." -f $RuntimeV2Metric.percent, $RuntimeV2Metric.passed, $RuntimeV2Metric.attempted, $RuntimeV2Metric.skipped, $RuntimeV2Metric.listed, $RuntimeV2Metric.revision_verified)
     } else {
         Write-Host ""
         Write-Host "Test262 parser and runtime subsets skipped. Pass -Test262Path <path-to-test262-test>."
         $Summary += "- Test262 parser v1: not run"
         $Summary += "- Test262 runtime v1: not run"
+        $Summary += "- Test262 runtime v2: not run"
     }
 
     if ($WptPath) {

@@ -29,6 +29,7 @@ pub(crate) struct TryTemplate {
 pub(crate) enum Instruction {
     Push(JsValue),
     Load(String),
+    TypeofBinding(String),
     Declare {
         name: String,
         kind: VariableKind,
@@ -602,9 +603,37 @@ impl Compiler {
                     });
                 }
             },
+            Expression::Unary {
+                op: UnaryOp::Typeof,
+                argument,
+            } => {
+                // typeof aMissingName is defined as 'undefined' even
+                // when an ordinary Load would throw ReferenceError.
+                if let Expression::Identifier(name) = argument.as_ref() {
+                    self.code.push(Instruction::TypeofBinding(name.clone()));
+                } else {
+                    self.expression(argument);
+                    self.code.push(Instruction::Unary(UnaryOp::Typeof));
+                }
+            }
             Expression::Unary { op, argument } => {
                 self.expression(argument);
                 self.code.push(Instruction::Unary(*op));
+            }
+            Expression::Conditional {
+                test,
+                consequent,
+                alternate,
+            } => {
+                self.expression(test);
+                let false_jump = self.emit_jump_if_false();
+                self.code.push(Instruction::Pop);
+                self.expression(consequent);
+                let end_jump = self.emit_jump();
+                self.patch_jump(false_jump, self.code.len());
+                self.code.push(Instruction::Pop);
+                self.expression(alternate);
+                self.patch_jump(end_jump, self.code.len());
             }
             Expression::Binary { left, op, right } => {
                 self.expression(left);

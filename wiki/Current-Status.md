@@ -141,3 +141,17 @@ also work. The same pinned 91 upstream Test262 classic runtime
 fixtures improved from 59/91 to 82/91 (90.11%) without skips.
 This is a narrow legacy arithmetic/equality sample, not overall
 JS conformance. Eval, Date and Symbol are still missing.
+
+## M4.18: broader pinned runtime compatibility sample
+
+Beyond the narrow legacy arithmetic/equality 82/91 runtime score,
+the new 25-family Test262 Runtime v2 samples 289 cases. 179 can be
+attempted by the currently limited harness, 110 are explicitly
+skipped, and 65/179 (36.31%) pass. On this fixed selection the previous
+baseline was 39/179 (21.79%). This is a more useful view of modern
+JavaScript gaps, but still not a comprehensive conformity score.
+
+Native typeof, ternary expressions, Array.isArray/of, Number.isNaN/
+isFinite and Object.is now work and are tested through native page
+rendering. Modern application compatibility remains substantially
+behind the narrow static CSS metrics.

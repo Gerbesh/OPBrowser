@@ -18,6 +18,12 @@ Documentation snapshot (8 October 2026): frozen **WPT Static v1 strict
 197/200 (98.5%)**, WPT-metadata-aware **198/200 (99%, separately reported)**,
 WPT Positioning v1 **53/100 (53%)**, Test262 Parser v1 **523/1983 (26.37%)**
 parse-only. These are *narrow pinned subsets*, not overall browser readiness.
+Test262 runtime M4.18 adds a pinned and deterministic 289-case selection
+across 25 language and built-in families. On the supported classic-script
+harness subset, 65/179 (36.31%) pass and 110 unsupported cases are explicitly
+SKIP. This is broader but still not a full Test262 or website score.
+The former 91-case arithmetic/equality suite remains 82/91 (90.11%);
+the two scores are separate and must not be averaged.
 Two Rec.2020 tests remain counted as failures but are classified as
 known reference divergences against current CSS Color 4 gamma 2.4.
 

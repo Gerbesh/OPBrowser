@@ -11,6 +11,7 @@ externally measured web-compatibility score.
 | WPT Positioning v1 strict | 53/100 (53.00%) | 100 selected positioning cases |
 | Test262 Parser v1 | 523/1983 (26.37%) | Parse-only tests, not JS execution |
 | Test262 Runtime v1 (M4.17) | 82/91 (90.11%) | Narrow, pinned classic arithmetic/equality subset only |
+| Test262 Runtime v2 (M4.18) | 65/179 (36.31%) | 289 selected across 25 families, 110 explicitly skipped |
 
 The Runtime v1 subset was rerun during M4.17 against the verified pinned
 upstream revision; the three other subset scores are carried forward
@@ -44,7 +45,7 @@ full declared end goal rather than passing percentage of milestones.
 
 ## Recommended engineering order
 
-1. Broaden the pinned Test262 runtime harness to a representative v2
+1. Expand the pinned Test262 runtime v2 harness toward more real includes and strict-mode variants
    while retaining the unchanged v1 baseline; add dynamic DOM/WPT.
 2. Improve core JS parsing/semantics, DOM tree modification and CSS layout.
 3. Build multi-tab renderer isolation and real browser-origin/cookie/cache

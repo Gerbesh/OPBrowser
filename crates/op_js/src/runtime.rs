@@ -91,6 +91,11 @@ enum BuiltinFunction {
     StringConstructor,
     IsNaN,
     IsFinite,
+    ArrayIsArray,
+    ArrayOf,
+    NumberIsNaN,
+    NumberIsFinite,
+    ObjectIs,
     ObjectPrototypeValueOf,
     ObjectPrototypeToString,
     BoxedPrimitiveValueOf,
@@ -625,6 +630,23 @@ impl JsRuntime {
                     ),
                 ]));
         }
+        for (constructor, method, builtin, length) in [
+            ("Array", "isArray", BuiltinFunction::ArrayIsArray, 1.0),
+            ("Array", "of", BuiltinFunction::ArrayOf, 0.0),
+            ("Number", "isNaN", BuiltinFunction::NumberIsNaN, 1.0),
+            ("Number", "isFinite", BuiltinFunction::NumberIsFinite, 1.0),
+            ("Object", "is", BuiltinFunction::ObjectIs, 2.0),
+        ] {
+            let method_id = self.allocate_lifecycle_method(method, builtin)?;
+            self.object_mut(method_id)?
+                .properties
+                .insert("length".into(), JsValue::Number(length));
+            if let Some(JsValue::Object(constructor_id)) = self.global(constructor).cloned() {
+                self.object_mut(constructor_id)?
+                    .properties
+                    .insert(method.into(), JsValue::Object(method_id));
+            }
+        }
         self.install_global_binding("NaN", JsValue::Number(f64::NAN), false, VariableKind::Const);
         self.install_global_binding(
             "Infinity",
@@ -685,6 +707,19 @@ impl JsRuntime {
         Err(JsError::type_error(
             "cannot convert object to primitive value",
         ))
+    }
+
+    fn typeof_value(&self, value: &JsValue) -> Result<JsValue, JsError> {
+        let category = match value {
+            JsValue::Undefined => "undefined",
+            JsValue::Null => "object",
+            JsValue::Boolean(_) => "boolean",
+            JsValue::Number(_) => "number",
+            JsValue::String(_) => "string",
+            JsValue::Object(id) if self.object(*id)?.function.is_some() => "function",
+            JsValue::Object(_) => "object",
+        };
+        Ok(JsValue::String(category.into()))
     }
 
     fn binary_with_coercion(
@@ -1467,6 +1502,14 @@ impl JsRuntime {
                 Instruction::Load(name) => {
                     stack.push(self.load_binding(env, name)?.clone());
                 }
+                Instruction::TypeofBinding(name) => {
+                    let value = match self.load_binding(env, name) {
+                        Ok(value) => value.clone(),
+                        Err(error) if error.kind == JsErrorKind::Reference => JsValue::Undefined,
+                        Err(error) => return Err(error),
+                    };
+                    stack.push(self.typeof_value(&value)?);
+                }
                 Instruction::Declare {
                     name,
                     kind,
@@ -1626,7 +1669,12 @@ impl JsRuntime {
                 }
                 Instruction::Unary(op) => {
                     let value = stack.pop().expect("compiler must push unary operand");
-                    stack.push(apply_unary(*op, value));
+                    let result = if *op == UnaryOp::Typeof {
+                        self.typeof_value(&value)?
+                    } else {
+                        apply_unary(*op, value)
+                    };
+                    stack.push(result);
                 }
                 Instruction::Binary(op) => {
                     let right = stack.pop().expect("compiler must push right operand");
@@ -1976,6 +2024,49 @@ impl JsRuntime {
                         .to_number()
                         .is_finite(),
                 )));
+            }
+            BuiltinFunction::ArrayIsArray => {
+                let is_array = match arguments.first() {
+                    Some(JsValue::Object(id)) => self.object(*id)?.kind == ObjectKind::Array,
+                    _ => false,
+                };
+                return Ok(CallOutcome::Value(JsValue::Boolean(is_array)));
+            }
+            BuiltinFunction::ArrayOf => {
+                if arguments.len() > 4096 {
+                    return Err(JsError::execution_limit("Array.of length budget exceeded"));
+                }
+                let mut props = HashMap::new();
+                for (index, value) in arguments.iter().enumerate() {
+                    props.insert(index.to_string(), value.clone());
+                }
+                props.insert("length".into(), JsValue::Number(arguments.len() as f64));
+                let id =
+                    self.allocate_object(ObjectKind::Array, Some(self.array_prototype), props)?;
+                return Ok(CallOutcome::Value(JsValue::Object(id)));
+            }
+            BuiltinFunction::NumberIsNaN => {
+                return Ok(CallOutcome::Value(JsValue::Boolean(matches!(
+                    arguments.first(), Some(JsValue::Number(value)) if value.is_nan()
+                ))));
+            }
+            BuiltinFunction::NumberIsFinite => {
+                return Ok(CallOutcome::Value(JsValue::Boolean(matches!(
+                    arguments.first(), Some(JsValue::Number(value)) if value.is_finite()
+                ))));
+            }
+            BuiltinFunction::ObjectIs => {
+                let first = arguments.first().unwrap_or(&JsValue::Undefined);
+                let second = arguments.get(1).unwrap_or(&JsValue::Undefined);
+                let equal = match (first, second) {
+                    (JsValue::Number(a), JsValue::Number(b)) => {
+                        (a.is_nan() && b.is_nan())
+                            || a.to_bits() == b.to_bits()
+                            || (*a != 0.0 && *b != 0.0 && a == b)
+                    }
+                    _ => strict_equal(first, second),
+                };
+                return Ok(CallOutcome::Value(JsValue::Boolean(equal)));
             }
             BuiltinFunction::ObjectConstructor => {
                 if let Some(JsValue::Object(id)) = arguments.first() {
@@ -2492,6 +2583,11 @@ impl JsRuntime {
             | BuiltinFunction::StringConstructor
             | BuiltinFunction::IsNaN
             | BuiltinFunction::IsFinite
+            | BuiltinFunction::ArrayIsArray
+            | BuiltinFunction::ArrayOf
+            | BuiltinFunction::NumberIsNaN
+            | BuiltinFunction::NumberIsFinite
+            | BuiltinFunction::ObjectIs
             | BuiltinFunction::ObjectPrototypeValueOf
             | BuiltinFunction::ObjectPrototypeToString
             | BuiltinFunction::BoxedPrimitiveValueOf
@@ -2520,6 +2616,16 @@ impl JsRuntime {
             .ok_or_else(|| JsError::type_error("value is not a constructor"))?;
 
         if let FunctionImplementation::Builtin(builtin) = function.implementation {
+            if matches!(
+                builtin,
+                BuiltinFunction::ArrayIsArray
+                    | BuiltinFunction::ArrayOf
+                    | BuiltinFunction::NumberIsNaN
+                    | BuiltinFunction::NumberIsFinite
+                    | BuiltinFunction::ObjectIs
+            ) {
+                return Err(JsError::type_error("built-in method is not a constructor"));
+            }
             if matches!(
                 builtin,
                 BuiltinFunction::BooleanConstructor
@@ -3100,6 +3206,7 @@ fn apply_unary(op: UnaryOp, value: JsValue) -> JsValue {
         UnaryOp::Minus => JsValue::Number(-value.to_number()),
         UnaryOp::Not => JsValue::Boolean(!value.is_truthy()),
         UnaryOp::Void => JsValue::Undefined,
+        UnaryOp::Typeof => unreachable!("typeof needs runtime heap or missing name inspection"),
     }
 }
 
@@ -3186,6 +3293,94 @@ mod tests {
             JsValue::Number(1.0)
         );
         assert_eq!(runtime.global("x"), Some(&JsValue::Number(5.0)));
+    }
+
+    #[test]
+    fn array_and_number_static_methods_preserve_types_and_edge_values() {
+        let mut vm = JsRuntime::new();
+        assert_eq!(
+            vm.eval_script(
+                "Array.isArray([]) && !Array.isArray({length:3}) && !Array.isArray() && \
+             Array.of().length===0 && Array.of(5).length===1 && \
+             Array.of(5)[0]===5 && Array.of(1,2,3)[2]===3 && \
+             Number.isNaN(NaN) && !Number.isNaN('NaN') && \
+             !Number.isNaN(undefined) && !Number.isNaN(0) && \
+             Number.isFinite(1) && Number.isFinite(0) && \
+             !Number.isFinite('1') && !Number.isFinite(Infinity) && \
+             !Number.isFinite(NaN)"
+            )
+            .unwrap(),
+            JsValue::Boolean(true)
+        );
+    }
+
+    #[test]
+    fn object_is_implements_same_value_negative_zero_nan_identity() {
+        let mut vm = JsRuntime::new();
+        assert_eq!(
+            vm.eval_script(
+                "var object={}; \
+             Object.is(NaN,NaN) && !Object.is(0,-0) && Object.is(-0,-0) && \
+             Object.is(0,0) && Object.is(object,object) && \
+             !Object.is({}, {}) && !Object.is(1,'1') && \
+             Object.is(undefined,undefined) && Object.is(null,null)"
+            )
+            .unwrap(),
+            JsValue::Boolean(true)
+        );
+        assert_eq!(
+            vm.eval_script("Object.is.length === 2 && Array.isArray.length === 1")
+                .unwrap(),
+            JsValue::Boolean(true)
+        );
+    }
+
+    #[test]
+    fn typeof_handles_unbound_names_functions_and_property_errors() {
+        let mut vm = JsRuntime::new();
+        assert_eq!(
+            vm.eval_script(
+                "typeof unknownName === 'undefined' && typeof undefined === 'undefined' && \
+             typeof null === 'object' && typeof true === 'boolean' && \
+             typeof 42 === 'number' && typeof 'hello' === 'string' && \
+             typeof MathMissing === 'undefined' && \
+             typeof (function(){}) === 'function' && \
+             typeof JSON.parse === 'function' && \
+             typeof ({x:1}) === 'object' && \
+             typeof [1] === 'object'"
+            )
+            .unwrap(),
+            JsValue::Boolean(true)
+        );
+        assert!(vm.eval_script("typeof (null).missing").is_err());
+        assert_eq!(
+            vm.eval_script("var counter=0; typeof (counter=9); counter")
+                .unwrap(),
+            JsValue::Number(9.0)
+        );
+    }
+
+    #[test]
+    fn conditional_operator_is_lazy_and_right_associative() {
+        let mut vm = JsRuntime::new();
+        assert_eq!(
+            vm.eval_script(
+                "var count=0; \
+             var a=true ? 5 : (count=1); \
+             var b=false ? (count=2) : 3; \
+             var c=false ? 1 : true ? 7 : 8; \
+             var d=true ? false ? 1 : 6 : 4; \
+             count===0 && a===5 && b===3 && c===7 && d===6 && \
+             (false || true ? 'yes':'no')==='yes'"
+            )
+            .unwrap(),
+            JsValue::Boolean(true)
+        );
+        assert!(vm.eval_script("true ? 1;").is_err());
+        assert_eq!(
+            vm.eval_script("true ? 11 : missingName").unwrap(),
+            JsValue::Number(11.0)
+        );
     }
 
     #[test]

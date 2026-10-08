@@ -441,3 +441,22 @@ its pinned revision produced **82/91 (90.11%)**, versus 59/91
 (64.84%) at M4.16. Remaining nine failures require eval, Date
 or Symbol. This result must not be confused with broad ECMAScript
 runtime or parser compliance, nor with static WPT.
+
+## M4.18: broader Test262 measurements and syntax/builtin work
+
+A new deterministic Test262 runtime v2 manifest spans 289 upstream
+files across 25 independently named ES expression, statement and
+built-in families, selected without consulting pass/fail results.
+Of these, 179 are attempted and 110 are explicitly skipped as beyond
+the supported Test262 harness subset. M4.18 raised passes from 39/179
+(21.79%) to 65/179 (36.31%) on the same immutable manifest.
+The narrow Runtime v1 remains 82/91 (90.11%), not an overall score.
+
+The original VM gained correct typeof handling (including missing
+identifiers), nested lazy conditional expressions, Array.isArray,
+Array.of, Number.isNaN/Number.isFinite and Object.is SameValue.
+An integration test verifies DOM text updates become native pixels.
+
+Major omissions persist: modern ECMAScript syntax, Symbol, Date,
+iterators, Array.of custom constructor semantics, strict modes,
+many Test262 includes and complete JS/DOM/Web API compatibility.

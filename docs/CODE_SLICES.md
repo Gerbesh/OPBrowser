@@ -16,6 +16,21 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S22 - typeof/conditional/standards -> DOM -> pixels and Test262 v2 (M4.18)
+
+Status: IMPLEMENTED, pinned broad v2 runtime benchmark.
+
+External Test262 v2 manifest -> Test262 runtime probe -> op_js lexer and
+parser/bytecode -> native VM typeof and conditional branch -> fixture
+pass/fail/skip and JSON summary. The same parser/VM executes original
+inline page scripts through op_engine -> DOM textContent mutation ->
+native retained layout/paint. The integration test checks the rendered
+text, not just a headless interpreter variable.
+
+Wide manifest baseline 39/179 -> 65/179 attempted; 110 explicit SKIP.
+The older 91-case runtime subset stays 82/91. These are limited
+classic-script compatibility measurements, not a modern Web score.
+
 ## S21 - Primitive boxing and ToPrimitive to pinned Test262 (M4.17)
 
 Status: IMPLEMENTED bounded classic-script semantics.

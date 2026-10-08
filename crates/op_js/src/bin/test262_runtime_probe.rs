@@ -77,38 +77,38 @@ enum Outcome {
     Skip(&'static str),
 }
 
-fn section<'a>(meta: &'a str, field: &str) -> Option<&'a str> {
-    let prefix = format!("{field}:");
-    let (index, line) = meta
-        .lines()
-        .enumerate()
-        .find(|(_, line)| line.trim_start().starts_with(&prefix))?;
-    let from: Vec<_> = meta.lines().skip(index).collect();
-    let first = line.trim_start().strip_prefix(&prefix).unwrap_or("").trim();
-    if !first.is_empty() && first != "|" && first != ">" {
-        return Some(first);
-    }
-    for line in from.iter().skip(1) {
-        if line.starts_with("  ") || line.starts_with('\t') {
-            if !line.trim().is_empty() {
-                return Some(line.trim());
+/// Read the simple scalar/flow-list/indented-list YAML fields used by
+/// Test262. Never silently drop an unsupported includes/flags list.
+fn words(meta: &str, key: &str) -> Vec<String> {
+    let prefix = format!("{key}:");
+    let mut found = false;
+    let mut field = String::new();
+    for line in meta.lines() {
+        if !found {
+            if let Some(value) = line.strip_prefix(&prefix) {
+                found = true;
+                field.push_str(value);
+                field.push(' ');
             }
-        } else {
+            continue;
+        }
+        let trimmed = line.trim();
+        if !trimmed.is_empty()
+            && !line.starts_with([' ', '\t'])
+            && !trimmed.starts_with(['[', ']', '-'])
+        {
             break;
         }
+        field.push_str(trimmed);
+        field.push(' ');
     }
-    None
-}
-
-fn words(meta: &str, key: &str) -> Vec<String> {
-    let Some(value) = section(meta, key) else {
-        return vec![];
-    };
-    value
-        .trim_matches(&['[', ']'][..])
-        .split([',', ' '])
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
+    if !found {
+        return Vec::new();
+    }
+    field
+        .split([',', ' ', '[', ']', '\t', '\n'])
+        .map(|value| value.trim_matches(&['-', '\'', '"'][..]))
+        .filter(|value| !value.is_empty())
         .map(str::to_owned)
         .collect()
 }
@@ -386,7 +386,7 @@ fn report_json(
     let mut json = format!(
         concat!(
             "{{\n  \"schema_version\": 1,\n",
-            "  \"suite\": \"test262-runtime-v1\",\n",
+            "  \"suite\": {},\n",
             "  \"upstream\": {}, \"revision_verified\": {},\n",
             "  \"listed\": {}, \"attempted\": {}, \"passed\": {}, \"failed\": {},\n",
             "  \"skipped\": {}, \"skipped_modules\": {}, \"skipped_async\": {},\n",
@@ -394,6 +394,13 @@ fn report_json(
             "  \"skipped_includes\": {}, \"skipped_other\": {},\n",
             "  \"positive_passed\": {}, \"runtime_negative_passed\": {},\n",
             "  \"percent\": {:.2},\n  \"cases\": [\n"
+        ),
+        escape_json(
+            &config
+                .manifest
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy(),
         ),
         escape_json(manifest_revision(&manifest)),
         revision_verified,
@@ -466,6 +473,29 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reads_multiline_test262_metadata_without_silently_ignoring_includes() {
+        assert_eq!(
+            words(
+                "includes:\n  - assert.js\n  - compareArray.js\nflags: [noStrict]",
+                "includes"
+            ),
+            vec!["assert.js", "compareArray.js"]
+        );
+        assert_eq!(
+            words("flags: [\n  onlyStrict,\n  async\n]\nincludes: []", "flags"),
+            vec!["onlyStrict", "async"]
+        );
+        assert_eq!(
+            words("includes: []\nflags: [noStrict]", "includes"),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            evaluate("/*---\nincludes:\n  - assert.js\n  - compareArray.js\n---*/\nassert(true);"),
+            Outcome::Skip("unsupported include")
+        );
+    }
+
     #[test]
     fn metadata_and_negative_phase_are_safe() {
         let metadata = "flags: [noStrict]\nincludes: [assert.js, sta.js]\nnegative:\n  phase: runtime\n  type: TypeError";

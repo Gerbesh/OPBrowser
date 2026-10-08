@@ -410,3 +410,30 @@ Because v1 deliberately samples older arithmetic and equality tests,
 90.11% is only valid for this small selected fixture set. The overall
 JS runtime conformance percentage is unknown. Next build a separate,
 fixed and broader Test262 Runtime v2 rather than replacing v1.
+
+## Test262 Runtime v2 (M4.18): broader 25-family selection
+
+In addition to the narrow 91-case v1 suite, a second manifest now
+locks 289 independently chosen files from 25 Test262 feature directories
+in the exact same pinned upstream revision. Each group contributes up to
+12 evenly spaced, sorted file paths, not selected by expected success.
+The committed manifest, not the generator's evolving output, is the
+long-term comparable target. Re-generate only to audit identical output.
+
+Runtime v2: 39/179 (21.79%) at M4.17 baseline, rising to 65/179
+(36.31%) after M4.18. 289 listed, 179 attempted, 110 explicitly
+skipped, 114 attempted failures. v1 remains at 82/91 (90.11%).
+The wide score is much lower because features in JSON, Promise, Object,
+Array, String, modern syntax and builtin families remain incomplete.
+Both scores are scoped, not whole-ECMAScript conformance.
+
+M4.18 changes: native typeof including missing-identifier behavior,
+lazy and nested conditional expressions, Array.isArray/Array.of,
+Number.isNaN/Number.isFinite without implicit numeric coercion,
+and Object.is with NaN and signed-zero SameValue semantics.
+The runner parses Test262 list metadata including multiline includes/
+flags and labels the machine-readable suite name by manifest version.
+
+Run both with tools/compatibility.ps1 -ExternalOnly -RuntimeOnly
+-Test262Path <pinned-Test262/test>. Parse-only v1 and WPT retain their
+separate metrics; they were not rerun by the narrow runtime-only command.

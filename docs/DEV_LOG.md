@@ -2992,3 +2992,19 @@ This file is append-only project history.
 - This is a narrow legacy arithmetic/equality sample, NOT a new score
   for the whole JS engine. Keep parser, layout and modern runtime
   measurement independent.
+
+## 2026-10-09 - M4.18 broader Test262 and JS expression semantics
+
+- Added independent deterministic and version-pinned 289-fixture Test262
+  runtime v2 across 25 ES language and built-in families. Selection
+  is blind to expected pass/fail and frozen as a separate manifest.
+- Implemented native typeof with missing-name handling, nested lazy
+  conditional/ternary operator, Array.isArray, Array.of, Number.isNaN,
+  Number.isFinite and Object.is with signed-zero/NaN behavior.
+- Extended Test262 probe to distinguish v1 and v2 JSON suites and
+  robustly parse multi-line Test262 metadata; no silent include omission.
+  compatibility.ps1 now outputs two independent runtime reports.
+- Measured v2 on the unchanged pinned manifest: 39/179 to 65/179
+  attempted passing; 110 SKIP explicit; v1 unchanged at 82/91.
+- Added original VM and native rendering integration tests; documented
+  gap to modern ECMAScript, iterator/test harness, strict mode and DOM.

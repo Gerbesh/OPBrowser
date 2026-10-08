@@ -88,3 +88,27 @@ version instead of silently redefining v1.
 - Scope caveats: classic non-strict scripts only, subset of Test262
   harness helpers, no includes such as propertyHelper or agent,
   no automatic strict-mode variant, no host APIs.
+
+## Test262 runtime v2 (M4.18): broad deterministic 25-family sample
+
+- Manifest: test262-runtime-v2.txt (289 pinned upstream files).
+  This independent set spans 7 language expression groups, 6 statement
+  groups and 12 standard built-in groups, including JSON, Array, Number,
+  String, Object, Promise and Boolean.
+- Selection uses ONLY sorted upstream file paths, never fixture contents
+  or the engine's passing status. For each named directory, up to 12
+  midpoints of evenly partitioned lexicographic paths are chosen.
+  Any missing directory or wrong upstream commit fails generation.
+- Reproduce selection from the pinned Git checkout:
+    py -3 tools/build_test262_runtime_v2.py --root <Test262/test> --output compat/test262-runtime-v2.txt --check
+  The published manifest is frozen; do not regenerate it to change score.
+- Runner retains its classic sloppy-script scope and unsupported-test
+  classification. Pass percentages use attempted cases; skip counts are
+  always displayed separately, never counted as passes.
+- M4.18 initial 39/179 (21.79%) after M4.17, final 65/179 (36.31%):
+  all 289 listed cases retained, 110 SKIP and 114 FAIL. Typical gaps:
+  Date, Symbol, eval, Function, modern syntax, property descriptors,
+  iterator methods, and unsupported Test262 harness inclusions.
+- Native end-to-end engine test verifies typeof/conditional/static
+  functions paint the expected DOM text. Full Test262 runtime coverage
+  and most browser Web APIs remain distant targets.

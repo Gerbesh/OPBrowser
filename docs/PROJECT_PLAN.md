@@ -1027,3 +1027,32 @@ counts must not be mislabeled as external conformance percentages.
   to overall ECMAScript or website compatibility.
 - NEXT M4.18 broaden representative pinned Test262 runtime suite v2
   across modules/features rather than optimizing the now-narrow v1.
+
+## M4.18 - Broad pinned Test262 Runtime v2, typeof and conditional expressions (2026-10-09)
+
+- DONE pinned Test262 Runtime v2: blind deterministic path-only selection,
+  289 cases from 25 expression/statement/builtin feature directories,
+  up to 12 per family, pinned at upstream revision c8c798898646638cd0c24879f8e0374e847e7d74.
+  Manifest is committed independently from the 91-case v1 suite.
+- DONE real native typeof operator: JavaScript type categories, functions,
+  null as object, and unbound identifier returning undefined without a
+  ReferenceError; property access on null still errors.
+- DONE lazily compiled ternary conditional expression, nested right-
+  associative branches and assignment-expression arms.
+- DONE standard static Array.isArray, Array.of (bounded own Array),
+  Number.isNaN and Number.isFinite (no argument coercion), and
+  Object.is with NaN, signed zero and identity semantics.
+- DONE Test262 runner v2 suite labeling, fail-closed multiline includes/
+  flags parsing, separate JSON result/score and integration into
+  compatibility.ps1. New engine test checks native DOM repaint.
+- MEASURED same 289 fixture selection: 39/179 attempted passing at
+  baseline -> 65/179 (36.31%); 110 SKIP and 114 FAIL remain; v1 stays
+  82/91. No changes to old manifest or selective test exclusions.
+- LIMITATION only classic-script test harness subset; strict variants,
+  many test includes, modules/async, Symbol, Date, Function, modern
+  property descriptors and iterators missing. Array.of does not yet
+  use custom constructors; only standard Array creation is supported.
+  No score here is overall JS or website compatibility.
+- NEXT M4.19: strengthen standard built-ins and DOM tree manipulation,
+  implement more real Test262 helpers and metadata when semantics are
+  supported, and keep v2 fixed while improving measured behavior.

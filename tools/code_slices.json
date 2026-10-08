@@ -336,6 +336,22 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S22",
+      "title": "Page script typeof and ternary through native DOM repaint",
+      "status": "M4.18 original JS syntax and standard static helpers",
+      "steps": [
+        {"path": "crates/op_js/src/lexer.rs", "symbol": "tokenize"},
+        {"path": "crates/op_js/src/parser.rs", "symbol": "conditional"},
+        {"path": "crates/op_js/src/bytecode.rs", "symbol": "compile_program"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "render_html"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "typeof_value"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "call_builtin"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "No complete modern ECMAScript, DOM or test harness support; v2 65/179 attempted with 110 explicit SKIP."
+    },
+    {
       "id": "S21",
       "title": "Browser page boxed primitive and ToPrimitive to native paint",
       "status": "M4.17 implemented; Test262 Runtime v1 82/91",

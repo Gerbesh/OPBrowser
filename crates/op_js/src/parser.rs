@@ -141,6 +141,11 @@ pub enum Expression {
         op: BinaryOp,
         right: Box<Expression>,
     },
+    Conditional {
+        test: Box<Expression>,
+        consequent: Box<Expression>,
+        alternate: Box<Expression>,
+    },
     Logical {
         left: Box<Expression>,
         op: LogicalOp,
@@ -164,6 +169,7 @@ pub enum UnaryOp {
     Minus,
     Not,
     Void,
+    Typeof,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -716,7 +722,7 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<Expression, JsError> {
-        let left = self.logical_or()?;
+        let left = self.conditional()?;
         if !self.take(&TokenKind::Equal) {
             return Ok(left);
         }
@@ -726,6 +732,28 @@ impl Parser {
         Ok(Expression::Assignment {
             target,
             value: Box::new(value),
+        })
+    }
+
+    fn conditional(&mut self) -> Result<Expression, JsError> {
+        let test = self.logical_or()?;
+        if !self.take(&TokenKind::Question) {
+            return Ok(test);
+        }
+        // The two arms are assignment expressions. Recursive descent
+        // preserves nested conditional right associativity and laziness.
+        let consequent = self.assignment()?;
+        if !self.take(&TokenKind::Colon) {
+            return Err(JsError::syntax(
+                self.current().start,
+                "expected ':' in conditional expression",
+            ));
+        }
+        let alternate = self.assignment()?;
+        Ok(Expression::Conditional {
+            test: Box::new(test),
+            consequent: Box::new(consequent),
+            alternate: Box::new(alternate),
         })
     }
 
@@ -881,6 +909,8 @@ impl Parser {
             Some(UnaryOp::Not)
         } else if self.take(&TokenKind::Void) {
             Some(UnaryOp::Void)
+        } else if self.take(&TokenKind::Typeof) {
+            Some(UnaryOp::Typeof)
         } else {
             None
         };

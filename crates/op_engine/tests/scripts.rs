@@ -2,6 +2,31 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn typeof_conditional_and_std_static_functions_repaint_native_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<p id='result'>Loading</p><script>",
+            "var samples=[1,2,3];",
+            "var ok=typeof unknownGlobal==='undefined' && ",
+            "typeof samples==='object' && typeof JSON.parse==='function' && ",
+            "Array.isArray(samples) && !Array.isArray({}) && ",
+            "Number.isFinite(2) && !Number.isFinite('2') && ",
+            "Object.is(NaN,NaN) && !Object.is(0,-0);",
+            "var text=ok ? 'TYPED-OK' : 'FAIL';",
+            "document.getElementById('result').textContent=text;",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("TYPED-OK")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn primitive_coercion_updates_native_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

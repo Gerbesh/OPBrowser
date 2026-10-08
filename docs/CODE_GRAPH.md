@@ -16,6 +16,22 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.18: Test262 broader fixture -> own syntax VM -> native pixels
+
+The pinned runtime v2 manifest is generated deterministically from
+25 named upstream language/builtin feature groups via the source-only
+build_test262_runtime_v2.py selector. The existing Test262 runtime
+probe evaluates each case on a fresh original JS runtime, now using
+correct multiline include/flag metadata and version-specific JSON.
+tools/compatibility.ps1 reports runtime v1 and runtime v2 separately.
+
+The lexer now tokenizes typeof and ?, the parser builds conditional
+expressions, and bytecode emits lazy branching instructions or special
+TypeofBinding for missing-name semantics. The runtime implements
+typeof_value and native standard Array/Number/Object helper methods.
+An op_engine integration test verifies these features mutate DOM and
+paint native text pixels. It never embeds another browser/JS runtime.
+
 ## M4.17: object primitives -> runtime conversion -> Test262 verdict
 
 A new boxed_values VM map holds primitive payloads separately from
