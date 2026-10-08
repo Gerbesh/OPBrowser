@@ -697,9 +697,9 @@ Status: IN PROGRESS.
 - NEXT labels and for-in/for-of; arrow/default/rest/destructuring forms; per-iteration lexical
   environments for for(let); fuller built-ins/property descriptors; and explicit VM call frames
   instead of native recursive calls.
-- LATER promises/microtasks.
+- PARTIAL self-hosted Promise, bounded microtask reactions and four array-like combinators (M4.12, M4.15).
 - LATER modules.
-- LATER standard built-ins.
+- PARTIAL Error/TypeError/ReferenceError, JSON.parse/stringify and selected Promise methods (M4.15).
 - DONE initial Test262 parse-expectation probe and combined compatibility command; this is
   explicitly not runtime conformance yet.
 - NEXT build the real Test262 harness progressively as language/runtime semantics land.
@@ -710,7 +710,7 @@ Status: IN PROGRESS.
 - LATER Web IDL binding layer.
 - LATER DOM mutation/events.
 - LATER timers and event loop.
-- LATER Fetch.
+- PARTIAL same-origin GET fetch, guarded Request/Headers, Response.json and checked redirects (M4.12-M4.15).
 - LATER URL/Encoding/Streams.
 - LATER forms/editing.
 - LATER storage.
@@ -952,3 +952,26 @@ counts must not be mislabeled as external conformance percentages.
   difference is deliberate pending proper browser cookie isolation.
 - NEXT M4.15: native JSON parsing and Response.json(), Promise combinators,
   standardized error handling, then CORS/cache/cookie architecture.
+
+## M4.15 - Strict JSON, Response.json, Promise combinators (2026-10-09)
+
+- DONE strict native JSON grammar in op_js/src/json.rs; payloads never go
+  through JavaScript eval. Values are converted into owned VM arrays/objects.
+  Supports Unicode escapes/surrogate pairs, exponent numbers, nested values.
+- DONE JSON.parse and JSON.stringify built-ins on the original VM with
+  64 KiB size, 64-depth and 4096-element parse bounds, cycle detection,
+  catchable SyntaxError/TypeError and safe own __proto__ data keys.
+- DONE Response.json returns a Promise and consumes the body exactly once,
+  reusing existing same-origin safe GET and microtask dispatch.
+- DONE self-hosted Promise.all, race, allSettled and any; bounded array-like
+  input up to 256 entries, index ordering, pending-input settlement,
+  and AggregateError-like name/errors on Promise.any failure.
+- DONE parser, VM and native engine regressions for JSON, Promise, invalid
+  input, consumption, and a fetched JSON object updating painted DOM text.
+- LIMITATION JSON.stringify uses sorted rather than insertion-order
+  object keys, does not call toJSON/replacer/space, JSON.parse reviver
+  is absent, and ECMAScript number formatting/unpaired-surrogate strings
+  are not exact. Combinators lack the Symbol.iterator protocol; no full
+  AggregateError class, species/thenable conformance or unlimited jobs.
+- NEXT M4.16: runtime Test262 harness; language/property/array/string
+  conformance, callback JSON semantics and broader modern DOM support.

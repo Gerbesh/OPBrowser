@@ -134,3 +134,108 @@ Promise.resolve = function(value) {
 Promise.reject = function(reason) {
     return new Promise(function(resolve, reject) { reject(reason); });
 };
+
+// M4.15: combinators over bounded array/array-like input. Future iterations
+// will use the ECMAScript iteration protocol, Symbol.iterator and species.
+function _opPromiseLength(values) {
+    if (values === null || values === undefined ||
+        values.length === undefined || values.length === null) {
+        throw new TypeError("Promise combinator requires an array-like value");
+    }
+    var count = values.length;
+    if (count < 0 || count > 256 || count % 1 !== 0) {
+        throw new TypeError("Promise combinator array length exceeds budget");
+    }
+    return count;
+}
+Promise.all = function(values) {
+    return new Promise(function(resolve, reject) {
+        try {
+            var count = _opPromiseLength(values);
+            var result = [];
+            var remaining = count;
+            if (count === 0) { resolve(result); return; }
+            var i = 0;
+            while (i < count) {
+                (function(index) {
+                    Promise.resolve(values[index]).then(
+                        function(value) {
+                            result[index] = value;
+                            remaining = remaining - 1;
+                            if (remaining === 0) resolve(result);
+                        },
+                        function(error) { reject(error); }
+                    );
+                })(i);
+                i = i + 1;
+            }
+        } catch (error) { reject(error); }
+    });
+};
+Promise.race = function(values) {
+    return new Promise(function(resolve, reject) {
+        try {
+            var count = _opPromiseLength(values);
+            var i = 0;
+            while (i < count) {
+                Promise.resolve(values[i]).then(resolve, reject);
+                i = i + 1;
+            }
+        } catch (error) { reject(error); }
+    });
+};
+Promise.allSettled = function(values) {
+    return new Promise(function(resolve, reject) {
+        try {
+            var count = _opPromiseLength(values);
+            var result = [];
+            var remaining = count;
+            if (count === 0) { resolve(result); return; }
+            var i = 0;
+            while (i < count) {
+                (function(index) {
+                    Promise.resolve(values[index]).then(
+                        function(value) {
+                            result[index] = {status: "fulfilled", value: value};
+                            remaining = remaining - 1;
+                            if (remaining === 0) resolve(result);
+                        },
+                        function(error) {
+                            result[index] = {status: "rejected", reason: error};
+                            remaining = remaining - 1;
+                            if (remaining === 0) resolve(result);
+                        }
+                    );
+                })(i);
+                i = i + 1;
+            }
+        } catch (error) { reject(error); }
+    });
+};
+Promise.any = function(values) {
+    return new Promise(function(resolve, reject) {
+        try {
+            var count = _opPromiseLength(values);
+            var errors = [];
+            var remaining = count;
+            function allRejected() {
+                var error = new Error("All promises were rejected");
+                error.name = "AggregateError";
+                error.errors = errors;
+                reject(error);
+            }
+            if (count === 0) { allRejected(); return; }
+            var i = 0;
+            while (i < count) {
+                (function(index) {
+                    Promise.resolve(values[index]).then(resolve, function(error) {
+                        errors[index] = error;
+                        remaining = remaining - 1;
+                        if (remaining === 0) allRejected();
+                    });
+                })(i);
+                i = i + 1;
+            }
+        } catch (error) { reject(error); }
+    });
+};

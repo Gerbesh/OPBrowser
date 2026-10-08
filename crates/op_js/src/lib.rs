@@ -5,6 +5,7 @@
 
 mod bytecode;
 mod error;
+mod json;
 mod lexer;
 mod parser;
 mod runtime;

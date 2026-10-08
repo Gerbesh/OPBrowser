@@ -16,6 +16,20 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S19 - strict JSON response -> Promise -> native pixels (M4.15)
+
+Status: IMPLEMENTED bounded strict JSON and array-like combinators.
+
+Page fetch(data.json) -> Engine::dispatch_text_requests -> validated
+GET completion -> Engine::tick_timers -> op_js::TextResponse ->
+Response.json -> JsonParse -> op_js::json::parse -> json_to_value ->
+Promise microtask reactions -> DomTextMutation ->
+Document::set_text_content -> native Win32 repaint.
+
+Real VM and engine tests cover Unicode, invalid JSON, delayed Promise
+resolution, circular stringify errors and JSON fields painted after GET.
+No reviver/toJSON, true iterator combinators, streams, cookies or CORS.
+
 ## S18 - Request Headers → vetted WinHTTP GET → checked redirects (M4.14)
 
 Status: **IMPLEMENTED** for bounded same-origin GET text.

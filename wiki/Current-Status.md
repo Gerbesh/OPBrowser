@@ -106,3 +106,15 @@ custom GET headers reach WinHTTP and local test servers. Text/fetch
 redirects are checked *before* visiting each new address, preventing
 cross-origin intermediate hops. redirect:error is supported. No general
 CORS, body upload, credentials, caching, streams or abort support yet.
+
+## M4.15: strict JSON and Promise combinators
+
+Native JSON.parse/stringify, Response.json and Promise.all/race/
+allSettled/any now work in the original VM. A network-loaded JSON
+object is verified to repaint native text pixels through Promise
+microtask callbacks. This does not imply full Fetch/ECMAScript support.
+
+Overall readiness toward a production-quality independent modern
+browser is approximately 10-15% as a qualitative engineering opinion,
+not a measured compatibility score. Pinned external subsets remain
+WPT Static 197/200, Positioning 53/100, Test262 Parser 523/1983.

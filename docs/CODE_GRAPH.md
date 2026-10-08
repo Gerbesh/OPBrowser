@@ -16,6 +16,20 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.15: native JSON -> original VM object -> Promise -> DOM repaint
+
+op_js::json implements strict bounded parsing, independent of JS eval.
+The runtime exposes native JsonParse and JsonStringify builtins, creates
+owned arrays/objects with json_to_value and serializes with cycle
+detection through json_from_value. The JSON global exists without DOM.
+
+The self-hosted async_promise.js implements all/race/allSettled/any
+over array-like input; Response.json uses Promise.resolve(body).then
+to call native JSON.parse at a normal microtask checkpoint. Existing
+Engine::dispatch_text_requests, Engine::tick_timers and
+JsRuntime::complete_text_response_request preserve the safe network
+boundary, followed by DOM changes and native pixels. No foreign engine.
+
 ## M4.14: Request/Headers → vetted GET → pre-connect redirect policy
 
 The browser-context VM now installs a native Headers constructor with

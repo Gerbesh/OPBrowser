@@ -387,3 +387,22 @@ GET text responses are supported. credentials defaults to omit
 instead of the web standard's same-origin pending cookie isolation.
 There is no general Header iteration, Headers guards, CORS, POST,
 request body, streams, AbortSignal, HTTP cache, or response.json().
+
+## M4.15: JSON and four Promise combinators
+
+The original VM now supports bounded JSON.parse and JSON.stringify.
+Its standalone strict parser creates owned JavaScript objects and arrays
+without evaluating JSON as executable JavaScript. SyntaxError and
+circular-structure TypeError are catchable by page scripts.
+
+Response.json returns a Promise and consumes the body once, using
+the existing same-origin text-only GET network path. Promise.all,
+Promise.race, Promise.allSettled and Promise.any are self-hosted through
+the bounded FIFO microtask queue, with array-like input up to 256 values.
+
+The JSON parser limits inputs to 64 KiB, 64 nesting levels and
+4096 parsed nodes. JSON reviver, replacer, spacing and toJSON callbacks,
+true insertion-order enumeration and ECMAScript canonical number
+formatting are missing. The VM cannot represent unpaired UTF-16
+surrogates as values. Promise combinators do not yet support arbitrary
+iterables or a fully native AggregateError class.

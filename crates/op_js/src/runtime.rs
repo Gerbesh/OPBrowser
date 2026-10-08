@@ -82,6 +82,8 @@ enum BuiltinFunction {
     HeadersSet,
     HeadersAppend,
     HeadersDelete,
+    JsonParse,
+    JsonStringify,
 }
 
 #[derive(Debug, Clone)]
@@ -316,6 +318,9 @@ impl Default for JsRuntime {
             VariableKind::Const,
         );
         runtime
+            .install_json_methods()
+            .expect("built-in JSON methods must fit runtime budgets");
+        runtime
             .eval_script(include_str!("async_promise.js"))
             .expect("bundled Promise bootstrap must compile and run");
 
@@ -525,6 +530,127 @@ impl JsRuntime {
                 ("headers".into(), JsValue::Object(headers)),
             ]),
         )
+    }
+
+    fn install_json_methods(&mut self) -> Result<(), JsError> {
+        let parse = self.allocate_lifecycle_method("parse", BuiltinFunction::JsonParse)?;
+        let stringify =
+            self.allocate_lifecycle_method("stringify", BuiltinFunction::JsonStringify)?;
+        let object = self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("parse".into(), JsValue::Object(parse)),
+                ("stringify".into(), JsValue::Object(stringify)),
+            ]),
+        )?;
+        self.install_global_binding("JSON", JsValue::Object(object), false, VariableKind::Const);
+        Ok(())
+    }
+
+    fn json_to_value(
+        &mut self,
+        value: crate::json::JsonValue,
+        depth: usize,
+    ) -> Result<JsValue, JsError> {
+        if depth > 64 {
+            return Err(JsError::execution_limit("JSON nesting budget exceeded"));
+        }
+        use crate::json::JsonValue;
+        Ok(match value {
+            JsonValue::Null => JsValue::Null,
+            JsonValue::Boolean(flag) => JsValue::Boolean(flag),
+            JsonValue::Number(number) => JsValue::Number(number),
+            JsonValue::String(text) => JsValue::String(text),
+            JsonValue::Array(elements) => {
+                let mut props = HashMap::new();
+                props.insert("length".into(), JsValue::Number(elements.len() as f64));
+                for (index, element) in elements.into_iter().enumerate() {
+                    props.insert(index.to_string(), self.json_to_value(element, depth + 1)?);
+                }
+                let object =
+                    self.allocate_object(ObjectKind::Array, Some(self.array_prototype), props)?;
+                JsValue::Object(object)
+            }
+            JsonValue::Object(fields) => {
+                let mut props = HashMap::new();
+                for (key, entry) in fields {
+                    // Always write JSON keys as own data properties, including
+                    // "__proto__", never through JS's prototype setter.
+                    props.insert(key, self.json_to_value(entry, depth + 1)?);
+                }
+                let object =
+                    self.allocate_object(ObjectKind::Ordinary, Some(self.object_prototype), props)?;
+                JsValue::Object(object)
+            }
+        })
+    }
+
+    fn json_from_value(
+        &self,
+        value: &JsValue,
+        seen: &mut Vec<ObjectId>,
+        depth: usize,
+    ) -> Result<Option<String>, String> {
+        if depth > 64 {
+            return Err("JSON nesting budget exceeded".into());
+        }
+        let result = match value {
+            JsValue::Undefined => return Ok(None),
+            JsValue::Null => "null".into(),
+            JsValue::Boolean(flag) => flag.to_string(),
+            JsValue::Number(number) if !number.is_finite() => "null".into(),
+            JsValue::Number(number) if *number == 0.0 => "0".into(),
+            JsValue::Number(number) => number.to_string(),
+            JsValue::String(text) => crate::json::quote(text),
+            JsValue::Object(id) => {
+                if seen.contains(id) {
+                    return Err("Converting circular structure to JSON".into());
+                }
+                let object = self.object(*id).map_err(|error| error.to_string())?;
+                if object.function.is_some() {
+                    return Ok(None);
+                }
+                seen.push(*id);
+                let mut items = Vec::new();
+                if object.kind == ObjectKind::Array {
+                    let length = match object.properties.get("length") {
+                        Some(JsValue::Number(n)) if n.is_finite() && *n >= 0.0 && *n <= 4096.0 => {
+                            *n as usize
+                        }
+                        _ => return Err("invalid JSON array length".into()),
+                    };
+                    for i in 0..length {
+                        let value = object
+                            .properties
+                            .get(&i.to_string())
+                            .unwrap_or(&JsValue::Undefined);
+                        let part = self.json_from_value(value, seen, depth + 1)?;
+                        items.push(part.unwrap_or_else(|| "null".into()));
+                    }
+                    seen.pop();
+                    format!("[{}]", items.join(","))
+                } else {
+                    // Deterministic key order for now. Insertion-order
+                    // enumeration and toJSON hooks need dedicated VM support.
+                    let mut keys: Vec<_> = object.properties.keys().collect();
+                    keys.sort();
+                    for key in keys {
+                        let part =
+                            self.json_from_value(&object.properties[key], seen, depth + 1)?;
+                        if let Some(part) = part {
+                            items.push(format!("{}:{}", crate::json::quote(key), part));
+                        }
+                    }
+                    seen.pop();
+                    format!("{{{}}}", items.join(","))
+                }
+            }
+        };
+        if result.len() > 64 * 1024 {
+            return Err("JSON output exceeds 64 KiB".into());
+        }
+        Ok(Some(result))
     }
 
     fn header_name(value: &JsValue) -> Result<String, JsError> {
@@ -1549,6 +1675,54 @@ impl JsRuntime {
         this_value: JsValue,
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
+        if builtin == BuiltinFunction::JsonParse {
+            if arguments
+                .get(1)
+                .is_some_and(|v| !matches!(v, JsValue::Undefined))
+            {
+                return Err(JsError::type_error(
+                    "JSON.parse reviver is not supported yet",
+                ));
+            }
+            let source = arguments
+                .first()
+                .map(JsValue::to_js_string)
+                .unwrap_or_else(|| "undefined".into());
+            let value = match crate::json::parse(&source) {
+                Ok(value) => value,
+                Err(message) => {
+                    let error =
+                        self.allocate_error_object("SyntaxError", &message, self.error_prototype)?;
+                    return Ok(CallOutcome::Thrown(JsValue::Object(error)));
+                }
+            };
+            return Ok(CallOutcome::Value(self.json_to_value(value, 0)?));
+        }
+        if builtin == BuiltinFunction::JsonStringify {
+            if arguments
+                .iter()
+                .skip(1)
+                .any(|v| !matches!(v, JsValue::Undefined))
+            {
+                return Err(JsError::type_error(
+                    "JSON.stringify replacer/space not supported yet",
+                ));
+            }
+            let value = arguments.first().unwrap_or(&JsValue::Undefined);
+            let output = self.json_from_value(value, &mut Vec::new(), 0);
+            return match output {
+                Ok(Some(text)) => Ok(CallOutcome::Value(JsValue::String(text))),
+                Ok(None) => Ok(CallOutcome::Value(JsValue::Undefined)),
+                Err(message) => {
+                    let error = self.allocate_error_object(
+                        "TypeError",
+                        &message,
+                        self.type_error_prototype,
+                    )?;
+                    Ok(CallOutcome::Thrown(JsValue::Object(error)))
+                }
+            };
+        }
         if builtin == BuiltinFunction::OpFetchText {
             let url = arguments
                 .first()
@@ -1946,7 +2120,9 @@ impl JsRuntime {
             | BuiltinFunction::HeadersHas
             | BuiltinFunction::HeadersSet
             | BuiltinFunction::HeadersAppend
-            | BuiltinFunction::HeadersDelete => {
+            | BuiltinFunction::HeadersDelete
+            | BuiltinFunction::JsonParse
+            | BuiltinFunction::JsonStringify => {
                 unreachable!("handled above")
             }
         };
@@ -3553,6 +3729,150 @@ mod tests {
         assert_eq!(
             vm.global("errors"),
             Some(&JsValue::String("method;auth;creds;redirect;".into()))
+        );
+    }
+
+    #[test]
+    fn json_native_parse_stringify_nested_arrays_and_safe_proto() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var obj=JSON.parse('{"person":{"name":"Привет","age":29},"array":[true,null,-1.5],"__proto__":{"safe":7}}');
+            var result=obj.person.name+'|'+obj.array[0]+'|'+obj.array[2]+'|'+obj.__proto__.safe;
+            var again=JSON.parse(JSON.stringify(obj));
+            result=result+'|'+again.person.age+'|'+again.array.length;
+            var hole=[1,,3];result=result+'|'+JSON.stringify(hole);
+            var undef=JSON.stringify(undefined);result=result+'|'+(undef===undefined);
+            var nonfinite=JSON.stringify([0/0,1/0]);result=result+'|'+nonfinite;"#,
+        ).unwrap();
+        assert_eq!(
+            vm.global("result"),
+            Some(&JsValue::String(
+                "Привет|true|-1.5|7|29|3|[1,null,3]|true|[null,null]".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn json_errors_are_catchable_and_stringify_rejects_cycles() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var errors='';\
+             try{JSON.parse('{bad:1}');}catch(e){errors=errors+e.name+';';}\
+             try{JSON.parse('1e');}catch(e){errors=errors+e.name+';';}\
+             var cycle={};cycle.self=cycle;\
+             try{JSON.stringify(cycle);}catch(e){errors=errors+e.name+';';}\
+             var obj={a:1,skip:undefined};\
+             errors=errors+JSON.stringify(obj);",
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("errors"),
+            Some(&JsValue::String(
+                "SyntaxError;SyntaxError;TypeError;{\"a\":1}".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn promise_combinators_fulfill_reject_in_input_order() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var output='';
+            Promise.all([Promise.resolve(2),3,Promise.resolve(5)])
+              .then(function(a){output=output+'all:'+a[0]+a[1]+a[2]+';';});
+            Promise.race([Promise.resolve('first'),Promise.resolve('second')])
+              .then(function(x){output=output+'race:'+x+';';});
+            Promise.allSettled([Promise.resolve('good'),Promise.reject('bad')])
+              .then(function(a){output=output+'settled:'+a[0].status+'/'+a[1].reason+';';});
+            Promise.any([Promise.reject('err'),Promise.resolve('ok')])
+              .then(function(v){output=output+'any:'+v+';';});
+            Promise.any([]).catch(function(e){output=output+'empty:'+e.name+';';});
+            Promise.all([Promise.resolve(1),Promise.reject('FAIL')])
+              .catch(function(e){output=output+'rejected:'+e+';';});"#,
+        )
+        .unwrap();
+        let output = vm.global("output").unwrap().to_js_string();
+        for expected in [
+            "all:235;",
+            "race:first;",
+            "settled:fulfilled/bad;",
+            "any:ok;",
+            "empty:AggregateError;",
+            "rejected:FAIL;",
+        ] {
+            assert!(
+                output.contains(expected),
+                "missing {expected:?} in {output:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn promise_all_waits_for_pending_inputs_and_race_empty_stays_pending() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var done='';var later;\
+             var p=new Promise(function(resolve){later=resolve;});\
+             Promise.all([p,Promise.resolve(2)]).then(function(items){\
+                done=done+'all:'+items[0]+items[1]+';';\
+             });\
+             Promise.race([]).then(function(){done=done+'unexpected;';});\
+             Promise.all([]).then(function(items){done=done+'empty:'+items.length+';';});\
+             Promise.race([p,Promise.resolve('fast')]).then(function(x){\
+                done=done+'race:'+x+';';\
+             });",
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("done"),
+            Some(&JsValue::String("empty:0;race:fast;".into()))
+        );
+        vm.eval_script("later(9);").unwrap();
+        assert_eq!(
+            vm.global("done"),
+            Some(&JsValue::String("empty:0;race:fast;all:92;".into()))
+        );
+    }
+
+    #[test]
+    fn json_parser_rejects_excessive_depth_and_large_input() {
+        let mut vm = JsRuntime::new();
+        let deep = "[".repeat(70) + "0" + &"]".repeat(70);
+        let input = format!("JSON.parse({});", crate::json::quote(&deep));
+        let error = vm.eval_script(&input).unwrap_err().to_string();
+        assert!(
+            error.contains("SyntaxError") || error.contains("nesting"),
+            "{error}"
+        );
+        assert!(crate::json::parse(&" ".repeat(65_537)).is_err());
+        assert_eq!(
+            crate::json::parse("1e999"),
+            Ok(crate::json::JsonValue::Number(f64::INFINITY))
+        );
+    }
+
+    #[test]
+    fn json_response_consumption_and_invalid_json_reject_as_promise() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"var result='';
+            fetch('valid.json').then(function(r){
+              var promise=r.json();
+              r.text().catch(function(e){result=result+'used;';});
+              return promise;
+            }).then(function(data){result=result+data.answer+';';});
+            fetch('bad.json').then(function(r){return r.json();})
+              .catch(function(e){result=result+'bad:'+e.name+';';});"#,
+        )
+        .unwrap();
+        let jobs = vm.take_text_requests();
+        assert_eq!(jobs.len(), 2);
+        assert!(!vm.complete_text_request(jobs[0].id, Ok("{\"answer\":42}".into())));
+        assert!(!vm.complete_text_request(jobs[1].id, Ok("{bad}".into())));
+        assert_eq!(
+            vm.global("result"),
+            Some(&JsValue::String("used;42;bad:SyntaxError;".into()))
         );
     }
 

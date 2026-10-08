@@ -901,6 +901,54 @@ fn fetch_promise_resolves_a_local_response_and_repaints() {
 }
 
 #[test]
+fn json_response_renders_object_fields_after_async_get() {
+    let root = std::env::temp_dir().join(format!("opbrowser-m415-json-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let page = root.join("index.html");
+    std::fs::write(
+        root.join("data.json"),
+        r#"{"message":"JSON-REPAINT","count":42}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        &page,
+        concat!(
+            "<p id='out'>Loading JSON</p><script>",
+            "fetch('data.json').then(function(response){return response.json();})",
+            ".then(function(data){document.getElementById('out').textContent=",
+            "data.message+'-'+data.count;})",
+            ".catch(function(e){document.getElementById('out').textContent='ERROR:'+e.message;});",
+            "</script>"
+        ),
+    )
+    .unwrap();
+    let mut engine = Engine::new();
+    engine
+        .navigate(&page.display().to_string(), 800, 600)
+        .unwrap();
+    let mut rendered = false;
+    for _ in 0..100 {
+        if let Some(display) = engine.tick_timers(800, 600)
+            && display.display_list.commands.iter().any(|cmd| {
+                matches!(
+                    cmd,op_paint::PaintCommand::Text{text,..} if text.contains("JSON-REPAINT-42")
+                )
+            })
+        {
+            rendered = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        rendered,
+        "JSON response did not repaint the retained native page"
+    );
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn fetch_promise_cross_origin_is_rejected_by_request_policy() {
     let root = std::env::temp_dir().join(format!("opbrowser-m412-cross-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();

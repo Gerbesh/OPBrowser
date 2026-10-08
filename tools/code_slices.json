@@ -318,6 +318,24 @@
       "limitation": "Same-origin GET text only, restricted request headers and <=5 checked redirect hops; no CORS, stream, credentials or POST."
     },
     {
+      "id": "S19",
+      "title": "JSON parser through Promise reactions to native repaint",
+      "status": "M4.15 bounded JSON and array-like Promise combinators",
+      "steps": [
+        {"path": "crates/op_js/src/json.rs", "symbol": "parse"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "JsonParse"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "json_to_value"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "json_from_value"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "dispatch_text_requests"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "tick_timers"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "complete_text_response_request"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "drain_microtasks"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "present_reflow"}
+      ],
+      "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
+    },
+    {
       "id": "S6",
       "title": "WPT image comparison and reporting",
       "status": "Strict and opt-in fuzzy reports",

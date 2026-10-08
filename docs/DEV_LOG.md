@@ -2944,3 +2944,15 @@ This file is append-only project history.
   DOM/native pixels. Maintained compatibility for legacy opFetchText.
 - Still pending: full Headers prototype/iteration/guard semantics, CORS,
   HTTP cache, credentials/cookies, POST, abort, binary bodies and JSON API.
+
+## 2026-10-09 - M4.15 JSON and Promise combinators
+
+- Independent strict bounded JSON parser, not dynamic JavaScript evaluation.
+- JSON.parse/stringify implemented as original VM builtins; own data
+  properties, circular-structure rejection, malformed-JSON SyntaxError.
+- Response.json parses GET bodies into real VM values via microtask jobs.
+- Promise.all/race/allSettled/any added to self-hosted runtime, bounded
+  to arrays and array-like values while iterable syntax is unavailable.
+- Added parser/VM/native-engine regressions including JSON-to-DOM repaint.
+- Incomplete: JSON callback hooks, canonical number formatting, iterators,
+  full AggregateError, CORS/streams/cookies/abort.

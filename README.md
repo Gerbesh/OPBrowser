@@ -58,8 +58,10 @@ real HTTP statuses, reason phrases, redirect URL, and filtered Headers
 into Response; HTTP 404/500 fulfill with ok=false. M4.14 adds a bounded
 Headers constructor, Request, safe GET RequestInit headers and manual
 per-hop same-origin redirect checks, including redirect:error.
-Complete Fetch/CORS, credentials, streams, caching, abort and ECMAScript
-Promise conformance remain pending.
+M4.15 adds strict native JSON.parse/stringify, async Response.json and
+bounded self-hosted Promise.all/race/allSettled/any. Complete Fetch/CORS,
+credentials, streams, caching, abort and ECMAScript Promise conformance
+remain pending. See docs/PROGRESS_AUDIT.md for a scoped readiness estimate.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 

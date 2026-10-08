@@ -62,6 +62,13 @@ Response.prototype.text = function() {
     this.bodyUsed = true;
     return Promise.resolve(this._body);
 };
+Response.prototype.json = function() {
+    if (this.bodyUsed) return Promise.reject(new TypeError("Body already consumed"));
+    this.bodyUsed = true;
+    return Promise.resolve(this._body).then(function(source) {
+        return JSON.parse(source);
+    });
+};
 
 function fetch(input, init) {
     return new Promise(function(resolve, reject) {
