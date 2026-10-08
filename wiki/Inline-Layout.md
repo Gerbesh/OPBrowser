@@ -79,6 +79,15 @@ emits this sequence instead of painting all text before all images.
   lines are materialized only for the CSS2 cases that require line-height geometry between blocks.
   Relative inline ancestors also carry their visual offset onto split block/float descendants while
   their normal-flow and float exclusion geometry remains unchanged.
+- An undecorated `position:relative` inline now retains identity in the parent-linked arena
+  even without padding, border or background. Text, nested images and inline decorations receive
+  cumulative relative visual offsets but consume their original line widths and flow heights.
+  Each line emits measured inline fragment rectangles; the nearest relative inline ancestor of
+  an absolute child uses first/last fragment padding edges (LTR/RTL) as its containing block,
+  within the same formatter run. Fixed children still use viewport dimensions. A block-level
+  positioned child inside an unrelated non-positioned inline keeps the previous static-position
+  path rather than changing the line sequence. Split-inline rectangles spanning separate block
+  formatting runs, bidi line reordering and vertical writing are not implemented yet.
 - Generated `::before`/`::after` text from strings, `attr()`, CSS counters and quote commands is converted
   to ordinary InlineChar items at the host's child boundaries. Counter state is resolved before
   layout, so the formatter only sees final generated Unicode text. Pseudos inherit host typography,

@@ -9,6 +9,9 @@ pub(super) struct InlineBoxStyle {
     pub node: op_dom::NodeId,
     pub pseudo: Option<PseudoElement>,
     pub direction: Direction,
+    pub positioned: bool,
+    pub offset_x: i32,
+    pub offset_y: i32,
     pub margin_right: i32,
     pub margin_left: i32,
     pub padding_top: i32,
@@ -106,6 +109,28 @@ impl InlineBoxes {
     }
     pub(super) fn parent(&self, id: usize) -> Option<usize> {
         self.nodes[id].parent
+    }
+
+    pub(super) fn positioned_ancestor(&self, mut id: Option<usize>) -> Option<op_dom::NodeId> {
+        while let Some(current) = id {
+            let style = self.style(current);
+            if style.positioned {
+                return Some(style.node);
+            }
+            id = self.parent(current);
+        }
+        None
+    }
+
+    fn visual_offset(&self, mut id: Option<usize>) -> (i32, i32) {
+        let (mut dx, mut dy) = (0i32, 0i32);
+        while let Some(current) = id {
+            let style = self.style(current);
+            dx = dx.saturating_add(style.offset_x);
+            dy = dy.saturating_add(style.offset_y);
+            id = self.parent(current);
+        }
+        (dx, dy)
     }
 
     fn current_id(&self, mut id: usize) -> usize {
@@ -296,6 +321,21 @@ pub(super) struct PositionedStatic {
     pub marker: usize,
     pub x: i32,
     pub y: i32,
+    pub ancestor: Option<op_dom::NodeId>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct InlineFragment {
+    pub node: op_dom::NodeId,
+    pub direction: Direction,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub border_left: i32,
+    pub border_right: i32,
+    pub border_top: i32,
+    pub border_bottom: i32,
 }
 
 pub(super) enum Item<'a> {
@@ -351,6 +391,7 @@ pub(super) struct Lines<'a, 'm> {
     pub image_boxes: Vec<ImageBox>,
     pub order: Vec<LayoutItem>,
     pub positioned: Vec<PositionedStatic>,
+    pub fragments: Vec<InlineFragment>,
 }
 
 impl<'a, 'm> Lines<'a, 'm> {
@@ -379,6 +420,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             image_boxes: Vec::new(),
             order: Vec::new(),
             positioned: Vec::new(),
+            fragments: Vec::new(),
         }
     }
 
@@ -824,6 +866,25 @@ impl<'a, 'm> Lines<'a, 'm> {
         }
     }
 
+    fn record_fragment(&mut self, id: usize, decoration: usize) {
+        let style = self.inline_boxes.style(id);
+        if style.positioned {
+            let bounds = &self.decorations[decoration];
+            self.fragments.push(InlineFragment {
+                node: style.node,
+                direction: style.direction,
+                x: bounds.x,
+                y: bounds.y,
+                width: bounds.width,
+                height: bounds.height,
+                border_left: style.border_left.width,
+                border_right: style.border_right.width,
+                border_top: style.border_top.width,
+                border_bottom: style.border_bottom.width,
+            });
+        }
+    }
+
     fn flush(&mut self, forced: bool) {
         self.pending_space = None;
         if self.boxes.is_empty() && !forced {
@@ -966,6 +1027,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                 let style = self.inline_boxes.style(id);
                 x = x.saturating_add(style.right_extra());
                 self.decorations[decoration].width = x.saturating_sub(start_x).max(0);
+                self.record_fragment(id, decoration);
                 x = x.saturating_add(style.margin_right);
             }
             for id in path.into_iter().skip(common) {
@@ -975,9 +1037,10 @@ impl<'a, 'm> Lines<'a, 'm> {
                 let bottom = self.inline_boxes.bottom(parent);
                 x = x.saturating_add(style.margin_left);
                 let decoration = self.decorations.len();
+                let (dx, dy) = self.inline_boxes.visual_offset(Some(id));
                 self.decorations.push(BoxDecoration {
-                    x,
-                    y: self.y.saturating_add(top),
+                    x: x.saturating_add(dx),
+                    y: self.y.saturating_add(top).saturating_add(dy),
                     width: 0,
                     height: ascent
                         .saturating_add(descent)
@@ -1002,9 +1065,10 @@ impl<'a, 'm> Lines<'a, 'm> {
                         let top = box_style.top_extra();
                         let bottom = box_style.bottom_extra();
                         x = x.saturating_add(box_style.margin_left);
+                        let (dx, dy) = self.inline_boxes.visual_offset(style.boxes);
                         self.decorations.push(BoxDecoration {
-                            x,
-                            y: baseline - bottom - image.height - top,
+                            x: x.saturating_add(dx),
+                            y: (baseline - bottom - image.height - top).saturating_add(dy),
                             width: image.width.saturating_add(left).saturating_add(right),
                             height: image.height.saturating_add(top).saturating_add(bottom),
                             background: box_style.background,
@@ -1016,12 +1080,14 @@ impl<'a, 'm> Lines<'a, 'm> {
                         x = x.saturating_add(left);
                     }
                     if let Some(pixels) = image.image {
+                        let (dx, dy) = self.inline_boxes.visual_offset(style.boxes);
                         self.order.push(LayoutItem::Image(self.image_boxes.len()));
                         self.image_boxes.push(ImageBox {
-                            x,
-                            y: baseline
+                            x: x.saturating_add(dx),
+                            y: (baseline
                                 - image.height
-                                - own_box.map_or(0, InlineBoxStyle::bottom_extra),
+                                - own_box.map_or(0, InlineBoxStyle::bottom_extra))
+                            .saturating_add(dy),
                             width: image.width,
                             height: image.height,
                             image: pixels,
@@ -1036,7 +1102,8 @@ impl<'a, 'm> Lines<'a, 'm> {
                             .saturating_add(box_style.margin_right);
                     }
                 }
-                PreparedBox::Atomic(mut atomic, _, vertical_align) => {
+                PreparedBox::Atomic(mut atomic, style, vertical_align) => {
+                    let (dx, dy) = self.inline_boxes.visual_offset(style.boxes);
                     let top = match vertical_align {
                         VerticalAlign::Baseline => baseline.saturating_sub(atomic.baseline),
                         VerticalAlign::Top => self.y,
@@ -1053,16 +1120,16 @@ impl<'a, 'm> Lines<'a, 'm> {
                     let image_base = self.image_boxes.len();
 
                     for decoration in &mut atomic.decorations {
-                        decoration.x = decoration.x.saturating_add(x);
-                        decoration.y = decoration.y.saturating_add(top);
+                        decoration.x = decoration.x.saturating_add(x).saturating_add(dx);
+                        decoration.y = decoration.y.saturating_add(top).saturating_add(dy);
                     }
                     for text in &mut atomic.text_boxes {
-                        text.x = text.x.saturating_add(x);
-                        text.y = text.y.saturating_add(top);
+                        text.x = text.x.saturating_add(x).saturating_add(dx);
+                        text.y = text.y.saturating_add(top).saturating_add(dy);
                     }
                     for image in &mut atomic.image_boxes {
-                        image.x = image.x.saturating_add(x);
-                        image.y = image.y.saturating_add(top);
+                        image.x = image.x.saturating_add(x).saturating_add(dx);
+                        image.y = image.y.saturating_add(top).saturating_add(dy);
                     }
 
                     self.decorations.extend(atomic.decorations);
@@ -1079,10 +1146,11 @@ impl<'a, 'm> Lines<'a, 'm> {
                     if text.text.is_empty() {
                         continue;
                     }
+                    let (dx, dy) = self.inline_boxes.visual_offset(text.style.boxes);
                     self.order.push(LayoutItem::Text(self.text_boxes.len()));
                     self.text_boxes.push(TextBox {
-                        x,
-                        y: baseline - text.metrics.ascent,
+                        x: x.saturating_add(dx),
+                        y: (baseline - text.metrics.ascent).saturating_add(dy),
                         width: text.width,
                         height: text.metrics.ascent + text.metrics.descent,
                         text: text.text,
@@ -1098,11 +1166,13 @@ impl<'a, 'm> Lines<'a, 'm> {
                     });
                     x += text.width;
                 }
-                PreparedBox::Positioned(marker, _) => {
+                PreparedBox::Positioned(marker, style) => {
+                    let (dx, dy) = self.inline_boxes.visual_offset(style.boxes);
                     self.positioned.push(PositionedStatic {
                         marker,
-                        x,
-                        y: self.y,
+                        x: x.saturating_add(dx),
+                        y: self.y.saturating_add(dy),
+                        ancestor: self.inline_boxes.positioned_ancestor(style.boxes),
                     });
                 }
             }
@@ -1111,6 +1181,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             let style = self.inline_boxes.style(id);
             x = x.saturating_add(style.right_extra());
             self.decorations[decoration].width = x.saturating_sub(start_x).max(0);
+            self.record_fragment(id, decoration);
             x = x.saturating_add(style.margin_right);
         }
 

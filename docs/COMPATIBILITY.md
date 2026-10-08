@@ -95,9 +95,15 @@ style and are bounded at used layout geometry instead of being discarded. The 20
 non-replaced absolute/fixed margin pass now distributes single/both auto margins against definite
 opposing insets on each axis, obeys RTL/LTR precedence for overconstrained horizontal values and
 places negative auto-margin remainders on the appropriate side. Four project regression tests pass;
-the unchanged pinned Positioning v1 suite remains at 36/100 (36.00%) with no regression. Sticky
-positioning, full inline containing-block rectangles, complete bidi/vertical writing, multicol,
-stacking contexts and complex/replaced abspos constraints remain deliberately visible gaps.
+the unchanged pinned Positioning v1 suite remains at 36/100 (36.00%) with no regression.
+The next inline-containing-block pass preserves unstyled relative inline ancestors in the line
+box arena, records first/last fragment padding-edge rectangles within a formatting run, handles
+LTR/RTL edge choice, and applies relative visual offsets to inline paint and absolute descendants.
+Five new deterministic inline regressions pass; WPT Positioning v1 remains **36/100 (36.00%)**
+without losing old passes, WPT Static v1 remains **187/200 (93.50%)**, and the Test262 Parser v1
+sample remains **523/1983 (26.37%)**. Sticky, cross-run split-inline containing geometry,
+complete bidi/vertical writing, multicol, stacking contexts and complex/replaced abspos
+constraints remain deliberately visible gaps.
 
 This new metric does not replace WPT Static v1. The older 200-test manifest remains frozen so its
 43.00% -> 93.50% history stays directly comparable.

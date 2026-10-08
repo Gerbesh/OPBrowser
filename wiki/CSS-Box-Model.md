@@ -127,7 +127,12 @@ horizontal free space assigns the negative margin to the RTL/LTR end side, and n
 free space assigns it to the bottom. With fixed margins and overconstrained left/width/right,
 LTR anchors left and RTL anchors right; missing insets make auto margins zero.
 
-Sticky positioning, full inline containing-block rectangles, complete bidi/vertical writing,
+Inline `position:relative` now establishes a containing rectangle for absolute children
+from its measured first/last line-fragment padding edges within one formatting run, including
+undecorated inline ancestors and LTR/RTL anchoring. Relative text/decorations shift visually
+without changing surrounding flow and `position:fixed` continues to use the viewport.
+
+Sticky positioning, cross-run split-inline containing rectangles, complete bidi/vertical writing,
 complex/replaced CSS2 positioned constraints, stacking/z-index and
 scroll-container interactions remain follow-up work. WPT Positioning v1 tracks 100 pinned cases
 across both implemented and deliberately unsupported families; it moved from 18/100 (18.00%) to

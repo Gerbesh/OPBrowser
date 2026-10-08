@@ -1,6 +1,6 @@
 # OPBrowser Project Plan
 
-Last updated: 2026-10-07
+Last updated: 2026-10-08
 
 ## North star
 
@@ -275,7 +275,10 @@ Status: IN PROGRESS.
   only at used layout geometry. Absolute/fixed non-replaced blocks now also solve horizontal and
   vertical auto margins inside definite opposing insets, including negative available space,
   one-auto-margin cases and direction-dependent horizontal overconstraint precedence.
-  Sticky, full inline containing-block rectangles, complete bidi/vertical writing, multicol,
+  An initial inline containing-block path now records relative inline fragment rectangles,
+  resolves absolute children against first/last padding edges within one inline formatting run,
+  honors LTR/RTL and visual relative offsets, and keeps fixed elements viewport-anchored.
+  Cross-run split-inline containing rectangles, complete bidi/vertical writing, multicol,
   replaced-element/complex CSS2 positioned constraints and stacking remain NEXT, followed by
   `overflow`, media queries, font faces, background images, border radius and broader flex/grid work.
 - LATER broader computed values outside the readable-static-web priority.
@@ -318,9 +321,13 @@ Status: IN PROGRESS.
   fragment edges, required empty intermediate fragments, relative-inline offsets for split block/float
   descendants and safe used-value clamping for very large finite lengths, raising the unchanged
   WPT Positioning v1 manifest from 25/100 (25.00%) to 36/100 (36.00%).
-- NEXT use the remaining WPT Positioning v1 failures to drive real inline containing-block rectangles,
-  CSS2 content-height/line-height cases, remaining abspos constraint equations, vertical writing /
-  multicol and sticky, then `overflow`; keep WPT Static v1 frozen for historical comparability.
+- DONE initial per-run relative-inline containing rectangles for positioned descendants, with
+  computed first/last fragment padding edges, LTR/RTL anchoring and relative visual translation;
+  five new regression tests guard ordinary, nested, wrapped, RTL and legacy static-position cases.
+  The unchanged pinned WPT Positioning v1 remains 36/100 (36.00%) with no regressions.
+- NEXT cross-run split-inline containing rectangles, CSS2 content-height/line-height cases,
+  remaining abspos constraints, vertical writing / multicol and sticky, then `overflow`;
+  keep WPT Static v1 frozen for historical comparability.
 
 ## M3 - Original JavaScript engine
 

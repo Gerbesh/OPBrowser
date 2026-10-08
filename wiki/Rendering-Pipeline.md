@@ -165,14 +165,18 @@ shrink-to-fit positioned auto widths and direct percentage-height propagation fr
 heights are implemented. Non-replaced positioned block margin equations now distribute horizontal
 and vertical auto margins between definite opposing insets, preserve negative free-space cases
 and apply LTR/RTL horizontal overconstraint anchoring. Inline positioned boxes can retain a
-zero-width static-position marker at the real line cursor. Horizontal inline margins, including negative values, participate in advance;
+zero-width static-position marker at the real line cursor. The line formatter now
+retains undecorated relative inline boxes as geometric ancestors, records positioned fragments
+with LTR/RTL padding edges and resolves local absolute children from the first/last fragment
+within a formatting run. Relative offsets move inline paint but leave line advance unchanged.
+Horizontal inline margins, including negative values, participate in advance;
 initial `display:inline-block` runs a local block/BFC layout and enters the line as one atomic box.
 Block children split active inline decoration paths into continuation nodes, suppressing opposite
 logical fragment edges according to computed LTR/RTL direction. Required zero-width intermediate
 fragments retain line height, later descendants attach to the newest continuation, and relative
 inline visual offsets are carried onto split block/float output without changing flow geometry.
 Large finite CSS lengths survive parsing and are bounded when converted to used integer geometry.
-Sticky positioning, full inline containing-block rectangles, complete bidi/vertical writing,
+Sticky positioning, cross-run split-inline containing-block rectangles, complete bidi/vertical writing,
 stacking/z-index, multicol and the remaining abspos constraint equations remain later. The inline formatter
 injects already-resolved
 generated before/after text (strings, attributes or counters) around real DOM children and emits the same BoxDecoration shape for

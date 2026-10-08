@@ -2178,3 +2178,32 @@ This file is append-only project history.
 - Updated local Windows executable: `target/release/op_browser.exe`, **1,051,136 bytes**,
   SHA-256 `36E7CDBE96D3F1D1E9CE6AD60998F52262B0645D2A72BB02987AF37256F2E4EE`.
 
+## 2026-10-08 - Initial relative-inline containing rectangles
+
+- Preserve `position:relative` inline ancestors as arena box nodes even without visible
+  backgrounds or borders; this gives absolute descendants a real nearest positioned inline
+  containing-block identity rather than always falling back to block/viewport geometry.
+- Add first/last fragment geometry emitted from the normal line formatter, with direction-aware
+  LTR/RTL padding edge resolution and definite height for percentage-positioned descendants.
+- Translate relative inline decorations, text, images and atomic content visually without
+  consuming extra inline advance or normal-flow height. Nested relative offsets accumulate.
+  Fixed-position descendants continue to resolve against the viewport.
+- Route absolute/fixed descendants through zero-width inline markers when the containing inline
+  path has a relative ancestor, while retaining block-level static-position fallback inside
+  unrelated unpositioned inline elements.
+- Avoid creating spurious empty continuation lines for undecorated relative inline nodes and
+  prevent metadata-only boxes from blocking normal empty-block margin collapse.
+- Added five deterministic inline integration tests for undecorated ancestors, nested/viewport
+  precedence, wrapping, RTL fragment edge selection and preservation of legacy static positions.
+- Pinned compatibility metrics unchanged after regression correction: WPT Static v1
+  **187/200 (93.50%)**, WPT Positioning v1 **36/100 (36.00%)**, Test262 Parser v1
+  **523/1983 (26.37%)**. Initial implementation temporarily dropped two positioning
+  cases; selective marker routing and empty fragment fixes restored the baseline.
+- Known limitation: split inline ancestors spanning distinct block/line formatter runs do
+  not yet accumulate one complete containing rectangle; vertical writing, bidi reordering,
+  multicol and stacking/z-index remain unimplemented.
+- Final verification passed rustfmt --check, workspace Clippy with -D warnings, full
+  workspace tests, Win32 startup/paint smoke, pinned compatibility suites and release build.
+- Rebuilt local `target/release/op_browser.exe`: **1,056,256 bytes**, SHA-256
+  `0DEE29CA9CB3A15AB2A4FDA4B4EF2EA5F880ACA04FBB2453EF6342EFE189036D`.
+

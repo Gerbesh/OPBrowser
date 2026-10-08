@@ -1,5 +1,6 @@
 use super::inline::{
-    InlineAtomic, InlineBoxStyle, InlineBoxes, InlineChar, InlineImage, InlineStyle, Item, Lines,
+    InlineAtomic, InlineBoxStyle, InlineBoxes, InlineChar, InlineFragment, InlineImage,
+    InlineStyle, Item, Lines,
 };
 use super::*;
 use op_css::{
@@ -426,6 +427,7 @@ impl<'a> Context<'a, '_> {
                 LayoutItem::Image(index) => LayoutItem::Image(index + self.images_out.len()),
             }));
         let positioned = lines.positioned.clone();
+        let fragments = lines.fragments.clone();
         self.decorations.extend(lines.decorations);
         self.text.extend(lines.text_boxes);
         self.images_out.extend(lines.image_boxes);
@@ -437,11 +439,52 @@ impl<'a> Context<'a, '_> {
                     positioned.href,
                     positioned.style,
                     positioned.display,
-                    marker.x,
-                    marker.y,
+                    (marker.x, marker.y),
+                    marker
+                        .ancestor
+                        .and_then(|ancestor| Self::inline_containing_context(ancestor, &fragments)),
                 );
             }
         }
+    }
+
+    fn inline_containing_context(
+        ancestor: NodeId,
+        fragments: &[InlineFragment],
+    ) -> Option<PositioningContext> {
+        let first = fragments
+            .iter()
+            .find(|fragment| fragment.node == ancestor)?;
+        let last = fragments
+            .iter()
+            .rfind(|fragment| fragment.node == ancestor)?;
+        // CSS2.1 inline containing blocks use the first fragment's padding
+        // start and the last fragment's padding end, not the parent block.
+        let left = match first.direction {
+            Direction::Ltr => first.x.saturating_add(first.border_left),
+            Direction::Rtl => last.x.saturating_add(last.border_left),
+        };
+        let top = first.y.saturating_add(first.border_top);
+        let right = match first.direction {
+            Direction::Ltr => last
+                .x
+                .saturating_add(last.width)
+                .saturating_sub(last.border_right),
+            Direction::Rtl => first
+                .x
+                .saturating_add(first.width)
+                .saturating_sub(first.border_right),
+        };
+        let bottom = last
+            .y
+            .saturating_add(last.height)
+            .saturating_sub(last.border_bottom);
+        Some(PositioningContext {
+            x: left,
+            y: top,
+            width: right.saturating_sub(left).max(1),
+            height: Some(bottom.saturating_sub(top).max(0)),
+        })
     }
 
     fn output_start(&self) -> OutputStart {
@@ -492,9 +535,10 @@ impl<'a> Context<'a, '_> {
         href: Option<&'a str>,
         mut style: Style,
         display: Display,
-        static_x: i32,
-        static_y: i32,
+        static_position: (i32, i32),
+        containing_override: Option<PositioningContext>,
     ) {
+        let (static_x, static_y) = static_position;
         self.flush_pending_margin();
         let saved_y = self.y;
         let saved_margin = self.pending_margin.take();
@@ -504,7 +548,7 @@ impl<'a> Context<'a, '_> {
         let positioning = if style.position == Position::Fixed {
             self.viewport_positioning_context()
         } else {
-            self.current_positioning_context()
+            containing_override.unwrap_or_else(|| self.current_positioning_context())
         };
         let left = style
             .inset
@@ -3054,7 +3098,10 @@ impl<'a> Context<'a, '_> {
                         )?,
                         Display::Inline => {
                             if resolve_inline_box_style(*child, None, child_style, containing_width)
-                                .is_some()
+                                .is_some_and(|box_style| {
+                                    box_style.reserves_empty_fragment()
+                                        || box_style.background.alpha > 0
+                                })
                                 || self
                                     .computed_styles
                                     .pseudo_style_for(*child, PseudoElement::Before)
@@ -3199,7 +3246,12 @@ impl<'a> Context<'a, '_> {
                 if matches!(current.position, Position::Absolute | Position::Fixed)
                     && display != Display::Contents
                 {
-                    if display == Display::Inline {
+                    if display == Display::Inline
+                        || self
+                            .inline_boxes
+                            .positioned_ancestor(inherited.inline.boxes)
+                            .is_some()
+                    {
                         let marker = self.inline_positioned.len();
                         current.inline.boxes = inherited.inline.boxes;
                         self.inline_positioned.push(InlinePositioned {
@@ -3213,7 +3265,14 @@ impl<'a> Context<'a, '_> {
                         self.emit(items, inherited, containing_x, containing_width);
                         self.flush_pending_margin();
                         let static_y = self.y;
-                        self.positioned_element(id, href, current, display, containing_x, static_y);
+                        self.positioned_element(
+                            id,
+                            href,
+                            current,
+                            display,
+                            (containing_x, static_y),
+                            None,
+                        );
                     }
                     return;
                 }
@@ -3226,7 +3285,16 @@ impl<'a> Context<'a, '_> {
                         inherited.inline.boxes
                     } else {
                         resolve_inline_box_style(id, None, current, containing_width)
-                            .map(|box_style| {
+                            .map(|mut box_style| {
+                                if current.position == Position::Relative {
+                                    let (dx, dy) = relative_position_offset(
+                                        current,
+                                        containing_width,
+                                        self.flow_height_stack.last().copied().flatten(),
+                                    );
+                                    box_style.offset_x = dx;
+                                    box_style.offset_y = dy;
+                                }
                                 self.inline_boxes.push(box_style, inherited.inline.boxes)
                             })
                             .or(inherited.inline.boxes)
@@ -3321,7 +3389,11 @@ impl<'a> Context<'a, '_> {
                                 || (self.inline_boxes.is_continuation(active_inline)
                                     && !self
                                         .inline_boxes
-                                        .had_visible_content_before(active_inline)))
+                                        .had_visible_content_before(active_inline)
+                                    && self
+                                        .inline_boxes
+                                        .style(active_inline)
+                                        .reserves_empty_fragment()))
                         {
                             let mut fragment = inherited.inline;
                             fragment.boxes = Some(active_inline);
@@ -3854,34 +3926,39 @@ fn resolve_inline_box_style(
         || border.right.width > 0
         || border.bottom.width > 0
         || border.left.width > 0;
-    visible.then_some(InlineBoxStyle {
-        node,
-        pseudo,
-        direction: style.direction,
-        margin_right,
-        margin_left,
-        padding_top,
-        padding_right,
-        padding_bottom,
-        padding_left,
-        background: style.background,
-        border_top: DecorationBorder {
-            width: border.top.width,
-            color: border.top.color,
+    (visible || (pseudo.is_none() && style.position == Position::Relative)).then_some(
+        InlineBoxStyle {
+            node,
+            pseudo,
+            direction: style.direction,
+            positioned: pseudo.is_none() && style.position == Position::Relative,
+            offset_x: 0,
+            offset_y: 0,
+            margin_right,
+            margin_left,
+            padding_top,
+            padding_right,
+            padding_bottom,
+            padding_left,
+            background: style.background,
+            border_top: DecorationBorder {
+                width: border.top.width,
+                color: border.top.color,
+            },
+            border_right: DecorationBorder {
+                width: border.right.width,
+                color: border.right.color,
+            },
+            border_bottom: DecorationBorder {
+                width: border.bottom.width,
+                color: border.bottom.color,
+            },
+            border_left: DecorationBorder {
+                width: border.left.width,
+                color: border.left.color,
+            },
         },
-        border_right: DecorationBorder {
-            width: border.right.width,
-            color: border.right.color,
-        },
-        border_bottom: DecorationBorder {
-            width: border.bottom.width,
-            color: border.bottom.color,
-        },
-        border_left: DecorationBorder {
-            width: border.left.width,
-            color: border.left.color,
-        },
-    })
+    )
 }
 
 fn table_span(element: &op_dom::ElementData, name: &str, default: usize, maximum: usize) -> usize {

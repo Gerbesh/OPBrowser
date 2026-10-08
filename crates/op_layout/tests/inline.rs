@@ -40,6 +40,156 @@ fn layout(html: &str, width: i32, measurer: &mut dyn TextMeasurer) -> LayoutTree
 }
 
 #[test]
+fn undecorated_relative_inline_establishes_containing_block_for_absolute_child() {
+    let page = layout(
+        "<div style='margin:0'>Before <span style='position:relative;left:20px;top:9px'>AB<span style='position:absolute;display:block;left:12px;top:7px;width:20px;height:10px;background:blue'></span>CD</span> after</div>",
+        800,
+        &mut Fixed,
+    );
+    let positioned = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    let containing = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background.alpha == 0 && box_.width == 40)
+        .unwrap();
+    assert_eq!(
+        (positioned.x, positioned.y),
+        (containing.x + 12, containing.y + 7)
+    );
+    assert_eq!((positioned.width, positioned.height), (20, 10));
+    let before = page
+        .text_boxes
+        .iter()
+        .find(|text| text.text == "Before ")
+        .unwrap();
+    let inner = page
+        .text_boxes
+        .iter()
+        .find(|text| text.text == "AB")
+        .unwrap();
+    let after = page
+        .text_boxes
+        .iter()
+        .find(|text| text.text == " after")
+        .unwrap();
+    assert_eq!(inner.x, before.x + before.width + 20);
+    assert_eq!(inner.y, before.y + 9);
+    assert_eq!(after.x, before.x + before.width + 40);
+    assert_eq!(after.y, before.y);
+}
+
+#[test]
+fn nearest_relative_inline_wins_over_nested_relative_block_and_fixed_uses_viewport() {
+    let page = layout(
+        "<div style='margin:0;position:relative;width:300px;height:70px;background:red'><span style='position:relative;left:15px;top:5px'>AA<span style='position:relative;left:7px;top:4px'>BB<span style='position:absolute;left:3px;top:6px;width:10px;height:10px;background:blue'></span></span><span style='position:fixed;left:20px;top:30px;width:10px;height:10px;background:green'></span></span></div>",
+        800,
+        &mut Fixed,
+    );
+    let blue = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    let green = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::GREEN.into())
+        .unwrap();
+    let bb = page
+        .text_boxes
+        .iter()
+        .find(|text| text.text == "BB")
+        .unwrap();
+    let inner = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background.alpha == 0 && box_.x == bb.x)
+        .unwrap();
+    assert_eq!((blue.x, blue.y), (inner.x + 3, inner.y + 6));
+    assert_eq!((green.x, green.y), (20, 30));
+}
+
+#[test]
+fn wrapped_relative_inline_uses_first_and_last_fragment_padding_edges() {
+    let page = layout(
+        "<div style='margin:0;width:70px'><span style='position:relative;left:5px;top:3px;background:red'>abc def ghi<span style='position:absolute;left:0;top:0;width:8px;height:8px;background:blue'></span></span></div>",
+        800,
+        &mut Fixed,
+    );
+    let fragments: Vec<_> = page
+        .box_decorations
+        .iter()
+        .filter(|box_| box_.background == op_css::CssColor::RED.into())
+        .collect();
+    assert!(fragments.len() >= 2);
+    let blue = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    assert_eq!((blue.x, blue.y), (fragments[0].x, fragments[0].y));
+    assert_eq!(
+        page.text_boxes
+            .iter()
+            .filter(|text| text.text.contains("abc"))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn rtl_relative_inline_uses_last_fragment_left_and_first_fragment_right() {
+    let page = layout(
+        "<div style='margin:0;width:85px'>XX <span style='position:relative;direction:rtl;background:red'>abc def ghi<span style='position:absolute;left:0;top:0;width:8px;height:8px;background:blue'></span></span></div>",
+        800,
+        &mut Fixed,
+    );
+    let fragments: Vec<_> = page
+        .box_decorations
+        .iter()
+        .filter(|box_| box_.background == op_css::CssColor::RED.into())
+        .collect();
+    assert!(fragments.len() >= 2);
+    assert_ne!(fragments[0].x, fragments.last().unwrap().x);
+    let child = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    assert_eq!(child.x, fragments.last().unwrap().x);
+    assert_eq!(child.y, fragments[0].y);
+}
+
+#[test]
+fn non_positioned_inline_does_not_reparent_block_level_absolute_static_position() {
+    let page = layout(
+        "<div style='margin:0'><span style='margin-right:-10px'>x<div style='position:absolute;width:10px;height:10px;background:blue'></div></span></div>",
+        800,
+        &mut Fixed,
+    );
+    let reference = layout(
+        "<div style='margin:0'>x<br><span style='position:absolute;width:10px;height:10px;background:blue'></span></div>",
+        800,
+        &mut Fixed,
+    );
+    let actual = page
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    let expected = reference
+        .box_decorations
+        .iter()
+        .find(|box_| box_.background == op_css::CssColor::BLUE.into())
+        .unwrap();
+    assert_eq!((actual.x, actual.y), (expected.x, expected.y));
+}
+
+#[test]
 fn nested_decorations_keep_outer_geometry_and_paint_order_across_text_styles() {
     let page = layout(
         "<p style='line-height:18px'><span style='padding:2px 3px;border:1px solid red;background:red'>A<span style='padding:4px 5px;border:2px solid blue;background:blue'><b>B</b></span>C</span>Z</p>",

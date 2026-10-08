@@ -416,6 +416,8 @@ classDiagram
     class InlineBoxStyle {
         node_id
         pseudo_identity
+        relative_position_marker
+        local_visual_offset
         padding_edges
         background
         border_edges
@@ -431,6 +433,12 @@ classDiagram
         continuation links / split-fragment history
         cached cumulative edges and depth
         iterative stack transitions
+        nearest positioned ancestor / visual offsets
+    }
+    class InlineFragment {
+        node_id / direction
+        border box / padding edge bounds
+        per-line relative inline containing geometry
     }
     class InlineStyle {
         typography
@@ -594,6 +602,8 @@ classDiagram
     Document --> BlockContent : ordinary element child traversal
     BlockContent --> BoxDecoration : shared normal-flow block geometry / empty boxes
     FlowContext --> PositioningContext : nearest positioned ancestor / viewport fallback
+    InlineBoxes --> InlineFragment : relative inline measured line fragments
+    InlineFragment --> PositioningContext : first/last fragment padding bounds within a line formatting run
     PositioningContext --> BoxDecoration : abs/fixed insets, axis margin equations and containing geometry
     InlineAtomic --> LayoutTree : inline-table and inline-flex atomic placement
     InlineAtomic --> BoxDecoration : nested flex/table decorations rebased into parent flow

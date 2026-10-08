@@ -413,10 +413,17 @@ positioning path now solves both horizontal and vertical auto margins against th
 after opposing insets and used border-box size. It handles a single auto margin, equal auto margins,
 negative horizontal free space according to LTR/RTL, negative vertical free space on the bottom, and
 overconstrained horizontal fixed margins by preferring left in LTR/right in RTL. A missing inset
-resolves auto margins to zero instead of centering against the viewport. Full inline containing-block
-rectangles, complex/replaced positioned constraints, bidi/vertical writing, multicol, sticky and
-stacking remain later work. WPT Positioning v1 remains 36/100 (36.00%) in the frozen manifest after
-this targeted fix; project regressions cover the newly supported margin cases. WPT Static remains
+resolves auto margins to zero instead of centering against the viewport. Relative inline elements
+now retain box-stack identity even with no visible decoration. Lines emits per-fragment measured
+border/padding geometry, tracks their relative visual offsets without consuming flow space and
+identifies the nearest positioned inline ancestor for absolute descendants. Within one emitted line
+formatting run, first/last fragment padding edges (LTR/RTL) establish the positioned containing
+rectangle, including a definite height for percentage insets. Positioned blocks inside unpositioned
+inline ancestors retain the legacy static-position path, while fixed descendants remain
+viewport-anchored. Cross-run fragment accumulation across separate block splits, complex/replaced
+positioned constraints, bidi/vertical writing, multicol, sticky and stacking remain later work.
+WPT Positioning v1 stays 36/100 (36.00%) on the frozen manifest without regression; project
+regressions cover both margin equations and this new inline rectangle slice. WPT Static remains
 frozen at 187/200 for historical comparison.
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
