@@ -117,6 +117,15 @@ resolves dependent backgrounds and borders at paint time for descendants
 inheriting the host color while preserving explicit child colors and later
 line fragments. Strict WPT Static v1 improves 196/200 -> 197/200 (98.50%);
 XYZ precision and two pinned Rec.2020 reference discrepancies remain.
+The user-agent default font size is now 16 CSS px instead of 18,
+matching common desktop browser defaults. The pinned WPT probe
+preserves the strict exact-color score and optionally reports source-
+authored fuzzy allowances with --report-wpt-fuzzy. That separate report
+reads HTML metadata through the own HTML tokenizer and checks both
+maximum per-channel difference and total pixels against inclusive
+ranges. With xyz-003's original 0-1 / 0-18432 metadata and the corrected
+font-size geometry, WPT-metadata Static is 198/200 (99%) while strict
+Static remains 197/200 (98.5%). Rec.2020 reference mismatches remain.
 This is not full CSS stacking: additional context triggers, other auto-z
 paint-phase details and exact interleaving remain future work. Win32 drawing
 never decides paint order.

@@ -461,6 +461,21 @@ Status: IN PROGRESS.
   two Rec.2020 references versus current gamma 2.4 CSS Color 4 transfer.
   Keep the strict WPT score unmodified; expand gradient/shadow support
   and positioning separately rather than add test-specific constants.
+- DONE WPT-authored fuzzy metadata reporting without changing the strict
+  metric: --report-wpt-fuzzy parses only original HTML meta[name=fuzzy]
+  limits, validates both per-channel max difference and total differing
+  pixels (including inclusive ranges and per-reference overrides), and
+  reports a second visibly separate percentage. Correct the normal default
+  font-size to conventional 16px; adapt geometry assertions to the changed
+  CSS em/rem and glyph metrics. The xyz-003 rectangular area now covers
+  exactly 18432 pixels and qualifies under its upstream maxDifference=0-1,
+  totalPixels=0-18432 metadata. Strict Static remains 197/200 (98.50%)
+  while optional WPT-metadata-aware Static is 198/200 (99.00%).
+  Positioning remains 53/100; no suite/manifest/reference/tolerance edits.
+- NEXT remaining two WPT-authored Static failures are the Rec.2020 colorspace
+  references versus current CSS Color 4 gamma 2.4. Investigate reference
+  provenance, improve wider color conversion and positioning independently,
+  and do not hardcode reference colors into the engine.
 
 ## M3 - Original JavaScript engine
 

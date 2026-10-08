@@ -1065,6 +1065,20 @@ Children with different explicit colors and later lines retain their original
 colors. The unchanged static currentcolor-003 image now passes exactly,
 raising strict Static WPT from 196/200 to 197/200.
 
+The WPT compliance reporting pipeline now runs two independent checks
+against the same rendered BGRA surfaces: the original strict byte-for-byte
+comparison, and an optional source-authored fuzzy report. In
+op_browser::bin::wpt_probe, --report-wpt-fuzzy reads the original test
+document through op_html::Tokenizer; parses WPT meta[name=fuzzy] bounds
+plus reference-specific overrides; computes actual maximum RGB channel
+difference and count of nonidentical pixels; then requires BOTH fields
+to fall within their inclusive ranges. Only extra console metrics are
+emitted, leaving the pre-existing JSON schema, CI badge, pinned manifests,
+and raw strict pass/fail score intact. The default ComputedStyle font-size
+is normalized to customary 16px, fixing em/rem sizing for WPT tests.
+Strict Static remains 197/200; optional WPT-authored metadata yields
+198/200. Neither metric reports the two Rec.2020 cases as passing.
+
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting
 an extra empty inline fragment after a block child/pseudo flushed the collection. Nested

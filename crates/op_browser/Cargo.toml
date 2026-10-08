@@ -6,5 +6,6 @@ default-run = "op_browser"
 
 [dependencies]
 op_engine = { path = "../op_engine" }
+op_html = { path = "../op_html" }
 op_paint = { path = "../op_paint" }
 op_platform_win = { path = "../op_platform_win" }

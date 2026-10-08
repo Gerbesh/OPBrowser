@@ -2599,3 +2599,32 @@ This file is append-only project history.
   within its own WPT fuzzy metadata). Test fixtures, thresholds and
   manifest are unchanged.
 
+## 2026-10-08 - Standard UA medium font and opt-in WPT fuzzy metadata report
+
+- Start from bdbdb58, frozen strict Static 197/200 and Positioning 53/100.
+- Verify the 2026-10-07 CSS Color 4 Candidate Recommendation explicitly
+  specifies Rec.2020 BT.1886 gamma 2.4 (rather than camera OETF);
+  keep legitimate color conversion instead of changing constants only
+  to match two stale green-reference samples.
+- Inspect xyz-003 original meta name=fuzzy:
+  maxDifference=0-1;totalPixels=0-18432. Exact rendering differs
+  only by one blue channel byte, but the 18px default made the
+  box 23328 pixels, too large to qualify under the authored allowance.
+- Normalize initial UA font-size 18px -> 16px, aligning with typical
+  browser medium defaults and 12em x 6em = 192x96 = 18432 pixels.
+  Update exact expected CSS rem, block, inline, line and typography
+  test dimensions and add an explicit initial-font/rem regression.
+  Frozen WPT Positioning remains 53/100; Static exact still 197/200.
+- Add --report-wpt-fuzzy to the existing wpt_probe without changing
+  default behavior. Use op_html::Tokenizer on the original WPT file,
+  parse optional global/reference-specific fuzzy meta values (including
+  inclusive ranges), and measure observed largest channel difference
+  together with total differing pixels. Both authored bounds must pass.
+  Unmarked tests receive no additional tolerance. Add tests for
+  malformed bounds, overrides, inclusive ranges and independent limits.
+- On the SAME pinned manifest and render output, report strict Static
+  197/200 (98.5%), WPT metadata-aware 198/200 (99%), Positioning
+  53/100. rec2020-001 and predefined-012 remain failures in both
+  modes. No edits to frozen fixtures, manifest, output-pixel comparison,
+  or original CI/JSON metric.
+

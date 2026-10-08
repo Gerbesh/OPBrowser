@@ -26,6 +26,125 @@ struct Config {
     max_different_pixels: usize,
     json_out: Option<PathBuf>,
     dump_failures: Option<PathBuf>,
+    report_wpt_fuzzy: bool,
+}
+
+/// The upstream WPT reftest allowance is a range in each dimension,
+/// not a global pixel tolerance. Both limits must hold simultaneously.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FuzzyAllowance {
+    max_difference: (usize, usize),
+    total_pixels: (usize, usize),
+}
+
+fn parse_fuzzy_range(value: &str) -> Option<(usize, usize)> {
+    let (min, max) = value.split_once('-').unwrap_or((value, value));
+    let min = min.trim().parse::<usize>().ok()?;
+    let max = max.trim().parse::<usize>().ok()?;
+    (min <= max).then_some((min, max))
+}
+
+fn parse_fuzzy_limits(value: &str) -> Option<FuzzyAllowance> {
+    let mut max_difference = None;
+    let mut total_pixels = None;
+    for part in value.split(';') {
+        let part = part.trim();
+        let (key, range) = part.split_once('=').unwrap_or(("", part));
+        let parsed = parse_fuzzy_range(range)?;
+        match key.trim() {
+            "maxDifference" => max_difference = Some(parsed),
+            "totalPixels" => total_pixels = Some(parsed),
+            "" if max_difference.is_none() => max_difference = Some(parsed),
+            "" if total_pixels.is_none() => total_pixels = Some(parsed),
+            _ => return None,
+        }
+    }
+    Some(FuzzyAllowance {
+        max_difference: max_difference?,
+        total_pixels: total_pixels?,
+    })
+}
+
+fn fuzzy_metadata(html: &str, reference: &str) -> Option<FuzzyAllowance> {
+    let mut global = None;
+    let mut specific = None;
+    for token in op_html::Tokenizer::new(html).tokenize() {
+        let op_html::Token::StartTag {
+            name, attributes, ..
+        } = token
+        else {
+            continue;
+        };
+        if !name.eq_ignore_ascii_case("meta") {
+            continue;
+        }
+        let attr = |name: &str| {
+            attributes
+                .iter()
+                .find(|a| a.name.eq_ignore_ascii_case(name))
+                .map(|a| a.value.as_str())
+        };
+        if !attr("name").is_some_and(|name| name.eq_ignore_ascii_case("fuzzy")) {
+            continue;
+        }
+        let Some(content) = attr("content") else {
+            continue;
+        };
+        let (reference_only, limits) = if let Some((prefix, rest)) = content.split_once(':') {
+            (Some(prefix.trim()), rest)
+        } else {
+            (None, content)
+        };
+        let Some(limits) = parse_fuzzy_limits(limits) else {
+            continue;
+        };
+        if let Some(target) = reference_only {
+            if reference.replace('\\', "/").ends_with(target) {
+                specific = Some(limits);
+            }
+        } else {
+            global = Some(limits);
+        }
+    }
+    specific.or(global)
+}
+
+fn observed_pixel_difference(left: &[u8], right: &[u8]) -> Option<(usize, usize)> {
+    if left.len() != right.len() || !left.len().is_multiple_of(4) {
+        return None;
+    }
+    let mut max_difference = 0usize;
+    let mut total_pixels = 0usize;
+    let (left_pixels, _) = left.as_chunks::<4>();
+    let (right_pixels, _) = right.as_chunks::<4>();
+    for (left, right) in left_pixels.iter().zip(right_pixels) {
+        let pixel_difference = (0..3)
+            .map(|ch| usize::from(left[ch].abs_diff(right[ch])))
+            .max()
+            .unwrap_or(0);
+        if pixel_difference > 0 {
+            total_pixels += 1;
+        }
+        max_difference = max_difference.max(pixel_difference);
+    }
+    Some((max_difference, total_pixels))
+}
+
+fn within_wpt_fuzzy(left: &[u8], right: &[u8], limits: FuzzyAllowance) -> bool {
+    let Some((max_difference, total_pixels)) = observed_pixel_difference(left, right) else {
+        return false;
+    };
+    (limits.max_difference.0..=limits.max_difference.1).contains(&max_difference)
+        && (limits.total_pixels.0..=limits.total_pixels.1).contains(&total_pixels)
+}
+
+fn load_wpt_fuzzy(root: &Path, test: &str, reference: &str) -> Option<FuzzyAllowance> {
+    let path = root.join(test);
+    // Keep metadata reporting lightweight even for giant stress fixtures.
+    if fs::metadata(&path).ok()?.len() > 2 * 1024 * 1024 {
+        return None;
+    }
+    fuzzy_metadata(&fs::read_to_string(path).ok()?, reference)
 }
 
 fn main() {
@@ -34,7 +153,7 @@ fn main() {
         eprintln!(
             "usage: wpt_probe <wpt-root> <manifest.tsv> [--width N] [--height N] \
              [--channel-tolerance N] [--max-different-pixels N] [--json-out PATH] \
-             [--dump-failures DIRECTORY]"
+             [--dump-failures DIRECTORY] [--report-wpt-fuzzy]"
         );
         std::process::exit(2);
     });
@@ -58,6 +177,7 @@ fn main() {
     }
 
     let mut counts = Counts::default();
+    let mut wpt_metadata_passed = 0usize;
     let mut logged_failures = 0usize;
     if let Some(directory) = &config.dump_failures {
         fs::create_dir_all(directory).unwrap_or_else(|error| {
@@ -78,7 +198,17 @@ fn main() {
             (Ok(test_pixels), Ok(reference_pixels)) => {
                 let different =
                     different_pixels(&test_pixels, &reference_pixels, config.channel_tolerance);
-                if different <= config.max_different_pixels {
+                let strict_pass = different <= config.max_different_pixels;
+                if config.report_wpt_fuzzy {
+                    let metadata_pass = load_wpt_fuzzy(&config.root, &test, &reference)
+                        .is_some_and(|limits| {
+                            within_wpt_fuzzy(&test_pixels, &reference_pixels, limits)
+                        });
+                    if strict_pass || metadata_pass {
+                        wpt_metadata_passed += 1;
+                    }
+                }
+                if strict_pass {
                     counts.passed += 1;
                 } else {
                     counts.failed += 1;
@@ -120,6 +250,7 @@ fn main() {
         }
     }
 
+    let wpt_metadata_percent = percent(wpt_metadata_passed, counts.total);
     let percent = percent(counts.passed, counts.total);
     println!("WPT reftest subset");
     println!("suite={suite}");
@@ -129,6 +260,12 @@ fn main() {
     println!("failed={}", counts.failed);
     println!("render_errors={}", counts.errors);
     println!("percent={percent:.2}");
+    if config.report_wpt_fuzzy {
+        println!("wpt_metadata_passed={wpt_metadata_passed}");
+        println!("wpt_metadata_failed={}", counts.total - wpt_metadata_passed);
+        println!("wpt_metadata_percent={wpt_metadata_percent:.2}");
+        println!("wpt_metadata_report_is_separate=true");
+    }
     if let Some(directory) = &config.dump_failures {
         println!(
             "failure_bitmaps_saved_at={} (up to {FAILURE_DUMP_LIMIT} cases)",
@@ -164,10 +301,12 @@ fn parse_args() -> Result<Config, String> {
         max_different_pixels: 0,
         json_out: None,
         dump_failures: None,
+        report_wpt_fuzzy: false,
     };
 
     while let Some(argument) = args.next() {
         match argument.as_str() {
+            "--report-wpt-fuzzy" => config.report_wpt_fuzzy = true,
             "--width" => {
                 config.width = parse_positive_i32(args.next(), "--width")?;
             }
@@ -377,6 +516,79 @@ fn write_json(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wpt_fuzzy_parses_ranges_and_meta_reference_specific_overrides() {
+        assert_eq!(
+            parse_fuzzy_limits("maxDifference=0-1;totalPixels=0-18432"),
+            Some(FuzzyAllowance {
+                max_difference: (0, 1),
+                total_pixels: (0, 18432)
+            })
+        );
+        assert_eq!(
+            parse_fuzzy_limits("5;20-50"),
+            Some(FuzzyAllowance {
+                max_difference: (5, 5),
+                total_pixels: (20, 50)
+            })
+        );
+        assert!(parse_fuzzy_limits("maxDifference=9-3;totalPixels=0-5").is_none());
+        assert!(parse_fuzzy_limits("maxDifference=2").is_none());
+        let source = r#"<meta name=fuzzy content="maxDifference=0-1;totalPixels=0-100">
+          <meta content='other-ref.html:maxDifference=0-3;totalPixels=0-500' name='fuzzy'>
+          <div data-x='<meta name=fuzzy content="0;0">'></div>"#;
+        assert_eq!(
+            fuzzy_metadata(source, "folder/other-ref.html"),
+            Some(FuzzyAllowance {
+                max_difference: (0, 3),
+                total_pixels: (0, 500)
+            })
+        );
+        assert_eq!(
+            fuzzy_metadata(source, "folder/first-ref.html"),
+            Some(FuzzyAllowance {
+                max_difference: (0, 1),
+                total_pixels: (0, 100)
+            })
+        );
+    }
+
+    #[test]
+    fn wpt_fuzzy_enforces_both_channel_and_pixel_ranges() {
+        let left = [10u8, 20, 30, 255, 20, 30, 40, 255, 40, 50, 60, 0];
+        let right = [11u8, 20, 30, 0, 20, 32, 40, 0, 40, 50, 60, 255];
+        assert_eq!(observed_pixel_difference(&left, &right), Some((2, 2)));
+        let allowed = FuzzyAllowance {
+            max_difference: (1, 2),
+            total_pixels: (1, 2),
+        };
+        assert!(within_wpt_fuzzy(&left, &right, allowed));
+        assert!(!within_wpt_fuzzy(
+            &left,
+            &right,
+            FuzzyAllowance {
+                max_difference: (0, 1),
+                ..allowed
+            }
+        ));
+        assert!(!within_wpt_fuzzy(
+            &left,
+            &right,
+            FuzzyAllowance {
+                total_pixels: (0, 1),
+                ..allowed
+            }
+        ));
+        assert!(!within_wpt_fuzzy(
+            &left,
+            &right,
+            FuzzyAllowance {
+                total_pixels: (3, 3),
+                ..allowed
+            }
+        ));
+    }
 
     #[test]
     fn pixel_comparison_ignores_alpha_and_honors_tolerance() {

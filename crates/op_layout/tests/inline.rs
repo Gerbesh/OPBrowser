@@ -921,7 +921,7 @@ fn groups_inline_siblings_and_honors_block_and_repeated_br_boundaries() {
             .collect::<Vec<_>>(),
         ["one two", "three", "block", "tail"]
     );
-    assert_eq!(page.text_boxes[1].y - page.text_boxes[0].y, 48);
+    assert_eq!(page.text_boxes[1].y - page.text_boxes[0].y, 44);
     assert!(page.text_boxes[2].y > page.text_boxes[1].y);
     assert!(page.text_boxes[3].y >= page.text_boxes[2].y + page.text_boxes[2].height);
 }

@@ -631,6 +631,23 @@ its frozen reference pixel-for-pixel. Static v1 reaches 197/200 (98.50%)
 with exact comparison intact; general gradient, shadow and outline effects
 are still incomplete.
 
+The frozen WPT measurement now optionally shows a second compliance result
+from unmodified test-supplied fuzzy metadata. The original wpt_probe
+default still compares RGB channels and every pixel exactly; existing
+JSON CI percent and manifests remain unchanged. With --report-wpt-fuzzy,
+the HTML tokenizer scans meta name=fuzzy entries, including the
+reference-specific override form, then requires observed maximum channel
+error AND total differing pixels to fall inside their author-declared
+inclusive ranges. Unmarked tests still use the strict outcome.
+Default 'medium' text changes from OPBrowser's previous 18px to the
+conventional 16 CSS pixels, correcting the shape of em-based WPT fixtures.
+Corresponding unit assertions now validate rem and line/inline metrics
+at 16px. With xyz-003 reporting one blue byte over 18432 pixels (both
+allowed by its own metadata), optional WPT metadata-aware Static v1
+reports 198/200 (99.00%); the primary strict metric still reports
+197/200 (98.50%), and Positioning stays 53/100. These separate numbers
+must not be conflated or used to claim 100% pixel-exact fidelity.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus

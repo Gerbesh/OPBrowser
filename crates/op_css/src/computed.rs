@@ -499,7 +499,7 @@ impl ComputedStyle {
             clear: Clear::None,
             inset: InsetEdges::AUTO,
             color: CssColor::BLACK,
-            font_size_px: 18.0,
+            font_size_px: 16.0,
             font_weight: ComputedFontWeight::Normal,
             font_style: FontStyle::Normal,
             line_height: ComputedLineHeight::Normal,
@@ -5073,6 +5073,18 @@ mod tests {
     }
 
     #[test]
+    fn default_medium_font_is_16_css_pixels_and_root_rem_uses_it() {
+        let document = parse_document(
+            "<div id='root'>base</div><div id='rem' style='padding-left:2rem'>relative</div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let base = computed.style_for(find_by_id(&document, "root")).unwrap();
+        let relative = computed.style_for(find_by_id(&document, "rem")).unwrap();
+        assert_eq!(base.font_size_px, 16.0);
+        assert_eq!(relative.padding.left, LengthPercentage::Px(32.0));
+    }
+
+    #[test]
     fn ua_spacing_is_represented_as_computed_margins_and_can_be_overridden() {
         let document =
             parse_document("<p id='default'>a</p><p id='custom' style='margin:4px 5px'>b</p>");
@@ -5116,7 +5128,7 @@ mod tests {
             hero.margin.left,
             MarginValue::Length(LengthPercentage::Px(4.0))
         );
-        assert_eq!(hero.padding.right, LengthPercentage::Px(54.0));
+        assert_eq!(hero.padding.right, LengthPercentage::Px(48.0));
         assert_eq!(hero.border.left.width_px, 5.0);
         assert_eq!(hero.border.left.style, BorderStyle::Solid);
         assert_eq!(hero.border.left.color, CssColor::BLUE);
@@ -5135,7 +5147,7 @@ mod tests {
 
         assert_eq!(style.width, Some(LengthPercentage::Percent(0.5)));
         assert_eq!(style.min_width, LengthPercentage::Px(240.0));
-        assert_eq!(style.max_width, Some(LengthPercentage::Px(720.0)));
+        assert_eq!(style.max_width, Some(LengthPercentage::Px(640.0)));
         assert_eq!(style.height, Some(LengthPercentage::Px(120.0)));
         assert_eq!(style.min_height, LengthPercentage::Px(80.0));
         assert_eq!(style.box_sizing, BoxSizing::BorderBox);

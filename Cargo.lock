@@ -7,6 +7,7 @@ name = "op_browser"
 version = "0.1.0"
 dependencies = [
  "op_engine",
+ "op_html",
  "op_paint",
  "op_platform_win",
 ]

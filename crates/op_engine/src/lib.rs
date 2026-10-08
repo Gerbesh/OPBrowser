@@ -442,7 +442,7 @@ mod tests {
             .copied()
             .unwrap();
         assert_eq!(computed.color, op_css::CssColor::BLUE);
-        assert_eq!(computed.font_size_px, 18.0);
+        assert_eq!(computed.font_size_px, 16.0);
         assert_eq!(computed.display, op_css::Display::Block);
 
         let retained = engine.active_styles().unwrap().clone();
@@ -1691,7 +1691,7 @@ mod tests {
                 _ => None,
             });
         let background = background.expect("inline background must reach the display list");
-        assert!(background.2 > 20 && background.3 >= 34);
+        assert!(background.2 > 20 && background.3 >= 30, "{background:?}");
         assert!(
             display_list
                 .commands

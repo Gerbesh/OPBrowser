@@ -1200,7 +1200,7 @@ mod tests {
         assert_eq!(layout.text_boxes[0].text, "OPBrowser");
         assert_eq!(layout.text_boxes[0].font_size, 34);
         assert_eq!(layout.text_boxes[0].weight, FontWeight::Bold);
-        assert_eq!(layout.text_boxes[1].font_size, 18);
+        assert_eq!(layout.text_boxes[1].font_size, 16);
         assert!(layout.text_boxes[1].y > layout.text_boxes[0].y);
     }
 
@@ -1888,13 +1888,13 @@ mod tests {
             "the inline span should fragment across wrapped lines"
         );
         // With font-derived inline content height, a 16px font reserves
-        // 18px of content plus four pixels each of border and padding.
+        // 16px of content plus four pixels each of border and padding.
         assert!(fragments.iter().all(|fragment| {
             fragment.border_top.width == 2
                 && fragment.border_right.width == 2
                 && fragment.border_bottom.width == 2
                 && fragment.border_left.width == 2
-                && fragment.height == 26
+                && fragment.height == 24
         }));
 
         let boxed = layout
@@ -2118,8 +2118,8 @@ mod tests {
         // Different top padding/borders must meet at the same content
         // baseline rather than forcing identical border-box tops.
         assert_eq!(before.y + 3, after.y + 5);
-        assert_eq!(before.height, 24);
-        assert_eq!(after.height, 28);
+        assert_eq!(before.height, 22);
+        assert_eq!(after.height, 26);
         let total = before.width + body.width + after.width;
         assert_eq!(before.x, 32 + (436 - total) / 2);
     }
@@ -2177,7 +2177,7 @@ mod tests {
                 layout.box_decorations[0].width,
                 layout.box_decorations[0].height
             ),
-            (12, 26)
+            (12, 24)
         );
     }
 
