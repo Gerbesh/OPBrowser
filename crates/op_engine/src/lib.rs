@@ -871,6 +871,135 @@ mod tests {
     }
 
     #[test]
+    fn rowspan_does_not_inflate_height_of_first_row_or_table() {
+        let html = r#"<table style="width:100px;border-spacing:0;background:lime">
+          <tr><td rowspan="2" style="padding:0;background:red"><div style="height:120px;width:20px"></div></td>
+              <td style="padding:0;background:blue"><div style="height:20px;width:20px"></div></td></tr>
+          <tr><td style="padding:0;background:yellow"><div style="height:20px;width:20px"></div></td></tr>
+        </table>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let find = |red: u8, green: u8, blue: u8| -> (i32, i32, i32, i32) {
+            commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::FillRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        color,
+                    } if (color.r, color.g, color.b) == (red, green, blue) => {
+                        Some((*x, *y, *width, *height))
+                    }
+                    _ => None,
+                })
+                .expect("expected colored table region")
+        };
+        let table = find(0, 255, 0);
+        let span = find(255, 0, 0);
+        let first = find(0, 0, 255);
+        let second = find(255, 255, 0);
+        assert_eq!(table.3, 120);
+        assert_eq!(span.3, 120);
+        assert_eq!(first.3 + second.3, 120);
+        assert_eq!(first.1 + first.3, second.1);
+        assert_eq!(span.1, first.1);
+        assert_eq!(second.1 + second.3, span.1 + span.3);
+    }
+
+    #[test]
+    fn overlapping_rowspans_keep_following_cells_at_shared_track_boundaries() {
+        let html = r#"<table style="width:120px;border-spacing:0;background:lime">
+            <tr><td rowspan="3" style="padding:0;background:red"><div style="height:150px;width:20px"></div></td>
+                <td rowspan="2" style="padding:0;background:blue"><div style="height:70px;width:20px"></div></td>
+                <td style="padding:0"><div style="height:20px;width:20px"></div></td></tr>
+            <tr><td style="padding:0"><div style="height:20px;width:20px"></div></td></tr>
+            <tr><td style="padding:0;background:yellow"><div style="height:20px;width:20px"></div></td>
+                <td style="padding:0;background:aqua"><div style="height:20px;width:20px"></div></td></tr>
+            <tr><td colspan="3" style="padding:0;background:fuchsia"><div style="height:20px;width:20px"></div></td></tr>
+          </table>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let find = |rgb: (u8, u8, u8)| -> (i32, i32) {
+            commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::FillRect {
+                        y, height, color, ..
+                    } if (color.r, color.g, color.b) == rgb => Some((*y, *height)),
+                    _ => None,
+                })
+                .expect("colored cell")
+        };
+        let table = find((0, 255, 0));
+        let three = find((255, 0, 0));
+        let two = find((0, 0, 255));
+        let final_span_row = find((255, 255, 0));
+        let next_row = find((255, 0, 255));
+        assert_eq!(three.1, 150);
+        assert_eq!(two.1, 70);
+        assert_eq!(final_span_row.0 + final_span_row.1, three.0 + three.1);
+        assert_eq!(next_row.0, three.0 + three.1);
+        assert_eq!(table.1, 170);
+    }
+
+    #[test]
+    fn rowspan_respects_vertical_border_spacing_and_following_row_offset() {
+        let html = r#"<table style="width:100px;border-spacing:0 5px;background:lime">
+            <tr><td rowspan="2" style="padding:0;background:red"><div style="width:20px;height:120px"></div></td>
+                <td style="padding:0;background:blue"><div style="width:20px;height:20px"></div></td></tr>
+            <tr><td style="padding:0;background:yellow"><div style="width:20px;height:20px"></div></td></tr>
+            <tr><td colspan="2" style="padding:0;background:fuchsia"><div style="width:20px;height:20px"></div></td></tr>
+          </table>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let find = |rgb: (u8, u8, u8)| -> (i32, i32) {
+            commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::FillRect {
+                        y, height, color, ..
+                    } if (color.r, color.g, color.b) == rgb => Some((*y, *height)),
+                    _ => None,
+                })
+                .expect("colored cell")
+        };
+        let table = find((0, 255, 0));
+        let span = find((255, 0, 0));
+        let first = find((0, 0, 255));
+        let second = find((255, 255, 0));
+        let after = find((255, 0, 255));
+        assert_eq!(span.1, 120);
+        assert_eq!(first.0 + first.1 + 5, second.0);
+        assert_eq!(span.0 + span.1 + 5, after.0);
+        assert_eq!(table.1, 155);
+    }
+
+    #[test]
+    fn auto_colspan_intrinsic_width_distributes_to_spanned_columns() {
+        let html = r#"<div style="width:300px"><table style="border-spacing:0;background:lime">
+          <tr><td colspan="2" style="padding:0;background:red"><div style="height:20px;width:120px"></div></td></tr>
+          <tr><td style="padding:0;background:blue"><div style="height:20px;width:20px"></div></td>
+              <td style="padding:0;background:yellow"><div style="height:20px;width:20px"></div></td></tr>
+        </table></div>"#;
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let width = |rgb: (u8, u8, u8)| -> i32 {
+            commands
+                .iter()
+                .find_map(|command| match command {
+                    PaintCommand::FillRect { width, color, .. }
+                        if (color.r, color.g, color.b) == rgb =>
+                    {
+                        Some(*width)
+                    }
+                    _ => None,
+                })
+                .expect("expected colored table region")
+        };
+        assert_eq!(width((0, 255, 0)), 120);
+        assert_eq!(width((255, 0, 0)), 120);
+        assert_eq!(width((0, 0, 255)) + width((255, 255, 0)), 120);
+    }
+
+    #[test]
     fn fixed_table_percent_tracks_and_bottom_caption_reach_paint() {
         let display_list = Engine::new().render_html(
             "<style>

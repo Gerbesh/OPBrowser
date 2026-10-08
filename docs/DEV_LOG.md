@@ -2414,3 +2414,23 @@ This file is append-only project history.
   53/100 (53.00%), zero render errors. More table sizing and row background
   work remains.
 
+## 2026-10-08 - Rowspan height reconciliation and row-origin correction
+
+- Fix table layout treating a rowspan cell's entire natural height as the
+  starting row's height, then adding later row heights again. Example:
+  120px rowspan across two 20px rows produced a 140px table.
+- Measure single-row cells and baselines first. Sort spanning cells by their
+  final covered row; calculate the covered track height including internal
+  border-spacing, and add shortages to the last covered track. Recalculate
+  final row origins and shift subsequent cells' decoration, text and images
+  without changing the measured cell content.
+- Set rowspan decoration heights and vertical alignment from the corrected
+  interval. Keep colspan intrinsic-width distribution unchanged.
+- Add three end-to-end table regressions: two-row rowspan height, overlapping
+  multi-row spans followed by another row, and vertical border-spacing and
+  following-row placement. Verify the existing colspan regression as control.
+- Frozen WPT Static v1 remains 187/200 (93.50%), WPT Positioning v1 remains
+  53/100 (53.00%), both with zero render errors. Full CSS row-height
+  distribution, row-group backgrounds and baseline corner cases remain future
+  work.
+

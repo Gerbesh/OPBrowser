@@ -1957,10 +1957,12 @@ impl<'a> Context<'a, '_> {
             let mut row_heights = vec![0; grid.row_count];
             let mut row_baselines = vec![None; grid.row_count];
             let mut cell_layouts = Vec::new();
+            let mut row_origins = vec![0; grid.row_count];
             let mut row_top = self.y.saturating_add(vertical_spacing);
 
             for (row, row_height) in row_heights.iter_mut().enumerate() {
                 let current_row_top = row_top;
+                row_origins[row] = current_row_top;
                 let row_cells_start = cell_layouts.len();
                 for placement in grid.cells.iter().filter(|cell| cell.row == row) {
                     let slot_width = table_cell_slot_width(
@@ -1992,14 +1994,20 @@ impl<'a> Context<'a, '_> {
                             ),
                         ),
                     );
-                    *row_height = (*row_height).max(layout.natural_height);
+                    // A spanning cell requires height across its entire span,
+                    // not independently in the first row.
+                    if layout.rowspan == 1 {
+                        *row_height = (*row_height).max(layout.natural_height);
+                    }
                     cell_layouts.push(layout);
                 }
                 let mut baseline = 0i32;
                 let mut below_baseline = 0i32;
                 let mut has_baseline = false;
                 for cell in &cell_layouts[row_cells_start..] {
-                    if let Some(cell_baseline) = cell.baseline_from_top {
+                    if cell.rowspan == 1
+                        && let Some(cell_baseline) = cell.baseline_from_top
+                    {
                         has_baseline = true;
                         baseline = baseline.max(cell_baseline);
                         below_baseline =
@@ -2023,6 +2031,46 @@ impl<'a> Context<'a, '_> {
                     .saturating_add(vertical_spacing);
             }
 
+            // Satisfy each rowspan against the combined height of all its
+            // tracks, including internal border-spacing. Grow the final track
+            // of each span so earlier rows keep their established baselines.
+            // Process shorter end positions first for overlapping spans.
+            let mut spanning = (0..cell_layouts.len())
+                .filter(|&index| cell_layouts[index].rowspan > 1)
+                .collect::<Vec<_>>();
+            spanning.sort_by_key(|&index| {
+                let cell = cell_layouts[index];
+                cell.row.saturating_add(cell.rowspan).min(row_heights.len())
+            });
+            for index in spanning {
+                let cell = cell_layouts[index];
+                let end = cell.row.saturating_add(cell.rowspan).min(row_heights.len());
+                if end <= cell.row {
+                    continue;
+                }
+                let current_height = row_heights[cell.row..end]
+                    .iter()
+                    .copied()
+                    .fold(0i32, i32::saturating_add)
+                    .saturating_add(
+                        vertical_spacing.saturating_mul(end.saturating_sub(cell.row + 1) as i32),
+                    );
+                let shortage = cell.natural_height.saturating_sub(current_height).max(0);
+                row_heights[end - 1] = row_heights[end - 1].saturating_add(shortage);
+            }
+
+            // Cells were measured before span deficits were distributed. Move
+            // cells in later rows down by only the additional preceding height.
+            let mut row_offsets = vec![0; grid.row_count];
+            let mut final_row_top = self.y.saturating_add(vertical_spacing);
+            for (row, &height) in row_heights.iter().enumerate() {
+                row_offsets[row] = final_row_top.saturating_sub(row_origins[row]);
+                final_row_top = final_row_top
+                    .saturating_add(height)
+                    .saturating_add(vertical_spacing);
+            }
+            row_top = final_row_top;
+
             // A row containing only out-of-flow elements has no in-flow
             // background area, even though the grid retains a 1px track for
             // stable placement of absolute descendants.
@@ -2033,6 +2081,7 @@ impl<'a> Context<'a, '_> {
                 }
             }
             for (cell, placement) in cell_layouts.into_iter().zip(&grid.cells) {
+                self.translate_table_cell(cell, 0, row_offsets[cell.row]);
                 let end = cell.row.saturating_add(cell.rowspan).min(row_heights.len());
                 let span_height = row_heights[cell.row..end]
                     .iter()

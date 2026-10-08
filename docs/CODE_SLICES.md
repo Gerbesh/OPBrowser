@@ -506,9 +506,23 @@ path. A width:auto table with table-layout:fixed still uses the auto algorithm
 rather than silently switching to fixed tracks when the internal preferred
 width becomes definite. Six engine regressions cover these cases. Frozen WPT
 Static/Positioning remain 187/200 and 53/100 with zero render errors.
-Limitations: row-group paint beyond basic span/grid cases is approximate,
-empty tables without intrinsic tracks and complex percentage widths need work,
-and percent-based absolute containing heights remain incomplete.
+The multi-row table span pass no longer charges the full height of rowspan
+cells to their starting rows. Ordinary one-row cell heights and baselines
+establish initial row tracks; spanning cells then request any remaining
+height across their entire row interval, including internal border-spacing.
+The final covered row absorbs each deficit in increasing span-end order.
+Since cells are measured before span-height reconciliation, the renderer
+records initial row origins and translates the decorations/text/images of
+later rows to match final track positions. A rowspan cell's decoration height
+is then set from its covered tracks, and vertical alignment uses that span
+height. Engine regressions cover a two-row span, overlapping two-/three-row
+spans with a following row, vertical border-spacing, and a colspan intrinsic
+width control. Frozen WPT Static/Positioning stay 187/200 and 53/100, with
+zero render errors.
+Limitations: redistribution across rows follows a simple last-track strategy
+rather than full browser-compatible row-height rules; row-group paint beyond
+basic spans is approximate, and percent-based absolute containing heights
+remain incomplete.
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore

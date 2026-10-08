@@ -61,7 +61,12 @@ decision with column layout before calculating backgrounds, borders or captions;
 horizontal border-spacing and box extras contribute to the final width. Explicit
 table widths stay authoritative; fixed layout without an explicit width still
 follows the auto-width intrinsic sizing path. Empty or complex spanned tables
-and multi-row group backgrounds remain approximate.
+and multi-row group backgrounds remain approximate. Rowspans now constrain the
+sum of covered row heights rather than inflate the first row: after initially
+measuring non-spanning cells, the final covered row absorbs missing height,
+and later cell paint ranges are translated to updated row origins. This
+handles overlapping rowspans and vertical border-spacing, but exact CSS
+row-height distribution and complex row-group backgrounds remain partial.
 This is not full CSS stacking: additional context triggers, other auto-z
 paint-phase details and exact interleaving remain future work. Win32 drawing
 never decides paint order.

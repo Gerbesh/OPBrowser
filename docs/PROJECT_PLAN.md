@@ -390,10 +390,19 @@ Status: IN PROGRESS.
   cover narrow one/two-column tables, spacing/extras, explicit widths, fixed
   layout with auto width, and min-width. Frozen WPT Static 187/200 and
   Positioning 53/100 remain unchanged with zero render errors.
+- DONE first multi-row rowspan height reconciliation: compute normal row track
+  heights from non-spanning cells, then satisfy overlapping spanning-cell
+  minimums across all covered rows (including internal border-spacing). Grow
+  the final covered track and translate later cell output by the resulting
+  row-origin deltas. This avoids double-counting a 120px rowspan as 140px
+  of table height; nested/overlapping spans and subsequent rows have engine
+  regressions, as does intrinsic colspan sizing. Frozen WPT Positioning remains
+  53/100 and Static remains 187/200 without render errors.
 - NEXT improve table row/group background painting over multi-column/spanned
-  grids, finish percentage/absolute containing block sizing, and complete CSS
-  paint phases. Additional context triggers, overflow clipping, font fallback,
-  multicol, vertical writing and sticky remain unsupported.
+  grids, refine row-height distribution and baseline rules, finish percentage/
+  absolute containing block sizing, and complete CSS paint phases. Additional
+  context triggers, overflow clipping, font fallback, multicol, vertical
+  writing and sticky remain unsupported.
 
 ## M3 - Original JavaScript engine
 

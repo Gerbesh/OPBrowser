@@ -986,7 +986,12 @@ in table_box. For width:auto, it resolves the shared content width including
 horizontal table spacing and box extras, then passes that same content width to
 column layout. The original auto-width flag preserves auto layout when
 table-layout:fixed is requested without a definite author width. No additional
-engine module or dependency is introduced.
+engine module or dependency is introduced. Rowspan reconciliation in table_box
+separates initial per-row height/baseline measurement from multi-row spanning
+constraints. The latter sort by end row, add any deficit to the last covered
+track, calculate row-origin deltas, and translate TableCellLayout paint ranges
+before applying per-cell alignment and relative-table offsets. Thus later
+rows advance correctly without measuring all cell content twice.
 
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting

@@ -136,7 +136,14 @@ with automatic width have engine regressions. Frozen WPT Static remains
 187/200 (93.50%), Positioning remains 53/100 (53.00%), zero render errors:
 the new work fixes additional cases outside the frozen subsets. Full table
 sizing, percent insets, row spans, and multi-column group painting remain
-incomplete.
+incomplete. The next rowspan reconciliation slice treats spanning cell
+minimum heights as constraints across all covered row tracks, instead of
+charging the height entirely to the originating row. Later cells move with
+the accumulated extra track heights; vertical border-spacing and overlapping
+spans are covered by dedicated regressions. Frozen WPT Static stays
+187/200 and Positioning stays 53/100, both with zero render errors. CSS
+row-height distribution, row-group painting and baseline corner cases remain
+partial.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves
