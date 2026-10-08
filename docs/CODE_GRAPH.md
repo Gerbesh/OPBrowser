@@ -1187,3 +1187,19 @@ compat/wpt-static-v1.tsv
 replace layout or paint semantics. Both visible WM_PAINT and compatibility reftests call the
 same `paint_command` implementation. The Test262 probe remains parser-only and does not
 pretend that the current VM implements the Test262 runtime harness.
+
+## M4.6: parser pause during HTML tree construction (current path)
+
+op_html::parse_document_with_script_hook invokes the engine at a closing
+script tag after flushing its text, before inserting later HTML tokens.
+op_engine::scripts::parse_and_execute retains one ParserScriptRunner
+across those callbacks. Bounded classic inline and same-origin external
+scripts use the shared JsRuntime. Detached DOM text mutations are applied
+to op_dom::Document before tree building resumes. The JS-visible DOM
+snapshot is refreshed between scripts and once after completion, without
+discarding globals, closures or click listeners registered earlier.
+
+Unlike the M4.1/M4.2 historical post-parse implementation above, the
+current engine uses this parser-pause path. Tokenization remains eager,
+and document.write, async/defer, script modules and DOM lifecycle events
+are still unsupported.

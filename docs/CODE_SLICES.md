@@ -1065,3 +1065,25 @@ The two pinned flex/display-contents reftests moved from 0/2 to 2/2, raising WPT
 When adding a major feature, either extend an existing slice or add a new slice.
 A subsystem is not considered product-progress until it participates in an end-to-end
 slice.
+
+## S10 - Closing script to retained parser-state DOM (M4.6, current)
+
+Status: IMPLEMENTED for bounded classic scripts.
+
+```text
+op_html::parse_document_with_script_hook
+  -> script close and text-buffer flush
+  -> op_engine::scripts::ParserScriptRunner::execute
+  -> optional filtered same-origin op_net script fetch
+  -> JsRuntime::install_dom_snapshot / refresh_dom_snapshot
+  -> JsRuntime::eval_script
+  -> Document::set_text_content before later markup
+  -> final snapshot refresh for retained event handlers
+  -> CSS / layout / paint
+```
+
+Tests assert that a script cannot find future IDs, later scripts share
+globals and can find newly parsed nodes, and a click listener installed
+early can access elements parsed after that script. This path supersedes
+the post-parse timing described in the historical S7 and S8 sections.
+Tokenization is eager; document.write and async/defer are not implemented.

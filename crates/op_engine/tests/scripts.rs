@@ -2,6 +2,50 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn parser_blocking_inline_script_cannot_observe_future_dom_nodes() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        "<p id='earlier'>Earlier</p>         <script>var visible='WRONG';         if (document.getElementById('later') == null) { visible='NOT-YET'; }         document.getElementById('earlier').textContent='FIRST-UPDATED';</script>         <p id='later'>Later</p>         <script>document.getElementById('later').textContent=visible;</script>",
+        800,
+        600,
+    );
+    let visible = |text: &str| {
+        page.commands.iter().any(|cmd| {
+            matches!(
+                cmd, op_paint::PaintCommand::Text {text: value,..} if value.contains(text)
+            )
+        })
+    };
+    assert!(visible("FIRST-UPDATED"));
+    assert!(
+        visible("NOT-YET"),
+        "a parser-blocking script must not see future nodes"
+    );
+    assert!(!visible("WRONG"));
+    let report = engine.active_script_report().unwrap();
+    assert_eq!(
+        (report.executed, report.failed, report.mutations),
+        (2, 0, 2)
+    );
+}
+
+#[test]
+fn parser_snapshot_refresh_sees_later_elements_and_retains_globals() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        "<div id='box'><script>var partial=document.getElementById('box').textContent;         var suffix='READY';</script>Tail</div>         <p id='later'>Before</p>         <script>document.getElementById('later').textContent=partial+suffix;</script>",
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("READY")
+    )));
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("TailREADY")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().executed, 2);
+}
+#[test]
 fn local_external_script_preserves_mixed_document_order_and_reflow() {
     let root = std::env::temp_dir().join(format!("opbrowser-js-m42-{}-v1", std::process::id(),));
     std::fs::create_dir_all(&root).unwrap();

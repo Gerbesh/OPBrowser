@@ -3,7 +3,7 @@ mod declarations;
 mod document_mode;
 mod references;
 mod tree_builder;
-pub use tree_builder::parse_document;
+pub use tree_builder::{parse_document, parse_document_with_script_hook};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Attribute {

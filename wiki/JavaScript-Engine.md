@@ -169,3 +169,21 @@ event.preventDefault() marks the cancelable event as defaultPrevented.
 Tests cover exact phase order and cancellation before target. Option
 objects, once/passive, stopImmediatePropagation, keyboard events and
 native default-action cancellation remain outside this bounded subset.
+
+## M4.6: parser-blocking classic scripts
+
+The HTML tree builder now pauses after closing each script tag and calls
+the engine's bounded classic-script runner before inserting later HTML
+nodes. Inline scripts and same-origin external classic scripts execute in
+tree-construction order with the same retained page VM, globals, closures,
+and event listeners. The engine refreshes the JS-visible DOM at each
+script boundary and again after parsing completes, so late DOM nodes are
+visible to callbacks during user interaction. Detached textContent mutations
+are applied to the live DOM before tree construction resumes.
+
+This is intentionally a **tree-builder pause**, not a complete streaming
+HTML parser: tokenization happens ahead of tree construction, document.write
+cannot reenter the tokenizer, external fetches are synchronous, and async,
+defer, integrity, modules, DOMContentLoaded, and load scheduling remain
+unsupported. M4.6 regression tests prove that earlier scripts cannot query
+future DOM IDs and that late nodes become available after parser completion.

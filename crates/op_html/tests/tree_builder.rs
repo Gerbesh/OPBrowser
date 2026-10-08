@@ -1,6 +1,32 @@
 use op_dom::{Document, NodeId, NodeKind};
 use op_html::parse_document;
 
+#[test]
+fn script_hook_sees_only_inserted_nodes_and_flushes_script_text() {
+    let mut observed = 0;
+    let document = op_html::parse_document_with_script_hook(
+        "<!doctype html><p id='first'>Earlier</p><script>var x=1;</script><p id='later'>Later</p>",
+        |document, script| {
+            observed += 1;
+            assert_eq!(document.element(script).unwrap().tag_name, "script");
+            assert!(document.children(script).iter().any(|&node| {
+                matches!(&document.node(node).unwrap().kind, NodeKind::Text(text) if text == "var x=1;")
+            }));
+            let ids: Vec<_> = (0..document.len())
+                .filter_map(|index| document.node_id(index))
+                .filter_map(|node| document.element(node))
+                .flat_map(|element| element.attributes.iter())
+                .filter(|attribute| attribute.name == "id")
+                .map(|attribute| attribute.value.as_str())
+                .collect();
+            assert!(ids.contains(&"first"));
+            assert!(!ids.contains(&"later"));
+        },
+    );
+    assert_eq!(observed, 1);
+    assert!(document.node_id(document.len() - 1).is_some());
+    assert!(document.len() > 5);
+}
 fn child_element(document: &Document, parent: NodeId, name: &str) -> NodeId {
     document
         .children(parent)

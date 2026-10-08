@@ -2795,3 +2795,18 @@ This file is append-only project history.
 - Native default actions are not yet connected to preventDefault; listener
   option objects, once/passive, stopImmediatePropagation and keyboard
   dispatch remain future work.
+
+## 2026-10-08 - M4.6 parser-blocking classic script integration
+
+- Exposed an op_html tree-builder callback after closing script elements,
+  so op_engine executes classic inline and filtered same-origin external
+  sources before parsing subsequent elements into DOM.
+- Kept the page's own JS runtime across parser pauses and refreshed
+  reachable DOM snapshots before scripts and at final parsing completion.
+  Retained click listeners can now resolve elements inserted after the
+  registering script.
+- Added parser/engine integration regressions for invisible future nodes,
+  flushed script source, shared globals, partial textContent, and retained
+  callbacks referencing late elements.
+- The tokenizer is still eager; document.write, reentrant parsing, async,
+  defer, integrity verification and full HTML loading events are absent.

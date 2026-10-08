@@ -135,6 +135,25 @@ Primary conformance targets:
 - NEXT implement capture/cancellation and HTML script lifecycle
   (parser-blocking classic scripts, async/defer scheduling).
 
+## M4.6 - Parser-blocking classic scripts (2026-10-08)
+
+- DONE HTML tree builder exposes a closing-script callback. Classic inline and
+  bounded same-origin external scripts execute when the parser closes their
+  script element, before subsequently parsed nodes exist in the DOM.
+- DONE one retained page VM survives each parser pause, with DOM snapshots
+  refreshed before each execution and once after the final parse so later
+  elements are visible to event callbacks. DOM text mutations apply before
+  tree construction resumes; CSS/layout run after the complete DOM is built.
+- DONE tests verify that early scripts cannot query future IDs, later scripts
+  share globals, script source is flushed before callbacks, and listeners
+  installed early can modify later DOM after a native click.
+- LIMITATION tokenization is eager; this is a tree-builder execution pause,
+  not a streaming parser with document.write/reentrant tokenization. External
+  fetches block synchronously within bounded budgets. External async/defer
+  and integrity remain skipped; no modules, event loop or DOMContentLoaded.
+- NEXT add standards-aware deferred/async scheduling and lifecycle hooks,
+  then larger DOM/Web API surface.
+
 ## M0 - Foundation
 
 Status: DONE at initial level.

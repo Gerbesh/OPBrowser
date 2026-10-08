@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><title>OPBrowser parser-blocking JS demo</title></head>
+<body>
+<h1>Parser-blocking classic scripts</h1>
+<p id="early">Early script has not run</p>
+<script>
+var sawFuture = "ERROR: future element already existed";
+if (document.getElementById("future") == null) {
+  sawFuture = "Correct: future element was not in DOM";
+}
+document.getElementById("early").textContent = "First script executed during parsing";
+</script>
+<p id="future">Later element exists now</p>
+<script>
+document.getElementById("future").textContent = sawFuture;
+</script>
+</body>
+</html>

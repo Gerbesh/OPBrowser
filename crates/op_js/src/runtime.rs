@@ -276,6 +276,14 @@ impl JsRuntime {
         Ok(())
     }
 
+    /// Refresh reachable DOM elements without resetting the page VM or listeners.
+    pub fn refresh_dom_snapshot(&mut self, elements: impl IntoIterator<Item = DomElementSnapshot>) {
+        self.dom_ids.clear();
+        for element in elements.into_iter().take(4096) {
+            self.dom_ids.entry(element.id).or_insert(element.node);
+            self.dom_text.insert(element.node, element.text_content);
+        }
+    }
     pub fn take_dom_mutations(&mut self) -> Vec<DomTextMutation> {
         std::mem::take(&mut self.dom_mutations)
     }

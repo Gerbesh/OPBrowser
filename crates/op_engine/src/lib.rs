@@ -2,7 +2,6 @@ use op_css::{
     ComputedStyleMap, StyleCollection, StyleError, StyleMap, collect_author_styles,
     collect_author_styles_with_linked, compute_styles,
 };
-use op_html::parse_document;
 use op_layout::{
     ImageResources, layout_document_with_backgrounds_and_resources,
     layout_document_with_computed_styles_and_viewport_metrics,
@@ -199,8 +198,7 @@ impl Engine {
         viewport_width: i32,
         viewport_height: i32,
     ) -> DisplayList {
-        let mut document = parse_document(html);
-        let _script_report = scripts::execute_inline(&mut document);
+        let (document, _script_report, _runtime) = scripts::parse_and_execute(html, None, None);
         let style_collection = collect_author_styles(&document);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let layout = layout_document_with_computed_styles_and_viewport_metrics(
@@ -227,8 +225,7 @@ impl Engine {
 
     /// Initialize an in-memory page and an empty navigation history for startup.
     pub fn set_html_page(&mut self, html: &str, width: i32, height: i32) -> DisplayList {
-        let mut document = parse_document(html);
-        let (script_report, runtime) = scripts::execute_retained(&mut document, None, None);
+        let (document, script_report, runtime) = scripts::parse_and_execute(html, None, None);
         let style_collection = collect_author_styles(&document);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let prepared = PreparedDocument {
@@ -377,9 +374,8 @@ impl Engine {
 
     fn prepare_source(&self, source: &str) -> Result<PreparedDocument, LoadError> {
         let loaded: LoadedDocument = self.network.load_document(source)?;
-        let mut document = parse_document(&loaded.text);
-        let (script_report, runtime) =
-            scripts::execute_retained(&mut document, Some(&self.network), Some(&loaded.address));
+        let (document, script_report, runtime) =
+            scripts::parse_and_execute(&loaded.text, Some(&self.network), Some(&loaded.address));
         let linked_stylesheets = styles::load(&self.network, &document, &loaded.address);
         let mut style_collection =
             collect_author_styles_with_linked(&document, &linked_stylesheets.texts);
@@ -515,6 +511,44 @@ mod tests {
             .expect("click bubbles to parent");
         assert!(contains_text(&next.display_list, "inner:outer:3"));
         assert_eq!(engine.active_script_report().unwrap().mutations, 1);
+    }
+
+    #[test]
+    fn early_parser_script_listener_can_find_node_inserted_after_script() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<div id='early' style='display:block;width:180px;height:60px'>Click</div>             <script>document.getElementById('early').addEventListener('click',             function(){document.getElementById('late').textContent='Handled';});</script>             <p id='late'>Before</p>",
+            800, 600,
+        );
+        let prepared = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_backgrounds_and_resources(
+            &prepared.document,
+            800,
+            600,
+            (&prepared.images.elements, &prepared.images.backgrounds),
+            &prepared.images.generated,
+            &prepared.computed_styles,
+            &mut text::Measurer::new(),
+        );
+        let region = layout
+            .click_regions
+            .iter()
+            .find(|region| {
+                prepared
+                    .document
+                    .element(region.node)
+                    .is_some_and(|element| {
+                        element
+                            .attributes
+                            .iter()
+                            .any(|attribute| attribute.name == "id" && attribute.value == "early")
+                    })
+            })
+            .expect("early clickable element");
+        let page = engine
+            .click_at(region.x + 3, region.y + 3, 800, 600)
+            .expect("handler registered before the later element persists");
+        assert!(contains_text(&page.display_list, "Handled"));
     }
 
     #[test]

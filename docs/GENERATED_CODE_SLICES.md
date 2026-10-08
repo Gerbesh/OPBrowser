@@ -18,7 +18,7 @@ op_platform_win::paint_command
 
 - [`op_net::load_document`](../crates/op_net/src/lib.rs#L156)
 - [`op_html::Tokenizer`](../crates/op_html/src/lib.rs#L56)
-- [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L196)
+- [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L195)
 - [`op_layout::layout`](../crates/op_layout/src/flow.rs#L15)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
 - [`op_platform_win::paint_command`](../crates/op_platform_win/src/lib.rs#L653)
@@ -35,8 +35,8 @@ op_engine::reflow
 op_platform_win::paint_window
 ```
 
-- [`op_engine::navigate`](../crates/op_engine/src/lib.rs#L309)
-- [`op_engine::reflow`](../crates/op_engine/src/lib.rs#L292)
+- [`op_engine::navigate`](../crates/op_engine/src/lib.rs#L306)
+- [`op_engine::reflow`](../crates/op_engine/src/lib.rs#L289)
 - [`op_platform_win::paint_window`](../crates/op_platform_win/src/lib.rs#L566)
 
 No full History API or single-page-application lifecycle.
@@ -87,17 +87,17 @@ op_engine::Engine
 
 - [`op_js::parse_script`](../crates/op_js/src/lib.rs#L18)
 - [`op_js::JsRuntime`](../crates/op_js/src/lib.rs#L20)
-- [`op_engine::Engine`](../crates/op_engine/src/lib.rs#L132)
+- [`op_engine::Engine`](../crates/op_engine/src/lib.rs#L131)
 
-Classic inline and bounded same-origin external scripts now update textContent by id. Async/defer scheduling, parser-blocking timing, events and full DOM/Web APIs remain unsupported.
+Classic inline and bounded same-origin external scripts now update textContent by id. Async/defer, document.write, module scripts and full DOM/Web APIs remain unsupported.
 
 ## S7 — Classic inline JavaScript to retained DOM and pixels
 
-Status: **M4.1 first functional page script slice**.
+Status: **M4.6 parser-paused classic page script slice**.
 
 ```text
-op_html::parse_document
-op_engine::execute_inline
+op_html::parse_document_with_script_hook
+op_engine::parse_and_execute
 op_js::install_dom_snapshot
 op_js::DomGetElementById
 op_dom::set_text_content
@@ -106,23 +106,23 @@ op_engine::render
 op_paint::build_display_list
 ```
 
-- [`op_html::parse_document`](../crates/op_html/src/lib.rs#L6)
-- [`op_engine::execute_inline`](../crates/op_engine/src/scripts.rs#L134)
+- [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
+- [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L138)
 - [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L240)
 - [`op_js::DomGetElementById`](../crates/op_js/src/runtime.rs#L51)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
-- [`op_engine::render`](../crates/op_engine/src/lib.rs#L113)
+- [`op_engine::render`](../crates/op_engine/src/lib.rs#L112)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
 
-Deliberately bounded, once-per-load execution after full HTML parsing; basic external scripts now exist but no event loop, general DOM mutations or full HTML5test support.
+Bounded classic execution at script closing tags during DOM construction; basic external scripts now exist but no event loop, general DOM mutations or full HTML5test support.
 
 ## S8 — External classic JavaScript through filtered network to DOM
 
-Status: **M4.2 initial same-origin external JS subset**.
+Status: **M4.6 parser-paused same-origin external JS**.
 
 ```text
-op_engine::execute_for_page
+op_engine::parse_and_execute
 op_net::resolve_script_source
 op_net::load_script_for_page
 op_net::load_script
@@ -131,19 +131,19 @@ op_dom::set_text_content
 op_engine::prepare_source
 ```
 
-- [`op_engine::execute_for_page`](../crates/op_engine/src/scripts.rs#L135)
+- [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L138)
 - [`op_net::resolve_script_source`](../crates/op_net/src/scripts.rs#L14)
 - [`op_net::load_script_for_page`](../crates/op_net/src/lib.rs#L145)
 - [`op_net::load_script`](../crates/op_net/src/http.rs#L196)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L494)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L502)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
-- [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L224)
+- [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L222)
 
-Only relative/local and same-origin HTTP(S) classic scripts in source order after DOM parse. Redirect origin checked after retrieval; async/defer/integrity not supported, no browser event loop.
+Only relative/local and same-origin HTTP(S) classic scripts in source order at parser pauses. Redirect origin checked after retrieval; async/defer/integrity not supported, no browser event loop.
 
 ## S9 — Native Win32 click through bubbling DOM listeners to repainted DOM
 
-Status: **M4.4 bubbling click with removable handlers**.
+Status: **M4.5 capture-target-bubble and cancellation events**.
 
 ```text
 op_platform_win::WM_LBUTTONUP
@@ -158,14 +158,38 @@ op_engine::compute_styles
 
 - [`op_platform_win::WM_LBUTTONUP`](../crates/op_platform_win/src/lib.rs#L314)
 - [`op_browser::NavigationEvent::Click`](../crates/op_browser/src/main.rs#L135)
-- [`op_engine::click_at`](../crates/op_engine/src/lib.rs#L254)
+- [`op_engine::click_at`](../crates/op_engine/src/lib.rs#L251)
 - [`op_layout::click_regions`](../crates/op_layout/src/flow.rs#L71)
-- [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L228)
-- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L285)
+- [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L379)
+- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L293)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::compute_styles`](../crates/op_engine/src/lib.rs#L3)
 
-Only id-bearing block regions; target-to-parent bubbling and listener removal work, but capture/stopPropagation/preventDefault/keyboard/default actions and full DOM hit-testing remain absent.
+Only id-bearing block regions; capture/target/bubbling and listener cancellation work, but keyboard/default actions and full DOM hit-testing remain absent.
+
+## S10 — Parser-closing classic script through retained DOM
+
+Status: **M4.6 parser-paused classic scripting**.
+
+```text
+op_html::parse_document_with_script_hook
+op_engine::parse_and_execute
+op_engine::ParserScriptRunner
+op_js::refresh_dom_snapshot
+op_js::eval_script
+op_dom::set_text_content
+op_engine::prepare_source
+```
+
+- [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
+- [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L138)
+- [`op_engine::ParserScriptRunner`](../crates/op_engine/src/scripts.rs#L143)
+- [`op_js::refresh_dom_snapshot`](../crates/op_js/src/runtime.rs#L280)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L502)
+- [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
+- [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L222)
+
+Eager tokenization; no document.write reentry, async/defer, modules or load event loop.
 
 ## S6 — WPT image comparison and reporting
 

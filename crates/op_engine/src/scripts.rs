@@ -131,6 +131,155 @@ fn snapshot_and_scripts(
     (elements, scripts, skipped)
 }
 
+/// Build the DOM incrementally and execute parser-inserted classic scripts
+/// at their closing tags, before the tree builder inserts subsequent nodes.
+/// The tokenizer is eager; this does not implement document.write or a full
+/// browser event loop.
+pub(crate) fn parse_and_execute(
+    html: &str,
+    network: Option<&NetworkContext>,
+    page_base: Option<&str>,
+) -> (Document, ScriptReport, Option<JsRuntime>) {
+    let mut runner = ParserScriptRunner {
+        runtime: None,
+        report: ScriptReport::default(),
+        accepted: 0,
+        requests: 0,
+        remaining_bytes: TOTAL_EXTERNAL_SCRIPT_BUDGET,
+        started: Instant::now(),
+        network,
+        page_base,
+    };
+    let document = op_html::parse_document_with_script_hook(html, |document, script| {
+        runner.execute(document, script);
+    });
+    // Elements inserted after the final script must be visible to retained
+    // callbacks when the user interacts with the completed page.
+    if let Some(runtime) = runner.runtime.as_mut() {
+        let (elements, _, _) = snapshot_and_scripts(&document);
+        runtime.refresh_dom_snapshot(elements);
+    }
+    (document, runner.report, runner.runtime)
+}
+
+struct ParserScriptRunner<'a> {
+    runtime: Option<JsRuntime>,
+    report: ScriptReport,
+    accepted: usize,
+    requests: usize,
+    remaining_bytes: usize,
+    started: Instant,
+    network: Option<&'a NetworkContext>,
+    page_base: Option<&'a str>,
+}
+
+impl ParserScriptRunner<'_> {
+    fn execute(&mut self, document: &mut Document, script: NodeId) {
+        let Some(element) = document.element(script) else {
+            return;
+        };
+        let src = element
+            .attributes
+            .iter()
+            .find(|a| a.name == "src")
+            .map(|a| a.value.as_str());
+        let unsupported_timing = element
+            .attributes
+            .iter()
+            .any(|a| matches!(a.name.as_str(), "async" | "defer" | "integrity"));
+        let type_attr = element
+            .attributes
+            .iter()
+            .find(|a| a.name == "type")
+            .map(|a| a.value.trim().to_ascii_lowercase());
+        let classic = type_attr
+            .as_deref()
+            .is_none_or(|value| matches!(value, "" | "text/javascript" | "application/javascript"));
+        if !classic || self.accepted >= MAX_SCRIPTS || (src.is_some() && unsupported_timing) {
+            self.report.skipped += 1;
+            return;
+        }
+        let source = if let Some(src) = src {
+            if src.trim().is_empty() {
+                self.report.skipped += 1;
+                return;
+            }
+            ScriptSource::External(src.to_owned())
+        } else {
+            let code = collect_text(document, script, MAX_SCRIPT_BYTES + 1);
+            if code.is_empty() || code.len() > MAX_SCRIPT_BYTES {
+                self.report.skipped += 1;
+                return;
+            }
+            ScriptSource::Inline(code)
+        };
+        self.accepted += 1;
+
+        let code = match source {
+            ScriptSource::Inline(code) => Some(code),
+            ScriptSource::External(src) => {
+                if let (Some(network), Some(base)) = (self.network, self.page_base) {
+                    if self.requests >= MAX_SCRIPT_REQUESTS
+                        || self.remaining_bytes == 0
+                        || self.started.elapsed() > SCRIPT_LOAD_DEADLINE
+                    {
+                        self.report.skipped += 1;
+                        None
+                    } else {
+                        self.requests += 1;
+                        match resolve_script_source(base, &src).and_then(|resolved| {
+                            network.load_script_for_page(
+                                &resolved,
+                                base,
+                                self.remaining_bytes.min(MAX_SCRIPT_BYTES),
+                            )
+                        }) {
+                            Ok(code) => {
+                                self.remaining_bytes =
+                                    self.remaining_bytes.saturating_sub(code.len());
+                                Some(code)
+                            }
+                            Err(_) => {
+                                self.report.failed += 1;
+                                None
+                            }
+                        }
+                    }
+                } else {
+                    self.report.skipped += 1;
+                    None
+                }
+            }
+        };
+        let Some(code) = code else {
+            return;
+        };
+        let (elements, _, _) = snapshot_and_scripts(document);
+        if let Some(runtime) = self.runtime.as_mut() {
+            runtime.refresh_dom_snapshot(elements);
+        } else {
+            let mut runtime = JsRuntime::with_instruction_budget(JS_INSTRUCTION_BUDGET);
+            if runtime.install_dom_snapshot(elements).is_err() {
+                self.report.failed += 1;
+                return;
+            }
+            self.runtime = Some(runtime);
+        }
+        let runtime = self.runtime.as_mut().expect("runtime just installed");
+        match runtime.eval_script(&code) {
+            Ok(_) => self.report.executed += 1,
+            Err(_) => self.report.failed += 1,
+        }
+        for mutation in runtime.take_dom_mutations() {
+            if let Some(node) = document.node_id(mutation.node)
+                && document.set_text_content(node, &mutation.text_content)
+            {
+                self.report.mutations += 1;
+            }
+        }
+    }
+}
+#[cfg(test)]
 pub fn execute_inline(document: &mut Document) -> ScriptReport {
     execute_for_page(document, None, None)
 }
@@ -138,6 +287,7 @@ pub fn execute_inline(document: &mut Document) -> ScriptReport {
 /// Resolve external classic scripts through the page's filtered network
 /// context, preserving DOM script order. This first slice executes after
 /// parsing rather than blocking the HTML tokenizer.
+#[cfg(test)]
 pub fn execute_for_page(
     document: &mut Document,
     network: Option<&NetworkContext>,
@@ -148,6 +298,7 @@ pub fn execute_for_page(
 
 /// Return a retained VM so callbacks registered during initial scripts
 /// survive until native click events reach the page worker.
+#[cfg(test)]
 pub(crate) fn execute_retained(
     document: &mut Document,
     network: Option<&NetworkContext>,

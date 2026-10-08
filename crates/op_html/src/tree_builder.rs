@@ -51,10 +51,36 @@ enum ActiveFormattingEntry {
 }
 
 pub fn parse_document(input: &str) -> Document {
+    parse_document_with_script_hook(input, |_, _| {})
+}
+
+/// Pause tree construction after closing a script element. The hook sees
+/// only nodes inserted so far and may apply DOM mutations before parsing
+/// continues. Tokenization is still eager; document.write is unsupported.
+pub fn parse_document_with_script_hook(
+    input: &str,
+    mut on_script: impl FnMut(&mut Document, NodeId),
+) -> Document {
     let mut builder = TreeBuilder::new();
 
     for token in Tokenizer::new(input).tokenize() {
-        if builder.process(token) {
+        let script = if builder.mode == InsertionMode::Text
+            && matches!(&token, Token::EndTag { name } if name == "script")
+        {
+            builder.open_elements.last().copied().filter(|node| {
+                builder
+                    .document
+                    .element(*node)
+                    .is_some_and(|element| element.tag_name == "script")
+            })
+        } else {
+            None
+        };
+        let stopped = builder.process(token);
+        if let Some(script) = script {
+            on_script(&mut builder.document, script);
+        }
+        if stopped {
             break;
         }
     }

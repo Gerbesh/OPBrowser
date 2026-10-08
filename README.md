@@ -38,11 +38,11 @@ local files and data URLs, with dimensions, transparency, alt fallback and image
 Initial embedded, inline and external author CSS plus block/flex/float layout and first relative/absolute/fixed positioning now reach native pixels. A standalone original JavaScript lexer/parser/bytecode/VM with objects, closures, exceptions, `this`, constructors, `arguments` and initial Error objects exists, and a first bounded inline `<script>` execution path can now update
 DOM text by id before paint. Bounded relative/local and same-origin
 external classic scripts now use the filtered network loader and execute
-in source order. A first native `click` event slice now retains JS
+at parser boundaries. A first native `click` event slice now retains JS
 handlers registered by `addEventListener` or `onclick`, allowing text
-changes and reflow after user interaction. M4.4 adds bubbling through
-DOM ancestors and `removeEventListener` cleanup. Full DOM Events,
-browser script timing and Web APIs are **not** implemented.
+changes and reflow after user interaction. M4.5 adds capture-target-bubble and
+listener removal plus event cancellation state. M4.6 runs classic scripts
+during DOM tree construction. Async/defer, document.write and broad Web APIs are **not** implemented.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 
