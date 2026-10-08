@@ -408,10 +408,16 @@ empty fragments preserve line height only when CSS2 requires them, and later des
 the newest continuation. Relative inline offsets are carried to split block/float output without
 altering normal-flow geometry. Definite block heights, including min/max-clamped explicit heights,
 propagate as the percentage-height basis for direct descendants. Auto-height blocks are deliberately
-not made definite merely by a min-height clamp. Full inline containing-block rectangles, complete
-bidi/vertical writing, multicol, sticky, remaining CSS2 overconstraint/auto-margin equations and
-stacking remain later work. WPT Positioning v1 moved from 18/100 (18.00%) to 36/100 (36.00%) without
-changing the manifest, while WPT Static remains frozen for historical comparison.
+not made definite merely by a min-height clamp. For absolute/fixed non-replaced blocks, the
+positioning path now solves both horizontal and vertical auto margins against the space remaining
+after opposing insets and used border-box size. It handles a single auto margin, equal auto margins,
+negative horizontal free space according to LTR/RTL, negative vertical free space on the bottom, and
+overconstrained horizontal fixed margins by preferring left in LTR/right in RTL. A missing inset
+resolves auto margins to zero instead of centering against the viewport. Full inline containing-block
+rectangles, complex/replaced positioned constraints, bidi/vertical writing, multicol, sticky and
+stacking remain later work. WPT Positioning v1 remains 36/100 (36.00%) in the frozen manifest after
+this targeted fix; project regressions cover the newly supported margin cases. WPT Static remains
+frozen at 187/200 for historical comparison.
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore

@@ -594,7 +594,7 @@ classDiagram
     Document --> BlockContent : ordinary element child traversal
     BlockContent --> BoxDecoration : shared normal-flow block geometry / empty boxes
     FlowContext --> PositioningContext : nearest positioned ancestor / viewport fallback
-    PositioningContext --> BoxDecoration : relative translation and abs/fixed containing geometry
+    PositioningContext --> BoxDecoration : abs/fixed insets, axis margin equations and containing geometry
     InlineAtomic --> LayoutTree : inline-table and inline-flex atomic placement
     InlineAtomic --> BoxDecoration : nested flex/table decorations rebased into parent flow
     InlineImage --> ImageBox : only available raster payloads produce paint items

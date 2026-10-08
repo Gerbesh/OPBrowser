@@ -2153,3 +2153,28 @@ This file is append-only project history.
   descendants, CSS2 content-height/line-height cases, remaining absolute-position equations,
   vertical writing/multicol, sticky positioning and overflow.
 
+## 2026-10-08 - CSS2 absolute/fixed margin constraint pass
+
+- Fixed the old ordinary block auto-margin resolver being reused for absolute/fixed width,
+  which centered positioned boxes against the entire viewport even when explicit insets
+  constrained the available space.
+- Non-replaced absolute/fixed blocks now distribute horizontal auto margins across the free
+  space between definite left/right insets. One-auto-margin, both-auto-margin, negative
+  free-space LTR/RTL, right-only and left-only inset cases use CSS2-style placement.
+- Fixed horizontal overconstraint anchoring: left inset wins in LTR, right wins in RTL.
+  Solved margins are passed to the actual block renderer, not only to its x-coordinate.
+- Added corresponding vertical auto-margin resolution when top/bottom and a definite used
+  height exist, including top/bottom-only auto-to-zero and negative-space bottom assignment.
+- Added four deterministic regression tests for horizontal/vertical auto margins, negative
+  free space and direction-dependent overconstraints; all seven absolute-related unit tests pass.
+- Rechecked the same pinned external manifests: WPT Static v1 **187/200 (93.50%)**,
+  WPT Positioning v1 **36/100 (36.00%)**, Test262 Parser v1 **523/1983 (26.37%)**.
+  This targeted correction has no change to those frozen subset scores; it closes real
+  project-observed geometry gaps without inventing a metric gain.
+- Remaining positioned gaps: inline containing blocks, replaced/complex constraints,
+  sticky, stacking/z-index, vertical writing/multicol and overflow.
+- Final local verification passed cargo fmt --check, warning-free workspace Clippy,
+  all workspace tests, Win32 startup/paint smoke and optimized release build.
+- Updated local Windows executable: `target/release/op_browser.exe`, **1,051,136 bytes**,
+  SHA-256 `36E7CDBE96D3F1D1E9CE6AD60998F52262B0645D2A72BB02987AF37256F2E4EE`.
+

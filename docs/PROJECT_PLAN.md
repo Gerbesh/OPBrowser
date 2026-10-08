@@ -272,8 +272,11 @@ Status: IN PROGRESS.
   now split enclosing inline boxes into continuation fragments with CSS2 start/end edge suppression,
   including logical LTR/RTL edges, empty intermediate line fragments and inherited relative visual
   offsets for block/float descendants. Very large finite CSS lengths remain computed and are bounded
-  only at used layout geometry. Sticky, full inline containing-block rectangles, complete bidi/vertical
-  writing, multicol, CSS2 abspos overconstraint/auto-margin rules and stacking remain NEXT, followed by
+  only at used layout geometry. Absolute/fixed non-replaced blocks now also solve horizontal and
+  vertical auto margins inside definite opposing insets, including negative available space,
+  one-auto-margin cases and direction-dependent horizontal overconstraint precedence.
+  Sticky, full inline containing-block rectangles, complete bidi/vertical writing, multicol,
+  replaced-element/complex CSS2 positioned constraints and stacking remain NEXT, followed by
   `overflow`, media queries, font faces, background images, border radius and broader flex/grid work.
 - LATER broader computed values outside the readable-static-web priority.
 - LATER fuller normal flow and CSS inline formatting plus Unicode line breaking.

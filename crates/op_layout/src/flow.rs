@@ -536,8 +536,41 @@ impl<'a> Context<'a, '_> {
                 .saturating_sub(right.unwrap_or(0))
                 .max(1)
         };
-        let used = resolve_block_horizontal(style, layout_width_basis);
-        let containing_x = if let Some(left) = left {
+        let mut used = resolve_block_horizontal(style, layout_width_basis);
+        // The absolute-position equation has its own auto-margin rules. Normal
+        // block layout must not center margins over the full containing width.
+        let specified_left_margin = resolve_margin(style.margin.left, positioning.width);
+        let specified_right_margin = resolve_margin(style.margin.right, positioning.width);
+        let (margin_left, margin_right) = if let (Some(left), Some(right)) = (left, right) {
+            let free = positioning
+                .width
+                .saturating_sub(left)
+                .saturating_sub(right)
+                .saturating_sub(used.border_width);
+            match (specified_left_margin, specified_right_margin) {
+                (None, None) if free < 0 && style.direction == Direction::Ltr => (0, free),
+                (None, None) if free < 0 => (free, 0),
+                (None, None) => (free / 2, free - free / 2),
+                (None, Some(right)) => (free.saturating_sub(right), right),
+                (Some(left), None) => (left, free.saturating_sub(left)),
+                (Some(left), Some(right)) => (left, right),
+            }
+        } else {
+            (
+                specified_left_margin.unwrap_or(0),
+                specified_right_margin.unwrap_or(0),
+            )
+        };
+        used.margin_left = margin_left;
+        used.margin_right = margin_right;
+        // Pass the solved margins to the actual block renderer too; computing an
+        // x offset without updating its box margins would shift the border twice.
+        style.margin.left = MarginValue::Length(LengthPercentage::Px(margin_left as f32));
+        style.margin.right = MarginValue::Length(LengthPercentage::Px(margin_right as f32));
+        // For fully specified horizontal constraints CSS2 ignores the end inset:
+        // right in LTR, left in RTL (including over-constrained cases).
+        let right_dominant = left.is_some() && right.is_some() && style.direction == Direction::Rtl;
+        let containing_x = if let Some(left) = left.filter(|_| !right_dominant) {
             positioning.x.saturating_add(left)
         } else if let Some(right) = right {
             positioning
@@ -564,6 +597,54 @@ impl<'a> Context<'a, '_> {
         {
             stretch_auto_positioned_height(&mut style, positioning.width, height, top, bottom);
         }
+
+        // CSS2 10.6.4: vertical auto margins share the remaining space
+        // between two definite insets. A negative remainder belongs entirely
+        // to the bottom margin; a missing inset makes auto margins zero.
+        let specified_top_margin = resolve_margin(style.margin.top, positioning.width);
+        let specified_bottom_margin = resolve_margin(style.margin.bottom, positioning.width);
+        let (margin_top, margin_bottom) =
+            if let (Some(height), Some(top), Some(bottom)) = (positioning.height, top, bottom) {
+                let border = resolve_border_edges(style.border);
+                let padding_top = resolve_length(style.padding.top, positioning.width).max(0);
+                let padding_bottom = resolve_length(style.padding.bottom, positioning.width).max(0);
+                if let Some(content_height) = resolve_definite_content_height(
+                    style,
+                    positioning.height,
+                    padding_top,
+                    padding_bottom,
+                    border,
+                ) {
+                    let border_height = content_height
+                        .saturating_add(padding_top)
+                        .saturating_add(padding_bottom)
+                        .saturating_add(border.top.width)
+                        .saturating_add(border.bottom.width);
+                    let free = height
+                        .saturating_sub(top)
+                        .saturating_sub(bottom)
+                        .saturating_sub(border_height);
+                    match (specified_top_margin, specified_bottom_margin) {
+                        (None, None) if free < 0 => (0, free),
+                        (None, None) => (free / 2, free - free / 2),
+                        (None, Some(bottom)) => (free.saturating_sub(bottom), bottom),
+                        (Some(top), None) => (top, free.saturating_sub(top)),
+                        (Some(top), Some(bottom)) => (top, bottom),
+                    }
+                } else {
+                    (
+                        specified_top_margin.unwrap_or(0),
+                        specified_bottom_margin.unwrap_or(0),
+                    )
+                }
+            } else {
+                (
+                    specified_top_margin.unwrap_or(0),
+                    specified_bottom_margin.unwrap_or(0),
+                )
+            };
+        style.margin.top = MarginValue::Length(LengthPercentage::Px(margin_top as f32));
+        style.margin.bottom = MarginValue::Length(LengthPercentage::Px(margin_bottom as f32));
 
         let provisional_y = top
             .map(|top| positioning.y.saturating_add(top))

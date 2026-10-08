@@ -121,9 +121,14 @@ which physical side is start/end. Empty intermediate continuation lines are reta
 split sequence requires them, and relative-positioned inline ancestors carry their visual offset to
 split block/float descendants without moving normal flow. Large finite CSS lengths are retained at
 computed-value time and safely bounded when converted to used integer geometry.
+Non-replaced absolute/fixed boxes now solve auto horizontal/vertical margins after subtracting
+opposing insets and border-box dimensions. Both or one auto margin uses the remaining space, negative
+horizontal free space assigns the negative margin to the RTL/LTR end side, and negative vertical
+free space assigns it to the bottom. With fixed margins and overconstrained left/width/right,
+LTR anchors left and RTL anchors right; missing insets make auto margins zero.
 
-Sticky positioning, full inline containing-block rectangles, complete bidi/vertical writing, the
-remaining CSS2 absolute-positioned overconstraint/auto-margin rules, stacking/z-index and
+Sticky positioning, full inline containing-block rectangles, complete bidi/vertical writing,
+complex/replaced CSS2 positioned constraints, stacking/z-index and
 scroll-container interactions remain follow-up work. WPT Positioning v1 tracks 100 pinned cases
 across both implemented and deliberately unsupported families; it moved from 18/100 (18.00%) to
 36/100 (36.00%) on the unchanged manifest.

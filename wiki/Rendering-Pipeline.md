@@ -162,8 +162,10 @@ output, absolute boxes leave flow and resolve against the nearest positioned anc
 and fixed boxes resolve against the viewport width/height. All four insets accept px/percentage
 values when their axis is definite; bottom-only placement, opposing-inset auto stretching,
 shrink-to-fit positioned auto widths and direct percentage-height propagation from definite block
-heights are implemented. Inline positioned boxes can retain a zero-width static-position marker at
-the real line cursor. Horizontal inline margins, including negative values, participate in advance;
+heights are implemented. Non-replaced positioned block margin equations now distribute horizontal
+and vertical auto margins between definite opposing insets, preserve negative free-space cases
+and apply LTR/RTL horizontal overconstraint anchoring. Inline positioned boxes can retain a
+zero-width static-position marker at the real line cursor. Horizontal inline margins, including negative values, participate in advance;
 initial `display:inline-block` runs a local block/BFC layout and enters the line as one atomic box.
 Block children split active inline decoration paths into continuation nodes, suppressing opposite
 logical fragment edges according to computed LTR/RTL direction. Required zero-width intermediate

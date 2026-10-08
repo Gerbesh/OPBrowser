@@ -91,9 +91,13 @@ height and ratio metadata from the initial bounded SVG raster slice as well as r
 block-inside-inline handling now creates continuation fragments, suppresses physical edges according
 to logical LTR/RTL start/end, preserves required empty intermediate line boxes, and carries relative
 inline visual offsets onto split block/float descendants. Large finite CSS lengths survive computed
-style and are bounded at used layout geometry instead of being discarded. Sticky positioning, full
-inline containing-block rectangles, complete bidi/vertical writing, multicol, stacking contexts and
-the remaining CSS2 abspos overconstraint/auto-margin handling remain deliberately visible gaps.
+style and are bounded at used layout geometry instead of being discarded. The 2026-10-08
+non-replaced absolute/fixed margin pass now distributes single/both auto margins against definite
+opposing insets on each axis, obeys RTL/LTR precedence for overconstrained horizontal values and
+places negative auto-margin remainders on the appropriate side. Four project regression tests pass;
+the unchanged pinned Positioning v1 suite remains at 36/100 (36.00%) with no regression. Sticky
+positioning, full inline containing-block rectangles, complete bidi/vertical writing, multicol,
+stacking contexts and complex/replaced abspos constraints remain deliberately visible gaps.
 
 This new metric does not replace WPT Static v1. The older 200-test manifest remains frozen so its
 43.00% -> 93.50% history stays directly comparable.

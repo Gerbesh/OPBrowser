@@ -24,7 +24,9 @@ The project now has three reproducible external metrics rather than milestone gu
   CSS Positioned Layout. Initial baseline after the first absolute/fixed/relative pass:
   **18/100, 18.00%**; current result after viewport/definite-height geometry, inline static-position,
   inline-block/replaced sizing and the CSS2 split-inline continuation pass: **36/100, 36.00%**.
-  Unsupported sticky, multicol, full inline-containing-block rectangles, stacking and vertical-writing
+  The follow-up absolute/fixed auto-margin constraint pass has four passing project regressions and
+  no change to the frozen WPT Positioning v1 score. Unsupported sticky, multicol,
+  full inline-containing-block rectangles, stacking and vertical-writing
   cases remain in the sample.
 - **Test262 Parser v1**: a 2,000-path deterministic Test262 language sample. Module entries are
   skipped until module parsing is supported. Initial executable baseline: **364/1983, 18.36%**;

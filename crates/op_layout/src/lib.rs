@@ -324,6 +324,152 @@ mod tests {
     }
 
     #[test]
+    fn absolute_auto_margins_respect_insets_instead_of_centering_in_viewport() {
+        let document = op_html::parse_document(
+            "<style>
+                body { margin:0 }
+                #balanced { position:fixed; left:20px; right:30px; top:0;
+                    width:100px; height:10px; margin:auto; background:blue }
+                #one-auto { position:fixed; left:20px; right:30px; top:20px;
+                    width:100px; height:10px; margin-left:auto; margin-right:10px; background:red }
+                #one-inset { position:fixed; left:10px; top:40px;
+                    width:90px; height:10px; margin:auto; background:green }
+                #right-only { position:fixed; right:30px; top:60px;
+                    width:100px; height:10px; margin:auto; background:black }
+              </style>
+              <div id=balanced></div><div id=one-auto></div>
+              <div id=one-inset></div><div id=right-only></div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let page = layout_document_with_computed_styles_and_viewport_metrics(
+            &document,
+            800,
+            600,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let locate = |color: CssColor| {
+            let box_ = page
+                .box_decorations
+                .iter()
+                .find(|box_| box_.background == color.into())
+                .unwrap();
+            (box_.x, box_.width)
+        };
+        assert_eq!(locate(CssColor::BLUE), (345, 100));
+        assert_eq!(locate(CssColor::RED), (660, 100));
+        assert_eq!(locate(CssColor::GREEN), (10, 90));
+        assert_eq!(locate(CssColor::BLACK), (670, 100));
+    }
+
+    #[test]
+    fn absolute_overconstraints_obey_direction_and_negative_auto_margin_rules() {
+        let document = op_html::parse_document(
+            "<style>
+                body { margin:0 }
+                #ltr { direction:ltr; position:fixed; left:20px; right:30px; top:0;
+                    width:100px; height:10px; margin:0 10px; background:blue }
+                #rtl { direction:rtl; position:fixed; left:20px; right:30px; top:20px;
+                    width:100px; height:10px; margin:0 10px; background:red }
+                #negative-ltr { direction:ltr; position:fixed; left:40px; right:50px; top:40px;
+                    width:760px; height:10px; margin:auto; background:green }
+                #negative-rtl { direction:rtl; position:fixed; left:40px; right:50px; top:60px;
+                    width:760px; height:10px; margin:auto; background:black }
+              </style>
+              <div id=ltr></div><div id=rtl></div>
+              <div id=negative-ltr></div><div id=negative-rtl></div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let page = layout_document_with_computed_styles_and_viewport_metrics(
+            &document,
+            800,
+            600,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let locate = |color: CssColor| {
+            let box_ = page
+                .box_decorations
+                .iter()
+                .find(|box_| box_.background == color.into())
+                .unwrap();
+            (box_.x, box_.width)
+        };
+        assert_eq!(locate(CssColor::BLUE), (30, 100));
+        assert_eq!(locate(CssColor::RED), (660, 100));
+        assert_eq!(locate(CssColor::GREEN), (40, 760));
+        assert_eq!(locate(CssColor::BLACK), (-10, 760));
+    }
+
+    #[test]
+    fn absolute_vertical_auto_margins_respect_insets_and_definite_height() {
+        let document = op_html::parse_document(
+            "<style>
+                body { margin:0 }
+                #balanced { position:fixed; top:20px; bottom:30px; left:0;
+                    width:10px; height:100px; margin:auto; background:blue }
+                #one-auto { position:fixed; top:20px; bottom:30px; left:20px;
+                    width:10px; height:100px; margin-top:auto; margin-bottom:10px; background:red }
+                #top-only { position:fixed; top:10px; left:40px;
+                    width:10px; height:100px; margin:auto; background:green }
+                #bottom-only { position:fixed; bottom:20px; left:60px;
+                    width:10px; height:100px; margin:auto; background:black }
+              </style>
+              <div id=balanced></div><div id=one-auto></div>
+              <div id=top-only></div><div id=bottom-only></div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let page = layout_document_with_computed_styles_and_viewport_metrics(
+            &document,
+            800,
+            600,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let locate = |color: CssColor| {
+            let box_ = page
+                .box_decorations
+                .iter()
+                .find(|box_| box_.background == color.into())
+                .unwrap();
+            (box_.y, box_.height)
+        };
+        assert_eq!(locate(CssColor::BLUE), (245, 100));
+        assert_eq!(locate(CssColor::RED), (460, 100));
+        assert_eq!(locate(CssColor::GREEN), (10, 100));
+        assert_eq!(locate(CssColor::BLACK), (480, 100));
+    }
+
+    #[test]
+    fn absolute_vertical_negative_auto_margin_does_not_shift_top_edge() {
+        let document = op_html::parse_document(
+            "<style>
+                body { margin:0 }
+                #negative { position:fixed; top:40px; bottom:50px; left:0;
+                    width:10px; height:560px; margin:auto; background:blue }
+              </style><div id=negative></div>",
+        );
+        let computed = compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let page = layout_document_with_computed_styles_and_viewport_metrics(
+            &document,
+            800,
+            600,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let positioned = page
+            .box_decorations
+            .iter()
+            .find(|box_| box_.background == CssColor::BLUE.into())
+            .unwrap();
+        assert_eq!((positioned.y, positioned.height), (40, 560));
+    }
+
+    #[test]
     fn fixed_blocks_use_viewport_coordinates_and_do_not_consume_flow_space() {
         let document = op_html::parse_document(
             "<style>
