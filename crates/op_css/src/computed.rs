@@ -528,9 +528,16 @@ pub struct ComputedStyleMap {
     custom_properties: HashMap<NodeId, CustomPropertyMap>,
     pseudo_custom_properties: HashMap<(NodeId, PseudoElement), CustomPropertyMap>,
     quotes: HashMap<NodeId, ComputedQuotes>,
+    background_images: HashMap<NodeId, (String, NodeId)>,
 }
 
 impl ComputedStyleMap {
+    pub fn background_image_for(&self, node: NodeId) -> Option<(&str, NodeId)> {
+        self.background_images
+            .get(&node)
+            .map(|(url, source)| (url.as_str(), *source))
+    }
+
     pub fn quotes_for(&self, node: NodeId) -> Option<&ComputedQuotes> {
         self.quotes.get(&node)
     }
@@ -683,6 +690,26 @@ fn compute_subtree(
             .and_then(|node| node.parent)
             .and_then(|parent| computed.quotes_for(parent));
         let quotes = compute_quotes(parent_quotes, &resolved);
+        if let Some((matched, specified)) = winning_background_image(&resolved) {
+            let inherited = document
+                .node(node)
+                .and_then(|n| n.parent)
+                .and_then(|parent| computed.background_images.get(&parent))
+                .cloned();
+            match specified {
+                Specified::Value(Some(url)) => {
+                    computed
+                        .background_images
+                        .insert(node, (url, matched.style_node));
+                }
+                Specified::Inherit => {
+                    if let Some(inherited) = inherited {
+                        computed.background_images.insert(node, inherited);
+                    }
+                }
+                Specified::Value(None) | Specified::Initial | Specified::Unset => {}
+            }
+        }
         computed.entries.insert(node, style);
         computed.custom_properties.insert(node, custom.clone());
         computed.quotes.insert(node, quotes.clone());
@@ -3372,6 +3399,47 @@ fn css_color_to_hsl(color: CssColor) -> [f32; 3] {
     [hue, saturation, lightness]
 }
 
+fn winning_background_image(
+    declarations: &[MatchedDeclaration],
+) -> Option<(&MatchedDeclaration, Specified<Option<String>>)> {
+    declarations
+        .iter()
+        .filter(|matched| {
+            matches!(
+                matched.declaration.name.as_str(),
+                "background" | "background-image"
+            )
+        })
+        .filter_map(|matched| {
+            let value = parse_background_image_url(&matched.declaration.value)
+                .or_else(|| matched.value_from_var.then_some(Specified::Unset))?;
+            Some((matched, value))
+        })
+        .max_by(|(a, _), (b, _)| cascade_key(a).cmp(&cascade_key(b)))
+}
+
+/// Initial single-image slice. Keep a URL's stylesheet origin for relative
+/// resource resolution rather than interpreting it against the HTML document.
+fn parse_background_image_url(tokens: &[TokenKind]) -> Option<Specified<Option<String>>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| None));
+    }
+    if single_ident(tokens).is_some_and(|v| v.eq_ignore_ascii_case("none")) {
+        return Some(Specified::Value(None));
+    }
+    let significant: Vec<_> = significant_tokens(tokens).collect();
+    match significant.as_slice() {
+        [TokenKind::Url(url)] => Some(Specified::Value(Some(url.clone()))),
+        [
+            TokenKind::Function(name),
+            TokenKind::String(url),
+            TokenKind::CloseParen,
+        ] if name.eq_ignore_ascii_case("url") => Some(Specified::Value(Some(url.clone()))),
+        _ if parse_computed_color(tokens).is_some() => Some(Specified::Value(None)),
+        _ => None,
+    }
+}
+
 fn winning_background_color(
     declarations: &[MatchedDeclaration],
 ) -> Option<(&MatchedDeclaration, Specified<ComputedColorValue>)> {
@@ -3395,6 +3463,13 @@ fn parse_background_color(tokens: &[TokenKind]) -> Option<Specified<ComputedColo
         return Some(keyword.map(|()| ComputedColorValue::Absolute(CssColor::TRANSPARENT)));
     }
     if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("none")) {
+        return Some(Specified::Value(ComputedColorValue::Absolute(
+            CssColor::TRANSPARENT,
+        )));
+    }
+    if parse_background_image_url(tokens)
+        .is_some_and(|specified| matches!(specified, Specified::Value(Some(_))))
+    {
         return Some(Specified::Value(ComputedColorValue::Absolute(
             CssColor::TRANSPARENT,
         )));
@@ -4185,6 +4260,41 @@ mod tests {
         assert_eq!(
             (style("initial").opacity, style("initial").invert_filter),
             (1.0, 0.0)
+        );
+    }
+
+    #[test]
+    fn background_image_url_cascade_resets_and_explicitly_inherits() {
+        let document = parse_document(
+            "<style>
+              #parent { background-image:url('a.png') }
+              #child { background-image:inherit }
+              #plain { }
+              #reset { background-image:url('b.png'); background:none }
+              #important { background-image:url('keep.png') !important; background:url('lose.png') }
+              #shorthand { background-color:red; background:url('tile.png') }
+             </style>
+             <div id='parent'><span id='child'></span><span id='plain'></span></div>
+             <div id='reset'></div><div id='important'></div><div id='shorthand'></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let background = |id| {
+            computed
+                .background_image_for(find_by_id(&document, id))
+                .map(|(url, _)| url.to_owned())
+        };
+        assert_eq!(background("parent").as_deref(), Some("a.png"));
+        assert_eq!(background("child").as_deref(), Some("a.png"));
+        assert_eq!(background("plain"), None);
+        assert_eq!(background("reset"), None);
+        assert_eq!(background("important").as_deref(), Some("keep.png"));
+        assert_eq!(background("shorthand").as_deref(), Some("tile.png"));
+        assert_eq!(
+            computed
+                .style_for(find_by_id(&document, "shorthand"))
+                .unwrap()
+                .background_color,
+            CssColor::TRANSPARENT
         );
     }
 

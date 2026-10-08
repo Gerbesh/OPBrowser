@@ -2486,3 +2486,36 @@ This file is append-only project history.
   (53%), both with no render errors. ICC images, shadows, color gamut
   mapping, more filter functions and full SVG remain incomplete.
 
+## 2026-10-08 - Self-link visited semantics, tiled CSS background URLs, ICC PNG conversion
+
+- Start from commit eacdcc9, WPT Static 192/200 and Positioning 53/100.
+- Treat an empty href as a known visited self-navigation to the current
+  document while retaining unvisited matching for other URLs until history
+  storage and history-leak-resistant styling exist. This closes the pinned
+  color-mix-currentcolor-visited reftest. Selector tests cover empty href,
+  external URLs, fragments and links without href.
+- Add first CSS background-image URL support to the existing computed
+  cascade. Track declaration stylesheet origin; handle !important, shorthand
+  reset and explicit inherit. Feed URLs into the worker's budgeted page
+  image loader without introducing a new fetch or rendering engine.
+- Store decoded background image Arcs with ordinary block/table/cell
+  decorations and emit a separate BackgroundImage paint command. Repeat
+  natural image tiles with a saved GDI clip and a finite tile budget;
+  retain the CSS background color and border paint phases. Tests verify
+  cascade and visible pixel colors at tile and clip boundaries.
+- Fix WIC ICC PNG handling: GetColorContexts first reports the number of
+  contexts, but the caller must create IWICColorContext objects for the
+  actual array before requesting profile contents. Transform embedded
+  profiles to the sRGB destination using IWICColorTransform prior to
+  PBGRA conversion. The pinned swapped-red-green PNG now decodes as
+  green #009900, matching the tagged sRGB PNG. Conditional test checks
+  the pinned WPT fixtures if present; normal codec tests remain independent.
+- Frozen Static v1 improves 192/200 -> 194/200 (97.00%), with 0 render
+  errors and no fixture, threshold or exact-comparison changes. Positioning
+  remains 53/100. Remaining Static failures: CSS @color-profile,
+  currentcolor-003 effects, XYZ (author-specified fuzzy not used by our
+  exact comparator), bidi first-line, and two Rec.2020 reference cases.
+- Limitations: only a single default-repeat image layer with no background
+  position/size/multi-layer controls, no ICC @color-profile rule, and no
+  private arbitrary visited URL history state.
+

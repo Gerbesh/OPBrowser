@@ -562,6 +562,28 @@ render errors. Remaining limits include other CSS filter functions,
 precise shadow/gradient handling, other opacity-bearing inline/table
 contexts and complete alpha/color-space precision.
 
+The image-background and ICC slice adds a per-node optional CSS URL
+associated with its declaration's source stylesheet node, without adding
+owned strings to the Copy ComputedStyle. CSS background and background-image
+candidates participate in the same important/inline/specificity/source-order
+cascade; none/initial reset, explicit inherit, and background shorthand
+reset are supported for this single image. The image worker resolves URLs
+against the linked stylesheet address where applicable, through the existing
+bounded loader, and caches the decoded resource per DOM node. Layout copies
+the image Arc to block, table or cell BoxDecoration ink without changing
+normal flow. The display-list BackgroundImage command paints between block
+background color and its border; native WIC/GDI uses intrinsic-size tiles
+under a saved rectangle clip, bounded to 1024 tiles per decoration.
+The WIC decoder now retrieves PNG ICC context count, constructs the
+required IWICColorContext objects, fetches embedded profiles, constructs
+an sRGB destination context and uses IWICColorTransform before PBGRA
+conversion. Unprofiled images keep the existing WIC format conversion.
+Together with the self-document href="" visited-link correction,
+the unchanged exact-pixel WPT Static v1 moves 192 -> 194/200; Positioning
+remains 53/100. CSS background gradients, placement, sizing,
+repeat controls, inline decorations and multi-layer backgrounds are still
+incomplete; arbitrary history-linked :visited remains unsupported.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus

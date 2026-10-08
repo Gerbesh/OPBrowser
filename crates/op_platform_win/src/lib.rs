@@ -673,6 +673,13 @@ fn layer_bounds(commands: &[PaintCommand]) -> Option<(i32, i32, i32, i32)> {
                 height,
                 ..
             }
+            | PaintCommand::BackgroundImage {
+                x,
+                y,
+                width,
+                height,
+                ..
+            }
             | PaintCommand::Image {
                 x,
                 y,
@@ -806,6 +813,9 @@ fn composite_layer(
 fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Vec<LinkRegion>) {
     match command {
         PaintCommand::BeginLayer { .. } | PaintCommand::EndLayer => {}
+        PaintCommand::BackgroundImage { .. } => {
+            raster::paint_background(hdc, command);
+        }
         PaintCommand::Image {
             x,
             y,

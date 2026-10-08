@@ -1018,6 +1018,21 @@ shared between the real Win32 window and headless WPT rendering. Bounded
 layer allocation/depth falls back to unfiltered visible contents rather
 than silently dropping them.
 
+The next Static compatibility path adds ComputedStyleMap::background_image_for,
+populated by winning_background_image (background or background-image
+declarations with stylesheet origin tracking). Engine::images::load retrieves
+the URL through Loader using the corresponding linked-style address and
+retains background RasterImage Arcs. Engine::PreparedDocument::render passes
+those resources through layout_document_with_backgrounds_and_resources;
+flow::Context places images into block/table/cell BoxDecoration. Paint emits
+BackgroundImage after fill color and before borders, while native
+raster::paint_background repeats intrinsic tiles inside an HDC clip.
+op_image::wic now resolves PNG ICC source contexts and transforms frames
+to the display sRGB target before PBGRA conversion. :visited matching
+recognizes only known-current-document empty href self-links and does
+not expose arbitrary user history. This improves frozen Static 192/200
+to 194/200 with no manifest or pixel-tolerance changes.
+
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting
 an extra empty inline fragment after a block child/pseudo flushed the collection. Nested

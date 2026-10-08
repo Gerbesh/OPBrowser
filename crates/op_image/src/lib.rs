@@ -385,6 +385,7 @@ mod wic {
     use super::*;
     use windows::Win32::Graphics::Imaging::*;
     use windows::Win32::System::Com::*;
+    use windows::core::Interface;
 
     struct Apartment;
     impl Drop for Apartment {
@@ -433,9 +434,56 @@ mod wic {
                         )));
                     }
                 };
+                // WIC does not implicitly apply embedded ICC profiles when
+                // converting frame pixels to PBGRA. Explicitly transform the
+                // embedded source space to the display's sRGB target first.
+                // Unprofiled images and unsupported/corrupt profiles keep the
+                // normal decode path instead of making the image disappear.
+                let mut actual = 0u32;
+                let count_status = frame.GetColorContexts(&mut [], &mut actual);
+                let mut contexts = (0..actual.min(8))
+                    .filter_map(|_| factory.CreateColorContext().ok().map(Some))
+                    .collect::<Vec<_>>();
+                let color_context_status = if count_status.is_ok() && !contexts.is_empty() {
+                    frame.GetColorContexts(&mut contexts, &mut actual)
+                } else {
+                    count_status
+                };
+
+                let profiled_source = if color_context_status.is_ok() && actual > 0 {
+                    contexts
+                        .into_iter()
+                        .flatten()
+                        .find(|context| {
+                            context
+                                .GetType()
+                                .is_ok_and(|kind| kind == WICColorContextProfile)
+                        })
+                        .and_then(|source_context| {
+                            let destination = factory.CreateColorContext().ok()?;
+                            destination.InitializeFromExifColorSpace(1).ok()?;
+                            let transformed = factory.CreateColorTransformer().ok()?;
+                            transformed
+                                .Initialize(
+                                    &frame,
+                                    &source_context,
+                                    &destination,
+                                    &GUID_WICPixelFormat32bppBGRA,
+                                )
+                                .ok()?;
+                            Some(transformed)
+                        })
+                } else {
+                    None
+                };
                 let converter = factory.CreateFormatConverter()?;
+                let source: IWICBitmapSource = if let Some(transform) = profiled_source {
+                    transform.cast()?
+                } else {
+                    frame.cast()?
+                };
                 converter.Initialize(
-                    &frame,
+                    &source,
                     &GUID_WICPixelFormat32bppPBGRA,
                     WICBitmapDitherTypeNone,
                     None,
@@ -465,6 +513,25 @@ mod wic {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn embedded_icc_png_uses_profile_when_wpt_fixtures_are_available() {
+        // The pinned upstream fixtures live in ignored target/compat-wpt.
+        // CI without that checkout still runs the decoder's built-in tests.
+        let root = "../../target/compat-wpt/css/css-color/support/";
+        let profiled = std::path::Path::new(root).join("swap-990000-iCCP.png");
+        let srgb = std::path::Path::new(root).join("009900-sRGB.png");
+        if !profiled.is_file() || !srgb.is_file() {
+            return;
+        }
+        for path in [&profiled, &srgb] {
+            let image = decode(&std::fs::read(path).unwrap(), 200 * 200 * 4).unwrap();
+            assert_eq!((image.width(), image.height()), (200, 200));
+            let color = &image.pixels()[..4];
+            assert_eq!(color, &[0, 153, 0, 255], "{}", path.display());
+        }
+    }
 
     #[test]
     #[cfg(windows)]

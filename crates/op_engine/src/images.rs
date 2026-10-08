@@ -18,6 +18,7 @@ const PIXEL_BUDGET: usize = 32 * 1024 * 1024;
 pub(super) struct PageImages {
     pub elements: ImageResources,
     pub generated: GeneratedImageResources,
+    pub backgrounds: ImageResources,
 }
 
 pub(super) fn load(
@@ -84,6 +85,14 @@ pub(super) fn load(
             }
             if after {
                 continue;
+            }
+            if let Some((url, source_node)) = computed.background_image_for(id) {
+                let resource_base = stylesheet_addresses
+                    .get(&source_node)
+                    .map_or(base, String::as_str);
+                if let Some(image) = loader.get(resource_base, url) {
+                    images.backgrounds.insert(id, image);
+                }
             }
             if element.tag_name == "img" {
                 if let Some(src) = element

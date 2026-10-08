@@ -84,6 +84,16 @@ and composites the group once. Native UI and WPT both use this path.
 Pixel budgets and depth limits allow a fallback to visible content if
 effects cannot be rendered safely. This is not a full CSS filter or
 transparency-color-management implementation.
+The renderer now recognizes a first single-URL CSS background-image layer
+per eligible block/table box, uses the computed cascade to track its
+origin stylesheet, resolves it through the existing budgeted image
+resource loader, and paints repeating intrinsic-size raster tiles clipped
+to the background border box. Windows WIC decodes embedded ICC profiles
+through a color-context transform into the output sRGB surface; PNGs
+without a profile keep the original path. Link matching treats an empty
+href as a visited self-navigation to the already active document, but
+arbitrary navigation-history styling is still intentionally absent.
+These slices raise frozen Static v1 to 194/200 (97.00%).
 This is not full CSS stacking: additional context triggers, other auto-z
 paint-phase details and exact interleaving remain future work. Win32 drawing
 never decides paint order.

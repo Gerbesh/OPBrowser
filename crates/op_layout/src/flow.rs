@@ -16,11 +16,12 @@ pub(super) fn layout(
     document: &Document,
     viewport_width: i32,
     viewport_height: i32,
-    images: &ImageResources,
+    images_and_backgrounds: (&ImageResources, &ImageResources),
     generated_images: &GeneratedImageResources,
     computed_styles: &ComputedStyleMap,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
+    let (images, backgrounds) = images_and_backgrounds;
     let viewport_width = viewport_width.max(240);
     let viewport_height = viewport_height.max(1);
     let mut stack = vec![document.root()];
@@ -45,6 +46,7 @@ pub(super) fn layout(
         document,
         images,
         generated_images,
+        backgrounds,
         computed_styles,
         measurer,
         dom_order: &dom_order,
@@ -181,6 +183,7 @@ struct Context<'a, 'm> {
     document: &'a Document,
     images: &'a ImageResources,
     generated_images: &'a GeneratedImageResources,
+    backgrounds: &'a ImageResources,
     computed_styles: &'a ComputedStyleMap,
     measurer: &'m mut dyn TextMeasurer,
     dom_order: &'m HashMap<NodeId, usize>,
@@ -1015,7 +1018,11 @@ impl<'a> Context<'a, '_> {
             || used.border.right.width > 0
             || used.border.bottom.width > 0
             || used.border.left.width > 0;
-        let decoration = if style.background.alpha > 0 || has_border {
+        let bg_image = match content {
+            BlockContent::Element(id) => self.backgrounds.get(&id).cloned(),
+            _ => None,
+        };
+        let decoration = if style.background.alpha > 0 || has_border || bg_image.is_some() {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
                 paint_layer: DecorationPaintLayer::Block,
@@ -1025,6 +1032,7 @@ impl<'a> Context<'a, '_> {
                 width: used.border_width,
                 height: 0,
                 background: style.background,
+                background_image: bg_image,
                 border_top: DecorationBorder {
                     width: used.border.top.width,
                     color: used.border.top.color,
@@ -1267,6 +1275,7 @@ impl<'a> Context<'a, '_> {
             document,
             images,
             generated_images,
+            backgrounds: self.backgrounds,
             computed_styles,
             measurer: &mut *self.measurer,
             dom_order: self.dom_order,
@@ -1355,6 +1364,7 @@ impl<'a> Context<'a, '_> {
             document,
             images,
             generated_images,
+            backgrounds: self.backgrounds,
             computed_styles,
             measurer: &mut *self.measurer,
             dom_order: self.dom_order,
@@ -1444,6 +1454,7 @@ impl<'a> Context<'a, '_> {
             document,
             images,
             generated_images,
+            backgrounds: self.backgrounds,
             computed_styles,
             measurer: &mut *self.measurer,
             dom_order: self.dom_order,
@@ -1697,6 +1708,7 @@ impl<'a> Context<'a, '_> {
             document,
             images,
             generated_images,
+            backgrounds: self.backgrounds,
             computed_styles,
             measurer: &mut *self.measurer,
             dom_order: self.dom_order,
@@ -1890,7 +1902,8 @@ impl<'a> Context<'a, '_> {
             || used.border.right.width > 0
             || used.border.bottom.width > 0
             || used.border.left.width > 0;
-        let table_decoration = if style.background.alpha > 0 || has_border {
+        let bg_image = self.backgrounds.get(&inherited_from).cloned();
+        let table_decoration = if style.background.alpha > 0 || has_border || bg_image.is_some() {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
                 paint_layer: DecorationPaintLayer::Block,
@@ -1900,6 +1913,7 @@ impl<'a> Context<'a, '_> {
                 width: used.border_width,
                 height: 0,
                 background: style.background,
+                background_image: bg_image,
                 border_top: DecorationBorder {
                     width: used.border.top.width,
                     color: used.border.top.color,
@@ -2328,6 +2342,7 @@ impl<'a> Context<'a, '_> {
                         width: table_width.max(1),
                         height,
                         background: part.background,
+                        background_image: None,
                         border_top: transparent,
                         border_right: transparent,
                         border_bottom: transparent,
@@ -3282,7 +3297,11 @@ impl<'a> Context<'a, '_> {
             }
             _ => None,
         };
-        let decoration = if style.background.alpha > 0 || has_border {
+        let cell_bg_image = match placement.source {
+            TableCellSource::Element(id) => self.backgrounds.get(&id).cloned(),
+            _ => None,
+        };
+        let decoration = if style.background.alpha > 0 || has_border || cell_bg_image.is_some() {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
                 paint_layer: if cell_paint_key.is_some() {
@@ -3296,6 +3315,7 @@ impl<'a> Context<'a, '_> {
                 width: slot_width.max(1),
                 height: 0,
                 background: style.background,
+                background_image: cell_bg_image,
                 border_top: DecorationBorder {
                     width: border.top.width,
                     color: border.top.color,
@@ -4508,6 +4528,7 @@ impl<'a> Context<'a, '_> {
                 width: outer_width,
                 height: outer_height,
                 background: box_style.background,
+                background_image: None,
                 border_top: box_style.border_top,
                 border_right: box_style.border_right,
                 border_bottom: box_style.border_bottom,

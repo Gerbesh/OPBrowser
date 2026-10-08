@@ -416,12 +416,27 @@ Status: IN PROGRESS.
   composited-filters-under-opacity, with no Positioning regression (53/100).
   Size and recursion budgets prevent unbounded offscreen allocations; oversized
   groups retain content without effects. This is not full CSS filter/opacity.
-- NEXT close remaining eight frozen WPT Static failures: ICC @color-profile,
-  tagged PNG color management/background images, :visited painting,
-  currentcolor/first-line effects, more precise XYZ/reftest color mapping,
-  bidirectional text, and reviewing the two legacy Rec.2020 transfer
-  references against the 2026 gamma 2.4 specification. Continue row/group
-  table painting and CSS positioning as separate workstreams.
+- DONE limited self-document visited-link handling: an empty href always
+  points back to the current document, already visited during navigation.
+  Preserve unvisited treatment for other links until history-backed,
+  privacy-safe :visited styling exists. This closes the frozen
+  color-mix-currentcolor-visited reftest, bringing Static to 193/200.
+- DONE first URL-based CSS background-image support for blocks and tables:
+  resolve authored background/background-image URLs through the computed
+  cascade, respect !important and explicit inherit/reset, resolve stylesheet
+  relative URLs through the existing bounded image loader, and tile decoded
+  image pixels under a clipped decoration layer before borders. The Windows
+  WIC path now explicitly converts embedded ICC profiles to sRGB by creating
+  source color-context COM objects, then using WICColorTransform on the frame
+  before premultiplication. This closes tagged-images-004 on the unchanged
+  exact-pixel WPT Static v1 manifest: 194/200 (97.00%). Positioning stays
+  53/100, no render errors. Tests cover cascade, tiling/clipping and ICC.
+- NEXT close the six remaining frozen WPT Static failures: CSS5
+  @color-profile, first-line/currentcolor shadows and gradients, more precise
+  XYZ color or spec-declared fuzzy reftest metadata, complex bidi/first-line
+  layout, and two legacy Rec.2020 transfer references. Full CSS background
+  repeat/position/size/multiple-layer controls remain out of scope.
+  Continue row/group tables and CSS positioning as separate workstreams.
 
 ## M3 - Original JavaScript engine
 

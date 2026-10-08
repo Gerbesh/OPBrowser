@@ -117,6 +117,7 @@ pub struct BoxDecoration {
     pub width: i32,
     pub height: i32,
     pub background: TextColor,
+    pub background_image: Option<Arc<RasterImage>>,
     pub border_top: DecorationBorder,
     pub border_right: DecorationBorder,
     pub border_bottom: DecorationBorder,
@@ -289,11 +290,31 @@ pub fn layout_document_with_resources_and_viewport_metrics(
     computed_styles: &ComputedStyleMap,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
+    layout_document_with_backgrounds_and_resources(
+        document,
+        viewport_width,
+        viewport_height,
+        (images, &ImageResources::new()),
+        generated_images,
+        computed_styles,
+        measurer,
+    )
+}
+
+pub fn layout_document_with_backgrounds_and_resources(
+    document: &Document,
+    viewport_width: i32,
+    viewport_height: i32,
+    images_and_backgrounds: (&ImageResources, &ImageResources),
+    generated_images: &GeneratedImageResources,
+    computed_styles: &ComputedStyleMap,
+    measurer: &mut dyn TextMeasurer,
+) -> LayoutTree {
     flow::layout(
         document,
         viewport_width,
         viewport_height,
-        images,
+        images_and_backgrounds,
         generated_images,
         computed_styles,
         measurer,

@@ -1082,6 +1082,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                         .saturating_add(style.bottom_extra())
                         .max(0),
                     background: style.background,
+                    background_image: None,
                     border_top: style.border_top,
                     border_right: style.border_right,
                     border_bottom: style.border_bottom,
@@ -1113,6 +1114,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                             width: image.width.saturating_add(left).saturating_add(right),
                             height: image.height.saturating_add(top).saturating_add(bottom),
                             background: box_style.background,
+                            background_image: None,
                             border_top: box_style.border_top,
                             border_right: box_style.border_right,
                             border_bottom: box_style.border_bottom,

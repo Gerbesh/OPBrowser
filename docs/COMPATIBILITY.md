@@ -168,7 +168,22 @@ backgrounds, :visited history colors, first-line shadows/currentcolor and
 bidirectional text, color conversion rounding/precision and two Rec.2020
 references with pre-2026 transfer expectations. The effect implementation
 does not yet cover all filters/opacity contexts, color-managed compositing,
-gradient/shadow effects or exact antialiasing.
+gradient/shadow effects or exact antialiasing. The subsequent image
+background/ICC pass supports one URL background layer for ordinary blocks,
+tables and cells, with URL resolution based on CSS stylesheet origin,
+bounded loading and intrinsic-size repeat tiling clipped to the decoration.
+The Windows WIC decoder explicitly transforms embedded PNG ICC color
+contexts into output sRGB before premultiplication. A separate known
+self-document href="" special case permits :visited color-mix tests to use
+the existing currentcolor interpolation, without consulting other history.
+On the original unchanged exact-pixel Static v1 manifest this improves
+192/200 -> 194/200 (97.00%): both color-mix-currentcolor-visited.html
+and tagged-images-004.html now pass. Positioning remains 53/100 (53%).
+The six remaining Static failures are at-color-profile-001, currentcolor-003,
+predefined-012, rec2020-001, xyz-003 and first-line-bidi-002. The xyz-003
+author-declared fuzzy allowance is still NOT applied by our exact-pixel
+probe; tolerance settings and manifest remain unchanged. Full CSS
+background layers, ICC CSS5 @color-profile, link history and bidi are pending.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves

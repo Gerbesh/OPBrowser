@@ -603,11 +603,16 @@ fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) 
             })
         }),
         PseudoClass::Link => document.element(node).is_some_and(|element| {
-            element.tag_name.eq_ignore_ascii_case("a") && attribute_value(element, "href").is_some()
+            element.tag_name.eq_ignore_ascii_case("a")
+                && attribute_value(element, "href").is_some_and(|href| !href.is_empty())
         }),
-        // Link-history state is intentionally not exposed yet. Treating all links as unvisited
-        // preserves privacy while still giving :visited valid selector semantics.
-        PseudoClass::Visited => false,
+        // An empty href resolves to the document being rendered, already in
+        // navigation history. External targets remain unvisited until a private,
+        // history-aware link-color pass exists.
+        PseudoClass::Visited => document.element(node).is_some_and(|element| {
+            element.tag_name.eq_ignore_ascii_case("a")
+                && attribute_value(element, "href") == Some("")
+        }),
         PseudoClass::Required => document.element(node).is_some_and(|element| {
             supports_required_state(element) && attribute_value(element, "required").is_some()
         }),
@@ -992,6 +997,26 @@ mod tests {
         assert!(matches(element_by_id(&document, "details"), ":open"));
         assert!(matches(element_by_id(&document, "link"), ":link"));
         assert!(!matches(element_by_id(&document, "link"), ":visited"));
+    }
+
+    #[test]
+    fn self_navigation_empty_href_is_visited_but_external_links_are_not() {
+        let document = parse_document(
+            "<a id='self' href=''>self</a><a id='other' href='next.html'>next</a>\
+             <a id='fragment' href='#part'>fragment</a><a id='no-href'>plain</a>",
+        );
+        let matches = |id, selector: &str| {
+            let sheet = parse_stylesheet(&format!("{selector} {{ color:red }}"));
+            let node = element_by_id(&document, id);
+            selector_matches(&document, node, &sheet.value.rules[0].selectors[0])
+        };
+        assert!(matches("self", ":visited"));
+        assert!(!matches("self", ":link"));
+        assert!(matches("other", ":link"));
+        assert!(!matches("other", ":visited"));
+        assert!(matches("fragment", ":link"));
+        assert!(!matches("no-href", ":visited"));
+        assert!(!matches("no-href", ":link"));
     }
 
     #[test]

@@ -40,6 +40,13 @@ pub enum PaintCommand {
         invert: u8,
     },
     EndLayer,
+    BackgroundImage {
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        image: Arc<RasterImage>,
+    },
     Image {
         x: i32,
         y: i32,
@@ -266,6 +273,15 @@ fn push_box_decoration(commands: &mut Vec<PaintCommand>, decoration: &BoxDecorat
             color: composite_color(decoration.background),
         });
     }
+    if let Some(image) = decoration.background_image.as_ref() {
+        commands.push(PaintCommand::BackgroundImage {
+            x: decoration.x,
+            y: decoration.y,
+            width: decoration.width,
+            height: decoration.height,
+            image: image.clone(),
+        });
+    }
 
     let top = decoration.border_top.width.clamp(0, decoration.height);
     let bottom = decoration
@@ -483,6 +499,7 @@ mod tests {
             width: 40,
             height: 20,
             background: color,
+            background_image: None,
             border_top: border,
             border_right: border,
             border_bottom: border,
@@ -588,6 +605,7 @@ mod tests {
                     blue: 255,
                     alpha: 255,
                 },
+                background_image: None,
                 border_top: DecorationBorder {
                     width: 2,
                     color: TextColor {

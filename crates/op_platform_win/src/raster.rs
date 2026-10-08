@@ -87,6 +87,57 @@ impl Drop for Surface {
     }
 }
 
+/// Paint the CSS background at its intrinsic size, repeated in both axes and
+/// clipped to the owning decoration. Each tile reuses the decoded image buffer.
+pub(super) fn paint_background(target: *mut c_void, command: &PaintCommand) -> bool {
+    let PaintCommand::BackgroundImage {
+        x,
+        y,
+        width,
+        height,
+        image,
+    } = command
+    else {
+        return false;
+    };
+    if *width <= 0 || *height <= 0 || image.width() == 0 || image.height() == 0 {
+        return false;
+    }
+    let tile_width = image.width() as i32;
+    let tile_height = image.height() as i32;
+    let right = x.saturating_add(*width);
+    let bottom = y.saturating_add(*height);
+    let saved = unsafe { SaveDC(target) };
+    if saved == 0 {
+        return false;
+    }
+    unsafe { IntersectClipRect(target, *x, *y, right, bottom) };
+    let mut painted = false;
+    let mut tile_y = *y;
+    let mut count = 0usize;
+    while tile_y < bottom && count < 1024 {
+        let mut tile_x = *x;
+        while tile_x < right && count < 1024 {
+            painted |= paint(
+                target,
+                &PaintCommand::Image {
+                    x: tile_x,
+                    y: tile_y,
+                    width: tile_width,
+                    height: tile_height,
+                    image: image.clone(),
+                    href: None,
+                },
+            );
+            count += 1;
+            tile_x = tile_x.saturating_add(tile_width);
+        }
+        tile_y = tile_y.saturating_add(tile_height);
+    }
+    unsafe { RestoreDC(target, saved) };
+    painted
+}
+
 pub(super) fn paint(target: *mut c_void, command: &PaintCommand) -> bool {
     let PaintCommand::Image {
         x,
@@ -288,6 +339,33 @@ mod tests {
         assert!((127..=129).contains(&red), "{red}");
         assert!((127..=129).contains(&green), "{green}");
         assert_eq!(blue, 255);
+    }
+
+    #[test]
+    fn background_image_tiles_and_clips_at_the_decoration_boundary() {
+        let target = Surface::new(null_mut(), 10, 7).unwrap();
+        target.clear_white();
+        let pixels = vec![
+            0, 0, 255, 255, 0, 255, 0, 255, 255, 0, 0, 255, 0, 255, 255, 255,
+        ];
+        let image = RasterImage::from_premultiplied_bgra(2, 2, pixels).unwrap();
+        let command = PaintCommand::BackgroundImage {
+            x: 1,
+            y: 1,
+            width: 5,
+            height: 3,
+            image: Arc::new(image),
+        };
+        assert!(paint_background(target.dc, &command));
+        assert_eq!(unsafe { GetPixel(target.dc, 1, 1) }, 0x0000ff);
+        assert_eq!(unsafe { GetPixel(target.dc, 2, 1) }, 0x00ff00);
+        assert_eq!(unsafe { GetPixel(target.dc, 3, 1) }, 0x0000ff);
+        assert_eq!(unsafe { GetPixel(target.dc, 1, 2) }, 0xff0000);
+        assert_eq!(unsafe { GetPixel(target.dc, 2, 2) }, 0x00ffff);
+        assert_eq!(unsafe { GetPixel(target.dc, 1, 3) }, 0x0000ff);
+        assert_eq!(unsafe { GetPixel(target.dc, 5, 3) }, 0x0000ff);
+        assert_eq!(unsafe { GetPixel(target.dc, 6, 3) }, 0xffffff);
+        assert_eq!(unsafe { GetPixel(target.dc, 1, 4) }, 0xffffff);
     }
 
     #[test]
