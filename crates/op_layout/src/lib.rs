@@ -76,6 +76,18 @@ pub struct DecorationBorder {
 pub enum DecorationPaintLayer {
     Block,
     Inline,
+    /// Initial foreground phase for out-of-flow positioned descendants.
+    PositionedBlock,
+    PositionedInline,
+}
+
+impl DecorationPaintLayer {
+    pub fn positioned(self) -> Self {
+        match self {
+            Self::Block | Self::PositionedBlock => Self::PositionedBlock,
+            Self::Inline | Self::PositionedInline => Self::PositionedInline,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,6 +134,26 @@ pub struct LinkSpan {
 pub enum LayoutItem {
     Text(usize),
     Image(usize),
+    PositionedText(usize),
+    PositionedImage(usize),
+}
+
+impl LayoutItem {
+    pub fn positioned(self) -> Self {
+        match self {
+            Self::Text(index) | Self::PositionedText(index) => Self::PositionedText(index),
+            Self::Image(index) | Self::PositionedImage(index) => Self::PositionedImage(index),
+        }
+    }
+
+    pub fn offset(self, text_base: usize, image_base: usize) -> Self {
+        match self {
+            Self::Text(index) => Self::Text(index + text_base),
+            Self::Image(index) => Self::Image(index + image_base),
+            Self::PositionedText(index) => Self::PositionedText(index + text_base),
+            Self::PositionedImage(index) => Self::PositionedImage(index + image_base),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

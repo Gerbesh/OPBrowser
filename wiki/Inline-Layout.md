@@ -76,7 +76,10 @@ emits this sequence instead of painting all text before all images.
   inline-block atomic alignment uses the last in-flow line's baseline rather than its box bottom.
   Outer decorations are allocated before inner decorations so opaque outer backgrounds paint
   first. The painter also draws block backgrounds before inline backgrounds, preserving inline
-  ink that extends past a following block's top.
+  ink that extends past a following block's top. Out-of-flow absolute/fixed output now
+  retains foreground paint markers for decorations and text/images through inline-block
+  and atomic reindexing. A basic positioned foreground phase paints after normal text;
+  complete z-index stacking and source-ordered nested contexts are still pending.
 - Block children inside an inline now split the active decorated path into continuation nodes.
   Ending and continuing fragments suppress the appropriate logical edge for computed `direction`,
   so LTR and RTL preserve different physical start/end borders and padding. Later descendants

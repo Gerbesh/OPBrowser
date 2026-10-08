@@ -2279,3 +2279,28 @@ This file is append-only project history.
   To update the regular executable, close the running browser and replace it with
   `op_browser_next.exe`; do not overwrite an active Windows executable.
 
+## 2026-10-08 - First foreground paint phase for positioned elements
+
+- Add PositionedBlock/PositionedInline decoration phases and PositionedText/PositionedImage
+  layout items; all four variants retain index identity when line, atomic and block
+  formatters merge their paint streams.
+- Context records an output-order cursor and promotes absolute/fixed descendants to a
+  foreground paint phase, so positioned backgrounds and glyphs/images paint after
+  normal-flow text rather than beneath it. Standalone relative blocks are promoted so
+  relatively shifted table captions can cover earlier absolute indicator boxes.
+- Identified and corrected a WPT Positioning regression during implementation: blindly
+  promoting all descendants of a relative parent drew its normal text over nested
+  absolute children. A relative parent containing positioned outputs avoids whole-
+  subtree promotion until the engine has a real nested stacking-context tree.
+- Add end-to-end tests for absolute/fixed foreground paint, relative caption precedence
+  and positioned image ordering after normal text. Frozen compatibility manifests hold
+  WPT Static **187/200**, Positioning **38/100**, Test262 Parser **523/1983**.
+- Known limitations: nested stacking contexts/source order, computed z-index, negative
+  stacking levels and selective inline-relative context promotion remain future work.
+- Final rustfmt --check, warning-free Clippy, all workspace tests, fixed WPT/Test262 suites,
+  and native Win32 smoke passed. Optimized Windows release was built into the primary
+  `target/release/op_browser.exe` path after the former process stopped. Superseded
+  `op_browser_next.exe` was removed, avoiding confusion between generations.
+  EXE: **1,058,816 bytes**; SHA-256
+  `9D91731725C606C1FDD0C6B73A39BE27B38AF1ACDBE98060B096AB632A814304`.
+

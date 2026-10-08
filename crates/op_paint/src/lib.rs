@@ -84,58 +84,76 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
         color: Color::WHITE,
     });
 
-    // CSS2 block background/border phase precedes inline background/border
-    // paint, including overlapping ink from the previous line.
-    for layer in [
-        op_layout::DecorationPaintLayer::Block,
-        op_layout::DecorationPaintLayer::Inline,
-    ] {
-        for decoration in &layout.box_decorations {
-            if decoration.paint_layer == layer {
-                push_box_decoration(&mut commands, decoration);
+    // First paint normal flow, then the initial foreground phase for
+    // absolute/fixed descendants. Within each phase blocks precede inlines,
+    // then text/images. Full stacking contexts and z-index come later.
+    for positioned in [false, true] {
+        let layers = if positioned {
+            [
+                op_layout::DecorationPaintLayer::PositionedBlock,
+                op_layout::DecorationPaintLayer::PositionedInline,
+            ]
+        } else {
+            [
+                op_layout::DecorationPaintLayer::Block,
+                op_layout::DecorationPaintLayer::Inline,
+            ]
+        };
+        for layer in layers {
+            for decoration in &layout.box_decorations {
+                if decoration.paint_layer == layer {
+                    push_box_decoration(&mut commands, decoration);
+                }
             }
         }
-    }
 
-    for item in &layout.order {
-        match *item {
-            LayoutItem::Text(index) => {
-                let Some(text_box) = layout.text_boxes.get(index) else {
-                    continue;
-                };
-                if !text_box.visible {
-                    continue;
-                }
-                commands.push(PaintCommand::Text {
-                    x: text_box.x,
-                    y: text_box.y,
-                    text: text_box.text.clone(),
-                    font_size: text_box.font_size,
-                    bold: text_box.weight == FontWeight::Bold,
-                    italic: text_box.style == FontStyle::Italic,
-                    underline: text_box.decoration.underline,
-                    line_through: text_box.decoration.line_through,
-                    letter_spacing: text_box.letter_spacing,
-                    word_spacing: text_box.word_spacing,
-                    color: composite_text_color(text_box.color),
-                    links: text_box.links.clone(),
-                });
+        for item in &layout.order {
+            let item_is_positioned = matches!(
+                item,
+                LayoutItem::PositionedText(_) | LayoutItem::PositionedImage(_)
+            );
+            if item_is_positioned != positioned {
+                continue;
             }
-            LayoutItem::Image(index) => {
-                let Some(image_box) = layout.image_boxes.get(index) else {
-                    continue;
-                };
-                if !image_box.visible {
-                    continue;
+            match *item {
+                LayoutItem::Text(index) | LayoutItem::PositionedText(index) => {
+                    let Some(text_box) = layout.text_boxes.get(index) else {
+                        continue;
+                    };
+                    if !text_box.visible {
+                        continue;
+                    }
+                    commands.push(PaintCommand::Text {
+                        x: text_box.x,
+                        y: text_box.y,
+                        text: text_box.text.clone(),
+                        font_size: text_box.font_size,
+                        bold: text_box.weight == FontWeight::Bold,
+                        italic: text_box.style == FontStyle::Italic,
+                        underline: text_box.decoration.underline,
+                        line_through: text_box.decoration.line_through,
+                        letter_spacing: text_box.letter_spacing,
+                        word_spacing: text_box.word_spacing,
+                        color: composite_text_color(text_box.color),
+                        links: text_box.links.clone(),
+                    });
                 }
-                commands.push(PaintCommand::Image {
-                    x: image_box.x,
-                    y: image_box.y,
-                    width: image_box.width,
-                    height: image_box.height,
-                    image: image_box.image.clone(),
-                    href: image_box.href.clone(),
-                });
+                LayoutItem::Image(index) | LayoutItem::PositionedImage(index) => {
+                    let Some(image_box) = layout.image_boxes.get(index) else {
+                        continue;
+                    };
+                    if !image_box.visible {
+                        continue;
+                    }
+                    commands.push(PaintCommand::Image {
+                        x: image_box.x,
+                        y: image_box.y,
+                        width: image_box.width,
+                        height: image_box.height,
+                        image: image_box.image.clone(),
+                        href: image_box.href.clone(),
+                    });
+                }
             }
         }
     }
@@ -229,6 +247,56 @@ fn composite_color(color: TextColor) -> Color {
 mod tests {
     use super::*;
     use op_layout::{DecorationBorder, FontStyle, FontWeight, LayoutTree, TextBox, TextDecoration};
+
+    #[test]
+    fn positioned_images_paint_after_normal_text_even_when_laid_out_first() {
+        let raster =
+            Arc::new(RasterImage::from_premultiplied_bgra(1, 1, vec![0, 255, 0, 255]).unwrap());
+        let layout = LayoutTree {
+            viewport_width: 120,
+            content_height: 60,
+            box_decorations: vec![],
+            text_boxes: vec![TextBox {
+                x: 10,
+                y: 10,
+                width: 60,
+                height: 18,
+                text: "normal".to_owned(),
+                font_size: 16,
+                weight: FontWeight::Normal,
+                style: FontStyle::Normal,
+                decoration: TextDecoration {
+                    underline: false,
+                    line_through: false,
+                },
+                letter_spacing: 0,
+                word_spacing: 0,
+                color: TextColor {
+                    red: 0,
+                    green: 0,
+                    blue: 0,
+                    alpha: 255,
+                },
+                visible: true,
+                links: vec![],
+            }],
+            image_boxes: vec![op_layout::ImageBox {
+                x: 10,
+                y: 10,
+                width: 1,
+                height: 1,
+                image: raster.clone(),
+                visible: true,
+                href: None,
+            }],
+            order: vec![LayoutItem::PositionedImage(0), LayoutItem::Text(0)],
+        };
+        let result = build_display_list(&layout, 60);
+        assert!(matches!(&result.commands[1], PaintCommand::Text { text, .. } if text == "normal"));
+        assert!(
+            matches!(&result.commands[2], PaintCommand::Image { image, .. } if Arc::ptr_eq(image, &raster))
+        );
+    }
 
     #[test]
     fn inline_backgrounds_paint_above_later_overlapping_block_backgrounds() {

@@ -1150,11 +1150,12 @@ impl<'a, 'm> Lines<'a, 'm> {
                     self.decorations.extend(atomic.decorations);
                     self.text_boxes.extend(atomic.text_boxes);
                     self.image_boxes.extend(atomic.image_boxes);
-                    self.order
-                        .extend(atomic.order.into_iter().map(|item| match item {
-                            LayoutItem::Text(index) => LayoutItem::Text(text_base + index),
-                            LayoutItem::Image(index) => LayoutItem::Image(image_base + index),
-                        }));
+                    self.order.extend(
+                        atomic
+                            .order
+                            .into_iter()
+                            .map(|item| item.offset(text_base, image_base)),
+                    );
                     x = x.saturating_add(atomic.width);
                 }
                 PreparedBox::Text(text) => {

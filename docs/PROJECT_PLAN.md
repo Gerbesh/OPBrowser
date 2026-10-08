@@ -340,8 +340,15 @@ Status: IN PROGRESS.
   Block backgrounds now paint before inline backgrounds, preventing following blocks from erasing
   overlapping inline content. WPT Positioning v1 improved from 36/100 to 38/100; WPT Static v1
   remains 187/200 on unchanged manifests. Layout and paint regressions added.
-- NEXT font fallback and remaining line-height cases, abspos constraints, vertical writing/multicol,
-  sticky, full stacking contexts and `overflow`; frozen manifests remain unchanged.
+- DONE initial foreground paint phase for CSS positioned blocks: absolute/fixed (and
+  standalone relative blocks) now retain foreground decoration and text/image tags across
+  inline and atomic layout boundaries. Normal-flow ink paints first; the foreground follows.
+  Relative parents with positioned descendants preserve their ordinary internal text phase
+  instead of incorrectly obscuring nested absolute children. Added engine and paint regressions;
+  WPT Static v1 remains 187/200 and Positioning v1 remains 38/100 on frozen manifests.
+- NEXT tree-structured stacking contexts with source-order groups and computed z-index,
+  negative stacking levels, positioned inline fragmentation, overflow clipping, font fallback
+  and remaining line-height cases; unsupported multicol/vertical writing and sticky remain.
 
 ## M3 - Original JavaScript engine
 

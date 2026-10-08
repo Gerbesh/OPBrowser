@@ -1825,6 +1825,54 @@ mod tests {
     }
 
     #[test]
+    fn positioned_absolute_and_fixed_contents_paint_over_normal_flow() {
+        for position in ["absolute", "fixed"] {
+            let html = format!(
+                "<div style='position:relative;height:90px'>\
+                 <div style='position:{position};left:0;top:0;background:lime;width:170px;height:45px'>FRONT</div>\
+                 <p>Normal flow underneath</p></div>"
+            );
+            let page = Engine::new().render_html(&html, 800, 600);
+            let commands = &page.commands;
+            let normal = commands.iter().position(|cmd| {
+                matches!(cmd, PaintCommand::Text { text, .. } if text.contains("Normal flow"))
+            }).expect("normal-flow text");
+            let background = commands
+                .iter()
+                .position(|cmd| {
+                    matches!(cmd, PaintCommand::FillRect { color, width:170, height:45, .. }
+                    if *color == (op_paint::Color { r:0, g:255, b:0 }))
+                })
+                .expect("positioned background");
+            let foreground = commands
+                .iter()
+                .position(|cmd| matches!(cmd, PaintCommand::Text { text, .. } if text == "FRONT"))
+                .expect("positioned foreground text");
+            assert!(normal < background && background < foreground, "{position}");
+        }
+    }
+
+    #[test]
+    fn relative_table_caption_overlays_preceding_absolute_indicator() {
+        let html = "<div style='display:inline-block;position:relative;height:200px'>\
+            <div style='position:absolute;left:0;top:100px;width:50px;height:50px;background:red'></div>\
+            <table><caption style='position:relative;top:100px;width:50px;height:50px;background:lime'></caption></table></div>";
+        let page = Engine::new().render_html(html, 800, 600);
+        let commands = &page.commands;
+        let position_of_color = |r: u8, g: u8| {
+            commands
+                .iter()
+                .position(|cmd| {
+                    matches!(cmd,
+                PaintCommand::FillRect { color, width:50, height:50, .. }
+                if color.r == r && color.g == g && color.b == 0)
+                })
+                .expect("colored positioned rectangle")
+        };
+        assert!(position_of_color(255, 0) < position_of_color(0, 255));
+    }
+
+    #[test]
     fn nested_inline_backgrounds_paint_outer_first_and_survive_reflow() {
         let html = "<p><a href=next style='padding:2px 3px;background:red'>A<span style='padding:4px 5px;background:blue'><b>nested label wraps across lines</b></span>Z</a></p>";
         let mut engine = Engine::new();

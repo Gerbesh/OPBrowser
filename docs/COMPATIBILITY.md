@@ -98,6 +98,13 @@ inline-block / replaced-SVG follow-up reached 25/100 (25.00%). After the split-i
 - 0 render/infrastructure errors;
 - **38.00% WPT Positioning v1**.
 
+The next foreground-paint slice adds positioned block/inline decoration and text/image
+phases. Out-of-flow absolute/fixed content now overlays normal-flow text, and standalone
+relative table captions can cover earlier absolute siblings. Position-relative parents
+with nested absolute children preserve their in-flow text underneath those descendants.
+The frozen suite scores remain unchanged (WPT Static 187/200, Positioning 38/100,
+Test262 Parser 523/1983). Full z-index and nested stacking contexts remain unsupported.
+
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves
 relative-position visual offsets without moving following flow, and supports px/percentage insets on

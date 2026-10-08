@@ -437,6 +437,18 @@ before inline backgrounds and before text/images, avoiding overwrites where inli
 following block's top. This is not full positioned stacking/z-index support. Frozen WPT Positioning
 v1 increased 36/100 -> 38/100 (38.00%) with WPT Static holding 187/200 (93.50%).
 
+A follow-up first positioned foreground paint phase extends `DecorationPaintLayer` with
+`PositionedBlock/PositionedInline` and `LayoutItem` with positioned text/image variants.
+`Context::positioned_element` tags its own output ranges, including nested atomic output,
+and `op_paint` emits normal block and inline backgrounds plus normal text/images before
+positioned backgrounds and foreground text/images. Relative blocks without nested positioned
+children are promoted as a foreground group (including relative table captions that must
+occlude previously painted absolute siblings). Relative blocks containing positioned
+descendants are deliberately not promoted wholesale, since that would place their ordinary
+text on top of their absolute children. This prevents foreground paint reversals but does
+not provide CSS source-order stacking contexts, negative z-index or interleaved sibling
+foreground paint groups. Pinned WPT Static and Positioning remain 187/200 and 38/100.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus

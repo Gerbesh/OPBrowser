@@ -165,6 +165,7 @@ struct OutputStart {
     decorations: usize,
     text: usize,
     images: usize,
+    order: usize,
     fragments: usize,
     deferred: usize,
 }
@@ -441,11 +442,12 @@ impl<'a> Context<'a, '_> {
         if let Some(baseline) = lines.last_baseline {
             self.last_line_baseline = Some(baseline);
         }
-        self.order
-            .extend(lines.order.into_iter().map(|item| match item {
-                LayoutItem::Text(index) => LayoutItem::Text(index + self.text.len()),
-                LayoutItem::Image(index) => LayoutItem::Image(index + self.images_out.len()),
-            }));
+        self.order.extend(
+            lines
+                .order
+                .into_iter()
+                .map(|item| item.offset(self.text.len(), self.images_out.len())),
+        );
         let positioned = lines.positioned.clone();
         self.inline_fragments.extend(lines.fragments);
         self.decorations.extend(lines.decorations);
@@ -543,8 +545,18 @@ impl<'a> Context<'a, '_> {
             decorations: self.decorations.len(),
             text: self.text.len(),
             images: self.images_out.len(),
+            order: self.order.len(),
             fragments: self.inline_fragments.len(),
             deferred: self.deferred_inline.len(),
+        }
+    }
+
+    fn mark_positioned_outputs_since(&mut self, start: OutputStart) {
+        for decoration in &mut self.decorations[start.decorations..] {
+            decoration.paint_layer = decoration.paint_layer.positioned();
+        }
+        for item in &mut self.order[start.order..] {
+            *item = item.clone().positioned();
         }
     }
 
@@ -823,6 +835,9 @@ impl<'a> Context<'a, '_> {
             self.translate_outputs_since(output_start, 0, desired_y.saturating_sub(provisional_y));
         }
 
+        // Non-auto positioned descendants participate in foreground painting.
+        self.mark_positioned_outputs_since(output_start);
+
         self.y = saved_y;
         self.pending_margin = saved_margin;
         self.floats = saved_floats;
@@ -1056,6 +1071,28 @@ impl<'a> Context<'a, '_> {
         if style.position == Position::Relative {
             let (dx, dy) = relative_position_offset(style, containing_width, containing_height);
             self.translate_outputs_since(output_start, dx, dy);
+            // A relative box without nested positioned paints can enter the
+            // foreground as one group. If it contains absolute children,
+            // promoting its whole subtree would incorrectly move ordinary
+            // text above those children. Full nested stacking needs groups.
+            let has_positioned_descendants = self.decorations[output_start.decorations..]
+                .iter()
+                .any(|box_| {
+                    matches!(
+                        box_.paint_layer,
+                        DecorationPaintLayer::PositionedBlock
+                            | DecorationPaintLayer::PositionedInline
+                    )
+                })
+                || self.order[output_start.order..].iter().any(|item| {
+                    matches!(
+                        item,
+                        LayoutItem::PositionedText(_) | LayoutItem::PositionedImage(_)
+                    )
+                });
+            if !has_positioned_descendants {
+                self.mark_positioned_outputs_since(output_start);
+            }
         }
     }
 
@@ -1613,11 +1650,12 @@ impl<'a> Context<'a, '_> {
         shift_atomic(&mut atomic, x, y);
         let text_offset = self.text.len();
         let image_offset = self.images_out.len();
-        self.order
-            .extend(atomic.order.into_iter().map(|item| match item {
-                LayoutItem::Text(index) => LayoutItem::Text(index + text_offset),
-                LayoutItem::Image(index) => LayoutItem::Image(index + image_offset),
-            }));
+        self.order.extend(
+            atomic
+                .order
+                .into_iter()
+                .map(|item| item.offset(text_offset, image_offset)),
+        );
         self.decorations.extend(atomic.decorations);
         self.text.extend(atomic.text_boxes);
         self.images_out.extend(atomic.image_boxes);
@@ -4375,12 +4413,12 @@ fn append_atomic(target: &mut InlineAtomic, mut child: InlineAtomic, x: i32, y: 
     shift_atomic(&mut child, x, y);
     let text_offset = target.text_boxes.len();
     let image_offset = target.image_boxes.len();
-    target
-        .order
-        .extend(child.order.into_iter().map(|item| match item {
-            LayoutItem::Text(index) => LayoutItem::Text(index + text_offset),
-            LayoutItem::Image(index) => LayoutItem::Image(index + image_offset),
-        }));
+    target.order.extend(
+        child
+            .order
+            .into_iter()
+            .map(|item| item.offset(text_offset, image_offset)),
+    );
     target.decorations.extend(child.decorations);
     target.text_boxes.extend(child.text_boxes);
     target.image_boxes.extend(child.image_boxes);

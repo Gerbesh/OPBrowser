@@ -488,7 +488,7 @@ classDiagram
         definite height
     }
     class BoxDecoration {
-        DecorationPaintLayer Block|Inline
+        DecorationPaintLayer Block|Inline|PositionedBlock|PositionedInline
         bounds
         background
         border_top/right/bottom/left

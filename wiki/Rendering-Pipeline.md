@@ -176,8 +176,12 @@ Horizontal inline margins, including negative values, participate in advance;
 initial `display:inline-block` runs a local block/BFC layout and enters the line as one atomic box.
 Its baseline is now the baseline of the last in-flow line, rather than the bottom border.
 Inline content rectangles use font metrics instead of the line-height strut. The paint list
-now separates Block and Inline decoration phases, painting block backgrounds before inline
-backgrounds and normal text/images. This is not full stacking context/z-index behavior.
+now separates normal Block and Inline decoration phases, followed by a first positioned
+foreground phase. The latter tags out-of-flow/standalone-relative block decorations and
+text/image items so ordinary text cannot paint over absolutely positioned descendants.
+Relative blocks with nested positioned children avoid bulk promotion because their own
+in-flow text must remain below their absolutely positioned children. This is not yet
+full source-ordered stacking contexts or z-index behavior.
 Block children split active inline decoration paths into continuation nodes, suppressing opposite
 logical fragment edges according to computed LTR/RTL direction. Required zero-width intermediate
 fragments retain line height, later descendants attach to the newest continuation, and relative
