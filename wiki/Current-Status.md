@@ -76,3 +76,13 @@ cancel itself. queueMicrotask(function) runs callbacks in FIFO order
 after the current script/event/timer task, before the next timer.
 Recursive enqueuing is bounded and cannot monopolize the worker
 indefinitely. Promise and async network event jobs remain unsupported.
+
+## M4.11: post-presentation text completion tasks
+
+The browser now has a small experimental opFetchText(url, callback)
+host API. Network IO is performed on bounded background workers while
+the page's own JS thread handles completion callbacks and DOM updates.
+Same-origin filtering, size and MIME limits apply to text resources.
+Callbacks cannot leak into newly navigated pages. This is not standard
+fetch/Promise/Response, and network tasks do not yet support aborting,
+CORS, streaming or credentials.

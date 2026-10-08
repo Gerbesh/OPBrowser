@@ -37,6 +37,18 @@ pub struct RequestFilter {
     blocked: AtomicU64,
 }
 
+impl Clone for RequestFilter {
+    fn clone(&self) -> Self {
+        Self {
+            rules: self.rules.clone(),
+            site_allowlist: self.site_allowlist.clone(),
+            checked: AtomicU64::new(0),
+            allowed: AtomicU64::new(0),
+            blocked: AtomicU64::new(0),
+        }
+    }
+}
+
 impl Default for RequestFilter {
     fn default() -> Self {
         Self {
@@ -157,7 +169,7 @@ impl RequestFilter {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct FilterRule {
     raw: String,
     exception: bool,
@@ -165,7 +177,7 @@ struct FilterRule {
     resource_types: Option<Vec<ResourceType>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum RulePattern {
     HostSuffix(String),
     Wildcard(Vec<String>),

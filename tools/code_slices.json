@@ -244,6 +244,23 @@
       "limitation": "Intervals and bounded FIFO microtasks; no Promise resolution jobs or network tasks after initial page paint."
     },
     {
+      "id": "S15",
+      "title": "Nonstandard text IO callback after first native paint",
+      "status": "M4.11 page-scoped filtered network completion tasks",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "OpFetchText"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "take_text_requests"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "dispatch_text_requests"},
+        {"path": "crates/op_net/src/lib.rs", "symbol": "load_text_for_page"},
+        {"path": "crates/op_net/src/http.rs", "symbol": "load_text"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "tick_timers"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "complete_text_request"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "present_reflow"}
+      ],
+      "limitation": "Nonstandard callback IO only, same-origin/64 KiB/8 requests; no Promise, fetch, CORS, streams or cancellation."
+    },
+    {
       "id": "S6",
       "title": "WPT image comparison and reporting",
       "status": "Strict and opt-in fuzzy reports",

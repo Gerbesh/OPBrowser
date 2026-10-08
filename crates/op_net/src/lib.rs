@@ -114,7 +114,7 @@ impl fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct NetworkContext {
     request_filter: RequestFilter,
 }
@@ -151,6 +151,25 @@ impl NetworkContext {
         scripts::enforce_same_origin(top_level_url, source)?;
         self.enforce_filter(source, ResourceType::Script, Some(top_level_url))?;
         scripts::load(source, top_level_url, byte_limit)
+    }
+
+    /// Same-origin, filtered, bounded text loading for experimental
+    /// callback-based JS network jobs. This does not implement fetch().
+    pub fn load_text_for_page(
+        &self,
+        source: &str,
+        top_level_url: &str,
+        byte_limit: usize,
+    ) -> Result<String, LoadError> {
+        scripts::enforce_same_origin(top_level_url, source)?;
+        self.enforce_filter(source, ResourceType::Other, Some(top_level_url))?;
+        if source.starts_with("http://") || source.starts_with("https://") {
+            let (final_url, text) = http::load_text(source, byte_limit.min(64 * 1024))?;
+            scripts::enforce_same_origin(top_level_url, &final_url)?;
+            Ok(text)
+        } else {
+            scripts::load(source, top_level_url, byte_limit.min(64 * 1024))
+        }
     }
 
     pub fn load_document(&self, source: &str) -> Result<LoadedDocument, LoadError> {

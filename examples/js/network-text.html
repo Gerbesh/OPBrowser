@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><title>OPBrowser async text completion demo</title></head>
+<body>
+<h1>Post-presentation text loading</h1>
+<p id="status">Loading a local text resource...</p>
+<script>
+opFetchText("message.txt", function(text, error) {
+    if (error == null) {
+        document.getElementById("status").textContent = text;
+    } else {
+        document.getElementById("status").textContent = error;
+    }
+});
+</script>
+</body>
+</html>

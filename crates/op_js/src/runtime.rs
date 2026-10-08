@@ -20,6 +20,8 @@ const MAX_TIMER_DELAY_MS: u64 = 60_000;
 const MIN_INTERVAL_DELAY_MS: u64 = 4;
 const MAX_PENDING_MICROTASKS: usize = 256;
 const MAX_TOTAL_MICROTASKS: u32 = 1024;
+const MAX_PENDING_TEXT_REQUESTS: usize = 8;
+const MAX_TOTAL_TEXT_REQUESTS: u32 = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct EnvironmentId(usize);
@@ -70,6 +72,7 @@ enum BuiltinFunction {
     SetInterval,
     ClearInterval,
     QueueMicrotask,
+    OpFetchText,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +134,14 @@ pub struct TimerReport {
     pub failed: usize,
 }
 
+/// A bounded resource request detached from the live JS heap. The page
+/// engine uses its own page identity to discard stale completions.
+#[derive(Debug, Clone)]
+pub struct TextRequest {
+    pub id: u32,
+    pub url: String,
+}
+
 /// A host mutation applied by the browser only after VM execution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomTextMutation {
@@ -165,6 +176,9 @@ pub struct JsRuntime {
     next_timer_id: u32,
     microtasks: VecDeque<JsValue>,
     microtasks_scheduled: u32,
+    text_requests: VecDeque<TextRequest>,
+    text_callbacks: HashMap<u32, JsValue>,
+    next_text_request_id: u32,
 }
 
 impl Default for JsRuntime {
@@ -237,6 +251,9 @@ impl Default for JsRuntime {
             next_timer_id: 1,
             microtasks: VecDeque::new(),
             microtasks_scheduled: 0,
+            text_requests: VecDeque::new(),
+            text_callbacks: HashMap::new(),
+            next_text_request_id: 1,
         };
 
         runtime.install_global_binding(
@@ -296,6 +313,9 @@ impl JsRuntime {
         self.next_timer_id = 1;
         self.microtasks.clear();
         self.microtasks_scheduled = 0;
+        self.text_requests.clear();
+        self.text_callbacks.clear();
+        self.next_text_request_id = 1;
         for element in elements.into_iter().take(4096) {
             self.dom_ids.entry(element.id).or_insert(element.node);
             self.dom_text.insert(element.node, element.text_content);
@@ -362,6 +382,7 @@ impl JsRuntime {
             ("setInterval", BuiltinFunction::SetInterval),
             ("clearInterval", BuiltinFunction::ClearInterval),
             ("queueMicrotask", BuiltinFunction::QueueMicrotask),
+            ("opFetchText", BuiltinFunction::OpFetchText),
         ] {
             let function = self.allocate_lifecycle_method(name, builtin)?;
             self.object_mut(self.global_object)?
@@ -376,6 +397,40 @@ impl JsRuntime {
         }
         Ok(())
     }
+    /// Drain only requests, never JS closures, to the network dispatcher.
+    pub fn take_text_requests(&mut self) -> Vec<TextRequest> {
+        self.text_requests.drain(..).collect()
+    }
+
+    pub fn has_text_requests(&self) -> bool {
+        !self.text_requests.is_empty()
+    }
+
+    /// Execute the callback on the page-owning worker after a validated
+    /// network completion. Failed callbacks do not stop other tasks.
+    pub fn complete_text_request(&mut self, id: u32, result: Result<String, String>) -> bool {
+        let Some(callback) = self.text_callbacks.remove(&id) else {
+            return false;
+        };
+        let arguments = match result {
+            Ok(text) => vec![JsValue::String(text), JsValue::Null],
+            Err(error) => vec![JsValue::Null, JsValue::String(error)],
+        };
+        let mut steps = 0;
+        let failed = !matches!(
+            self.call_value(
+                callback,
+                JsValue::Object(self.global_object),
+                arguments,
+                &mut steps,
+                0,
+            ),
+            Ok(CallOutcome::Value(_))
+        );
+        self.drain_microtasks();
+        failed
+    }
+
     /// The host decides when to wake the page worker; no VM timer spawns threads.
     pub fn next_timer_wait(&self) -> Option<Duration> {
         if !self.microtasks.is_empty() {
@@ -1239,6 +1294,31 @@ impl JsRuntime {
         this_value: JsValue,
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
+        if builtin == BuiltinFunction::OpFetchText {
+            let url = arguments
+                .first()
+                .map(JsValue::to_js_string)
+                .unwrap_or_default();
+            if url.is_empty() || url.len() > 2048 || url.chars().any(char::is_control) {
+                return Err(JsError::type_error("invalid opFetchText URL"));
+            }
+            let Some(JsValue::Object(callback)) = arguments.get(1) else {
+                return Err(JsError::type_error("opFetchText callback must be callable"));
+            };
+            if self.object(*callback)?.function.is_none() {
+                return Err(JsError::type_error("opFetchText callback must be callable"));
+            }
+            if self.text_callbacks.len() >= MAX_PENDING_TEXT_REQUESTS
+                || self.next_text_request_id > MAX_TOTAL_TEXT_REQUESTS
+            {
+                return Err(JsError::execution_limit("network task budget exceeded"));
+            }
+            let id = self.next_text_request_id;
+            self.next_text_request_id += 1;
+            self.text_callbacks.insert(id, JsValue::Object(*callback));
+            self.text_requests.push_back(TextRequest { id, url });
+            return Ok(CallOutcome::Value(JsValue::Number(f64::from(id))));
+        }
         if matches!(
             builtin,
             BuiltinFunction::SetTimeout
@@ -1535,7 +1615,8 @@ impl JsRuntime {
             | BuiltinFunction::ClearTimeout
             | BuiltinFunction::SetInterval
             | BuiltinFunction::ClearInterval
-            | BuiltinFunction::QueueMicrotask => {
+            | BuiltinFunction::QueueMicrotask
+            | BuiltinFunction::OpFetchText => {
                 unreachable!("handled above")
             }
         };

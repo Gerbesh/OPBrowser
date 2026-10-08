@@ -2872,3 +2872,19 @@ This file is append-only project history.
   queue exhaustion, navigation resets, and delayed DOM mutations.
 - Promise jobs, MutationObserver, general subresource completions and
   asynchronous rendering pipelines remain planned rather than supported.
+
+## 2026-10-08 - M4.11 post-presentation text resource tasks
+
+- Added a bounded nonstandard opFetchText(url, callback) to demonstrate
+  asynchronous resource completion after first page render without any
+  foreign JavaScript engine.
+- New same-origin filtered text loader accepts small UTF-8-compatible
+  text/JSON/HTML resources with explicit MIME and response byte limits.
+- Detached background workers perform IO only; a page-generation-tagged
+  channel queues completions to the original page worker, where callbacks,
+  microtask checkpoints, DOM updates and native repaint occur.
+- The page worker sleeps indefinitely when idle; it polls completion tasks
+  at 20ms intervals only while network jobs exist.
+- Verified WinHTTP delayed JSON, local-file text, cross-origin errors
+  and stale navigation completions. fetch(), Promise, CORS, streaming
+  and cancellation remain outside the supported M4.11 scope.

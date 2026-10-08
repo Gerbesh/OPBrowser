@@ -6,7 +6,24 @@ use op_layout::{
     ImageResources, layout_document_with_backgrounds_and_resources,
     layout_document_with_computed_styles_and_viewport_metrics,
 };
-use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link};
+use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link, resolve_script_source};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
+use std::time::Duration;
+
+static ACTIVE_NETWORK_WORKERS: AtomicUsize = AtomicUsize::new(0);
+const MAX_NETWORK_WORKERS: usize = 16;
+const MAX_PAGE_NETWORK_REQUESTS: usize = 8;
+const NETWORK_COMPLETION_POLL: Duration = Duration::from_millis(20);
+const NETWORK_TEXT_BYTES: usize = 64 * 1024;
+
+#[derive(Debug)]
+struct NetworkCompletion {
+    generation: u64,
+    id: u32,
+    result: Result<String, String>,
+}
+
 use op_paint::{DisplayList, build_display_list};
 mod images;
 mod scripts;
@@ -134,11 +151,20 @@ pub struct Engine {
     navigation: NavigationState,
     document_address: Option<String>,
     active_document: Option<PreparedDocument>,
+    network_completion_send: mpsc::Sender<NetworkCompletion>,
+    network_completion_recv: mpsc::Receiver<NetworkCompletion>,
+    generation: u64,
+    network_active: usize,
 }
 
 impl Engine {
     pub fn new() -> Self {
+        let (network_completion_send, network_completion_recv) = mpsc::channel();
         Self {
+            network_completion_send,
+            network_completion_recv,
+            generation: 0,
+            network_active: 0,
             state: EngineState::Created,
             network: NetworkContext::default(),
             navigation: NavigationState::default(),
@@ -240,6 +266,8 @@ impl Engine {
             runtime,
         };
         let page = prepared.render(width, height);
+        self.generation = self.generation.wrapping_add(1);
+        self.network_active = 0;
         self.active_document = Some(prepared);
         self.document_address = None;
         self.navigation = NavigationState::default();
@@ -288,20 +316,103 @@ impl Engine {
     /// How long until the current page's earliest queued JavaScript task.
     /// No task from a previous navigation is retained.
     pub fn next_timer_wait(&self) -> Option<std::time::Duration> {
-        self.active_document
-            .as_ref()?
-            .runtime
-            .as_ref()?
-            .next_timer_wait()
+        let runtime = self.active_document.as_ref()?.runtime.as_ref()?;
+        let timer_wait = runtime.next_timer_wait();
+        if runtime.has_text_requests() {
+            return Some(Duration::ZERO);
+        }
+        if self.network_active > 0 {
+            return Some(
+                timer_wait
+                    .unwrap_or(NETWORK_COMPLETION_POLL)
+                    .min(NETWORK_COMPLETION_POLL),
+            );
+        }
+        timer_wait
+    }
+
+    fn dispatch_text_requests(&mut self) {
+        let Some(prepared) = self.active_document.as_mut() else {
+            return;
+        };
+        let Some(runtime) = prepared.runtime.as_mut() else {
+            return;
+        };
+        let requests = runtime.take_text_requests();
+        for request in requests {
+            let base = prepared.address.clone();
+            let source =
+                resolve_script_source(&base, &request.url).map_err(|error| error.to_string());
+            let send = self.network_completion_send.clone();
+            let generation = self.generation;
+            let id = request.id;
+            let source = match source {
+                Ok(source) => source,
+                Err(error) => {
+                    let _ = send.send(NetworkCompletion {
+                        generation,
+                        id,
+                        result: Err(error),
+                    });
+                    self.network_active += 1;
+                    continue;
+                }
+            };
+            if self.network_active >= MAX_PAGE_NETWORK_REQUESTS
+                || ACTIVE_NETWORK_WORKERS
+                    .try_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+                        (active < MAX_NETWORK_WORKERS).then_some(active + 1)
+                    })
+                    .is_err()
+            {
+                let _ = send.send(NetworkCompletion {
+                    generation,
+                    id,
+                    result: Err("network worker budget exceeded".into()),
+                });
+                self.network_active += 1;
+                continue;
+            }
+            self.network_active += 1;
+            let network = self.network.clone();
+            std::thread::spawn(move || {
+                let result = network
+                    .load_text_for_page(&source, &base, NETWORK_TEXT_BYTES)
+                    .map_err(|error| error.to_string());
+                let _ = send.send(NetworkCompletion {
+                    generation,
+                    id,
+                    result,
+                });
+                ACTIVE_NETWORK_WORKERS.fetch_sub(1, Ordering::AcqRel);
+            });
+        }
     }
 
     /// Deliver bounded due timer callbacks on the page-owning engine thread.
     /// Returns a reflow only when a callback actually mutated the DOM.
     pub fn tick_timers(&mut self, width: i32, height: i32) -> Option<RenderedPage> {
+        self.dispatch_text_requests();
+        let mut network_failed = 0;
+        {
+            let prepared = self.active_document.as_mut()?;
+            let runtime = prepared.runtime.as_mut()?;
+            for _ in 0..32 {
+                let Ok(completion) = self.network_completion_recv.try_recv() else {
+                    break;
+                };
+                if completion.generation != self.generation {
+                    continue;
+                }
+                self.network_active = self.network_active.saturating_sub(1);
+                network_failed +=
+                    usize::from(runtime.complete_text_request(completion.id, completion.result));
+            }
+        }
         let prepared = self.active_document.as_mut()?;
         let runtime = prepared.runtime.as_mut()?;
         let fired = runtime.run_due_timers(16);
-        prepared.scripts.failed += fired.failed;
+        prepared.scripts.failed += fired.failed + network_failed;
         let mut changes = 0;
         for mutation in runtime.take_dom_mutations() {
             if let Some(node) = prepared.document.node_id(mutation.node)
@@ -334,6 +445,8 @@ impl Engine {
     ) -> Result<RenderedPage, LoadError> {
         let prepared = self.prepare_source(source)?;
         let page = prepared.render(width, height);
+        self.generation = self.generation.wrapping_add(1);
+        self.network_active = 0;
         self.active_document = Some(prepared);
         self.document_address = Some(page.address.clone());
         Ok(page)

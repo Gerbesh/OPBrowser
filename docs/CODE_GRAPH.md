@@ -1274,3 +1274,25 @@ pending work. Total enqueues are capped per page to stop self-enqueue
 loops. Promise resolution/reaction jobs are not implemented. Initial
 external-script workers still finalize before presentation, and no
 network-completion events enter this page task loop yet.
+
+## M4.11: network completion tasks after initial paint
+
+The JS runtime now owns a bounded queue of detached TextRequest records
+and associated retained callable callbacks. opFetchText is intentionally
+not named fetch because Promise/Response semantics are not available.
+The engine worker consumes URL-only records, resolves them relative to
+the page using the existing same-origin classic source subset, and
+starts background IO with a cloned request-filter snapshot and a global
+worker cap. NetworkContext::load_text_for_page checks same-origin and
+resource filters before loading, accepts a limited set of text MIME
+types, caps each response at 64 KiB and rejects cross-origin redirect
+results. JS closures and live Document never enter network threads.
+
+Completed requests return through mpsc tagged with the current page's
+generation counter. Engine::tick_timers now also drains bounded network
+completions, runs callbacks and microtask checkpoints in the retained
+single-threaded JS VM, then applies textContent mutations and rerenders.
+Engine::next_timer_wait polls 20ms only for in-flight IO and otherwise
+allows indefinite worker sleep. Navigation invalidates old generations.
+The cloned filter enforces current-at-start policy, but its per-clone
+statistics are not yet merged into the originating filter.

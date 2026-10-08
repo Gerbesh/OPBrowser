@@ -263,3 +263,18 @@ the next macrotask, with per-page and per-checkpoint limits.
 This is a limited VM job queue. Promise and MutationObserver jobs,
 general async network completions after initial painting and hidden
 tab throttling are outside the supported feature set.
+
+## M4.11: small async text requests after rendering
+
+A page can call opFetchText("data.json", function(text, error) {...})
+to load limited same-origin content on a background worker and receive
+a callback through the retained JS runtime. Text/JSON responses and
+errors are delivered after the initial page render and can change DOM
+and native pixels without input. Per-resource cap is 64 KiB; the
+page budget is eight concurrent requests and 32 total. A navigation
+change prevents any old callback from changing the new document.
+
+This is deliberately not the standard fetch API. No Promise, Response,
+CORS, streaming, request cancellation, cookies or cross-origin reads.
+Worker request filtering uses an immutable snapshot; statistics from
+its cloned counters do not aggregate with the main filter yet.

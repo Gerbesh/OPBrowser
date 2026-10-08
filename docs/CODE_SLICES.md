@@ -1180,3 +1180,23 @@ The page caps timer IDs, interval rate and microtask queue length/total
 enqueues. Intervals may clear themselves while executing. The source
 queue still has no Promise jobs, MutationObserver, fetch completion
 tasks, or full browser event loop prioritization.
+
+## S15 - JS text request to post-presentation native pixels (M4.11)
+
+Status: IMPLEMENTED as a nonstandard bounded callback API, not fetch().
+
+    opFetchText(url, callback) in op_js::JsRuntime
+      -> TextRequest {id, url} queue in VM
+      -> Engine::dispatch_text_requests
+      -> resolve_script_source and NetworkContext clone
+      -> NetworkContext::load_text_for_page on capped IO worker
+      -> same-origin / ResourceType::Other filter / text MIME / byte limits
+      -> mpsc NetworkCompletion {generation, id, result}
+      -> Engine::tick_timers on page worker
+      -> JsRuntime::complete_text_request callback + microtasks
+      -> DomTextMutation and computed styles
+      -> native paint through existing unsolicited reflow
+
+Failures reach the callback as error strings. Old page generations are
+discarded. This is a narrow networking bridge without standard fetch,
+Promise/Response, credential policy, CORS, abort or response streaming.

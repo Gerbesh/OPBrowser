@@ -829,3 +829,33 @@ counts must not be mislabeled as external conformance percentages.
   arbitration, and background tab throttling are not implemented.
 - NEXT integrate resource completions into the same event loop and add
   more ECMAScript runtime support; do not claim Promise compatibility yet.
+
+## M4.11 - Post-presentation bounded text-network tasks (2026-10-08)
+
+- DONE experimental nonstandard opFetchText(url, callback) host function. It
+  returns a request id and invokes callback(text, null) on success or
+  callback(null, errorString) on failure on the page-owning JS worker.
+  This is explicitly NOT the standards-based fetch() Promise API.
+- DONE supported text MIME types: text/plain, text/html, text/javascript,
+  application/javascript, application/json, text/css (plus no Content-Type).
+  Text responses are decoded within a 64 KiB bound per request.
+- DONE same-origin enforcement and existing request_filter policy run on
+  bounded background WinHTTP/local-file loading, including rechecking the
+  final redirect URL. The page never executes JavaScript in network workers.
+- DONE mpsc completion task channel, 20ms polling only while a page has
+  in-flight resources; otherwise the page worker parks without busy-loop.
+  At most eight outstanding requests per page, 32 requests per page VM,
+  and 16 simultaneous network workers across the process.
+- DONE navigation generation tags discard late replies from older documents.
+  Callback textContent updates run through the retained DOM, CSS and
+  display-list reflow pipeline after the initial page render.
+- DONE regressions for delayed real WinHTTP text/JSON, local files,
+  cross-origin rejection, and late completion after navigation.
+- LIMITATION this does not implement standard fetch(), Request/Response,
+  Promise, cookies/credentials, CORS, streaming or cancellation. Network
+  filter policy is copied as a snapshot to background workers; filter
+  statistic counters are not yet aggregated back into the main instance.
+  Some script-side local file URL restrictions are inherited from the
+  earlier same-origin classic-script subset.
+- NEXT integrate a standards-grounded Promise/reaction system and fetch(),
+  and unify task arbitration rather than 20ms in-flight polling.

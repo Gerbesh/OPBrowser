@@ -708,3 +708,194 @@ fn interval_does_not_survive_navigation() {
     engine.set_html_page("<p>New page</p>", 800, 600);
     assert!(engine.next_timer_wait().is_none());
 }
+
+#[test]
+fn post_presentation_text_task_loads_local_resource_and_repaints() {
+    let root = std::env::temp_dir().join(format!("opbrowser-m411-file-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let page = root.join("index.html");
+    std::fs::write(root.join("hello.txt"), "LOCAL-RESOURCE").unwrap();
+    std::fs::write(
+        &page,
+        concat!(
+            "<p id='out'>Before</p>",
+            "<script>opFetchText('hello.txt',function(body,error){",
+            "if(error==null){document.getElementById('out').textContent=body;}else{document.getElementById('out').textContent=error;}",
+            "});</script>"
+        ),
+    )
+    .unwrap();
+    let mut engine = Engine::new();
+    let initial = engine
+        .navigate(&page.display().to_string(), 800, 600)
+        .unwrap();
+    assert!(initial.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("Before")
+    )));
+    let mut done = false;
+    for _ in 0..100 {
+        if let Some(result) = engine.tick_timers(800, 600)
+            && result.display_list.commands.iter().any(|cmd| {
+                matches!(
+                    cmd,op_paint::PaintCommand::Text{text,..} if text.contains("LOCAL-RESOURCE")
+                )
+            })
+        {
+            done = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(done, "network completion did not repaint page");
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn blocked_cross_origin_text_request_returns_error_without_network() {
+    let root = std::env::temp_dir().join(format!("opbrowser-m411-cross-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let page = root.join("index.html");
+    std::fs::write(
+        &page,
+        concat!(
+            "<p id='out'>Before</p>",
+            "<script>opFetchText('https://example.com/elsewhere.txt',function(body,error){",
+            "if(body==null && error!=null){document.getElementById('out').textContent='BLOCKED';}else{document.getElementById('out').textContent='WRONG';}",
+            "});</script>"
+        ),
+    )
+    .unwrap();
+    let mut engine = Engine::new();
+    engine
+        .navigate(&page.display().to_string(), 800, 600)
+        .unwrap();
+    let result = engine.tick_timers(800, 600).unwrap();
+    assert!(result.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("BLOCKED")
+    )));
+    assert!(engine.next_timer_wait().is_none());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+#[cfg(windows)]
+fn winhttp_text_completion_runs_on_engine_after_first_render() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    listener.set_nonblocking(true).unwrap();
+    let server = std::thread::spawn(move || {
+        let mut workers = Vec::new();
+        for _ in 0..2 {
+            let start = std::time::Instant::now();
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(start.elapsed().as_secs() < 8);
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            };
+            stream.set_nonblocking(false).unwrap();
+            workers.push(std::thread::spawn(move||{
+                stream.set_read_timeout(Some(std::time::Duration::from_secs(3))).unwrap();
+                let mut buf=[0_u8;8192];
+                let n=stream.read(&mut buf).unwrap();
+                let req=String::from_utf8_lossy(&buf[..n]);
+                let (mime,body)=if req.starts_with("GET /index.html ") {
+                    ("text/html",concat!(
+                        "<p id='out'>INITIAL</p>",
+                        "<script>opFetchText('data.json',function(body,error){",
+                        "if(error==null){document.getElementById('out').textContent=body;}else{document.getElementById('out').textContent=error;}",
+                        "});</script>"
+                    ))
+                }else{
+                    assert!(req.starts_with("GET /data.json "),"unexpected {req:?}");
+                    std::thread::sleep(std::time::Duration::from_millis(180));
+                    ("application/json","JSON-TEXT")
+                };
+                write!(stream,
+                  "HTTP/1.1 200 OK\r\nContent-Type: {mime}; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                  body.len()).unwrap();
+                stream.flush().unwrap();
+            }));
+        }
+        for worker in workers {
+            worker.join().unwrap();
+        }
+    });
+    let mut engine = Engine::new();
+    let initial = engine
+        .navigate(&format!("{origin}/index.html"), 800, 600)
+        .unwrap();
+    assert!(initial.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("INITIAL")
+    )));
+    assert!(engine.tick_timers(800, 600).is_none());
+    let mut finished = false;
+    for _ in 0..120 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        if let Some(page) = engine.tick_timers(800, 600)
+            && page.display_list.commands.iter().any(|cmd| {
+                matches!(
+                    cmd,op_paint::PaintCommand::Text{text,..} if text.contains("JSON-TEXT")
+                )
+            })
+        {
+            finished = true;
+            break;
+        }
+    }
+    assert!(finished, "asynchronous network task did not repaint");
+    server.join().unwrap();
+}
+
+#[test]
+fn late_completion_from_previous_navigation_is_discarded() {
+    let root = std::env::temp_dir().join(format!("opbrowser-m411-stale-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let old = root.join("old.html");
+    let new = root.join("new.html");
+    std::fs::write(root.join("data.txt"), "STALE-BODY").unwrap();
+    std::fs::write(
+        &old,
+        concat!(
+            "<p id='out'>Old</p>",
+            "<script>opFetchText('data.txt',function(body){",
+            "document.getElementById('out').textContent=body;",
+            "});</script>"
+        ),
+    )
+    .unwrap();
+    std::fs::write(&new, "<p id='out'>NEW-PAGE</p>").unwrap();
+    let mut engine = Engine::new();
+    engine
+        .navigate(&old.display().to_string(), 800, 600)
+        .unwrap();
+    engine.tick_timers(800, 600);
+    let initial = engine
+        .navigate(&new.display().to_string(), 800, 600)
+        .unwrap();
+    assert!(initial.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("NEW-PAGE")
+    )));
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    assert!(engine.tick_timers(800, 600).is_none());
+    assert!(
+        engine
+            .reflow(800, 600)
+            .unwrap()
+            .display_list
+            .commands
+            .iter()
+            .any(|cmd| matches!(
+                cmd,op_paint::PaintCommand::Text{text,..} if text.contains("NEW-PAGE")
+            ))
+    );
+    assert!(engine.next_timer_wait().is_none());
+    std::fs::remove_dir_all(root).unwrap();
+}
