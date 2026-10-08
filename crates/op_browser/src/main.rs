@@ -130,7 +130,10 @@ fn main() {
                 width,
                 height,
             } = command;
-            let reflow = event == NavigationEvent::Resize;
+            let reflow = matches!(
+                event,
+                NavigationEvent::Resize | NavigationEvent::Click { .. }
+            );
             let page = match event {
                 NavigationEvent::Navigate(source) => {
                     engine.navigate(&source, width, height).map(Some)
@@ -142,6 +145,7 @@ fn main() {
                 NavigationEvent::Forward => engine.go_forward(width, height),
                 NavigationEvent::Reload => engine.reload(width, height),
                 NavigationEvent::Resize => Ok(engine.reflow(width, height)),
+                NavigationEvent::Click { x, y } => Ok(engine.click_at(x, y, width, height)),
                 NavigationEvent::Poll => continue,
             }
             .map_err(|error| error.to_string());
@@ -317,7 +321,7 @@ fn main() {
             if event == NavigationEvent::Resize && (width, height) == presented_viewport {
                 return;
             }
-            let reflow = event == NavigationEvent::Resize;
+            let reflow = matches!(event, NavigationEvent::Resize | NavigationEvent::Click { .. });
             if commands
                 .send(LoadCommand {
                     event,

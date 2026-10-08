@@ -182,6 +182,16 @@ impl LayoutItem {
     }
 }
 
+/// Hit rectangles for the initial click-event block target subset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClickRegion {
+    pub node: NodeId,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayoutTree {
     pub viewport_width: i32,
@@ -191,6 +201,7 @@ pub struct LayoutTree {
     pub image_boxes: Vec<ImageBox>,
     pub order: Vec<LayoutItem>,
     pub paint_groups: Vec<PaintGroup>,
+    pub click_regions: Vec<ClickRegion>,
 }
 
 pub fn layout_document(document: &Document, viewport_width: i32) -> LayoutTree {

@@ -53,6 +53,25 @@ do not abort subsequent scripts. Unsupported async/defer/integrity
 external scripts are skipped; scheduling remains post-parse and
 full browser document lifecycle is still absent.
 
+## M4.3: click event → persistent VM → reflow
+
+The per-page `PreparedDocument` retains an `Option<JsRuntime>`,
+including closures registered by `addEventListener("click", fn)` or
+the `onclick` property. `op_layout::flow` records block
+`ClickRegion` rectangles for `id`-bearing elements, with relative
+position offsets. `op_platform_win::NavigationEvent::Click` converts
+client coordinates to document coordinates using toolbar height and
+scroll offset; hyperlink actions retain priority. The browser worker
+calls `op_engine::Engine::click_at`, which hit-tests the current layout,
+dispatches to the registered JS callback, applies bounded detached
+DOM text mutations, recomputes CSS when needed, and sends a non-navigation
+reflow page back to the Win32 painter.
+
+Current limitation: the hit-test is scoped to block layout boxes,
+not a complete DOM hit-test tree. This is a non-bubbling click event
+slice with no capture, default-action cancellation, keyboard path,
+or general event loop.
+
 ## Crate dependency graph
 
 ```mermaid

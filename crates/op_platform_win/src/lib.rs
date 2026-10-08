@@ -47,6 +47,7 @@ const NAVIGATION_COMMAND: u32 = WM_APP + 1;
 pub enum NavigationEvent {
     Navigate(String),
     FollowLink(String),
+    Click { x: i32, y: i32 },
     Back,
     Forward,
     Reload,
@@ -380,8 +381,19 @@ impl NativeBrowserWindow {
             WM_LBUTTONUP if message.hwnd == self.hwnd => {
                 let x = (message.lParam as u16 as i16) as i32;
                 let y = ((message.lParam >> 16) as u16 as i16) as i32;
-                self.link_at_client_point(x, y)
-                    .map(NavigationEvent::FollowLink)
+                if let Some(href) = self.link_at_client_point(x, y) {
+                    Some(NavigationEvent::FollowLink(href))
+                } else {
+                    let mut client: RECT = unsafe { zeroed() };
+                    unsafe {
+                        GetClientRect(self.hwnd, &mut client);
+                    }
+                    (x >= 0 && x < client.right && y >= TOOLBAR_HEIGHT && y < client.bottom)
+                        .then_some(NavigationEvent::Click {
+                            x,
+                            y: y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst),
+                        })
+                }
             }
             WM_KEYDOWN
                 if message.wParam == VK_RETURN as usize

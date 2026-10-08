@@ -49,6 +49,7 @@ enum BuiltinFunction {
     TypeError,
     ReferenceError,
     DomGetElementById,
+    DomAddEventListener,
 }
 
 #[derive(Debug, Clone)]
@@ -120,6 +121,8 @@ pub struct JsRuntime {
     dom_ids: HashMap<String, usize>,
     dom_text: HashMap<usize, String>,
     dom_mutations: Vec<DomTextMutation>,
+    dom_click_listeners: HashMap<usize, Vec<JsValue>>,
+    dom_onclick: HashMap<usize, JsValue>,
 }
 
 impl Default for JsRuntime {
@@ -183,6 +186,8 @@ impl Default for JsRuntime {
             dom_ids: HashMap::new(),
             dom_text: HashMap::new(),
             dom_mutations: Vec::new(),
+            dom_click_listeners: HashMap::new(),
+            dom_onclick: HashMap::new(),
         };
 
         runtime.install_global_binding(
@@ -234,6 +239,8 @@ impl JsRuntime {
         self.dom_ids.clear();
         self.dom_text.clear();
         self.dom_mutations.clear();
+        self.dom_click_listeners.clear();
+        self.dom_onclick.clear();
         for element in elements.into_iter().take(4096) {
             self.dom_ids.entry(element.id).or_insert(element.node);
             self.dom_text.insert(element.node, element.text_content);
@@ -265,6 +272,64 @@ impl JsRuntime {
 
     pub fn take_dom_mutations(&mut self) -> Vec<DomTextMutation> {
         std::mem::take(&mut self.dom_mutations)
+    }
+
+    /// Dispatch one non-bubbling click to a retained element after initial scripts.
+    /// This is the initial DOM event subset, not the complete DOM Events model.
+    pub fn dispatch_dom_click(&mut self, node: usize) -> Result<bool, JsError> {
+        let mut handlers = self
+            .dom_click_listeners
+            .get(&node)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(handler) = self.dom_onclick.get(&node).cloned() {
+            handlers.push(handler);
+        }
+        if handlers.is_empty() {
+            return Ok(false);
+        }
+        let id = self
+            .dom_ids
+            .iter()
+            .find_map(|(id, &value)| (value == node).then_some(id.clone()))
+            .unwrap_or_default();
+        let receiver = self.allocate_object(
+            ObjectKind::DomElement(node),
+            Some(self.object_prototype),
+            HashMap::from([("id".into(), JsValue::String(id))]),
+        )?;
+        let event = self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("type".into(), JsValue::String("click".into())),
+                ("target".into(), JsValue::Object(receiver)),
+                ("currentTarget".into(), JsValue::Object(receiver)),
+            ]),
+        )?;
+        let mut steps = 0;
+        for handler in handlers {
+            match self.call_value(
+                handler,
+                JsValue::Object(receiver),
+                vec![JsValue::Object(event)],
+                &mut steps,
+                1,
+            )? {
+                CallOutcome::Value(_) => {}
+                CallOutcome::Thrown(value) => {
+                    return Err(JsError::exception(self.describe_thrown_value(&value)));
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    pub fn has_dom_click_listener(&self, node: usize) -> bool {
+        self.dom_click_listeners
+            .get(&node)
+            .is_some_and(|v| !v.is_empty())
+            || self.dom_onclick.contains_key(&node)
     }
 
     pub fn eval_script(&mut self, source: &str) -> Result<JsValue, JsError> {
@@ -664,7 +729,9 @@ impl JsRuntime {
             .ok_or_else(|| JsError::type_error("value is not callable"))?;
 
         match function.implementation {
-            FunctionImplementation::Builtin(builtin) => self.call_builtin(builtin, arguments),
+            FunctionImplementation::Builtin(builtin) => {
+                self.call_builtin(builtin, this_value, arguments)
+            }
             FunctionImplementation::User { template, closure } => self.call_user_function(
                 id, template, closure, this_value, arguments, steps, call_depth,
             ),
@@ -738,6 +805,7 @@ impl JsRuntime {
     fn call_builtin(
         &mut self,
         builtin: BuiltinFunction,
+        this_value: JsValue,
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
         if matches!(builtin, BuiltinFunction::DomGetElementById) {
@@ -748,15 +816,74 @@ impl JsRuntime {
                 return Ok(CallOutcome::Value(JsValue::Null));
             };
             let text = self.dom_text.get(&node).cloned().unwrap_or_default();
+            let listener = self.allocate_object_with_function(
+                ObjectKind::Function,
+                Some(self.object_prototype),
+                HashMap::from([
+                    (
+                        "name".to_owned(),
+                        JsValue::String("addEventListener".into()),
+                    ),
+                    ("length".to_owned(), JsValue::Number(2.0)),
+                ]),
+                Some(FunctionObject {
+                    implementation: FunctionImplementation::Builtin(
+                        BuiltinFunction::DomAddEventListener,
+                    ),
+                }),
+            )?;
             let element = self.allocate_object(
                 ObjectKind::DomElement(node),
                 Some(self.object_prototype),
                 HashMap::from([
                     ("textContent".to_owned(), JsValue::String(text)),
                     ("id".to_owned(), JsValue::String(id)),
+                    ("addEventListener".to_owned(), JsValue::Object(listener)),
                 ]),
             )?;
             return Ok(CallOutcome::Value(JsValue::Object(element)));
+        }
+        if matches!(builtin, BuiltinFunction::DomAddEventListener) {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error(
+                    "addEventListener receiver is not an element",
+                ));
+            };
+            let ObjectKind::DomElement(node) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error(
+                    "addEventListener receiver is not an element",
+                ));
+            };
+            if arguments
+                .first()
+                .is_none_or(|v| v.to_js_string() != "click")
+            {
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
+            let Some(callback) = arguments.get(1).cloned() else {
+                return Err(JsError::type_error("event listener callback is missing"));
+            };
+            let JsValue::Object(function) = callback else {
+                return Err(JsError::type_error("event listener must be callable"));
+            };
+            if self.object(function)?.function.is_none() {
+                return Err(JsError::type_error("event listener must be callable"));
+            }
+            let total = self
+                .dom_click_listeners
+                .values()
+                .map(Vec::len)
+                .sum::<usize>();
+            if total >= 256 {
+                return Err(JsError::execution_limit(
+                    "DOM event listener budget exceeded",
+                ));
+            }
+            let listeners = self.dom_click_listeners.entry(node).or_default();
+            if !listeners.contains(&JsValue::Object(function)) {
+                listeners.push(JsValue::Object(function));
+            }
+            return Ok(CallOutcome::Value(JsValue::Undefined));
         }
         let message = arguments
             .first()
@@ -767,7 +894,9 @@ impl JsRuntime {
             BuiltinFunction::Error => ("Error", self.error_prototype),
             BuiltinFunction::TypeError => ("TypeError", self.type_error_prototype),
             BuiltinFunction::ReferenceError => ("ReferenceError", self.reference_error_prototype),
-            BuiltinFunction::DomGetElementById => unreachable!("handled above"),
+            BuiltinFunction::DomGetElementById | BuiltinFunction::DomAddEventListener => {
+                unreachable!("handled above")
+            }
         };
         let error = self.allocate_error_object(name, &message, prototype)?;
         Ok(CallOutcome::Value(JsValue::Object(error)))
@@ -962,6 +1091,13 @@ impl JsRuntime {
     pub fn get_property(&self, target: &JsValue, key: &str) -> Result<JsValue, JsError> {
         match target {
             JsValue::Object(id) => {
+                if key == "textContent"
+                    && let ObjectKind::DomElement(node) = self.object(*id)?.kind
+                {
+                    return Ok(JsValue::String(
+                        self.dom_text.get(&node).cloned().unwrap_or_default(),
+                    ));
+                }
                 if key == "__proto__" {
                     let object = self.object(*id)?;
                     if let Some(value) = object.properties.get(key) {
@@ -996,6 +1132,19 @@ impl JsRuntime {
             };
         };
 
+        if key == "onclick"
+            && let ObjectKind::DomElement(node) = self.object(*id)?.kind
+        {
+            match &value {
+                JsValue::Null | JsValue::Undefined => {
+                    self.dom_onclick.remove(&node);
+                }
+                JsValue::Object(function) if self.object(*function)?.function.is_some() => {
+                    self.dom_onclick.insert(node, value.clone());
+                }
+                _ => return Err(JsError::type_error("onclick must be callable")),
+            }
+        }
         if key == "textContent"
             && let ObjectKind::DomElement(node) = self.object(*id)?.kind
         {
@@ -1424,6 +1573,57 @@ mod tests {
             runtime.eval_script("'2' === 2").unwrap(),
             JsValue::Boolean(false)
         );
+    }
+
+    #[test]
+    fn dom_click_handlers_survive_scripts_and_mutate_text() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "control".into(),
+                text_content: "Click".into(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "result".into(),
+                text_content: "Before".into(),
+            },
+        ])
+        .unwrap();
+        vm.eval_script("var button = document.getElementById('control'); var count=0;          button.addEventListener('click', function(event) {            count=count+1;            document.getElementById('result').textContent='count: '+count;          });").unwrap();
+        assert!(vm.has_dom_click_listener(1));
+        assert!(!vm.has_dom_click_listener(2));
+        assert!(vm.dispatch_dom_click(1).unwrap());
+        assert_eq!(vm.take_dom_mutations()[0].text_content, "count: 1");
+        assert!(vm.dispatch_dom_click(1).unwrap());
+        assert_eq!(vm.take_dom_mutations()[0].text_content, "count: 2");
+        assert!(!vm.dispatch_dom_click(2).unwrap());
+    }
+
+    #[test]
+    fn onclick_property_is_replaced_and_removed() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 3,
+                id: "press".into(),
+                text_content: "Press".into(),
+            },
+            DomElementSnapshot {
+                node: 4,
+                id: "status".into(),
+                text_content: "Before".into(),
+            },
+        ])
+        .unwrap();
+        vm.eval_script("var item=document.getElementById('press');             item.onclick=function(){document.getElementById('status').textContent='one'};             item.onclick=function(){document.getElementById('status').textContent='two'};").unwrap();
+        assert!(vm.dispatch_dom_click(3).unwrap());
+        let updates = vm.take_dom_mutations();
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].text_content, "two");
+        vm.eval_script("item.onclick=null;").unwrap();
+        assert!(!vm.has_dom_click_listener(3));
     }
 
     #[test]

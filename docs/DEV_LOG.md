@@ -2732,3 +2732,27 @@ This file is append-only project history.
   addEventListener, full Web API set, CSP/CORS/SRI or HTML5test score.
   Redirects may be fetched before cross-origin final-URL rejection.
 
+## 2026-10-08 - M4.3 native click events to retained JavaScript VM
+
+- Keep a per-page JsRuntime alive beyond initial script loading, with
+  document IDs, closures and global state. Introduce DOM click handler
+  storage for `element.addEventListener("click", fn)` and `onclick`
+  property replacement/removal; cap listener registrations.
+- `JsRuntime::dispatch_dom_click` calls retained functions under
+  instruction/call-depth budgets, exposes basic event type/target and
+  `this` binding, and queues bounded DOM text mutations.
+- Record id-bearing block hit regions in op_layout, taking relative
+  positioning into account. Win32 WM_LBUTTONUP, when not a hyperlink,
+  converts the mouse point to document pixel coordinates including
+  toolbar and wheel scroll. Worker `Engine::click_at` dispatches
+  callbacks, mutates the retained DOM, recomputes styles, and reflows
+  without changing URL/history or resetting scroll.
+- Added repeated-click and onclick replacement VM regressions, engine
+  click target/reflow regression and external-JS click sample
+  `examples/js/click.html` / `click.js`.
+- Strict Static WPT 197/200 and metadata-aware Static 198/200 remain
+  unchanged; Positioning WPT remains 53/100 with no render errors.
+- Scope is intentionally a first event slice, not DOM Events
+  conformance: no capture/bubble, preventDefault, keyboard activation,
+  full element hit-testing, class/style mutation or HTML5test score.
+

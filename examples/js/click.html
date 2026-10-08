@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>OPBrowser M4.3: click events</title>
+  <style>
+    body { font-size:20px; margin:28px; background:#eff6ff; color:#203050 }
+    #control { display:block; width:260px; height:64px; padding:12px;
+               border:3px solid #0d7e77; background:#c7f7e7; color:#134e4a }
+    #status { font-size:26px; color:#075985; }
+  </style>
+</head>
+<body>
+  <h1>OPBrowser native click → JavaScript → DOM</h1>
+  <button id="control" style="display:block">Click me</button>
+  <p id="status">No clicks yet</p>
+  <script src="click.js"></script>
+  <p>The JavaScript listener is retained after load. Click the block
+     several times; the displayed count should increase without reload.</p>
+  <p>First slice limitations: id-bearing block regions; no DOM bubbling,
+     capture, full default actions, event loop or arbitrary controls yet.</p>
+</body>
+</html>

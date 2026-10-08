@@ -92,6 +92,32 @@ Primary conformance targets:
   followed by real parser-blocking/defer/async semantics and
   script-fetch redirect restrictions.
 
+## M4.3 - First real click event integration (2026-10-08)
+
+- DONE persist the original `op_js::JsRuntime` in the active prepared
+  document instead of dropping it after the scripts run. Registered
+  function closures and global state therefore survive real user clicks.
+- DONE initial `element.addEventListener("click", callback)` and
+  `element.onclick = callback` / `null` support for element objects
+  returned by `document.getElementById`. The event object exposes
+  `type`, `target`, and `currentTarget`; `this` is the target.
+- DONE Win32 `WM_LBUTTONUP` now yields a document-relative click
+  event when not handled as a hyperlink; browser worker dispatches
+  on the retained page. Own layout collects hit boxes for id-bearing
+  blocks. After listener DOM text changes, recompute CSS and repaint
+  while preserving scrolling and session state.
+- DONE tests verify retained closures, multiple clicks and `onclick`
+  replacement/removal, native layout click coordinates, reflow after
+  mutation, error-free WPT baselines, and native demo
+  `examples/js/click.html` with sibling `click.js`.
+- LIMITATION initial subset has no bubbling, capture, keyboard dispatch,
+  browser default actions, `preventDefault`, `stopPropagation`,
+  `removeEventListener`, arbitrary inline/flex/table hit regions,
+  style mutation APIs or full HTML5test support.
+- NEXT expand DOM event targeting and state, expose a real DOMEvent
+  dispatch path, then implement parser-blocking/async/defer script
+  timing, timers and independent Web APIs.
+
 ## M0 - Foundation
 
 Status: DONE at initial level.

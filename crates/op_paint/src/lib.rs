@@ -408,6 +408,7 @@ mod tests {
                 LayoutItem::Text(0),
             ],
             paint_groups: vec![],
+            click_regions: vec![],
         };
         let result = build_display_list(&layout, 60);
         assert!(matches!(&result.commands[1], PaintCommand::Text { text, .. } if text == "normal"));
@@ -467,6 +468,7 @@ mod tests {
                 ),
             ],
             paint_groups: vec![],
+            click_regions: vec![],
         };
         let ordered_x: Vec<_> = build_display_list(&layout, 20)
             .commands
@@ -536,6 +538,7 @@ mod tests {
             image_boxes: vec![],
             order: vec![],
             paint_groups: vec![],
+            click_regions: vec![],
         };
         let commands = build_display_list(&layout, 90).commands;
         let backgrounds: Vec<Color> = commands
@@ -647,6 +650,7 @@ mod tests {
             image_boxes: vec![],
             order: vec![],
             paint_groups: vec![],
+            click_regions: vec![],
         };
 
         let display_list = build_display_list(&layout, 120);
@@ -756,6 +760,7 @@ mod tests {
             image_boxes: vec![],
             order: vec![LayoutItem::Text(0)],
             paint_groups: vec![],
+            click_regions: vec![],
         };
 
         let display_list = build_display_list(&layout, 200);
@@ -799,6 +804,7 @@ mod tests {
             image_boxes: vec![],
             order: vec![LayoutItem::Text(0)],
             paint_groups: vec![],
+            click_regions: vec![],
         };
 
         let display_list = build_display_list(&layout, 600);

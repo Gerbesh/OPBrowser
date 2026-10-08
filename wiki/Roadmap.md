@@ -11,8 +11,10 @@ is not a proxy for full completion.
 3. **Page scripting:** M4.1 executes bounded classic inline scripts
    with `document.getElementById`/textContent DOM mutations. M4.2 adds
    filtered local/same-origin HTTP(S) `script src` loading and document
-   ordering. Next: parser-blocking/defer/async timing, DOM event dispatch,
-   script security policies and broader Web APIs.
+   ordering. M4.3 retains the VM and dispatches native clicks to
+   `addEventListener`/`onclick` handlers on id-bearing block elements.
+   Next: full event targeting/bubbling and keyboard support,
+   parser-blocking/defer/async scheduling and broader Web APIs.
 4. **Browser features:** tabs, task manager, page isolation, session
    restore, background tab freezing, content blocker subscriptions/UI.
 5. **Quality:** bounded memory/CPU benchmarks, security hardening,

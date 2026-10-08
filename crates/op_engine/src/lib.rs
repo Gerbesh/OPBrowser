@@ -106,6 +106,7 @@ struct PreparedDocument {
     computed_styles: ComputedStyleMap,
     stylesheet_addresses: std::collections::HashMap<op_dom::NodeId, String>,
     scripts: ScriptReport,
+    runtime: Option<op_js::JsRuntime>,
 }
 
 impl PreparedDocument {
@@ -227,7 +228,7 @@ impl Engine {
     /// Initialize an in-memory page and an empty navigation history for startup.
     pub fn set_html_page(&mut self, html: &str, width: i32, height: i32) -> DisplayList {
         let mut document = parse_document(html);
-        let script_report = scripts::execute_inline(&mut document);
+        let (script_report, runtime) = scripts::execute_retained(&mut document, None, None);
         let style_collection = collect_author_styles(&document);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let prepared = PreparedDocument {
@@ -239,12 +240,53 @@ impl Engine {
             computed_styles,
             stylesheet_addresses: std::collections::HashMap::new(),
             scripts: script_report,
+            runtime,
         };
         let page = prepared.render(width, height);
         self.active_document = Some(prepared);
         self.document_address = None;
         self.navigation = NavigationState::default();
         page.display_list
+    }
+
+    /// Dispatch an initial DOM click to the smallest live block hit region.
+    /// Coordinates are document pixels (already adjusted for toolbar/scroll).
+    pub fn click_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<RenderedPage> {
+        let prepared = self.active_document.as_mut()?;
+        let runtime = prepared.runtime.as_mut()?;
+        let layout = layout_document_with_backgrounds_and_resources(
+            &prepared.document,
+            width,
+            height,
+            (&prepared.images.elements, &prepared.images.backgrounds),
+            &prepared.images.generated,
+            &prepared.computed_styles,
+            &mut text::Measurer::new(),
+        );
+        let target = layout
+            .click_regions
+            .iter()
+            .filter(|region| {
+                region.width > 0
+                    && region.height > 0
+                    && x >= region.x
+                    && x < region.x.saturating_add(region.width)
+                    && y >= region.y
+                    && y < region.y.saturating_add(region.height)
+                    && runtime.has_dom_click_listener(region.node.index())
+            })
+            .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
+            .map(|region| region.node)?;
+        let (handled, changes) = scripts::dispatch_click(&mut prepared.document, runtime, target);
+        if !handled && changes == 0 {
+            return None;
+        }
+        prepared.scripts.mutations += changes;
+        if changes > 0 {
+            prepared.computed_styles =
+                compute_styles(&prepared.document, &prepared.style_collection.styles);
+        }
+        Some(prepared.render(width, height))
     }
 
     /// Rebuild only layout/paint from the current DOM and shared image pixels.
@@ -337,8 +379,8 @@ impl Engine {
     fn prepare_source(&self, source: &str) -> Result<PreparedDocument, LoadError> {
         let loaded: LoadedDocument = self.network.load_document(source)?;
         let mut document = parse_document(&loaded.text);
-        let script_report =
-            scripts::execute_for_page(&mut document, Some(&self.network), Some(&loaded.address));
+        let (script_report, runtime) =
+            scripts::execute_retained(&mut document, Some(&self.network), Some(&loaded.address));
         let linked_stylesheets = styles::load(&self.network, &document, &loaded.address);
         let mut style_collection =
             collect_author_styles_with_linked(&document, &linked_stylesheets.texts);
@@ -381,6 +423,7 @@ impl Engine {
             computed_styles,
             stylesheet_addresses: linked_stylesheets.addresses,
             scripts: script_report,
+            runtime,
         })
     }
 }
@@ -395,6 +438,49 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn native_dom_click_dispatch_changes_retained_page_text() {
+        let mut engine = Engine::new();
+        let initial = engine.set_html_page(
+            "<div id='activate' style='display:block;width:180px;height:50px;                background:#eeeeee'>Press</div>             <p id='result'>Before</p>             <script>var count=0;             document.getElementById('activate').addEventListener('click',               function(event){count=count+1;               document.getElementById('result').textContent='Count '+count;});             </script>", 800, 600
+        );
+        assert!(contains_text(&initial, "Before"));
+        let active = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_backgrounds_and_resources(
+            &active.document,
+            800,
+            600,
+            (&active.images.elements, &active.images.backgrounds),
+            &active.images.generated,
+            &active.computed_styles,
+            &mut text::Measurer::new(),
+        );
+        let region = layout
+            .click_regions
+            .iter()
+            .find(|region| {
+                active.document.element(region.node).is_some_and(|e| {
+                    e.attributes
+                        .iter()
+                        .any(|a| a.name == "id" && a.value == "activate")
+                })
+            })
+            .expect("clickable block has real layout bounds");
+        let (x, y) = (region.x + 3, region.y + 3);
+        assert!(region.width > 20 && region.height > 20);
+        assert!(engine.click_at(0, 0, 800, 600).is_none());
+        let first = engine.click_at(x, y, 800, 600).unwrap();
+        assert!(contains_text(&first.display_list, "Count 1"));
+        assert!(!contains_text(&first.display_list, "Before"));
+        let second = engine.click_at(x, y, 800, 600).unwrap();
+        assert!(contains_text(&second.display_list, "Count 2"));
+        assert!(contains_text(
+            &engine.reflow(600, 400).unwrap().display_list,
+            "Count 2"
+        ));
+        assert_eq!(engine.active_script_report().unwrap().mutations, 2);
+    }
 
     #[test]
     fn inline_page_script_changes_visible_text_and_reflow_keeps_the_mutation() {

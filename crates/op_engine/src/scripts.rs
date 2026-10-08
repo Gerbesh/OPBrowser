@@ -143,18 +143,28 @@ pub fn execute_for_page(
     network: Option<&NetworkContext>,
     page_base: Option<&str>,
 ) -> ScriptReport {
+    execute_retained(document, network, page_base).0
+}
+
+/// Return a retained VM so callbacks registered during initial scripts
+/// survive until native click events reach the page worker.
+pub(crate) fn execute_retained(
+    document: &mut Document,
+    network: Option<&NetworkContext>,
+    page_base: Option<&str>,
+) -> (ScriptReport, Option<JsRuntime>) {
     let (elements, scripts, skipped) = snapshot_and_scripts(document);
     let mut report = ScriptReport {
         skipped,
         ..ScriptReport::default()
     };
     if scripts.is_empty() {
-        return report;
+        return (report, None);
     }
     let mut runtime = JsRuntime::with_instruction_budget(JS_INSTRUCTION_BUDGET);
     if runtime.install_dom_snapshot(elements).is_err() {
         report.failed = scripts.len();
-        return report;
+        return (report, None);
     }
     let started = Instant::now();
     let mut requests = 0usize;
@@ -211,7 +221,28 @@ pub fn execute_for_page(
             }
         }
     }
-    report
+    (report, Some(runtime))
+}
+
+/// Dispatch one click only to a still-attached block DOM node.
+pub(crate) fn dispatch_click(
+    document: &mut Document,
+    runtime: &mut JsRuntime,
+    node: NodeId,
+) -> (bool, usize) {
+    if document.element(node).is_none() || !runtime.has_dom_click_listener(node.index()) {
+        return (false, 0);
+    }
+    let handled = runtime.dispatch_dom_click(node.index()).unwrap_or(false);
+    let mut changed = 0;
+    for mutation in runtime.take_dom_mutations() {
+        if let Some(node) = document.node_id(mutation.node)
+            && document.set_text_content(node, &mutation.text_content)
+        {
+            changed += 1;
+        }
+    }
+    (handled, changed)
 }
 
 #[cfg(test)]

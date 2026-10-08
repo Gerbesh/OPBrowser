@@ -68,6 +68,7 @@ pub(super) fn layout(
         text: Vec::new(),
         images_out: Vec::new(),
         order: Vec::new(),
+        click_regions: Vec::new(),
     };
 
     let root_style = document
@@ -103,6 +104,7 @@ pub(super) fn layout(
         image_boxes: context.images_out,
         order: context.order,
         paint_groups,
+        click_regions: context.click_regions,
     }
 }
 
@@ -205,6 +207,7 @@ struct Context<'a, 'm> {
     text: Vec<TextBox>,
     images_out: Vec<ImageBox>,
     order: Vec<LayoutItem>,
+    click_regions: Vec<ClickRegion>,
 }
 
 /// Generated blocks share ordinary block sizing without adding synthetic DOM nodes.
@@ -1213,6 +1216,26 @@ impl<'a> Context<'a, '_> {
         }
         self.pending_margin = Some(margin_bottom);
 
+        if let BlockContent::Element(node) = content
+            && self
+                .document
+                .element(node)
+                .is_some_and(|e| e.attributes.iter().any(|a| a.name == "id"))
+        {
+            let (dx, dy) = if style.position == Position::Relative {
+                relative_position_offset(style, containing_width, containing_height)
+            } else {
+                (0, 0)
+            };
+            self.click_regions.push(ClickRegion {
+                node,
+                x: border_x.saturating_add(dx),
+                y: border_y.saturating_add(dy),
+                width: used.border_width.max(0),
+                height: self.y.saturating_sub(border_y).max(0),
+            });
+        }
+
         if style.position == Position::Relative {
             let (dx, dy) = relative_position_offset(style, containing_width, containing_height);
             self.translate_outputs_since(output_start, dx, dy);
@@ -1329,6 +1352,7 @@ impl<'a> Context<'a, '_> {
             text: Vec::new(),
             images_out: Vec::new(),
             order: Vec::new(),
+            click_regions: Vec::new(),
         };
         let metrics = local.table_box(&children, id, style, 0, available);
         local.finish_deferred_inline();
@@ -1418,6 +1442,7 @@ impl<'a> Context<'a, '_> {
             text: Vec::new(),
             images_out: Vec::new(),
             order: Vec::new(),
+            click_regions: Vec::new(),
         };
         local.block(BlockContent::Element(id), None, style, 0, available);
         local.flush_pending_margin();
@@ -1508,6 +1533,7 @@ impl<'a> Context<'a, '_> {
             text: Vec::new(),
             images_out: Vec::new(),
             order: Vec::new(),
+            click_regions: Vec::new(),
         };
         local.block(BlockContent::Element(id), None, style, 0, available);
         local.flush_pending_margin();
@@ -1762,6 +1788,7 @@ impl<'a> Context<'a, '_> {
             text: Vec::new(),
             images_out: Vec::new(),
             order: Vec::new(),
+            click_regions: Vec::new(),
         };
 
         let display = local

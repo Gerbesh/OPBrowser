@@ -93,6 +93,24 @@ HTML parser insertion points. HTTP redirects are validated only after
 a response is fetched. Browser events, security policies, modules and
 sufficient HTML5test Web APIs are not yet implemented.
 
+## M4.3: retained click handlers
+
+OPBrowser now keeps the original JS VM alive for the active page, so
+`document.getElementById("control").addEventListener("click", fn)`
+and `element.onclick = fn` retain their function closures. Native
+Win32 mouse clicks are converted to page coordinates and passed to the
+engine, which hit-tests id-bearing block rectangles from the current
+layout and invokes matching callbacks. A basic `click` event has
+`type`, `target`, and `currentTarget`; `this` is the clicked
+element. Text mutations update the actual DOM and trigger reflow.
+Try `examples/js/click.html` and click the block multiple times.
+
+Limits: no event bubbling, capture, keyboard activation,
+`removeEventListener`, `preventDefault`, `stopPropagation`,
+full default actions or event-loop scheduling; complex inline/flex
+hit-testing is not complete. This is **not** general DOM Events
+compatibility, and html5test.co still cannot compute its score.
+
 ## Test262 measurement
 
 `op_js` includes `test262_probe`. It measures only whether the current parser accepts

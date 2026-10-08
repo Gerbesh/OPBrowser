@@ -38,8 +38,10 @@ local files and data URLs, with dimensions, transparency, alt fallback and image
 Initial embedded, inline and external author CSS plus block/flex/float layout and first relative/absolute/fixed positioning now reach native pixels. A standalone original JavaScript lexer/parser/bytecode/VM with objects, closures, exceptions, `this`, constructors, `arguments` and initial Error objects exists, and a first bounded inline `<script>` execution path can now update
 DOM text by id before paint. Bounded relative/local and same-origin
 external classic scripts now use the filtered network loader and execute
-in source order. Full DOM bindings, browser script timing, events and Web
-APIs are not implemented.
+in source order. A first native `click` event slice now retains JS
+handlers registered by `addEventListener` or `onclick`, allowing text
+changes and reflow after user interaction. Full DOM Events, browser script
+timing and Web APIs are **not** implemented.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 
@@ -79,6 +81,10 @@ First JavaScript-to-DOM demonstration:
 `target\\release\\op_browser.exe examples\\js\\dom-text.html`.
 This executes two classic inline scripts through the original VM and
 shows the resulting DOM text in the native window.
+
+Interactive M4.3 demo: `target\\release\\op_browser.exe examples\\js\\click.html`.
+Click the green button repeatedly to run a JavaScript event listener
+loaded from sibling `click.js` and update the status without navigation.
 
 Current usage examples:
 

@@ -18,10 +18,10 @@ op_platform_win::paint_command
 
 - [`op_net::load_document`](../crates/op_net/src/lib.rs#L156)
 - [`op_html::Tokenizer`](../crates/op_html/src/lib.rs#L56)
-- [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L195)
+- [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L196)
 - [`op_layout::layout`](../crates/op_layout/src/flow.rs#L15)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
-- [`op_platform_win::paint_command`](../crates/op_platform_win/src/lib.rs#L641)
+- [`op_platform_win::paint_command`](../crates/op_platform_win/src/lib.rs#L653)
 
 This path lacks complete CSS, forms, DOM scripting and a GPU backend.
 
@@ -35,9 +35,9 @@ op_engine::reflow
 op_platform_win::paint_window
 ```
 
-- [`op_engine::navigate`](../crates/op_engine/src/lib.rs#L268)
-- [`op_engine::reflow`](../crates/op_engine/src/lib.rs#L251)
-- [`op_platform_win::paint_window`](../crates/op_platform_win/src/lib.rs#L554)
+- [`op_engine::navigate`](../crates/op_engine/src/lib.rs#L310)
+- [`op_engine::reflow`](../crates/op_engine/src/lib.rs#L293)
+- [`op_platform_win::paint_window`](../crates/op_platform_win/src/lib.rs#L566)
 
 No full History API or single-page-application lifecycle.
 
@@ -87,7 +87,7 @@ op_engine::Engine
 
 - [`op_js::parse_script`](../crates/op_js/src/lib.rs#L18)
 - [`op_js::JsRuntime`](../crates/op_js/src/lib.rs#L20)
-- [`op_engine::Engine`](../crates/op_engine/src/lib.rs#L131)
+- [`op_engine::Engine`](../crates/op_engine/src/lib.rs#L132)
 
 Classic inline and bounded same-origin external scripts now update textContent by id. Async/defer scheduling, parser-blocking timing, events and full DOM/Web APIs remain unsupported.
 
@@ -108,11 +108,11 @@ op_paint::build_display_list
 
 - [`op_html::parse_document`](../crates/op_html/src/lib.rs#L6)
 - [`op_engine::execute_inline`](../crates/op_engine/src/scripts.rs#L134)
-- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L230)
+- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L235)
 - [`op_js::DomGetElementById`](../crates/op_js/src/runtime.rs#L51)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
-- [`op_engine::render`](../crates/op_engine/src/lib.rs#L112)
+- [`op_engine::render`](../crates/op_engine/src/lib.rs#L113)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
 
 Deliberately bounded, once-per-load execution after full HTML parsing; basic external scripts now exist but no event loop, general DOM mutations or full HTML5test support.
@@ -135,11 +135,37 @@ op_engine::prepare_source
 - [`op_net::resolve_script_source`](../crates/op_net/src/scripts.rs#L14)
 - [`op_net::load_script_for_page`](../crates/op_net/src/lib.rs#L145)
 - [`op_net::load_script`](../crates/op_net/src/http.rs#L196)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L270)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L335)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
-- [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L223)
+- [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L224)
 
 Only relative/local and same-origin HTTP(S) classic scripts in source order after DOM parse. Redirect origin checked after retrieval; async/defer/integrity not supported, no browser event loop.
+
+## S9 — Native Win32 click through retained JS listener to repainted DOM
+
+Status: **M4.3 initial non-bubbling click subset**.
+
+```text
+op_platform_win::WM_LBUTTONUP
+op_browser::NavigationEvent::Click
+op_engine::click_at
+op_layout::click_regions
+op_engine::dispatch_click
+op_js::dispatch_dom_click
+op_dom::set_text_content
+op_engine::compute_styles
+```
+
+- [`op_platform_win::WM_LBUTTONUP`](../crates/op_platform_win/src/lib.rs#L314)
+- [`op_browser::NavigationEvent::Click`](../crates/op_browser/src/main.rs#L135)
+- [`op_engine::click_at`](../crates/op_engine/src/lib.rs#L254)
+- [`op_layout::click_regions`](../crates/op_layout/src/flow.rs#L71)
+- [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L228)
+- [`op_js::dispatch_dom_click`](../crates/op_js/src/runtime.rs#L279)
+- [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
+- [`op_engine::compute_styles`](../crates/op_engine/src/lib.rs#L3)
+
+Only id-bearing block region hits with click listeners, no bubbling/capture/stopPropagation/preventDefault/keyboard or complete event target identity; JS runtime stays with the prepared page.
 
 ## S6 — WPT image comparison and reporting
 
@@ -153,7 +179,7 @@ op_platform_win::render_display_list_to_bgra
 
 - [`op_browser::different_pixels`](../crates/op_browser/src/bin/wpt_probe.rs#L200)
 - [`op_browser::within_wpt_fuzzy`](../crates/op_browser/src/bin/wpt_probe.rs#L133)
-- [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L60)
+- [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L61)
 
 Strict Static: 197/200; metadata-aware Static: 198/200; two Rec.2020 fixtures remain known mismatches.
 
