@@ -187,6 +187,7 @@ fn winhttp_external_javascript_roundtrip_executes_to_dom() {
                     Err(error) => panic!("{error}"),
                 }
             };
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(3)))
                 .unwrap();
@@ -398,4 +399,114 @@ fn async_scripts_execute_in_download_completion_order_not_tag_order() {
         cmd, op_paint::PaintCommand::Text {text,..} if text.contains("FS")
     )));
     server.join().unwrap();
+}
+
+#[test]
+fn lifecycle_events_follow_parser_completion_and_change_ready_state() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<p id='output'>Before</p>",
+            "<script>",
+            "var history='';",
+            "document.addEventListener('readystatechange',function(e){",
+            "history=history+'R'+document.readyState+'-'+e.eventPhase+';';",
+            "});",
+            "document.addEventListener('DOMContentLoaded',function(e){",
+            "if (e.target == document && e.currentTarget == document && this == document) {",
+            "history=history+'D'+document.readyState+';';",
+            "}",
+            "});",
+            "window.addEventListener('load',function(e){",
+            "if (this == window && e.currentTarget == window && e.target == document) {",
+            "history=history+'L'+document.readyState+';';",
+            "document.getElementById('output').textContent=history;",
+            "}",
+            "});",
+            "</script>",
+            "<p id='later'>Parsed after listener installation</p>",
+        ),
+        800,
+        600,
+    );
+    let report = engine.active_script_report().unwrap();
+    assert_eq!(
+        (report.executed, report.failed, report.mutations),
+        (1, 0, 1),
+        "{report:?}"
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..}
+            if text.contains("Rinteractive-2;Dinteractive;Rcomplete-2;Lcomplete;")
+    )));
+}
+
+#[test]
+fn lifecycle_property_handlers_and_listener_removal_work() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<p id='output'>Before</p>",
+            "<script>",
+            "var history='';",
+            "var gone=function(){history=history+'BAD';};",
+            "document.addEventListener('DOMContentLoaded',gone);",
+            "document.removeEventListener('DOMContentLoaded',gone);",
+            "document.onreadystatechange=function(){history=history+'R'+document.readyState+';';};",
+            "window.onload=function(){",
+            "document.getElementById('output').textContent=history+'ONLOAD';",
+            "};",
+            "document.readyState='untrusted';",
+            "if (document.readyState != 'loading') { throw 'readyState must be read-only'; }",
+            "</script>",
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..}
+            if text.contains("Rinteractive;Rcomplete;ONLOAD")
+    )));
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..} if text.contains("BAD")
+    )));
+    let report = engine.active_script_report().unwrap();
+    assert_eq!((report.executed, report.failed), (1, 0), "{report:?}");
+}
+
+#[test]
+fn deferred_script_registers_dom_content_loaded_before_dispatch() {
+    let root =
+        std::env::temp_dir().join(format!("opbrowser-js-m48-lifecycle-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let page = root.join("index.html");
+    std::fs::write(
+        root.join("deferred.js"),
+        concat!(
+            "if (document.readyState != 'interactive') { throw 'not interactive'; }",
+            "document.addEventListener('DOMContentLoaded',function(){",
+            "document.getElementById('out').textContent='DEFER-LOADED-'+document.readyState;",
+            "});",
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        &page,
+        concat!(
+            "<p id='out'>Before</p>",
+            "<script defer src='deferred.js'></script>",
+            "<p id='later'>After parser</p>",
+        ),
+    )
+    .unwrap();
+    let mut engine = Engine::new();
+    let rendered = engine
+        .navigate(&page.display().to_string(), 800, 600)
+        .unwrap();
+    assert!(rendered.display_list.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text {text,..}
+            if text.contains("DEFER-LOADED-interactive")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    std::fs::remove_dir_all(root).unwrap();
 }

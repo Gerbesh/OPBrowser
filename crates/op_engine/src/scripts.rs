@@ -156,6 +156,7 @@ pub(crate) fn parse_and_execute(
         deferred_order: Vec::new(),
         deferred_ready: HashMap::new(),
         async_pending: 0,
+        ready_state: "loading",
     };
 
     let document = std::thread::scope(|scope| {
@@ -182,6 +183,7 @@ pub(crate) fn parse_and_execute(
             runner.drain_ready(document, &receiver);
         });
         runner.drain_ready(&mut document, &receiver);
+        runner.advance_state(&mut document, "interactive");
 
         // Deferred classic scripts run after DOM parsing, in document order.
         // Async completions arriving while we wait can still run immediately.
@@ -201,6 +203,8 @@ pub(crate) fn parse_and_execute(
             runner.drain_ready(&mut document, &receiver);
         }
 
+        runner.dispatch_lifecycle(&mut document, "DOMContentLoaded");
+
         // Initial navigation owns the page VM; do not let background workers
         // outlive that page or mutate it on another thread.
         while runner.async_pending > 0 {
@@ -212,6 +216,9 @@ pub(crate) fn parse_and_execute(
                 }
             }
         }
+
+        runner.advance_state(&mut document, "complete");
+        runner.dispatch_lifecycle(&mut document, "load");
 
         // Elements inserted after the final script must be visible to its
         // retained event handlers.
@@ -258,9 +265,43 @@ struct ParserScriptRunner<'a> {
     deferred_order: Vec<usize>,
     deferred_ready: HashMap<usize, Result<String, op_net::LoadError>>,
     async_pending: usize,
+    ready_state: &'static str,
 }
 
 impl ParserScriptRunner<'_> {
+    fn advance_state(&mut self, document: &mut Document, state: &'static str) {
+        self.ready_state = state;
+        if let Some(runtime) = self.runtime.as_mut() {
+            let (elements, _, _) = snapshot_and_scripts(document);
+            runtime.refresh_dom_snapshot(elements);
+            if runtime.set_document_ready_state(state).is_err() {
+                self.report.failed += 1;
+            }
+        }
+        self.dispatch_lifecycle(document, "readystatechange");
+    }
+
+    fn dispatch_lifecycle(&mut self, document: &mut Document, event: &str) {
+        if let Some(runtime) = self.runtime.as_mut()
+            && runtime.dispatch_lifecycle_event(event).is_err()
+        {
+            self.report.failed += 1;
+        }
+        self.apply_mutations(document);
+    }
+
+    fn apply_mutations(&mut self, document: &mut Document) {
+        let Some(runtime) = self.runtime.as_mut() else {
+            return;
+        };
+        for mutation in runtime.take_dom_mutations() {
+            if let Some(node) = document.node_id(mutation.node)
+                && document.set_text_content(node, &mutation.text_content)
+            {
+                self.report.mutations += 1;
+            }
+        }
+    }
     fn execute(&mut self, document: &mut Document, script: NodeId) -> Option<ScriptFetch> {
         let element = document.element(script)?;
         let src = element
@@ -421,17 +462,15 @@ impl ParserScriptRunner<'_> {
             self.runtime = Some(runtime);
         }
         let runtime = self.runtime.as_mut().expect("runtime just installed");
+        if runtime.set_document_ready_state(self.ready_state).is_err() {
+            self.report.failed += 1;
+            return;
+        }
         match runtime.eval_script(code) {
             Ok(_) => self.report.executed += 1,
             Err(_) => self.report.failed += 1,
         }
-        for mutation in runtime.take_dom_mutations() {
-            if let Some(node) = document.node_id(mutation.node)
-                && document.set_text_content(node, &mutation.text_content)
-            {
-                self.report.mutations += 1;
-            }
-        }
+        self.apply_mutations(document);
     }
 }
 #[cfg(test)]

@@ -24,7 +24,9 @@ claim that OPBrowser is ready for everyday browsing.
   Bounded external classic defer/async now fetch concurrently; defer runs
   in document order after parsing; async runs at parser/load polling
   points. An independent event loop, document.write, native default-action
-  cancellation and broad Web APIs remain absent.
+  cancellation and broad Web APIs remain absent. document.readyState now
+  tracks loading/interactive/complete, with DOMContentLoaded after defer
+  and window load after initial async completion.
 - Network request filtering foundation; full adblock UI/subscription pipeline
   is **not** implemented.
 
@@ -51,3 +53,9 @@ major workstreams. The 98.5% metric measures only **200 selected static tests**.
 See [Project Overview](Project-Overview.md), [Architecture](Architecture.md),
 [Code Graph](Code-Graph.md), [Code Slicer](Code-Slicer.md), and
 [Development Workflow](Development-Workflow.md).
+
+## M4.8: lifecycle timing
+
+Initial document.readyState and DOMContentLoaded/load sequencing is
+available with bounded document/window listeners; this does not yet
+imply a full browser event loop or resource-aware load timing.

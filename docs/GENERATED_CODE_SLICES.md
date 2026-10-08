@@ -108,7 +108,7 @@ op_paint::build_display_list
 
 - [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L141)
-- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L240)
+- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L246)
 - [`op_js::DomGetElementById`](../crates/op_js/src/runtime.rs#L51)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
@@ -135,7 +135,7 @@ op_engine::prepare_source
 - [`op_net::resolve_script_source`](../crates/op_net/src/scripts.rs#L14)
 - [`op_net::load_script_for_page`](../crates/op_net/src/lib.rs#L145)
 - [`op_net::load_script`](../crates/op_net/src/http.rs#L196)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L502)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L625)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L222)
 
@@ -160,8 +160,8 @@ op_engine::compute_styles
 - [`op_browser::NavigationEvent::Click`](../crates/op_browser/src/main.rs#L135)
 - [`op_engine::click_at`](../crates/op_engine/src/lib.rs#L251)
 - [`op_layout::click_regions`](../crates/op_layout/src/flow.rs#L71)
-- [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L534)
-- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L293)
+- [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L573)
+- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L416)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::compute_styles`](../crates/op_engine/src/lib.rs#L3)
 
@@ -184,8 +184,8 @@ op_engine::prepare_source
 - [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L141)
 - [`op_engine::ParserScriptRunner`](../crates/op_engine/src/scripts.rs#L146)
-- [`op_js::refresh_dom_snapshot`](../crates/op_js/src/runtime.rs#L280)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L502)
+- [`op_js::refresh_dom_snapshot`](../crates/op_js/src/runtime.rs#L403)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L625)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L222)
 
@@ -208,11 +208,11 @@ op_dom::set_text_content
 
 - [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L141)
-- [`op_engine::prepare_fetch`](../crates/op_engine/src/scripts.rs#L299)
+- [`op_engine::prepare_fetch`](../crates/op_engine/src/scripts.rs#L340)
 - [`op_net::load_script_for_page`](../crates/op_net/src/lib.rs#L145)
-- [`op_engine::drain_ready`](../crates/op_engine/src/scripts.rs#L164)
-- [`op_engine::evaluate_loaded`](../crates/op_engine/src/scripts.rs#L199)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L502)
+- [`op_engine::drain_ready`](../crates/op_engine/src/scripts.rs#L165)
+- [`op_engine::evaluate_loaded`](../crates/op_engine/src/scripts.rs#L201)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L625)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 
 Concurrent fetch and initial-load JS polling only; no event loop, DOMContentLoaded, module scripts or SRI.

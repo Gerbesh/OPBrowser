@@ -1218,3 +1218,24 @@ tags; deferred completions wait in a keyed table and are executed after
 tree construction in original document order. Initial load drains remaining
 async work before paint. Scoped workers cannot outlive page preparation.
 An independent browser event loop remains unimplemented.
+
+## M4.8: retained JS document lifecycle
+
+ParserScriptRunner advances document state once tree building finishes
+and again after the initial async/defer load phase. JsRuntime holds
+document/window event listeners and dispatches lifecycle callbacks on
+the engine thread, applying queued text mutations before render.
+
+## M4.8: page lifecycle state and events (current)
+
+op_js::JsRuntime retains a document object with host-owned readyState,
+exposes lifecycle registration on document/window, and dispatches
+readystatechange, DOMContentLoaded and load callbacks in the original
+bounded JS VM. Event objects expose target/currentTarget/type/eventPhase.
+Callbacks may mutate the DOM through detached textContent mutations.
+
+op_engine::scripts::ParserScriptRunner::advance_state moves the page to
+interactive after parsing and complete after pending async work. The
+engine fires DOMContentLoaded only after deferred scripts execute and
+window load after async completion, applying mutations before layout.
+There is no independent event loop or post-presentation async dispatch.

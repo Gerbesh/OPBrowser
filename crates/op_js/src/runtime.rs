@@ -53,6 +53,8 @@ enum BuiltinFunction {
     DomRemoveEventListener,
     EventStopPropagation,
     EventPreventDefault,
+    LifecycleAddEventListener,
+    LifecycleRemoveEventListener,
 }
 
 #[derive(Debug, Clone)]
@@ -127,6 +129,8 @@ pub struct JsRuntime {
     dom_click_listeners: HashMap<usize, Vec<JsValue>>,
     dom_click_capture_listeners: HashMap<usize, Vec<JsValue>>,
     dom_onclick: HashMap<usize, JsValue>,
+    dom_document: Option<ObjectId>,
+    lifecycle_listeners: HashMap<(ObjectId, String, bool), Vec<JsValue>>,
 }
 
 impl Default for JsRuntime {
@@ -193,6 +197,8 @@ impl Default for JsRuntime {
             dom_click_listeners: HashMap::new(),
             dom_click_capture_listeners: HashMap::new(),
             dom_onclick: HashMap::new(),
+            dom_document: None,
+            lifecycle_listeners: HashMap::new(),
         };
 
         runtime.install_global_binding(
@@ -247,6 +253,7 @@ impl JsRuntime {
         self.dom_click_listeners.clear();
         self.dom_click_capture_listeners.clear();
         self.dom_onclick.clear();
+        self.lifecycle_listeners.clear();
         for element in elements.into_iter().take(4096) {
             self.dom_ids.entry(element.id).or_insert(element.node);
             self.dom_text.insert(element.node, element.text_content);
@@ -262,11 +269,45 @@ impl JsRuntime {
                 implementation: FunctionImplementation::Builtin(BuiltinFunction::DomGetElementById),
             }),
         )?;
+        let add_listener = self.allocate_lifecycle_method(
+            "addEventListener",
+            BuiltinFunction::LifecycleAddEventListener,
+        )?;
+        let remove_listener = self.allocate_lifecycle_method(
+            "removeEventListener",
+            BuiltinFunction::LifecycleRemoveEventListener,
+        )?;
         let document = self.allocate_object(
             ObjectKind::Ordinary,
             Some(self.object_prototype),
-            HashMap::from([("getElementById".to_owned(), JsValue::Object(function))]),
+            HashMap::from([
+                ("getElementById".into(), JsValue::Object(function)),
+                ("addEventListener".into(), JsValue::Object(add_listener)),
+                (
+                    "removeEventListener".into(),
+                    JsValue::Object(remove_listener),
+                ),
+                ("readyState".into(), JsValue::String("loading".into())),
+                ("onreadystatechange".into(), JsValue::Null),
+            ]),
         )?;
+        self.dom_document = Some(document);
+        self.object_mut(self.global_object)?
+            .properties
+            .insert("addEventListener".into(), JsValue::Object(add_listener));
+        self.object_mut(self.global_object)?.properties.insert(
+            "removeEventListener".into(),
+            JsValue::Object(remove_listener),
+        );
+        self.object_mut(self.global_object)?
+            .properties
+            .insert("onload".into(), JsValue::Null);
+        self.install_global_binding(
+            "window",
+            JsValue::Object(self.global_object),
+            false,
+            VariableKind::Const,
+        );
         self.install_global_binding(
             "document",
             JsValue::Object(document),
@@ -277,6 +318,88 @@ impl JsRuntime {
     }
 
     /// Refresh reachable DOM elements without resetting the page VM or listeners.
+    fn allocate_lifecycle_method(
+        &mut self,
+        name: &str,
+        builtin: BuiltinFunction,
+    ) -> Result<ObjectId, JsError> {
+        self.allocate_object_with_function(
+            ObjectKind::Function,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("name".into(), JsValue::String(name.into())),
+                ("length".into(), JsValue::Number(2.0)),
+            ]),
+            Some(FunctionObject {
+                implementation: FunctionImplementation::Builtin(builtin),
+            }),
+        )
+    }
+
+    /// Called by the page engine at parser and resource lifecycle boundaries.
+    /// The readyState property is host-owned rather than writable JS state.
+    pub fn set_document_ready_state(&mut self, state: &str) -> Result<(), JsError> {
+        if !matches!(state, "loading" | "interactive" | "complete") {
+            return Err(JsError::type_error("invalid document readyState"));
+        }
+        if let Some(document) = self.dom_document {
+            self.object_mut(document)?
+                .properties
+                .insert("readyState".into(), JsValue::String(state.into()));
+        }
+        Ok(())
+    }
+
+    /// Dispatch a bounded non-bubbling lifecycle event on document/window.
+    pub fn dispatch_lifecycle_event(&mut self, name: &str) -> Result<(), JsError> {
+        let Some(document) = self.dom_document else {
+            return Ok(());
+        };
+        let receiver = match name {
+            "readystatechange" | "DOMContentLoaded" => document,
+            "load" => self.global_object,
+            _ => return Err(JsError::type_error("unknown lifecycle event")),
+        };
+        let event = self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("type".into(), JsValue::String(name.into())),
+                ("target".into(), JsValue::Object(document)),
+                ("currentTarget".into(), JsValue::Object(receiver)),
+                ("eventPhase".into(), JsValue::Number(2.0)),
+                ("bubbles".into(), JsValue::Boolean(false)),
+                ("cancelable".into(), JsValue::Boolean(false)),
+                ("defaultPrevented".into(), JsValue::Boolean(false)),
+            ]),
+        )?;
+        let mut handlers = Vec::new();
+        for capture in [true, false] {
+            if let Some(registered) =
+                self.lifecycle_listeners
+                    .get(&(receiver, name.into(), capture))
+            {
+                handlers.extend(registered.clone());
+            }
+        }
+        let property = match name {
+            "readystatechange" => Some("onreadystatechange"),
+            "load" => Some("onload"),
+            _ => None,
+        };
+        if let Some(property) = property
+            && let Some(callback) = self.object(receiver)?.properties.get(property)
+            && let JsValue::Object(id) = callback
+            && self.object(*id)?.function.is_some()
+        {
+            handlers.push(callback.clone());
+        }
+        let mut steps = 0;
+        for callback in handlers {
+            self.call_event_handler(callback, receiver, event, &mut steps)?;
+        }
+        self.finish_event_dispatch(event)
+    }
     pub fn refresh_dom_snapshot(&mut self, elements: impl IntoIterator<Item = DomElementSnapshot>) {
         self.dom_ids.clear();
         for element in elements.into_iter().take(4096) {
@@ -999,6 +1122,69 @@ impl JsRuntime {
             }
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
+        if matches!(
+            builtin,
+            BuiltinFunction::LifecycleAddEventListener
+                | BuiltinFunction::LifecycleRemoveEventListener
+        ) {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error(
+                    "event target must be document or window",
+                ));
+            };
+            if Some(receiver) != self.dom_document && receiver != self.global_object {
+                return Err(JsError::type_error("unsupported event target"));
+            }
+            let event = arguments
+                .first()
+                .map(JsValue::to_js_string)
+                .unwrap_or_default();
+            let allowed = if Some(receiver) == self.dom_document {
+                matches!(event.as_str(), "readystatechange" | "DOMContentLoaded")
+            } else {
+                event == "load"
+            };
+            if !allowed {
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
+            let remove = matches!(builtin, BuiltinFunction::LifecycleRemoveEventListener);
+            let Some(JsValue::Object(callback)) = arguments.get(1) else {
+                if remove {
+                    return Ok(CallOutcome::Value(JsValue::Undefined));
+                }
+                return Err(JsError::type_error("lifecycle listener must be callable"));
+            };
+            if self.object(*callback)?.function.is_none() {
+                if remove {
+                    return Ok(CallOutcome::Value(JsValue::Undefined));
+                }
+                return Err(JsError::type_error("lifecycle listener must be callable"));
+            }
+            let capture = matches!(arguments.get(2), Some(JsValue::Boolean(true)));
+            let key = (receiver, event, capture);
+            if remove {
+                if let Some(handlers) = self.lifecycle_listeners.get_mut(&key) {
+                    handlers.retain(|existing| existing != &JsValue::Object(*callback));
+                }
+            } else {
+                if self
+                    .lifecycle_listeners
+                    .values()
+                    .map(Vec::len)
+                    .sum::<usize>()
+                    >= 256
+                {
+                    return Err(JsError::execution_limit(
+                        "lifecycle listener budget exceeded",
+                    ));
+                }
+                let handlers = self.lifecycle_listeners.entry(key).or_default();
+                if !handlers.contains(&JsValue::Object(*callback)) {
+                    handlers.push(JsValue::Object(*callback));
+                }
+            }
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
         if matches!(builtin, BuiltinFunction::DomGetElementById) {
             let Some(id) = arguments.first().map(JsValue::to_js_string) else {
                 return Ok(CallOutcome::Value(JsValue::Null));
@@ -1142,7 +1328,9 @@ impl JsRuntime {
             | BuiltinFunction::DomAddEventListener
             | BuiltinFunction::DomRemoveEventListener
             | BuiltinFunction::EventStopPropagation
-            | BuiltinFunction::EventPreventDefault => {
+            | BuiltinFunction::EventPreventDefault
+            | BuiltinFunction::LifecycleAddEventListener
+            | BuiltinFunction::LifecycleRemoveEventListener => {
                 unreachable!("handled above")
             }
         };
@@ -1380,6 +1568,9 @@ impl JsRuntime {
             };
         };
 
+        if key == "readyState" && self.dom_document == Some(*id) {
+            return Ok(());
+        }
         if key == "onclick"
             && let ObjectKind::DomElement(node) = self.object(*id)?.kind
         {

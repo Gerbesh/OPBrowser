@@ -1106,3 +1106,34 @@ event loop.
 Local-file and WinHTTP tests cover deferred ordering, async completion
 ordering, inline flags and retained DOM. There is no post-presentation
 event loop, module support, SRI, document.write or DOMContentLoaded.
+
+## S12 - HTML parser completion → document lifecycle events (M4.8)
+
+Status: initial lifecycle dispatch implemented.
+
+    parse_and_execute -> ParserScriptRunner::advance_state
+      -> JsRuntime::set_document_ready_state
+      -> JsRuntime::dispatch_lifecycle_event
+      -> DomTextMutation -> Document::set_text_content -> paint
+
+Tests verify interactive before deferred execution, DOMContentLoaded
+after deferred scripts, complete/load after initial async workers.
+An independent browser task/event loop is not yet available.
+
+## S12 - Page lifecycle events to native pixels (M4.8)
+
+Status: IMPLEMENTED for initial-load-only lifecycle events.
+
+    HTML parser completes
+      -> ParserScriptRunner::advance_state interactive
+      -> JsRuntime::set_document_ready_state
+      -> document readystatechange
+      -> deferred classic scripts
+      -> JsRuntime::dispatch_lifecycle_event DOMContentLoaded
+      -> pending initial async completion
+      -> ParserScriptRunner::advance_state complete
+      -> document readystatechange + window load
+      -> DOM text mutation -> CSS/layout/paint
+
+Tests cover readyState immutability, event fields/receivers, property
+handlers and deferred registration. There is no independent event loop.

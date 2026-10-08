@@ -2822,3 +2822,25 @@ This file is append-only project history.
 - Added local-file regressions and WinHTTP slow/fast async ordering test.
 - Browser event loop, readyState/DOMContentLoaded/load, document.write,
   modules, SRI and interactive async dispatch are still future work.
+
+## 2026-10-08 - M4.8 document lifecycle
+
+- Added document.readyState loading/interactive/complete phases.
+- Wired readystatechange, DOMContentLoaded and load dispatch to retained VM.
+- Added lifecycle listener APIs and callback mutation synchronization.
+- Added engine tests for event ordering, state, listener removal, and
+  deferred-script registration. The browser event loop remains future work.
+
+## 2026-10-08 - M4.8 document lifecycle events
+
+- Added host-owned document.readyState updates (loading, interactive,
+  complete), lifecycle registration/removal, and onreadystatechange.
+- Added window.addEventListener/removeEventListener for load and onload,
+  using non-bubbling lifecycle event objects with correct receiver binding.
+- Engine dispatch now follows parser completion, deferred scripts,
+  DOMContentLoaded, pending async completion, complete and window load.
+  Listener DOM mutations apply before initial page presentation.
+- Added regressions for state/event order, receiver, listener removal,
+  immutable readyState and defer listeners registered before DOMContentLoaded.
+- Full event loop, timers, modules, document.write, post-presentation async
+  work and script-resource events remain future work.

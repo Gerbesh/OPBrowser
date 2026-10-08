@@ -203,3 +203,34 @@ Initial navigation still waits for scheduled workers: this is not an
 independent event loop. Async cannot execute at arbitrary tokenizer points,
 during interactive frames or after page presentation. No document.readyState,
 DOMContentLoaded, load event scheduling, modules, SRI or document.write yet.
+
+## M4.8: document lifecycle events
+
+The engine now transitions document.readyState from loading to interactive
+after HTML parsing, then to complete after the initial script queue drains.
+It sends readystatechange and DOMContentLoaded to document, and load to
+window, with retained listeners, removal and matching on* properties.
+Callbacks run in the single JS runtime; mutations are applied before
+painting. This is limited initial navigation sequencing, not a general
+HTML event loop or resource-complete browser load state.
+
+## M4.8: readyState, DOMContentLoaded and window load
+
+The page VM exposes host-owned document.readyState. Parser-blocking scripts
+observe "loading"; after HTML tree construction the engine sets "interactive"
+and dispatches readystatechange to document. Deferred classic scripts
+then execute in order, followed by DOMContentLoaded on document. Pending
+async classic scripts complete before readyState changes to "complete",
+triggers readystatechange again and dispatches window load.
+
+Lifecycle listeners use document.addEventListener/removeEventListener
+("readystatechange", "DOMContentLoaded") or window.addEventListener /
+removeEventListener("load"). Both document.onreadystatechange and window.onload
+properties work. Non-bubbling, non-cancelable event objects expose type,
+target, currentTarget and eventPhase 2; this identifies the receiver.
+Mutations cross the same DOM text boundary before layout/paint. JavaScript
+cannot overwrite document.readyState.
+
+This is initial-load-only scheduling. There is no interactive event loop,
+post-presentation async delivery, microtasks, timers, document.write,
+general Web APIs or module lifecycle.

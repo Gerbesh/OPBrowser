@@ -173,6 +173,29 @@ Primary conformance targets:
   DOMContentLoaded/load, document.write, modules and SRI are still absent.
 - NEXT implement document lifecycle state/events, followed by interactive
   asynchronous completion and task scheduling.
+## M4.8 - Page readyState and lifecycle events (2026-10-08)
+
+- DONE host-owned read-only document.readyState transitions from "loading"
+  during tree construction to "interactive" after HTML parsing, then to
+  "complete" after pending initial async script requests finish.
+- DONE document.addEventListener/removeEventListener for readystatechange
+  and DOMContentLoaded, plus document.onreadystatechange property.
+  window.addEventListener/removeEventListener for load and window.onload
+  property are available through the original JS VM.
+- DONE document readystatechange fires after each state transition;
+  DOMContentLoaded fires after all deferred classic scripts but does not
+  wait for async scripts; window load fires after initial async completion.
+  Lifecycle callbacks run in the single engine VM and their DOM text
+  mutations are committed before CSS/layout/paint.
+- DONE tests verify lifecycle ordering and event receiver/target, read-only
+  readyState, registration/removal and property callbacks, and defer
+  registration before DOMContentLoaded dispatch.
+- LIMITATION script/module error/load resource events, an independent task
+  queue, microtasks, timers, post-presentation async work, document.write,
+  broader event propagation and full document lifecycle are unsupported.
+  Initial navigation still waits for async work before presenting the page.
+- NEXT introduce a page-owned task queue/timers and move async fetch
+  completions to interactive worker scheduling; expand DOM APIs.
 ## M0 - Foundation
 
 Status: DONE at initial level.
@@ -744,3 +767,16 @@ counts must not be mislabeled as external conformance percentages.
 - LIMITATION stopImmediatePropagation, option objects, once/passive,
   keyboard events and native default-action cancellation remain absent.
 - NEXT make classic script execution parser-aware, then add defer/async.
+
+## M4.8 - Document lifecycle (2026-10-08)
+
+- DONE document.readyState transitions from loading to interactive after HTML
+  tree construction, then complete after initial script work finishes.
+- DONE bounded document readystatechange and DOMContentLoaded listeners,
+  window load listeners, removal and onreadystatechange/onload properties.
+  Lifecycle events run in retained JS VM and flush DOM text mutations.
+- DONE deferred scripts can subscribe before DOMContentLoaded, and the
+  lifecycle event sequence is covered by engine tests.
+- LIMITATION no independent event loop, resource-aware load completion,
+  bubbling of lifecycle events, document.write or general Web APIs.
+- NEXT implement a real task queue and interactive async resource completion.
