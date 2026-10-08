@@ -16,6 +16,22 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S21 - Primitive boxing and ToPrimitive to pinned Test262 (M4.17)
+
+Status: IMPLEMENTED bounded classic-script semantics.
+
+JS new Boolean/Number/String, Object(value) -> JsRuntime::box_primitive
+-> VM private boxed_values map -> prototype valueOf/toString methods.
+For +, equality and relational operators: Instruction::Binary ->
+JsRuntime::binary_with_coercion -> JsRuntime::coerce_to_primitive ->
+JsRuntime::call_value (user hooks) -> apply_binary; native instanceof
+walks prototype chain and never calls ToPrimitive. Unary void and
+global sloppy assignment complete selected evaluation-order fixtures.
+
+The same pinned 91-Test262-runtime v1 fixtures pass 82/91, formerly
+59/91. This is not a whole JavaScript-engine score. Eval, Date and
+Symbol remain absent, as do strict-mode and modern ES features.
+
 ## S20 - Pinned Test262 runtime case -> own VM -> machine-readable verdict (M4.16)
 
 Status: IMPLEMENTED narrow executable classic-script sample.

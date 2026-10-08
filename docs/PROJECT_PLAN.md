@@ -999,3 +999,31 @@ counts must not be mislabeled as external conformance percentages.
 - NEXT M4.17: object/primitive coercion and boxing, correct property
   descriptors/enumeration, plus modern expression syntax; broaden
   the pinned runtime subset by creating version 2, never altering v1.
+
+## M4.17 - Object coercion, primitive boxing, instanceof and void (2026-10-09)
+
+- DONE real Boolean/Number/String boxed primitive identities for new
+  constructors; Object(primitive) boxes without exposing fake primitive
+  properties, and Object(existingObject) preserves its reference.
+- DONE Object.prototype valueOf/toString defaults and boxed prototype
+  methods, with correct receiver checks for boxed primitive methods.
+- DONE ordered object-to-primitive conversion in binary operators,
+  invokes own or inherited callable valueOf then toString, preserves
+  user-thrown errors and throws TypeError when neither returns a
+  primitive; no conversion on strict equality of two objects.
+- DONE instanceof checks constructor.prototype against prototype chain
+  without converting left operands; catches invalid right operands.
+  Implemented void with operand side effects and sloppy implicit
+  global bindings on assignment to previously unresolvable identifiers.
+- DONE fixed-pinned Test262 runtime v1 rerun on verified upstream:
+  59/91 (64.84%) -> 82/91 (90.11%), same 91 attempted and no skips.
+  Unit tests cover boxing, identity, inherited methods, override order,
+  thrown errors, instanceof, void and assignment side effects.
+- LIMITATION intentionally narrow classic-script suite focused on
+  arithmetic/equality. Remaining nine failures need eval, Date and
+  Symbol. Runtime semantics still lack complete strict-mode, String
+  ToPrimitive hint, object property descriptors, Object.assign,
+  Symbol.hasInstance and modern iterators. Do not extrapolate 90.11%
+  to overall ECMAScript or website compatibility.
+- NEXT M4.18 broaden representative pinned Test262 runtime suite v2
+  across modules/features rather than optimizing the now-narrow v1.

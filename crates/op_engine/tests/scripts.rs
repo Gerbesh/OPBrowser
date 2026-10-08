@@ -2,6 +2,27 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn primitive_coercion_updates_native_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<p id='out'>Not ready</p><script>",
+            "var obj={valueOf:function(){return 37;}};",
+            "var boxed=new Number(5);",
+            "var ok=boxed instanceof Number && boxed !== 5 && boxed==5;",
+            "if(ok) document.getElementById('out').textContent='OP-'+(obj+boxed);",
+            "</script>",
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("OP-42")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn parser_blocking_inline_script_cannot_observe_future_dom_nodes() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

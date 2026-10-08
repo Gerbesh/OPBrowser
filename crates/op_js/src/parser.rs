@@ -163,6 +163,7 @@ pub enum UnaryOp {
     Plus,
     Minus,
     Not,
+    Void,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,6 +187,7 @@ pub enum BinaryOp {
     LessEqual,
     Greater,
     GreaterEqual,
+    InstanceOf,
 }
 
 pub fn parse_script(source: &str) -> Result<Program, JsError> {
@@ -790,6 +792,8 @@ impl Parser {
                 Some(BinaryOp::Greater)
             } else if self.take(&TokenKind::GreaterEqual) {
                 Some(BinaryOp::GreaterEqual)
+            } else if self.take(&TokenKind::InstanceOf) {
+                Some(BinaryOp::InstanceOf)
             } else {
                 None
             };
@@ -875,6 +879,8 @@ impl Parser {
             Some(UnaryOp::Minus)
         } else if self.take(&TokenKind::Bang) {
             Some(UnaryOp::Not)
+        } else if self.take(&TokenKind::Void) {
+            Some(UnaryOp::Void)
         } else {
             None
         };

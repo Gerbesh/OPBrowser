@@ -2973,3 +2973,22 @@ This file is append-only project history.
 - Known failures remain visible for eval, Date, Symbol, coercion and
   unimplemented syntax. Next step should expand runtime coverage
   deliberately, not cherry-pick only tests that pass.
+
+## 2026-10-09 - M4.17 boxed primitives, object coercion and syntax
+
+- Implemented constructor-created boxed Boolean/Number/String references,
+  Object(primitive) and the respective prototype valueOf/toString calls.
+  Hidden primitive values live in a VM-owned map instead of own JS keys.
+- Converted object operands via callable valueOf/toString, in order,
+  before ordinary arithmetic, comparison and abstract equality. User
+  exceptions propagate to try/catch; cyclic prototype and depth
+  guards remain in place. Added native instanceof prototype checking.
+- Added unary void (evaluates operand, returns undefined) and sloppy
+  assignment to undeclared global identifiers. Strict-mode semantics
+  remain a follow-up; not claiming strict conformance.
+- Fixed pinned Test262 classic runtime v1 score from 59/91 (64.84%)
+  to 82/91 (90.11%) with precisely the same 91 paths and confirmed
+  upstream revision. The nine outstanding cases require eval/Date/Symbol.
+- This is a narrow legacy arithmetic/equality sample, NOT a new score
+  for the whole JS engine. Keep parser, layout and modern runtime
+  measurement independent.

@@ -396,3 +396,17 @@ Use tools/compatibility.ps1 -ExternalOnly -RuntimeOnly -Test262Path <pinned-Test
 to run only the pinned runtime subset, or omit -RuntimeOnly
 to rerun both Test262 v1 subsets. The runtime JSON reports failed
 file paths and reasons for new conformance work.
+
+## Test262 Runtime v1 progress after M4.17
+
+The same pinned upstream revision and 91 classic-script fixture paths
+were rerun with no exclusions or altered skip rules. With boxed
+primitives, ordered object coercion, instanceof, unary void and sloppy
+global assignment, the result is **82/91 (90.11%)**, up from
+**59/91 (64.84%)** after M4.16. Remaining cases are all
+missing eval/Date/Symbol support; these are *failures*, not skips.
+
+Because v1 deliberately samples older arithmetic and equality tests,
+90.11% is only valid for this small selected fixture set. The overall
+JS runtime conformance percentage is unknown. Next build a separate,
+fixed and broader Test262 Runtime v2 rather than replacing v1.

@@ -131,3 +131,13 @@ constants and numeric radix conversions.
 This result covers only those 91 files. Full JS Runtime Test262
 conformance, strict/module semantics, boxing and core Web APIs remain
 unmeasured or incomplete. See docs/COMPATIBILITY.md for scope.
+
+## M4.17: boxed primitives, conversion and operators
+
+new Boolean/Number/String now create real objects, and custom
+valueOf/toString are invoked during binary operand conversion.
+instanceof, void and sloppy undeclared-variable assignment
+also work. The same pinned 91 upstream Test262 classic runtime
+fixtures improved from 59/91 to 82/91 (90.11%) without skips.
+This is a narrow legacy arithmetic/equality sample, not overall
+JS conformance. Eval, Date and Symbol are still missing.

@@ -386,7 +386,8 @@ This is not full Fetch or Headers conformance. Only bounded same-origin
 GET text responses are supported. credentials defaults to omit
 instead of the web standard's same-origin pending cookie isolation.
 There is no general Header iteration, Headers guards, CORS, POST,
-request body, streams, AbortSignal, HTTP cache, or response.json().
+request body, streams, AbortSignal or HTTP cache. Response.json is
+implemented in M4.15 but full Fetch remains absent.
 
 ## M4.15: JSON and four Promise combinators
 
@@ -424,3 +425,19 @@ metric must not be confused with the 523/1983 parser-only metric.
 Limitations: boxed primitive constructors, full Object/Array prototype
 methods, Date, eval, Symbol and modern ES features remain incomplete.
 Only the supported classic-script assertion helpers are supplied.
+
+## M4.17: real boxed values and ordered object-to-primitive conversion
+
+The VM now distinguishes new Boolean/Number/String objects from
+their primitive counterparts. Constructor prototypes expose
+valueOf/toString methods, and Object(primitive) boxes values.
+Binary operators use ordered valueOf then toString calls with
+catchable user exceptions. instanceof tests prototype-chain
+membership, while void evaluates its argument and returns undefined.
+Sloppy assignments to undeclared variables create global bindings.
+
+Re-running the unchanged 91-case Test262 Runtime v1 suite against
+its pinned revision produced **82/91 (90.11%)**, versus 59/91
+(64.84%) at M4.16. Remaining nine failures require eval, Date
+or Symbol. This result must not be confused with broad ECMAScript
+runtime or parser compliance, nor with static WPT.

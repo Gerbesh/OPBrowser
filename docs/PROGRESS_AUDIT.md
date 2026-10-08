@@ -10,9 +10,11 @@ externally measured web-compatibility score.
 | WPT Static v1 strict | 197/200 (98.50%) | 200 selected static reftests |
 | WPT Positioning v1 strict | 53/100 (53.00%) | 100 selected positioning cases |
 | Test262 Parser v1 | 523/1983 (26.37%) | Parse-only tests, not JS execution |
-| Test262 Runtime v1 (M4.16) | 59/91 (64.84%) | Narrow, pinned classic arithmetic/equality subset only |
+| Test262 Runtime v1 (M4.17) | 82/91 (90.11%) | Narrow, pinned classic arithmetic/equality subset only |
 
-These are recorded baselines, not a freshly rerun WPT/Test262 result.
+The Runtime v1 subset was rerun during M4.17 against the verified pinned
+upstream revision; the three other subset scores are carried forward
+from recorded baselines, not freshly rerun.
 See COMPATIBILITY.md and compat/upstream.env for methodology.
 
 ## Qualitative readiness toward everyday independent modern browsing
@@ -42,7 +44,8 @@ full declared end goal rather than passing percentage of milestones.
 
 ## Recommended engineering order
 
-1. Establish a pinned Test262 runtime harness and dynamic DOM/WPT subset.
+1. Broaden the pinned Test262 runtime harness to a representative v2
+   while retaining the unchanged v1 baseline; add dynamic DOM/WPT.
 2. Improve core JS parsing/semantics, DOM tree modification and CSS layout.
 3. Build multi-tab renderer isolation and real browser-origin/cookie/cache
    policies before claiming readiness for arbitrary public websites.

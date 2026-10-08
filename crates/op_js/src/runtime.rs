@@ -91,6 +91,10 @@ enum BuiltinFunction {
     StringConstructor,
     IsNaN,
     IsFinite,
+    ObjectPrototypeValueOf,
+    ObjectPrototypeToString,
+    BoxedPrimitiveValueOf,
+    BoxedPrimitiveToString,
 }
 
 #[derive(Debug, Clone)]
@@ -212,6 +216,7 @@ pub struct JsRuntime {
     text_requests: VecDeque<TextRequest>,
     text_callbacks: HashMap<u32, JsValue>,
     header_values: HashMap<ObjectId, HashMap<String, String>>,
+    boxed_values: HashMap<ObjectId, JsValue>,
     next_text_request_id: u32,
 }
 
@@ -288,6 +293,7 @@ impl Default for JsRuntime {
             text_requests: VecDeque::new(),
             text_callbacks: HashMap::new(),
             header_values: HashMap::new(),
+            boxed_values: HashMap::new(),
             next_text_request_id: 1,
         };
 
@@ -543,6 +549,14 @@ impl JsRuntime {
     }
 
     fn install_standard_primitives(&mut self) -> Result<(), JsError> {
+        let value_of =
+            self.allocate_lifecycle_method("valueOf", BuiltinFunction::ObjectPrototypeValueOf)?;
+        let to_string =
+            self.allocate_lifecycle_method("toString", BuiltinFunction::ObjectPrototypeToString)?;
+        self.object_mut(self.object_prototype)?.properties.extend([
+            ("valueOf".into(), JsValue::Object(value_of)),
+            ("toString".into(), JsValue::Object(to_string)),
+        ]);
         for (name, builtin) in [
             ("Object", BuiltinFunction::ObjectConstructor),
             ("Array", BuiltinFunction::ArrayConstructor),
@@ -566,6 +580,25 @@ impl JsRuntime {
                 self.object_mut(id)?
                     .properties
                     .insert("prototype".into(), JsValue::Object(prototype));
+            } else if matches!(name, "Boolean" | "Number" | "String") {
+                let primitive_value = self
+                    .allocate_lifecycle_method("valueOf", BuiltinFunction::BoxedPrimitiveValueOf)?;
+                let primitive_string = self.allocate_lifecycle_method(
+                    "toString",
+                    BuiltinFunction::BoxedPrimitiveToString,
+                )?;
+                let proto = self.allocate_object(
+                    ObjectKind::Ordinary,
+                    Some(self.object_prototype),
+                    HashMap::from([
+                        ("constructor".into(), JsValue::Object(id)),
+                        ("valueOf".into(), JsValue::Object(primitive_value)),
+                        ("toString".into(), JsValue::Object(primitive_string)),
+                    ]),
+                )?;
+                self.object_mut(id)?
+                    .properties
+                    .insert("prototype".into(), JsValue::Object(proto));
             }
             self.install_global_binding(name, JsValue::Object(id), true, VariableKind::Var);
         }
@@ -600,6 +633,126 @@ impl JsRuntime {
             VariableKind::Const,
         );
         Ok(())
+    }
+
+    fn box_primitive(
+        &mut self,
+        primitive: JsValue,
+        constructor_name: &str,
+    ) -> Result<JsValue, JsError> {
+        let constructor = self.global(constructor_name).cloned();
+        let prototype = if let Some(JsValue::Object(id)) = constructor {
+            match self.get_object_property(id, "prototype")? {
+                JsValue::Object(proto) => proto,
+                _ => self.object_prototype,
+            }
+        } else {
+            self.object_prototype
+        };
+        let boxed = self.allocate_object(ObjectKind::Ordinary, Some(prototype), HashMap::new())?;
+        self.boxed_values.insert(boxed, primitive);
+        Ok(JsValue::Object(boxed))
+    }
+
+    fn coerce_to_primitive(
+        &mut self,
+        value: JsValue,
+        steps: &mut usize,
+        call_depth: usize,
+    ) -> Result<CallOutcome, JsError> {
+        let JsValue::Object(id) = value.clone() else {
+            return Ok(CallOutcome::Value(value));
+        };
+        // Ordinary ToPrimitive with default hint. Date's preferred hint is
+        // not supported yet. Call user functions with the actual receiver;
+        // throwing valueOf/toString must propagate to try/catch unchanged.
+        for method in ["valueOf", "toString"] {
+            let candidate = self.get_object_property(id, method)?;
+            let JsValue::Object(method_id) = candidate.clone() else {
+                continue;
+            };
+            if self.object(method_id)?.function.is_none() {
+                continue;
+            }
+            match self.call_value(candidate, value.clone(), Vec::new(), steps, call_depth + 1)? {
+                CallOutcome::Value(primitive) if !matches!(primitive, JsValue::Object(_)) => {
+                    return Ok(CallOutcome::Value(primitive));
+                }
+                CallOutcome::Thrown(thrown) => return Ok(CallOutcome::Thrown(thrown)),
+                _ => {}
+            }
+        }
+        Err(JsError::type_error(
+            "cannot convert object to primitive value",
+        ))
+    }
+
+    fn binary_with_coercion(
+        &mut self,
+        op: BinaryOp,
+        left: JsValue,
+        right: JsValue,
+        steps: &mut usize,
+        call_depth: usize,
+    ) -> Result<CallOutcome, JsError> {
+        if op == BinaryOp::InstanceOf {
+            let JsValue::Object(function_id) = right else {
+                return Err(JsError::type_error(
+                    "instanceof right operand is not callable",
+                ));
+            };
+            if self.object(function_id)?.function.is_none() {
+                return Err(JsError::type_error(
+                    "instanceof right operand is not callable",
+                ));
+            }
+            let prototype = self.get_object_property(function_id, "prototype")?;
+            let JsValue::Object(prototype) = prototype else {
+                return Err(JsError::type_error(
+                    "instanceof constructor has invalid prototype",
+                ));
+            };
+            let JsValue::Object(object) = left else {
+                return Ok(CallOutcome::Value(JsValue::Boolean(false)));
+            };
+            let parent = self.object(object)?.prototype;
+            let matches = if let Some(parent) = parent {
+                self.prototype_chain_contains(parent, prototype)?
+            } else {
+                false
+            };
+            return Ok(CallOutcome::Value(JsValue::Boolean(matches)));
+        }
+        let needs_left = matches!(left, JsValue::Object(_));
+        let needs_right = matches!(right, JsValue::Object(_));
+        let coerce = match op {
+            BinaryOp::StrictEqual | BinaryOp::StrictNotEqual | BinaryOp::InstanceOf => {
+                (false, false)
+            }
+            BinaryOp::Equal | BinaryOp::NotEqual => {
+                // Objects compare by identity, but object-to-primitive
+                // conversion is required for loose equality vs scalars.
+                (needs_left && !needs_right, needs_right && !needs_left)
+            }
+            _ => (needs_left, needs_right),
+        };
+        let left = if coerce.0 {
+            match self.coerce_to_primitive(left, steps, call_depth)? {
+                CallOutcome::Value(v) => v,
+                CallOutcome::Thrown(v) => return Ok(CallOutcome::Thrown(v)),
+            }
+        } else {
+            left
+        };
+        let right = if coerce.1 {
+            match self.coerce_to_primitive(right, steps, call_depth)? {
+                CallOutcome::Value(v) => v,
+                CallOutcome::Thrown(v) => return Ok(CallOutcome::Thrown(v)),
+            }
+        } else {
+            right
+        };
+        Ok(CallOutcome::Value(apply_binary(op, left, right)))
     }
 
     fn install_json_methods(&mut self) -> Result<(), JsError> {
@@ -1478,7 +1631,10 @@ impl JsRuntime {
                 Instruction::Binary(op) => {
                     let right = stack.pop().expect("compiler must push right operand");
                     let left = stack.pop().expect("compiler must push left operand");
-                    stack.push(apply_binary(*op, left, right));
+                    match self.binary_with_coercion(*op, left, right, steps, call_depth)? {
+                        CallOutcome::Value(value) => stack.push(value),
+                        CallOutcome::Thrown(value) => return Ok(RunOutcome::Thrown(value)),
+                    }
                 }
                 Instruction::Dup => {
                     let value = stack
@@ -1746,6 +1902,45 @@ impl JsRuntime {
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
         match builtin {
+            BuiltinFunction::ObjectPrototypeValueOf => {
+                return Ok(CallOutcome::Value(this_value));
+            }
+            BuiltinFunction::ObjectPrototypeToString => {
+                let tag = if let JsValue::Object(id) = this_value {
+                    if self.object(id)?.kind == ObjectKind::Array {
+                        "Array"
+                    } else {
+                        "Object"
+                    }
+                } else {
+                    "Object"
+                };
+                return Ok(CallOutcome::Value(JsValue::String(format!(
+                    "[object {tag}]"
+                ))));
+            }
+            BuiltinFunction::BoxedPrimitiveValueOf => {
+                let JsValue::Object(id) = this_value else {
+                    return Err(JsError::type_error("valueOf called on non-boxed value"));
+                };
+                return Ok(CallOutcome::Value(
+                    self.boxed_values
+                        .get(&id)
+                        .ok_or_else(|| JsError::type_error("incompatible valueOf receiver"))?
+                        .clone(),
+                ));
+            }
+            BuiltinFunction::BoxedPrimitiveToString => {
+                let JsValue::Object(id) = this_value else {
+                    return Err(JsError::type_error("toString called on non-boxed value"));
+                };
+                return Ok(CallOutcome::Value(JsValue::String(
+                    self.boxed_values
+                        .get(&id)
+                        .ok_or_else(|| JsError::type_error("incompatible toString receiver"))?
+                        .to_js_string(),
+                )));
+            }
             BuiltinFunction::BooleanConstructor => {
                 return Ok(CallOutcome::Value(JsValue::Boolean(
                     arguments.first().is_some_and(JsValue::is_truthy),
@@ -1785,6 +1980,19 @@ impl JsRuntime {
             BuiltinFunction::ObjectConstructor => {
                 if let Some(JsValue::Object(id)) = arguments.first() {
                     return Ok(CallOutcome::Value(JsValue::Object(*id)));
+                }
+                if let Some(
+                    value @ (JsValue::Boolean(_) | JsValue::Number(_) | JsValue::String(_)),
+                ) = arguments.first()
+                {
+                    let class = match value {
+                        JsValue::Boolean(_) => "Boolean",
+                        JsValue::Number(_) => "Number",
+                        _ => "String",
+                    };
+                    return Ok(CallOutcome::Value(
+                        self.box_primitive(value.clone(), class)?,
+                    ));
                 }
                 let id = self.allocate_object(
                     ObjectKind::Ordinary,
@@ -2283,7 +2491,11 @@ impl JsRuntime {
             | BuiltinFunction::NumberConstructor
             | BuiltinFunction::StringConstructor
             | BuiltinFunction::IsNaN
-            | BuiltinFunction::IsFinite => {
+            | BuiltinFunction::IsFinite
+            | BuiltinFunction::ObjectPrototypeValueOf
+            | BuiltinFunction::ObjectPrototypeToString
+            | BuiltinFunction::BoxedPrimitiveValueOf
+            | BuiltinFunction::BoxedPrimitiveToString => {
                 unreachable!("handled above")
             }
         };
@@ -2307,7 +2519,30 @@ impl JsRuntime {
             .clone()
             .ok_or_else(|| JsError::type_error("value is not a constructor"))?;
 
-        if matches!(function.implementation, FunctionImplementation::Builtin(_)) {
+        if let FunctionImplementation::Builtin(builtin) = function.implementation {
+            if matches!(
+                builtin,
+                BuiltinFunction::BooleanConstructor
+                    | BuiltinFunction::NumberConstructor
+                    | BuiltinFunction::StringConstructor
+            ) {
+                let class = match builtin {
+                    BuiltinFunction::BooleanConstructor => "Boolean",
+                    BuiltinFunction::NumberConstructor => "Number",
+                    _ => "String",
+                };
+                let primitive = match self.call_value(
+                    callee,
+                    JsValue::Undefined,
+                    arguments,
+                    steps,
+                    call_depth,
+                )? {
+                    CallOutcome::Value(value) => value,
+                    CallOutcome::Thrown(value) => return Ok(CallOutcome::Thrown(value)),
+                };
+                return Ok(CallOutcome::Value(self.box_primitive(primitive, class)?));
+            }
             return self.call_value(callee, JsValue::Undefined, arguments, steps, call_depth);
         }
 
@@ -2351,9 +2586,15 @@ impl JsRuntime {
         name: &str,
         value: JsValue,
     ) -> Result<(), JsError> {
-        let environment = self
-            .find_binding_environment(start, name)
-            .ok_or_else(|| JsError::reference(format!("{name} is not defined")))?;
+        // Classic scripts currently execute in sloppy mode. An assignment
+        // to an unresolvable reference creates a mutable global binding.
+        // Strict/module scripts must reject this when strict mode lands.
+        let environment = if let Some(env) = self.find_binding_environment(start, name) {
+            env
+        } else {
+            self.install_global_binding(name, value, true, VariableKind::Var);
+            return Ok(());
+        };
         let binding = self.environments[environment.0]
             .bindings
             .get_mut(name)
@@ -2858,6 +3099,7 @@ fn apply_unary(op: UnaryOp, value: JsValue) -> JsValue {
         UnaryOp::Plus => JsValue::Number(value.to_number()),
         UnaryOp::Minus => JsValue::Number(-value.to_number()),
         UnaryOp::Not => JsValue::Boolean(!value.is_truthy()),
+        UnaryOp::Void => JsValue::Undefined,
     }
 }
 
@@ -2882,6 +3124,7 @@ fn apply_binary(op: BinaryOp, left: JsValue, right: JsValue) -> JsValue {
         BinaryOp::LessEqual => JsValue::Boolean(compare(&left, &right, |a, b| a <= b)),
         BinaryOp::Greater => JsValue::Boolean(compare(&left, &right, |a, b| a > b)),
         BinaryOp::GreaterEqual => JsValue::Boolean(compare(&left, &right, |a, b| a >= b)),
+        BinaryOp::InstanceOf => unreachable!("instanceof requires VM heap access"),
     }
 }
 
@@ -2943,6 +3186,101 @@ mod tests {
             JsValue::Number(1.0)
         );
         assert_eq!(runtime.global("x"), Some(&JsValue::Number(5.0)));
+    }
+
+    #[test]
+    fn boxed_primitives_have_identity_and_prototype_value_of() {
+        let mut vm = JsRuntime::new();
+        let script = r#"
+            var a = new Number(3);
+            var b = new Number(3);
+            var c = new String("hey");
+            var d = new Boolean(false);
+            a !== b && a !== 3 && a == 3 &&
+            a instanceof Number && !(a instanceof String) &&
+            b instanceof Number && c instanceof String &&
+            d instanceof Boolean && d.valueOf() === false &&
+            d.toString() === "false" &&
+            c.valueOf() === "hey" && c.toString() === "hey" &&
+            a.valueOf() === 3 && a.toString() === "3" &&
+            new Number(4) == 4 && (Object("foo") instanceof String) &&
+            (Object(1) instanceof Number) &&
+            Object(a) === a && Object(false) == false;
+        "#;
+        assert_eq!(vm.eval_script(script).unwrap(), JsValue::Boolean(true));
+    }
+
+    #[test]
+    fn primitive_conversion_order_and_user_exception_semantics() {
+        let mut vm = JsRuntime::new();
+        let script = r#"
+            var calls = "";
+            var v = {
+                valueOf: function(){ calls = calls + "v"; return {}; },
+                toString: function(){ calls = calls + "s"; return "8"; }
+            };
+            var x = v + 1;
+            var y = v == 8;
+            var z = v >= "7";
+            var thrown = "";
+            try {
+                ({ valueOf: function(){ throw "boom"; },
+                   toString: function(){ return 1; }}) + 2;
+            } catch (e) { thrown = e; }
+            var bothThrow = false;
+            try {
+                ({ valueOf: function(){ return {}; },
+                   toString: function(){ return {}; }}) + 2;
+            } catch (e) { bothThrow = e instanceof TypeError; }
+            x === "81" && y && z && calls === "vsvsvs" &&
+                thrown === "boom" && bothThrow;
+        "#;
+        assert_eq!(vm.eval_script(script).unwrap(), JsValue::Boolean(true));
+    }
+
+    #[test]
+    fn instanceof_void_and_sloppy_global_assignment() {
+        let mut vm = JsRuntime::new();
+        let source = r#"
+            function Example(){ this.ready = true; }
+            var entry = new Example();
+            var side = 0;
+            function createGlobal(){ missingGlobal = 13; }
+            createGlobal();
+            var empty = void (side = side + 2);
+            var caught = false;
+            try { entry instanceof 5; }
+            catch(e) { caught = e instanceof TypeError; }
+            var invalidProto = false;
+            function Broken(){}
+            Broken.prototype = 1;
+            try { entry instanceof Broken; }
+            catch(e) { invalidProto = e instanceof TypeError; }
+            entry instanceof Example && !(entry instanceof Number) &&
+            !("hey" instanceof String) && empty === undefined &&
+            side === 2 && missingGlobal === 13 && caught && invalidProto;
+        "#;
+        assert_eq!(vm.eval_script(source).unwrap(), JsValue::Boolean(true));
+    }
+
+    #[test]
+    fn invalid_boxed_primitive_receiver_throws() {
+        let mut vm = JsRuntime::new();
+        let source = r#"
+            var method = Number.prototype.valueOf;
+            var invalid = false;
+            try { method.call(); } catch(e){invalid=e instanceof TypeError;}
+            var invalid2=false;
+            try { ({}).valueOf() === undefined; } catch(e) { invalid2=true; }
+            // call/apply are still missing; the direct borrowed method
+            // receives the non-Number global this.
+            var invalid3=false;
+            try { method(); } catch(e) {invalid3=e instanceof TypeError;}
+            invalid3 && !invalid2;
+        "#;
+        // The test avoids requiring Function.prototype.call, which is
+        // outside our implemented subset.
+        assert_eq!(vm.eval_script(source).unwrap(), JsValue::Boolean(true));
     }
 
     #[test]

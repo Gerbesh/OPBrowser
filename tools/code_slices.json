@@ -336,6 +336,50 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S21",
+      "title": "Browser page boxed primitive and ToPrimitive to native paint",
+      "status": "M4.17 implemented; Test262 Runtime v1 82/91",
+      "steps": [
+        {
+          "path": "crates/op_engine/src/lib.rs",
+          "symbol": "render_html"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "install_standard_primitives"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "box_primitive"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "construct_value"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "coerce_to_primitive"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "binary_with_coercion"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "apply_binary"
+        },
+        {
+          "path": "crates/op_paint/src/lib.rs",
+          "symbol": "build_display_list"
+        },
+        {
+          "path": "crates/op_js/src/bin/test262_runtime_probe.rs",
+          "symbol": "evaluate"
+        }
+      ],
+      "limitation": "91-case legacy arithmetic/equality suite; no strict mode, eval, Date, Symbol, or modern ES full semantics."
+    },
+    {
       "id": "S6",
       "title": "WPT image comparison and reporting",
       "status": "Strict and opt-in fuzzy reports",

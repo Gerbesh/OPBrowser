@@ -16,6 +16,20 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.17: object primitives -> runtime conversion -> Test262 verdict
+
+A new boxed_values VM map holds primitive payloads separately from
+ordinary JS properties. new Boolean/Number/String and Object(primitive)
+create real object references tied to their constructor prototypes.
+The bytecode binary instruction resolves ToPrimitive via valueOf then
+toString, respecting own/inherited callable methods, user-thrown values,
+the existing VM call-depth budget and object prototype walks.
+instanceof instead searches the receiver's prototype chain with a
+callable constructor and a validated constructor.prototype. Unary
+void evaluates for side effects; non-strict undeclared assignments
+create mutable global var bindings. Test262 Runtime v1 now passes
+82/91 previously pinned cases versus 59/91 at M4.16.
+
 ## M4.16: pinned Test262 runtime probe -> original VM -> standard globals
 
 The separate op_js bin/test262_runtime_probe evaluates each pinned
