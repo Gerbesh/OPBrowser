@@ -224,16 +224,30 @@ pub(crate) fn execute_retained(
     (report, Some(runtime))
 }
 
-/// Dispatch one click only to a still-attached block DOM node.
+/// Dispatch the click to the hit element and its attached DOM ancestors.
 pub(crate) fn dispatch_click(
     document: &mut Document,
     runtime: &mut JsRuntime,
     node: NodeId,
 ) -> (bool, usize) {
-    if document.element(node).is_none() || !runtime.has_dom_click_listener(node.index()) {
+    if document.element(node).is_none() {
         return (false, 0);
     }
-    let handled = runtime.dispatch_dom_click(node.index()).unwrap_or(false);
+    let mut path = Vec::new();
+    let mut current = Some(node);
+    while let Some(id) = current {
+        if path.len() >= 64 {
+            break;
+        }
+        if document.element(id).is_some() {
+            path.push(id.index());
+        }
+        current = document.node(id).and_then(|n| n.parent);
+    }
+    if !path.iter().any(|&id| runtime.has_dom_click_listener(id)) {
+        return (false, 0);
+    }
+    let handled = runtime.dispatch_dom_click_path(&path).unwrap_or(false);
     let mut changed = 0;
     for mutation in runtime.take_dom_mutations() {
         if let Some(node) = document.node_id(mutation.node)

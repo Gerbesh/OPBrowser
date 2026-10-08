@@ -111,6 +111,22 @@ full default actions or event-loop scheduling; complex inline/flex
 hit-testing is not complete. This is **not** general DOM Events
 compatibility, and html5test.co still cannot compute its score.
 
+## M4.4: bubbling click dispatch and removal
+
+When a native click lands on an id-bearing block box, the engine
+selects the smallest hit element even if it has no own listener.
+The retained JS VM invokes callbacks on the target and then its
+ancestors, in DOM parent order. `event.target` remains the hit element;
+`event.currentTarget` and callback `this` identify the current
+listener. `eventPhase` is 2 at target and 3 during bubbling;
+`event.bubbles` is true. `element.removeEventListener("click", fn)`
+removes the previously registered callback by its function identity.
+
+Try `examples/js/bubble.html` in OPBrowser. This is not complete
+DOM Events: capture, stopPropagation, preventDefault, default actions,
+keyboard events, listener options and non-block hit targets remain
+unsupported. Script execution is still post-parse.
+
 ## Test262 measurement
 
 `op_js` includes `test262_probe`. It measures only whether the current parser accepts

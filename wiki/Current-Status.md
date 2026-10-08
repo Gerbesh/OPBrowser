@@ -16,9 +16,10 @@ claim that OPBrowser is ready for everyday browsing.
 - Independent JavaScript lexer/parser/bytecode VM now executes bounded
   classic inline **and same-origin external** scripts in document order,
   supporting `document.getElementById` and textContent updates before
-  CSS/layout. First native block click events with `addEventListener`
-  or `onclick` now update retained DOM after a user click. Bubbling,
-  capture, async/defer and broad Web APIs remain absent.
+  CSS/layout. Native block clicks execute `addEventListener` or
+  `onclick` handlers, bubble through parent elements and support
+  `removeEventListener` cleanup. Capture, cancellation, async/defer
+  and broad Web APIs remain absent.
 - Network request filtering foundation; full adblock UI/subscription pipeline
   is **not** implemented.
 

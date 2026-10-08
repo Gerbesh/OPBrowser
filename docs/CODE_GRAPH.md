@@ -67,10 +67,15 @@ dispatches to the registered JS callback, applies bounded detached
 DOM text mutations, recomputes CSS when needed, and sends a non-navigation
 reflow page back to the Win32 painter.
 
-Current limitation: the hit-test is scoped to block layout boxes,
-not a complete DOM hit-test tree. This is a non-bubbling click event
-slice with no capture, default-action cancellation, keyboard path,
-or general event loop.
+M4.4 extends this path: hit-testing selects the smallest id-bearing
+block region even if only an ancestor registered a listener. The engine
+follows `op_dom::Node::parent` and calls
+`JsRuntime::dispatch_dom_click_path` for target-then-ancestor callbacks.
+The retained VM exposes `event.target`, `event.currentTarget`,
+`eventPhase`, and `event.bubbles`; `removeEventListener` removes
+callbacks by function identity. Detached mutations still cross the
+owned DOM and computed-style/reflow boundary. Capture, cancellation,
+keyboard dispatch and a full hit-test tree are not yet implemented.
 
 ## Crate dependency graph
 

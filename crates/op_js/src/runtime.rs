@@ -50,6 +50,7 @@ enum BuiltinFunction {
     ReferenceError,
     DomGetElementById,
     DomAddEventListener,
+    DomRemoveEventListener,
 }
 
 #[derive(Debug, Clone)]
@@ -274,55 +275,97 @@ impl JsRuntime {
         std::mem::take(&mut self.dom_mutations)
     }
 
-    /// Dispatch one non-bubbling click to a retained element after initial scripts.
-    /// This is the initial DOM event subset, not the complete DOM Events model.
+    /// Dispatch a click on one element, without an ancestor path.
     pub fn dispatch_dom_click(&mut self, node: usize) -> Result<bool, JsError> {
-        let mut handlers = self
-            .dom_click_listeners
-            .get(&node)
-            .cloned()
-            .unwrap_or_default();
-        if let Some(handler) = self.dom_onclick.get(&node).cloned() {
-            handlers.push(handler);
-        }
-        if handlers.is_empty() {
+        self.dispatch_dom_click_path(&[node])
+    }
+
+    /// Deliver a click to the target, then bubble through parent elements.
+    /// The path is target-first; capture and default actions are not yet implemented.
+    pub fn dispatch_dom_click_path(&mut self, path: &[usize]) -> Result<bool, JsError> {
+        if path.is_empty() || !path.iter().any(|&node| self.has_dom_click_listener(node)) {
             return Ok(false);
         }
-        let id = self
+        let target = path[0];
+        let target_id = self
             .dom_ids
             .iter()
-            .find_map(|(id, &value)| (value == node).then_some(id.clone()))
+            .find_map(|(id, &node)| (node == target).then_some(id.clone()))
             .unwrap_or_default();
-        let receiver = self.allocate_object(
-            ObjectKind::DomElement(node),
+        let target_object = self.allocate_object(
+            ObjectKind::DomElement(target),
             Some(self.object_prototype),
-            HashMap::from([("id".into(), JsValue::String(id))]),
+            HashMap::from([("id".into(), JsValue::String(target_id))]),
         )?;
         let event = self.allocate_object(
             ObjectKind::Ordinary,
             Some(self.object_prototype),
             HashMap::from([
                 ("type".into(), JsValue::String("click".into())),
-                ("target".into(), JsValue::Object(receiver)),
-                ("currentTarget".into(), JsValue::Object(receiver)),
+                ("target".into(), JsValue::Object(target_object)),
+                ("currentTarget".into(), JsValue::Null),
+                ("bubbles".into(), JsValue::Boolean(true)),
+                ("eventPhase".into(), JsValue::Number(0.0)),
             ]),
         )?;
         let mut steps = 0;
-        for handler in handlers {
-            match self.call_value(
-                handler,
-                JsValue::Object(receiver),
-                vec![JsValue::Object(event)],
-                &mut steps,
-                1,
-            )? {
-                CallOutcome::Value(_) => {}
-                CallOutcome::Thrown(value) => {
-                    return Err(JsError::exception(self.describe_thrown_value(&value)));
+        let mut handled = false;
+        for (index, &node) in path.iter().take(64).enumerate() {
+            let mut handlers = self
+                .dom_click_listeners
+                .get(&node)
+                .cloned()
+                .unwrap_or_default();
+            if let Some(handler) = self.dom_onclick.get(&node).cloned() {
+                handlers.push(handler);
+            }
+            if handlers.is_empty() {
+                continue;
+            }
+            handled = true;
+            let id = self
+                .dom_ids
+                .iter()
+                .find_map(|(id, &value)| (value == node).then_some(id.clone()))
+                .unwrap_or_default();
+            let receiver = if index == 0 {
+                target_object
+            } else {
+                self.allocate_object(
+                    ObjectKind::DomElement(node),
+                    Some(self.object_prototype),
+                    HashMap::from([("id".into(), JsValue::String(id))]),
+                )?
+            };
+            self.object_mut(event)?
+                .properties
+                .insert("currentTarget".into(), JsValue::Object(receiver));
+            self.object_mut(event)?.properties.insert(
+                "eventPhase".into(),
+                JsValue::Number(if index == 0 { 2.0 } else { 3.0 }),
+            );
+            for handler in handlers {
+                match self.call_value(
+                    handler,
+                    JsValue::Object(receiver),
+                    vec![JsValue::Object(event)],
+                    &mut steps,
+                    1,
+                )? {
+                    CallOutcome::Value(_) => {}
+                    CallOutcome::Thrown(value) => {
+                        return Err(JsError::exception(self.describe_thrown_value(&value)));
+                    }
                 }
             }
         }
-        Ok(true)
+        self.object_mut(event)?
+            .properties
+            .insert("currentTarget".into(), JsValue::Null);
+        self.object_mut(event)?
+            .properties
+            .insert("eventPhase".into(), JsValue::Number(0.0));
+        Ok(handled)
     }
 
     pub fn has_dom_click_listener(&self, node: usize) -> bool {
@@ -832,6 +875,22 @@ impl JsRuntime {
                     ),
                 }),
             )?;
+            let remove_listener = self.allocate_object_with_function(
+                ObjectKind::Function,
+                Some(self.object_prototype),
+                HashMap::from([
+                    (
+                        "name".to_owned(),
+                        JsValue::String("removeEventListener".into()),
+                    ),
+                    ("length".to_owned(), JsValue::Number(2.0)),
+                ]),
+                Some(FunctionObject {
+                    implementation: FunctionImplementation::Builtin(
+                        BuiltinFunction::DomRemoveEventListener,
+                    ),
+                }),
+            )?;
             let element = self.allocate_object(
                 ObjectKind::DomElement(node),
                 Some(self.object_prototype),
@@ -839,11 +898,18 @@ impl JsRuntime {
                     ("textContent".to_owned(), JsValue::String(text)),
                     ("id".to_owned(), JsValue::String(id)),
                     ("addEventListener".to_owned(), JsValue::Object(listener)),
+                    (
+                        "removeEventListener".to_owned(),
+                        JsValue::Object(remove_listener),
+                    ),
                 ]),
             )?;
             return Ok(CallOutcome::Value(JsValue::Object(element)));
         }
-        if matches!(builtin, BuiltinFunction::DomAddEventListener) {
+        if matches!(
+            builtin,
+            BuiltinFunction::DomAddEventListener | BuiltinFunction::DomRemoveEventListener
+        ) {
             let JsValue::Object(receiver) = this_value else {
                 return Err(JsError::type_error(
                     "addEventListener receiver is not an element",
@@ -861,13 +927,28 @@ impl JsRuntime {
                 return Ok(CallOutcome::Value(JsValue::Undefined));
             }
             let Some(callback) = arguments.get(1).cloned() else {
+                if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
+                    return Ok(CallOutcome::Value(JsValue::Undefined));
+                }
                 return Err(JsError::type_error("event listener callback is missing"));
             };
             let JsValue::Object(function) = callback else {
+                if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
+                    return Ok(CallOutcome::Value(JsValue::Undefined));
+                }
                 return Err(JsError::type_error("event listener must be callable"));
             };
             if self.object(function)?.function.is_none() {
+                if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
+                    return Ok(CallOutcome::Value(JsValue::Undefined));
+                }
                 return Err(JsError::type_error("event listener must be callable"));
+            }
+            if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
+                if let Some(listeners) = self.dom_click_listeners.get_mut(&node) {
+                    listeners.retain(|listener| listener != &JsValue::Object(function));
+                }
+                return Ok(CallOutcome::Value(JsValue::Undefined));
             }
             let total = self
                 .dom_click_listeners
@@ -894,7 +975,9 @@ impl JsRuntime {
             BuiltinFunction::Error => ("Error", self.error_prototype),
             BuiltinFunction::TypeError => ("TypeError", self.type_error_prototype),
             BuiltinFunction::ReferenceError => ("ReferenceError", self.reference_error_prototype),
-            BuiltinFunction::DomGetElementById | BuiltinFunction::DomAddEventListener => {
+            BuiltinFunction::DomGetElementById
+            | BuiltinFunction::DomAddEventListener
+            | BuiltinFunction::DomRemoveEventListener => {
                 unreachable!("handled above")
             }
         };
@@ -1624,6 +1707,51 @@ mod tests {
         assert_eq!(updates[0].text_content, "two");
         vm.eval_script("item.onclick=null;").unwrap();
         assert!(!vm.has_dom_click_listener(3));
+    }
+
+    #[test]
+    fn event_bubbles_with_original_target_and_removed_listener_stays_removed() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 10,
+                id: "parent".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 11,
+                id: "child".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.eval_script(
+            "var parent=document.getElementById('parent');             var child=document.getElementById('child');             var seen='';             function obsolete(){seen='wrong';}             parent.addEventListener('click',obsolete);             parent.removeEventListener('click',obsolete);             child.addEventListener('click',function(e){               seen=e.target.id+':'+e.currentTarget.id+':'+e.eventPhase;             });             parent.addEventListener('click',function(e){               seen=seen+'|'+e.target.id+':'+e.currentTarget.id+':'+e.eventPhase;             });"
+        ).unwrap();
+        assert!(vm.dispatch_dom_click_path(&[11, 10]).unwrap());
+        assert_eq!(
+            vm.global("seen"),
+            Some(&JsValue::String("child:child:2|child:parent:3".into()))
+        );
+        vm.eval_script("parent.removeEventListener('click',obsolete);")
+            .unwrap();
+        assert!(vm.has_dom_click_listener(10));
+    }
+
+    #[test]
+    fn removing_the_last_listener_disables_click_dispatch() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 3,
+            id: "press".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            "var el=document.getElementById('press');             function handler(){}             el.addEventListener('click',handler);             el.addEventListener('click',handler);             el.removeEventListener('click',handler);"
+        ).unwrap();
+        assert!(!vm.has_dom_click_listener(3));
+        assert!(!vm.dispatch_dom_click(3).unwrap());
     }
 
     #[test]

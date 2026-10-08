@@ -273,7 +273,6 @@ impl Engine {
                     && x < region.x.saturating_add(region.width)
                     && y >= region.y
                     && y < region.y.saturating_add(region.height)
-                    && runtime.has_dom_click_listener(region.node.index())
             })
             .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
             .map(|region| region.node)?;
@@ -480,6 +479,42 @@ mod tests {
             "Count 2"
         ));
         assert_eq!(engine.active_script_report().unwrap().mutations, 2);
+    }
+
+    #[test]
+    fn native_click_on_child_bubbles_to_parent_listener() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<div id='outer' style='display:block;width:240px;height:110px;background:#ddd'>               <div id='inner' style='display:block;width:110px;height:40px;background:#bbb'>Click</div>             </div><p id='result'>Before</p><script>             document.getElementById('outer').addEventListener('click',function(event){               document.getElementById('result').textContent=                 event.target.id+':'+event.currentTarget.id+':'+event.eventPhase;             });</script>",
+            800, 600,
+        );
+        let active = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_backgrounds_and_resources(
+            &active.document,
+            800,
+            600,
+            (&active.images.elements, &active.images.backgrounds),
+            &active.images.generated,
+            &active.computed_styles,
+            &mut text::Measurer::new(),
+        );
+        let inner = layout
+            .click_regions
+            .iter()
+            .find(|region| {
+                active.document.element(region.node).is_some_and(|e| {
+                    e.attributes
+                        .iter()
+                        .any(|a| a.name == "id" && a.value == "inner")
+                })
+            })
+            .unwrap();
+        let (x, y) = (inner.x + 5, inner.y + 5);
+        let next = engine
+            .click_at(x, y, 800, 600)
+            .expect("click bubbles to parent");
+        assert!(contains_text(&next.display_list, "inner:outer:3"));
+        assert_eq!(engine.active_script_report().unwrap().mutations, 1);
     }
 
     #[test]

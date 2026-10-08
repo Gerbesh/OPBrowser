@@ -118,6 +118,23 @@ Primary conformance targets:
   dispatch path, then implement parser-blocking/async/defer script
   timing, timers and independent Web APIs.
 
+## M4.4 - Bubbling click events and removable listeners (2026-10-08)
+
+- DONE native hit-testing now chooses the smallest id-bearing element
+  under the cursor, even when only an ancestor registered a listener.
+  The engine follows attached DOM parents and dispatches to the target,
+  then its ancestors, bounded to 64 elements.
+- DONE retained JS listeners receive stable `event.target`, changing
+  `event.currentTarget`, `eventPhase` (2 target, 3 bubbling) and
+  `event.bubbles`. Callback `this` is the current listener's element.
+- DONE `element.removeEventListener("click", sameFunction)` removes a
+  callback by identity, and duplicate listeners remain deduplicated.
+  Engine/VM tests cover ancestry, field values and removed listeners.
+- LIMITATION capture, stopPropagation, preventDefault, listener options,
+  default actions, keyboard input and full DOM hit-test are unsupported.
+- NEXT implement capture/cancellation and HTML script lifecycle
+  (parser-blocking classic scripts, async/defer scheduling).
+
 ## M0 - Foundation
 
 Status: DONE at initial level.

@@ -150,19 +150,19 @@
     },
     {
       "id": "S9",
-      "title": "Native Win32 click through retained JS listener to repainted DOM",
-      "status": "M4.3 initial non-bubbling click subset",
+      "title": "Native Win32 click through bubbling DOM listeners to repainted DOM",
+      "status": "M4.4 bubbling click with removable handlers",
       "steps": [
         {"path": "crates/op_platform_win/src/lib.rs", "symbol": "WM_LBUTTONUP"},
         {"path": "crates/op_browser/src/main.rs", "symbol": "NavigationEvent::Click"},
         {"path": "crates/op_engine/src/lib.rs", "symbol": "click_at"},
         {"path": "crates/op_layout/src/flow.rs", "symbol": "click_regions"},
         {"path": "crates/op_engine/src/scripts.rs", "symbol": "dispatch_click"},
-        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_dom_click"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_dom_click_path"},
         {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
         {"path": "crates/op_engine/src/lib.rs", "symbol": "compute_styles"}
       ],
-      "limitation": "Only id-bearing block region hits with click listeners, no bubbling/capture/stopPropagation/preventDefault/keyboard or complete event target identity; JS runtime stays with the prepared page."
+      "limitation": "Only id-bearing block regions; target-to-parent bubbling and listener removal work, but capture/stopPropagation/preventDefault/keyboard/default actions and full DOM hit-testing remain absent."
     },
     {
       "id": "S6",

@@ -63,28 +63,28 @@ dispatch remain unsupported. The `S8` generated source slice is
 checked by Code Slicer in CI. Sample:
 `examples/js/external.html` and sibling `external.js`.
 
-## S9 - Native click → JS callback → pixels (M4.3)
+## S9 - Native click → DOM bubbling → JS callback → pixels (M4.4)
 
-Status: **IMPLEMENTED** for id-bearing block boxes and basic click listeners.
+Status: **IMPLEMENTED** for id-bearing block regions with bubbling
+and handler removal by function identity.
 
 ```text
 WM_LBUTTONUP / client coordinates
   -> Win32 toolbar/scroll conversion
   -> NavigationEvent::Click on browser worker
-  -> current op_layout::ClickRegion hit target
-  -> retained JsRuntime::dispatch_dom_click
-  -> element.addEventListener('click', fn) / element.onclick
+  -> smallest op_layout::ClickRegion target (listener-independent)
+  -> op_dom::Node::parent chain
+  -> retained JsRuntime::dispatch_dom_click_path
+  -> target/ancestor addEventListener / onclick callbacks
   -> bounded DomTextMutation → Document::set_text_content
   -> recompute_styles / reflow / paint without navigating
 ```
 
-Retained VM closures preserve counters across repeated clicks.
-Engine and VM tests verify Count 1→Count 2 and `onclick` replacement;
-`examples/js/click.html` with external `click.js` is the UI demo.
-The first hit-test path covers block elements with `id`; inline
-fragment targeting, event bubbling/capture, keyboard activation,
-`removeEventListener`, preventDefault and style/class mutations
-remain unimplemented.
+Retained VM closures preserve counters across clicks. Tests cover
+bubbling, target/currentTarget/eventPhase and removal/duplicate
+registration. Demos: `examples/js/click.html` and
+`examples/js/bubble.html`. Capture, cancellation, keyboard,
+listener options and full DOM hit-testing remain unsupported.
 
 ## S0 - Native process startup
 

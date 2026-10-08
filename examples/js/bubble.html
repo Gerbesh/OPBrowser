@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>OPBrowser M4.4: bubbling click listeners</title>
+  <style>
+    body { background:#f3f7ff; color:#23364e; font-size:20px; margin:32px }
+    #outer { display:block; background:#d8e8ff; border:2px solid #3974aa;
+             width:320px; height:150px; padding:18px }
+    #inner { display:block; background:#cff7e4; border:2px solid #13795b;
+             width:175px; height:64px; padding:12px }
+    #result { color:#12605d; font-size:24px }
+  </style>
+</head>
+<body>
+  <h1>DOM bubbling in native OPBrowser</h1>
+  <div id="outer">
+    Parent with a click handler
+    <div id="inner">Click this child</div>
+  </div>
+  <p id="result">No click yet</p>
+  <script>
+    var outer = document.getElementById("outer");
+    function removedHandler() {
+      document.getElementById("result").textContent = "Wrong: removed handler ran";
+    }
+    outer.addEventListener("click", removedHandler);
+    outer.removeEventListener("click", removedHandler);
+    outer.addEventListener("click", function (event) {
+      document.getElementById("result").textContent =
+        "target=" + event.target.id +
+        ", listener=" + event.currentTarget.id +
+        ", phase=" + event.eventPhase;
+    });
+  </script>
+  <p>Click the green child: the parent receives the bubbling event.
+     The removed handler must not execute. No page reload is needed.</p>
+</body>
+</html>

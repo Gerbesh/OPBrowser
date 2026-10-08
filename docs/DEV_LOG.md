@@ -2775,3 +2775,12 @@ This file is append-only project history.
   including invocation from a different working directory. Await fresh
   hosted Windows CI confirmation after push.
 
+## 2026-10-08 - M4.4 bubbling click dispatch and listener removal
+
+- Extended native hit-testing to select the smallest id-bearing block under a click even when only an ancestor has a listener.
+- Engine walks the attached DOM parent chain (bounded to 64 elements); the retained original JS VM dispatches click callbacks at target and along ancestors.
+- Added event.bubbles, event.eventPhase (2 target, 3 bubbling) and changing currentTarget/this with stable target.
+- Implemented removeEventListener("click", callback) by function identity without changing the existing callback deduplication and budgets.
+- Added VM regressions for bubbling/removal and an Engine integration regression for child-to-parent dispatch through DOM mutation, layout and paint.
+- Added a native interactive example and updated plan, Code Graph/Slicer, README and Wiki.
+- Remaining limits: no capture, cancellation, keyboard, listener options, default actions, full hit-testing or complete script scheduling.

@@ -35,8 +35,8 @@ op_engine::reflow
 op_platform_win::paint_window
 ```
 
-- [`op_engine::navigate`](../crates/op_engine/src/lib.rs#L310)
-- [`op_engine::reflow`](../crates/op_engine/src/lib.rs#L293)
+- [`op_engine::navigate`](../crates/op_engine/src/lib.rs#L309)
+- [`op_engine::reflow`](../crates/op_engine/src/lib.rs#L292)
 - [`op_platform_win::paint_window`](../crates/op_platform_win/src/lib.rs#L566)
 
 No full History API or single-page-application lifecycle.
@@ -108,7 +108,7 @@ op_paint::build_display_list
 
 - [`op_html::parse_document`](../crates/op_html/src/lib.rs#L6)
 - [`op_engine::execute_inline`](../crates/op_engine/src/scripts.rs#L134)
-- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L235)
+- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L236)
 - [`op_js::DomGetElementById`](../crates/op_js/src/runtime.rs#L51)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
@@ -135,15 +135,15 @@ op_engine::prepare_source
 - [`op_net::resolve_script_source`](../crates/op_net/src/scripts.rs#L14)
 - [`op_net::load_script_for_page`](../crates/op_net/src/lib.rs#L145)
 - [`op_net::load_script`](../crates/op_net/src/http.rs#L196)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L335)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L378)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L224)
 
 Only relative/local and same-origin HTTP(S) classic scripts in source order after DOM parse. Redirect origin checked after retrieval; async/defer/integrity not supported, no browser event loop.
 
-## S9 — Native Win32 click through retained JS listener to repainted DOM
+## S9 — Native Win32 click through bubbling DOM listeners to repainted DOM
 
-Status: **M4.3 initial non-bubbling click subset**.
+Status: **M4.4 bubbling click with removable handlers**.
 
 ```text
 op_platform_win::WM_LBUTTONUP
@@ -151,7 +151,7 @@ op_browser::NavigationEvent::Click
 op_engine::click_at
 op_layout::click_regions
 op_engine::dispatch_click
-op_js::dispatch_dom_click
+op_js::dispatch_dom_click_path
 op_dom::set_text_content
 op_engine::compute_styles
 ```
@@ -161,11 +161,11 @@ op_engine::compute_styles
 - [`op_engine::click_at`](../crates/op_engine/src/lib.rs#L254)
 - [`op_layout::click_regions`](../crates/op_layout/src/flow.rs#L71)
 - [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L228)
-- [`op_js::dispatch_dom_click`](../crates/op_js/src/runtime.rs#L279)
+- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L280)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
 - [`op_engine::compute_styles`](../crates/op_engine/src/lib.rs#L3)
 
-Only id-bearing block region hits with click listeners, no bubbling/capture/stopPropagation/preventDefault/keyboard or complete event target identity; JS runtime stays with the prepared page.
+Only id-bearing block regions; target-to-parent bubbling and listener removal work, but capture/stopPropagation/preventDefault/keyboard/default actions and full DOM hit-testing remain absent.
 
 ## S6 — WPT image comparison and reporting
 
