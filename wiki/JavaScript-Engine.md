@@ -156,3 +156,16 @@ bindings, broader built-ins/property semantics and explicit VM call frames. In p
 start consuming the VM through a narrow DOM binding boundary because ordinary receiver calls,
 constructors, arguments and catchable runtime errors exist; page scripting still must not be
 advertised as compatible until that binding/event-loop work lands.
+
+## M4.5: capture and cancellation primitives
+
+addEventListener("click", fn, true) now registers a capture listener.
+Native click dispatch walks root-to-target capture (eventPhase 1), target
+(phase 2), then target-to-root bubbling (phase 3). Capture-aware
+removeEventListener uses the same boolean flag.
+
+event.stopPropagation() stops traversal after the current element and
+event.preventDefault() marks the cancelable event as defaultPrevented.
+Tests cover exact phase order and cancellation before target. Option
+objects, once/passive, stopImmediatePropagation, keyboard events and
+native default-action cancellation remain outside this bounded subset.

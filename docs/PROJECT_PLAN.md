@@ -693,3 +693,16 @@ Every milestone continuously tracks security, WPT/Test262 regressions, startup t
 memory use, binary size, background CPU, and dependency growth. `tools/compatibility.ps1`
 provides the project-owned baseline plus an optional Test262 parse probe; owned unit-test
 counts must not be mislabeled as external conformance percentages.
+
+## M4.5 - Capture and event cancellation primitives (2026-10-08)
+
+- DONE boolean capture registration in addEventListener/removeEventListener.
+  Click dispatch follows root-to-target capture, target, then bubbling
+  with eventPhase 1/2/3.
+- DONE event.stopPropagation() halts traversal after listeners on the
+  current element; event.preventDefault() sets defaultPrevented.
+- DONE VM regressions verify exact phase ordering, cancellation before
+  target and observable defaultPrevented state.
+- LIMITATION stopImmediatePropagation, option objects, once/passive,
+  keyboard events and native default-action cancellation remain absent.
+- NEXT make classic script execution parser-aware, then add defer/async.

@@ -51,6 +51,8 @@ enum BuiltinFunction {
     DomGetElementById,
     DomAddEventListener,
     DomRemoveEventListener,
+    EventStopPropagation,
+    EventPreventDefault,
 }
 
 #[derive(Debug, Clone)]
@@ -123,6 +125,7 @@ pub struct JsRuntime {
     dom_text: HashMap<usize, String>,
     dom_mutations: Vec<DomTextMutation>,
     dom_click_listeners: HashMap<usize, Vec<JsValue>>,
+    dom_click_capture_listeners: HashMap<usize, Vec<JsValue>>,
     dom_onclick: HashMap<usize, JsValue>,
 }
 
@@ -188,6 +191,7 @@ impl Default for JsRuntime {
             dom_text: HashMap::new(),
             dom_mutations: Vec::new(),
             dom_click_listeners: HashMap::new(),
+            dom_click_capture_listeners: HashMap::new(),
             dom_onclick: HashMap::new(),
         };
 
@@ -241,6 +245,7 @@ impl JsRuntime {
         self.dom_text.clear();
         self.dom_mutations.clear();
         self.dom_click_listeners.clear();
+        self.dom_click_capture_listeners.clear();
         self.dom_onclick.clear();
         for element in elements.into_iter().take(4096) {
             self.dom_ids.entry(element.id).or_insert(element.node);
@@ -280,22 +285,39 @@ impl JsRuntime {
         self.dispatch_dom_click_path(&[node])
     }
 
-    /// Deliver a click to the target, then bubble through parent elements.
-    /// The path is target-first; capture and default actions are not yet implemented.
+    /// Deliver a click through capture, target, then bubbling phases.
+    /// The supplied path is target-first and bounded by the page engine.
     pub fn dispatch_dom_click_path(&mut self, path: &[usize]) -> Result<bool, JsError> {
         if path.is_empty() || !path.iter().any(|&node| self.has_dom_click_listener(node)) {
             return Ok(false);
         }
         let target = path[0];
-        let target_id = self
-            .dom_ids
-            .iter()
-            .find_map(|(id, &node)| (node == target).then_some(id.clone()))
-            .unwrap_or_default();
-        let target_object = self.allocate_object(
-            ObjectKind::DomElement(target),
+        let target_object = self.dom_element_object(target)?;
+        let stop = self.allocate_object_with_function(
+            ObjectKind::Function,
             Some(self.object_prototype),
-            HashMap::from([("id".into(), JsValue::String(target_id))]),
+            HashMap::from([
+                ("name".into(), JsValue::String("stopPropagation".into())),
+                ("length".into(), JsValue::Number(0.0)),
+            ]),
+            Some(FunctionObject {
+                implementation: FunctionImplementation::Builtin(
+                    BuiltinFunction::EventStopPropagation,
+                ),
+            }),
+        )?;
+        let prevent = self.allocate_object_with_function(
+            ObjectKind::Function,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("name".into(), JsValue::String("preventDefault".into())),
+                ("length".into(), JsValue::Number(0.0)),
+            ]),
+            Some(FunctionObject {
+                implementation: FunctionImplementation::Builtin(
+                    BuiltinFunction::EventPreventDefault,
+                ),
+            }),
         )?;
         let event = self.allocate_object(
             ObjectKind::Ordinary,
@@ -305,12 +327,68 @@ impl JsRuntime {
                 ("target".into(), JsValue::Object(target_object)),
                 ("currentTarget".into(), JsValue::Null),
                 ("bubbles".into(), JsValue::Boolean(true)),
+                ("cancelable".into(), JsValue::Boolean(true)),
+                ("defaultPrevented".into(), JsValue::Boolean(false)),
                 ("eventPhase".into(), JsValue::Number(0.0)),
+                ("stopPropagation".into(), JsValue::Object(stop)),
+                ("preventDefault".into(), JsValue::Object(prevent)),
+                ("__stopPropagation".into(), JsValue::Boolean(false)),
             ]),
         )?;
         let mut steps = 0;
         let mut handled = false;
-        for (index, &node) in path.iter().take(64).enumerate() {
+
+        // Capture travels root -> parent of target.
+        for &node in path.iter().take(64).skip(1).rev() {
+            let handlers = self
+                .dom_click_capture_listeners
+                .get(&node)
+                .cloned()
+                .unwrap_or_default();
+            if handlers.is_empty() {
+                continue;
+            }
+            handled = true;
+            let receiver = self.dom_element_object(node)?;
+            self.prepare_event_callback(event, receiver, 1)?;
+            for handler in handlers {
+                self.call_event_handler(handler, receiver, event, &mut steps)?;
+            }
+            if self.event_propagation_stopped(event)? {
+                self.finish_event_dispatch(event)?;
+                return Ok(handled);
+            }
+        }
+
+        // At target, capture listeners run before ordinary listeners.
+        let receiver = target_object;
+        let captures = self
+            .dom_click_capture_listeners
+            .get(&target)
+            .cloned()
+            .unwrap_or_default();
+        let mut ordinary = self
+            .dom_click_listeners
+            .get(&target)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(handler) = self.dom_onclick.get(&target).cloned() {
+            ordinary.push(handler);
+        }
+        if !captures.is_empty() || !ordinary.is_empty() {
+            handled = true;
+            self.prepare_event_callback(event, receiver, 2)?;
+            for handler in captures.into_iter().chain(ordinary) {
+                self.call_event_handler(handler, receiver, event, &mut steps)?;
+            }
+        }
+        if self.event_propagation_stopped(event)? {
+            self.finish_event_dispatch(event)?;
+            return Ok(handled);
+        }
+
+        // Bubble travels parent -> root.
+        for &node in path.iter().take(64).skip(1) {
             let mut handlers = self
                 .dom_click_listeners
                 .get(&node)
@@ -323,55 +401,93 @@ impl JsRuntime {
                 continue;
             }
             handled = true;
-            let id = self
-                .dom_ids
-                .iter()
-                .find_map(|(id, &value)| (value == node).then_some(id.clone()))
-                .unwrap_or_default();
-            let receiver = if index == 0 {
-                target_object
-            } else {
-                self.allocate_object(
-                    ObjectKind::DomElement(node),
-                    Some(self.object_prototype),
-                    HashMap::from([("id".into(), JsValue::String(id))]),
-                )?
-            };
-            self.object_mut(event)?
-                .properties
-                .insert("currentTarget".into(), JsValue::Object(receiver));
-            self.object_mut(event)?.properties.insert(
-                "eventPhase".into(),
-                JsValue::Number(if index == 0 { 2.0 } else { 3.0 }),
-            );
+            let receiver = self.dom_element_object(node)?;
+            self.prepare_event_callback(event, receiver, 3)?;
             for handler in handlers {
-                match self.call_value(
-                    handler,
-                    JsValue::Object(receiver),
-                    vec![JsValue::Object(event)],
-                    &mut steps,
-                    1,
-                )? {
-                    CallOutcome::Value(_) => {}
-                    CallOutcome::Thrown(value) => {
-                        return Err(JsError::exception(self.describe_thrown_value(&value)));
-                    }
-                }
+                self.call_event_handler(handler, receiver, event, &mut steps)?;
+            }
+            if self.event_propagation_stopped(event)? {
+                break;
             }
         }
+        self.finish_event_dispatch(event)?;
+        Ok(handled)
+    }
+
+    fn dom_element_object(&mut self, node: usize) -> Result<ObjectId, JsError> {
+        let id = self
+            .dom_ids
+            .iter()
+            .find_map(|(id, &value)| (value == node).then_some(id.clone()))
+            .unwrap_or_default();
+        self.allocate_object(
+            ObjectKind::DomElement(node),
+            Some(self.object_prototype),
+            HashMap::from([("id".into(), JsValue::String(id))]),
+        )
+    }
+
+    fn prepare_event_callback(
+        &mut self,
+        event: ObjectId,
+        receiver: ObjectId,
+        phase: u8,
+    ) -> Result<(), JsError> {
+        self.object_mut(event)?
+            .properties
+            .insert("currentTarget".into(), JsValue::Object(receiver));
+        self.object_mut(event)?
+            .properties
+            .insert("eventPhase".into(), JsValue::Number(f64::from(phase)));
+        Ok(())
+    }
+
+    fn call_event_handler(
+        &mut self,
+        handler: JsValue,
+        receiver: ObjectId,
+        event: ObjectId,
+        steps: &mut usize,
+    ) -> Result<(), JsError> {
+        match self.call_value(
+            handler,
+            JsValue::Object(receiver),
+            vec![JsValue::Object(event)],
+            steps,
+            1,
+        )? {
+            CallOutcome::Value(_) => Ok(()),
+            CallOutcome::Thrown(value) => {
+                Err(JsError::exception(self.describe_thrown_value(&value)))
+            }
+        }
+    }
+
+    fn event_propagation_stopped(&self, event: ObjectId) -> Result<bool, JsError> {
+        Ok(matches!(
+            self.object(event)?.properties.get("__stopPropagation"),
+            Some(JsValue::Boolean(true))
+        ))
+    }
+
+    fn finish_event_dispatch(&mut self, event: ObjectId) -> Result<(), JsError> {
         self.object_mut(event)?
             .properties
             .insert("currentTarget".into(), JsValue::Null);
         self.object_mut(event)?
             .properties
             .insert("eventPhase".into(), JsValue::Number(0.0));
-        Ok(handled)
+        Ok(())
     }
 
     pub fn has_dom_click_listener(&self, node: usize) -> bool {
         self.dom_click_listeners
             .get(&node)
             .is_some_and(|v| !v.is_empty())
+            || self
+                .dom_click_capture_listeners
+                .get(&node)
+                .is_some_and(|v| !v.is_empty())
             || self.dom_onclick.contains_key(&node)
     }
 
@@ -851,6 +967,30 @@ impl JsRuntime {
         this_value: JsValue,
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
+        if matches!(
+            builtin,
+            BuiltinFunction::EventStopPropagation | BuiltinFunction::EventPreventDefault
+        ) {
+            let JsValue::Object(event) = this_value else {
+                return Err(JsError::type_error(
+                    "event method receiver is not an object",
+                ));
+            };
+            match builtin {
+                BuiltinFunction::EventStopPropagation => {
+                    self.object_mut(event)?
+                        .properties
+                        .insert("__stopPropagation".into(), JsValue::Boolean(true));
+                }
+                BuiltinFunction::EventPreventDefault => {
+                    self.object_mut(event)?
+                        .properties
+                        .insert("defaultPrevented".into(), JsValue::Boolean(true));
+                }
+                _ => unreachable!(),
+            }
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
         if matches!(builtin, BuiltinFunction::DomGetElementById) {
             let Some(id) = arguments.first().map(JsValue::to_js_string) else {
                 return Ok(CallOutcome::Value(JsValue::Null));
@@ -944,8 +1084,14 @@ impl JsRuntime {
                 }
                 return Err(JsError::type_error("event listener must be callable"));
             }
+            let capture = matches!(arguments.get(2), Some(JsValue::Boolean(true)));
             if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
-                if let Some(listeners) = self.dom_click_listeners.get_mut(&node) {
+                let listeners = if capture {
+                    self.dom_click_capture_listeners.get_mut(&node)
+                } else {
+                    self.dom_click_listeners.get_mut(&node)
+                };
+                if let Some(listeners) = listeners {
                     listeners.retain(|listener| listener != &JsValue::Object(function));
                 }
                 return Ok(CallOutcome::Value(JsValue::Undefined));
@@ -954,13 +1100,22 @@ impl JsRuntime {
                 .dom_click_listeners
                 .values()
                 .map(Vec::len)
-                .sum::<usize>();
+                .sum::<usize>()
+                + self
+                    .dom_click_capture_listeners
+                    .values()
+                    .map(Vec::len)
+                    .sum::<usize>();
             if total >= 256 {
                 return Err(JsError::execution_limit(
                     "DOM event listener budget exceeded",
                 ));
             }
-            let listeners = self.dom_click_listeners.entry(node).or_default();
+            let listeners = if capture {
+                self.dom_click_capture_listeners.entry(node).or_default()
+            } else {
+                self.dom_click_listeners.entry(node).or_default()
+            };
             if !listeners.contains(&JsValue::Object(function)) {
                 listeners.push(JsValue::Object(function));
             }
@@ -977,7 +1132,9 @@ impl JsRuntime {
             BuiltinFunction::ReferenceError => ("ReferenceError", self.reference_error_prototype),
             BuiltinFunction::DomGetElementById
             | BuiltinFunction::DomAddEventListener
-            | BuiltinFunction::DomRemoveEventListener => {
+            | BuiltinFunction::DomRemoveEventListener
+            | BuiltinFunction::EventStopPropagation
+            | BuiltinFunction::EventPreventDefault => {
                 unreachable!("handled above")
             }
         };
@@ -1707,6 +1864,61 @@ mod tests {
         assert_eq!(updates[0].text_content, "two");
         vm.eval_script("item.onclick=null;").unwrap();
         assert!(!vm.has_dom_click_listener(3));
+    }
+
+    #[test]
+    fn click_capture_target_and_bubble_run_in_dom_order() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "root".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "parent".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 3,
+                id: "target".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.eval_script(
+            "var log='';             var root=document.getElementById('root');             var parent=document.getElementById('parent');             var target=document.getElementById('target');             root.addEventListener('click',function(e){log=log+'RC'+e.eventPhase+';';},true);             parent.addEventListener('click',function(e){log=log+'PC'+e.eventPhase+';';},true);             target.addEventListener('click',function(e){log=log+'T'+e.eventPhase+';';});             parent.addEventListener('click',function(e){log=log+'PB'+e.eventPhase+';';});             root.addEventListener('click',function(e){log=log+'RB'+e.eventPhase+';';});"
+        ).unwrap();
+        assert!(vm.dispatch_dom_click_path(&[3, 2, 1]).unwrap());
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("RC1;PC1;T2;PB3;RB3;".into()))
+        );
+    }
+
+    #[test]
+    fn stop_propagation_in_capture_blocks_target_and_prevent_default_sets_flag() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "root".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "target".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.eval_script(
+            "var log=''; var prevented=false;             var root=document.getElementById('root');             var target=document.getElementById('target');             root.addEventListener('click',function(e){               e.preventDefault(); prevented=e.defaultPrevented;               e.stopPropagation(); log=log+'capture';             },true);             target.addEventListener('click',function(){log=log+'target';});"
+        ).unwrap();
+        assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
+        assert_eq!(vm.global("log"), Some(&JsValue::String("capture".into())));
+        assert_eq!(vm.global("prevented"), Some(&JsValue::Boolean(true)));
     }
 
     #[test]

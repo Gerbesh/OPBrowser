@@ -2784,3 +2784,14 @@ This file is append-only project history.
 - Added VM regressions for bubbling/removal and an Engine integration regression for child-to-parent dispatch through DOM mutation, layout and paint.
 - Added a native interactive example and updated plan, Code Graph/Slicer, README and Wiki.
 - Remaining limits: no capture, cancellation, keyboard, listener options, default actions, full hit-testing or complete script scheduling.
+
+## 2026-10-08 - M4.5 capture and cancellation event slice
+
+- Added boolean capture listener registration/removal and three-phase
+  native click dispatch: capture, target and bubble.
+- Added stopPropagation and preventDefault event methods plus cancelable
+  and defaultPrevented state.
+- Added VM regressions for exact phase order and cancellation semantics.
+- Native default actions are not yet connected to preventDefault; listener
+  option objects, once/passive, stopImmediatePropagation and keyboard
+  dispatch remain future work.
