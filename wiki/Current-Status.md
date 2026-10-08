@@ -13,10 +13,10 @@ claim that OPBrowser is ready for everyday browsing.
   images, basic SVG text, CSS backgrounds, relative/absolute/fixed layout,
   floats, basic flex/table formatting, selected compositing/filter effects.
 - Windows WIC-backed raster decoding and ICC color conversion.
-- Independent JavaScript lexer/parser/bytecode VM now executes **bounded
-  classic inline scripts** and supports `document.getElementById` plus
-  textContent mutation before CSS/layout. External JS, events and Web
-  APIs are not yet supported.
+- Independent JavaScript lexer/parser/bytecode VM now executes bounded
+  classic inline **and same-origin external** scripts in document order,
+  supporting `document.getElementById` and textContent updates before
+  CSS/layout. Events, async/defer scheduling and broad Web APIs remain absent.
 - Network request filtering foundation; full adblock UI/subscription pipeline
   is **not** implemented.
 

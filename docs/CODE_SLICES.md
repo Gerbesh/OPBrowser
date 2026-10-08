@@ -39,6 +39,30 @@ not parser-blocking; external scripts, events, DOM creation and other Web
 APIs remain unimplemented. Generated code slice S7 is source-anchor
 checked under `docs/GENERATED_CODE_SLICES.md`.
 
+## S8 - External JS resource → VM → DOM (M4.2)
+
+Status: **IMPLEMENTED** at initial bounded/same-origin level.
+
+```text
+<script src="relative.js"> in parsed DOM
+  -> op_engine::scripts::execute_for_page
+  -> op_net::resolve_script_source
+  -> NetworkContext::load_script_for_page
+  -> RequestFilter::check(ResourceType::Script)
+  -> local file or WinHTTP HTTP(S) JS download + decoding
+  -> shared JsRuntime::eval_script
+  -> DomTextMutation -> Document::set_text_content
+  -> computed styles, retained layout, display list, GDI
+```
+
+Verified against real local paths and WinHTTP loopback traffic, plus
+source-order inline/external/inline, request blocking, missing resources
+and cross-origin rejection. Browser-like parser-blocking semantics,
+`async`, `defer`, SRI/CSP, cross-origin script loading and event
+dispatch remain unsupported. The `S8` generated source slice is
+checked by Code Slicer in CI. Sample:
+`examples/js/external.html` and sibling `external.js`.
+
 ## S0 - Native process startup
 
 Status: COMPLETE at M0 level.

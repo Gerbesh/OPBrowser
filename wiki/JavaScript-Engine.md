@@ -73,6 +73,26 @@ and ASI/line-terminator restrictions around throw/postfix updates are still inco
 calls currently recurse through the native stack; the temporary depth limit is 64 until calls move
 to explicit VM frames.
 
+## M4.2: external JavaScript via native network loader
+
+External `<script src="…">` now works for relative local JS files and
+same-origin HTTP(S) classic scripts. Scripts run in DOM order with
+adjacent inline scripts and a shared VM. The resource loader checks
+the URL's origin, content-filter rules using `ResourceType::Script`,
+response MIME and script byte budgets; the final origin after a
+redirect is checked before execution. A failed external load is counted,
+but does not prevent a following script from running.
+
+Try `target\\release\\op_browser.exe examples\\js\\external.html`
+and inspect the green result block. The page sources its JS from the
+sibling `external.js` file. Loopback WinHTTP, blocked requests,
+cross-origin rejects, file loading and retained reflow have dedicated
+tests. `async`/`defer`/`integrity` scripts are deliberately skipped,
+and scripts still run after whole-document parse rather than at their
+HTML parser insertion points. HTTP redirects are validated only after
+a response is fetched. Browser events, security policies, modules and
+sufficient HTML5test Web APIs are not yet implemented.
+
 ## Test262 measurement
 
 `op_js` includes `test262_probe`. It measures only whether the current parser accepts

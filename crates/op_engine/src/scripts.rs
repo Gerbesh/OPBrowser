@@ -3,11 +3,16 @@
 //! This is intentionally not a complete HTML script-processing model.
 use op_dom::{Document, NodeId, NodeKind};
 use op_js::{DomElementSnapshot, JsRuntime};
+use op_net::{NetworkContext, resolve_script_source};
+use std::time::{Duration, Instant};
 
 const MAX_NODES: usize = 20_000;
 const MAX_ELEMENTS: usize = 4096;
 const MAX_SCRIPT_BYTES: usize = 128 * 1024;
 const MAX_SCRIPTS: usize = 16;
+const MAX_SCRIPT_REQUESTS: usize = 8;
+const TOTAL_EXTERNAL_SCRIPT_BUDGET: usize = 512 * 1024;
+const SCRIPT_LOAD_DEADLINE: Duration = Duration::from_secs(10);
 const MAX_TOTAL_TEXT_BYTES: usize = 512 * 1024;
 const JS_INSTRUCTION_BUDGET: usize = 50_000;
 
@@ -48,7 +53,15 @@ fn collect_text(document: &Document, root: NodeId, budget: usize) -> String {
     result
 }
 
-fn snapshot_and_scripts(document: &Document) -> (Vec<DomElementSnapshot>, Vec<String>, usize) {
+#[derive(Debug)]
+enum ScriptSource {
+    Inline(String),
+    External(String),
+}
+
+fn snapshot_and_scripts(
+    document: &Document,
+) -> (Vec<DomElementSnapshot>, Vec<ScriptSource>, usize) {
     let mut elements = Vec::new();
     let mut scripts = Vec::new();
     let mut skipped = 0;
@@ -62,7 +75,15 @@ fn snapshot_and_scripts(document: &Document) -> (Vec<DomElementSnapshot>, Vec<St
         }
         if let Some(element) = document.element(node) {
             if element.tag_name == "script" {
-                let src = element.attributes.iter().any(|a| a.name == "src");
+                let src = element
+                    .attributes
+                    .iter()
+                    .find(|a| a.name == "src")
+                    .map(|a| a.value.as_str());
+                let unsupported_timing = element
+                    .attributes
+                    .iter()
+                    .any(|a| matches!(a.name.as_str(), "async" | "defer" | "integrity"));
                 let type_attr = element
                     .attributes
                     .iter()
@@ -72,15 +93,19 @@ fn snapshot_and_scripts(document: &Document) -> (Vec<DomElementSnapshot>, Vec<St
                     matches!(value, "" | "text/javascript" | "application/javascript")
                 });
                 let code = collect_text(document, node, MAX_SCRIPT_BYTES + 1);
-                if src
-                    || !classic
-                    || code.is_empty()
-                    || code.len() > MAX_SCRIPT_BYTES
-                    || scripts.len() >= MAX_SCRIPTS
+                if !classic || scripts.len() >= MAX_SCRIPTS || (src.is_some() && unsupported_timing)
                 {
                     skipped += 1;
+                } else if let Some(src) = src {
+                    if src.trim().is_empty() {
+                        skipped += 1;
+                    } else {
+                        scripts.push(ScriptSource::External(src.to_owned()));
+                    }
+                } else if code.is_empty() || code.len() > MAX_SCRIPT_BYTES {
+                    skipped += 1;
                 } else {
-                    scripts.push(code);
+                    scripts.push(ScriptSource::Inline(code));
                 }
             } else if elements.len() < MAX_ELEMENTS
                 && let Some(id) = element
@@ -107,6 +132,17 @@ fn snapshot_and_scripts(document: &Document) -> (Vec<DomElementSnapshot>, Vec<St
 }
 
 pub fn execute_inline(document: &mut Document) -> ScriptReport {
+    execute_for_page(document, None, None)
+}
+
+/// Resolve external classic scripts through the page's filtered network
+/// context, preserving DOM script order. This first slice executes after
+/// parsing rather than blocking the HTML tokenizer.
+pub fn execute_for_page(
+    document: &mut Document,
+    network: Option<&NetworkContext>,
+    page_base: Option<&str>,
+) -> ScriptReport {
     let (elements, scripts, skipped) = snapshot_and_scripts(document);
     let mut report = ScriptReport {
         skipped,
@@ -120,10 +156,50 @@ pub fn execute_inline(document: &mut Document) -> ScriptReport {
         report.failed = scripts.len();
         return report;
     }
-    for code in scripts {
-        match runtime.eval_script(&code) {
-            Ok(_) => report.executed += 1,
-            Err(_) => report.failed += 1,
+    let started = Instant::now();
+    let mut requests = 0usize;
+    let mut remaining_bytes = TOTAL_EXTERNAL_SCRIPT_BUDGET;
+    for source in scripts {
+        let code = match source {
+            ScriptSource::Inline(code) => Some(code),
+            ScriptSource::External(src) => {
+                if let (Some(network), Some(base)) = (network, page_base) {
+                    if requests >= MAX_SCRIPT_REQUESTS
+                        || remaining_bytes == 0
+                        || started.elapsed() > SCRIPT_LOAD_DEADLINE
+                    {
+                        report.skipped += 1;
+                        None
+                    } else {
+                        requests += 1;
+                        match resolve_script_source(base, &src).and_then(|resolved| {
+                            network.load_script_for_page(
+                                &resolved,
+                                base,
+                                remaining_bytes.min(MAX_SCRIPT_BYTES),
+                            )
+                        }) {
+                            Ok(code) => {
+                                remaining_bytes = remaining_bytes.saturating_sub(code.len());
+                                Some(code)
+                            }
+                            Err(_) => {
+                                report.failed += 1;
+                                None
+                            }
+                        }
+                    }
+                } else {
+                    report.skipped += 1;
+                    None
+                }
+            }
+        };
+        if let Some(code) = code {
+            match runtime.eval_script(&code) {
+                Ok(_) => report.executed += 1,
+                Err(_) => report.failed += 1,
+            }
         }
         // Apply completed mutations even when a later statement throws.
         // All DOM changes affect the retained tree before CSS/layout.

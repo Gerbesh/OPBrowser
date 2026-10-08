@@ -67,6 +67,31 @@ Primary conformance targets:
   resource loader; establish script loading order and lifecycle, then
   implement event dispatch and additional DOM APIs with honest test coverage.
 
+## M4.2 - Filtered external classic JS (2026-10-08)
+
+- DONE external `script src` URLs in document order alongside inline
+  classic scripts, sharing one `op_js` runtime and its global bindings.
+  The resource loader uses `ResourceType::Script` (not an image/CSS
+  disguise), local/HTTP(S) source resolution, same-origin validation,
+  explicit script MIME/UTF-8 decoding and independent size budgets.
+- DONE same-origin restrictions on requested URL and final redirected URL,
+  HTTPS-to-HTTP redirect prohibition via WinHTTP, non-fatal load failures,
+  bounded 8 external requests / 512 KiB aggregate / 128 KiB per script /
+  10-second request-phase deadline, plus existing VM/DOM budgets.
+- DONE real WinHTTP loopback test (page, script, inline execution),
+  local file sequence/reflow tests, missing external file recovery,
+  cross-origin denial and request-filter `$script` rule enforcement.
+  Manual example: `examples/js/external.html` with sibling `external.js`.
+- LIMITATION classic-only scripts run after full DOM parse, not true
+  parser-blocking timing. `async`, `defer` and `integrity` external
+  attributes are skipped rather than falsely scheduled/verified.
+  Cross-origin redirects are rejected after the transport has fetched
+  them, not at each redirect hop. No broad JavaScript Web APIs, DOM
+  events, modules, CORS, CSP, document.write, or HTML5test score.
+- NEXT M4.3: event dispatch, DOM lifecycle and safe API expansion,
+  followed by real parser-blocking/defer/async semantics and
+  script-fetch redirect restrictions.
+
 ## M0 - Foundation
 
 Status: DONE at initial level.

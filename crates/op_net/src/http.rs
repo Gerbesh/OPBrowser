@@ -7,6 +7,16 @@ enum ResourceKind {
     Document,
     Image,
     Stylesheet,
+    Script,
+}
+
+pub(crate) fn same_origin(a: &str, b: &str) -> bool {
+    match (HttpUrl::parse(a), HttpUrl::parse(b)) {
+        (Ok(a), Ok(b)) => {
+            a.secure == b.secure && a.port == b.port && a.host.eq_ignore_ascii_case(&b.host)
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn validate_url(source: &str) -> Result<(), LoadError> {
@@ -183,6 +193,42 @@ pub(crate) fn load_stylesheet(source: &str, limit: usize) -> Result<LoadedStyles
     }
 }
 
+pub(crate) fn load_script(source: &str, limit: usize) -> Result<(String, String), LoadError> {
+    let url = HttpUrl::parse(source)?;
+    #[cfg(windows)]
+    {
+        let response = windows::load(url, ResourceKind::Script, limit)?;
+        let mime = response
+            .content_type
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        if !mime.is_empty()
+            && !matches!(
+                mime.as_str(),
+                "text/javascript"
+                    | "application/javascript"
+                    | "application/x-javascript"
+                    | "text/ecmascript"
+                    | "application/ecmascript"
+            )
+        {
+            return Err(LoadError::UnsupportedContentType(mime));
+        }
+        let charset = crate::encoding::charset_parameter(&response.content_type);
+        let text =
+            crate::encoding::decode_script(&response.bytes, charset.as_deref(), &response.address)?;
+        Ok((response.address, text))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (url, limit);
+        Err(LoadError::Network("HTTP transport requires Windows".into()))
+    }
+}
+
 pub(crate) fn load_image(source: &str, limit: usize) -> Result<Vec<u8>, LoadError> {
     let url = HttpUrl::parse(source)?;
     #[cfg(windows)]
@@ -309,6 +355,7 @@ mod windows {
             ResourceKind::Document => "text/html",
             ResourceKind::Image => "image/png,image/jpeg,image/gif,image/bmp",
             ResourceKind::Stylesheet => "text/css,*/*;q=0.1",
+            ResourceKind::Script => "text/javascript,application/javascript,*/*;q=0.1",
         });
         let accept_types = [accept.as_ptr(), null()];
         let request = Handle::checked(
@@ -399,6 +446,7 @@ mod windows {
                     ResourceKind::Document => LoadError::DocumentTooLarge,
                     ResourceKind::Image => LoadError::ImageTooLarge,
                     ResourceKind::Stylesheet => LoadError::StylesheetTooLarge,
+                    ResourceKind::Script => LoadError::ScriptTooLarge,
                 });
             }
             bytes.extend_from_slice(&buffer[..read as usize]);

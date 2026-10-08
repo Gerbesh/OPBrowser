@@ -34,6 +34,25 @@ This is not DOM scripting conformance or a complete script lifecycle:
 external scripts, event loop, DOM mutation observers, document.write and
 real parser-blocking timing remain absent.
 
+## M4.2: filtered external JavaScript resource path
+
+`op_engine::scripts::execute_for_page` now accepts the filtered
+`NetworkContext` and document base. Its document-ordered script
+sequence may contain inline source or an external URL. For external
+sources, `op_net::resolve_script_source` rejects unsafe/cross-origin
+references, then `NetworkContext::load_script_for_page` invokes
+`ResourceType::Script` filtering. The resource decoder uses explicit
+JavaScript MIME types, UTF-8/BOM decoding, bounded local file reads and
+WinHTTP transport. Following a redirect, its final origin is checked
+against the page before code execution.
+
+The loaded code executes in the same bounded `JsRuntime` as adjacent
+inline scripts; detached `DomTextMutation` records update retained
+DOM, then CSS/layout/paint work exactly as in M4.1. Failed requests
+do not abort subsequent scripts. Unsupported async/defer/integrity
+external scripts are skipped; scheduling remains post-parse and
+full browser document lifecycle is still absent.
+
 ## Crate dependency graph
 
 ```mermaid

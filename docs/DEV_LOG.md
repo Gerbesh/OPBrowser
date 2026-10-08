@@ -2708,3 +2708,27 @@ This file is append-only project history.
   has been parsed rather than parser-blocking; no async scripts, event
   handlers, script.src, DOM creation or security-origin model yet.
 
+## 2026-10-08 - M4.2 external classic JS in native resource pipeline
+
+- Build a dedicated Script resource path in op_net, with explicit
+  `ResourceType::Script` filtering and WinHTTP JavaScript Accept headers,
+  bounded file reads, encoding/MIME verification and an independent
+  ScriptTooLarge error. Reject cross-origin requested sources and
+  cross-origin final redirected URLs; HTTPS downgrade remains blocked.
+- Preserve DOM order of classic inline/external/inline scripts in one
+  shared bounded op_js::JsRuntime; apply DOM text mutations after
+  each script and continue on missing/failed external resources.
+- Bound requests to 8, external text to 512 KiB total and 128 KiB
+  per script, 16 total selected scripts and a 10-second request phase.
+  Async/defer/integrity scripts are skipped pending correct scheduling
+  and subresource integrity enforcement.
+- Add WinHTTP loopback end-to-end test, filesystem source order/reflow,
+  non-fatal 404/missing source behavior, same-origin rejection and
+  request filter blocking test. Add examples/js/external.html and .js.
+- Frozen WPT Static remains 197/200 strict (198/200 metadata-aware);
+  WPT Positioning remains 53/100, zero render errors. Code Slicer S8
+  and Wiki updated.
+- Remaining gaps: no parser-blocking lifecycle, native event loop,
+  addEventListener, full Web API set, CSP/CORS/SRI or HTML5test score.
+  Redirects may be fetched before cross-origin final-URL rejection.
+

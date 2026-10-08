@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>OPBrowser M4.2: External JavaScript</title>
+  <style>
+    body {font-size:20px;margin:32px;background:#eef4ff;color:#203050}
+    .result {display:block;background:#def7e3;padding:18px;border:2px solid #087a35}
+  </style>
+</head>
+<body>
+  <h1>External JavaScript: DOM execution order</h1>
+  <p class="result" id="result">Waiting for JavaScript</p>
+  <script>
+    var message = "inline";
+  </script>
+  <script src="external.js"></script>
+  <script>
+    document.getElementById("result").textContent = message + " → final inline";
+  </script>
+  <p>This example uses a real sibling JS file loaded through OPBrowser's
+  own file/HTTP resource loader, not an embedded third-party JS engine.</p>
+</body>
+</html>

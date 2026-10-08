@@ -36,8 +36,10 @@ into a Win32 window. Text hyperlinks support current-window navigation, includin
 relative HTTP(S) and local-file links. PNG/JPEG/GIF/BMP images load from HTTP(S),
 local files and data URLs, with dimensions, transparency, alt fallback and image links.
 Initial embedded, inline and external author CSS plus block/flex/float layout and first relative/absolute/fixed positioning now reach native pixels. A standalone original JavaScript lexer/parser/bytecode/VM with objects, closures, exceptions, `this`, constructors, `arguments` and initial Error objects exists, and a first bounded inline `<script>` execution path can now update
-DOM text by id before paint. Full DOM bindings, external scripts, event
-dispatch and Web APIs are not implemented.
+DOM text by id before paint. Bounded relative/local and same-origin
+external classic scripts now use the filtered network loader and execute
+in source order. Full DOM bindings, browser script timing, events and Web
+APIs are not implemented.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 

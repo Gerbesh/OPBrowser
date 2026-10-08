@@ -337,7 +337,8 @@ impl Engine {
     fn prepare_source(&self, source: &str) -> Result<PreparedDocument, LoadError> {
         let loaded: LoadedDocument = self.network.load_document(source)?;
         let mut document = parse_document(&loaded.text);
-        let script_report = scripts::execute_inline(&mut document);
+        let script_report =
+            scripts::execute_for_page(&mut document, Some(&self.network), Some(&loaded.address));
         let linked_stylesheets = styles::load(&self.network, &document, &loaded.address);
         let mut style_collection =
             collect_author_styles_with_linked(&document, &linked_stylesheets.texts);

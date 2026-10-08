@@ -7,12 +7,14 @@ mod http;
 mod images;
 mod links;
 mod request_filter;
+mod scripts;
 mod stylesheets;
 pub use images::resolve_image_source;
 pub use links::resolve_link;
 pub use request_filter::{
     FilterImportReport, FilterStats, RequestDecision, RequestFilter, ResourceType,
 };
+pub use scripts::resolve_script_source;
 pub use stylesheets::resolve_stylesheet_source;
 
 use std::fmt;
@@ -60,6 +62,7 @@ pub enum LoadError {
     DocumentTooLarge,
     ImageTooLarge,
     StylesheetTooLarge,
+    ScriptTooLarge,
     InvalidLink(String),
     BlockedRequest { url: String, rule: String },
 }
@@ -97,6 +100,7 @@ impl fmt::Display for LoadError {
             Self::DocumentTooLarge => write!(formatter, "document exceeds the 2 MiB limit"),
             Self::ImageTooLarge => write!(formatter, "image exceeds the byte budget"),
             Self::StylesheetTooLarge => write!(formatter, "stylesheet exceeds the byte budget"),
+            Self::ScriptTooLarge => write!(formatter, "script exceeds the byte budget"),
             Self::InvalidLink(message) => write!(formatter, "cannot open link: {message}"),
             Self::BlockedRequest { url, rule } => {
                 write!(
@@ -136,6 +140,17 @@ impl NetworkContext {
     ) -> Result<Vec<u8>, LoadError> {
         self.enforce_filter(source, ResourceType::Image, top_level_url)?;
         images::load(source, byte_limit)
+    }
+
+    pub fn load_script_for_page(
+        &self,
+        source: &str,
+        top_level_url: &str,
+        byte_limit: usize,
+    ) -> Result<String, LoadError> {
+        scripts::enforce_same_origin(top_level_url, source)?;
+        self.enforce_filter(source, ResourceType::Script, Some(top_level_url))?;
+        scripts::load(source, top_level_url, byte_limit)
     }
 
     pub fn load_document(&self, source: &str) -> Result<LoadedDocument, LoadError> {

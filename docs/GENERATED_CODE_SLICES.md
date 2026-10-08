@@ -16,7 +16,7 @@ op_paint::build_display_list
 op_platform_win::paint_command
 ```
 
-- [`op_net::load_document`](../crates/op_net/src/lib.rs#L141)
+- [`op_net::load_document`](../crates/op_net/src/lib.rs#L156)
 - [`op_html::Tokenizer`](../crates/op_html/src/lib.rs#L56)
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L195)
 - [`op_layout::layout`](../crates/op_layout/src/flow.rs#L15)
@@ -89,7 +89,7 @@ op_engine::Engine
 - [`op_js::JsRuntime`](../crates/op_js/src/lib.rs#L20)
 - [`op_engine::Engine`](../crates/op_engine/src/lib.rs#L131)
 
-Initial classic inline scripts now execute and can update textContent by id. External scripts, events, parser-blocking order and full DOM/Web APIs remain unsupported.
+Classic inline and bounded same-origin external scripts now update textContent by id. Async/defer scheduling, parser-blocking timing, events and full DOM/Web APIs remain unsupported.
 
 ## S7 — Classic inline JavaScript to retained DOM and pixels
 
@@ -107,7 +107,7 @@ op_paint::build_display_list
 ```
 
 - [`op_html::parse_document`](../crates/op_html/src/lib.rs#L6)
-- [`op_engine::execute_inline`](../crates/op_engine/src/scripts.rs#L109)
+- [`op_engine::execute_inline`](../crates/op_engine/src/scripts.rs#L134)
 - [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L230)
 - [`op_js::DomGetElementById`](../crates/op_js/src/runtime.rs#L51)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
@@ -115,7 +115,31 @@ op_paint::build_display_list
 - [`op_engine::render`](../crates/op_engine/src/lib.rs#L112)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
 
-Deliberately bounded, once-per-load execution after the document is parsed; no event loop, external scripts, general DOM mutations or full HTML5test support.
+Deliberately bounded, once-per-load execution after full HTML parsing; basic external scripts now exist but no event loop, general DOM mutations or full HTML5test support.
+
+## S8 — External classic JavaScript through filtered network to DOM
+
+Status: **M4.2 initial same-origin external JS subset**.
+
+```text
+op_engine::execute_for_page
+op_net::resolve_script_source
+op_net::load_script_for_page
+op_net::load_script
+op_js::eval_script
+op_dom::set_text_content
+op_engine::prepare_source
+```
+
+- [`op_engine::execute_for_page`](../crates/op_engine/src/scripts.rs#L135)
+- [`op_net::resolve_script_source`](../crates/op_net/src/scripts.rs#L14)
+- [`op_net::load_script_for_page`](../crates/op_net/src/lib.rs#L145)
+- [`op_net::load_script`](../crates/op_net/src/http.rs#L196)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L270)
+- [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
+- [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L223)
+
+Only relative/local and same-origin HTTP(S) classic scripts in source order after DOM parse. Redirect origin checked after retrieval; async/defer/integrity not supported, no browser event loop.
 
 ## S6 — WPT image comparison and reporting
 

@@ -46,6 +46,24 @@ pub(crate) fn decode_html(
     decode_selected(bytes, encoding, source)
 }
 
+pub(crate) fn decode_script(
+    bytes: &[u8],
+    label: Option<&str>,
+    source: &str,
+) -> Result<String, LoadError> {
+    let (encoding, bytes) = if let Some(bom) = select_bom(bytes) {
+        bom
+    } else if let Some(label) = label {
+        (
+            from_label(label).ok_or_else(|| LoadError::UnsupportedCharset(label.into()))?,
+            bytes,
+        )
+    } else {
+        (Encoding::Utf8, bytes)
+    };
+    decode_selected(bytes, encoding, source)
+}
+
 pub(crate) fn decode_css(
     bytes: &[u8],
     label: Option<&str>,
