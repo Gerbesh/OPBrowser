@@ -8,8 +8,10 @@ is not a proxy for full completion.
    layout, painting, SVG and color-management fidelity.
 2. **JavaScript engine:** expand ECMAScript grammar/runtime support and
    honest Test262 coverage. Existing parse-only metric is 523/1983.
-3. **Page scripting:** connect `op_js` to a DOM binding layer, events,
-   document lifecycle and Web APIs. This path is **not working yet**.
+3. **Page scripting:** M4.1 now executes bounded classic inline scripts
+   and supports a first `document.getElementById`/textContent DOM
+   mutation path. Next implement external script loading, correct script
+   scheduling, DOM event dispatch and broader Web APIs.
 4. **Browser features:** tabs, task manager, page isolation, session
    restore, background tab freezing, content blocker subscriptions/UI.
 5. **Quality:** bounded memory/CPU benchmarks, security hardening,

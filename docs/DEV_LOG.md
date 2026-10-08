@@ -2681,3 +2681,30 @@ This file is append-only project history.
   links, missing references, and complete source rendering. The main repo
   remains canonical; Wiki updates must be committed/pushed independently.
 
+## 2026-10-08 - First inline JS to real DOM and native paint (M4.1)
+
+- Introduced native host binding to op_js::JsRuntime:
+  document.getElementById returns an owned element view, and writing
+  element.textContent produces detached, bounded mutation records.
+  No ready-made JS engine, borrowed DOM pointer or unsafe bridge.
+- op_dom::Document::set_text_content detaches an element's old child
+  subtree and inserts an ordinary DOM Text node. op_engine::scripts
+  discovers classic inline scripts, skips src/module/non-JS cases,
+  shares one runtime between scripts and applies mutations between
+  them before author CSS/computed styles, image loading and layout.
+- Limits include 16 scripts, 128 KiB/script, 50,000 VM instructions
+  per script, 4096 DOM snapshot nodes, 256 mutations/script,
+  and 64 KiB per mutation; runtime heap/call depth limits still apply.
+  Errors are non-fatal and reported as ScriptReport counts.
+- Tests prove DOM mutation affects display-list text for an actual
+  data:text/html navigation and persists after retained reflow;
+  VM tests cover live text reads, missing ids and oversized text.
+  Added standalone examples/js/dom-text.html for native inspection.
+- Strict Static WPT unchanged at 197/200 (98.50%), author-fuzzy
+  198/200 (99.00%), Positioning 53/100 with zero render errors.
+  HTML5test still cannot calculate its score: the site's external
+  JavaScript, event lifecycle, and numerous DOM/Web APIs are absent.
+- Caveat: all classic inline scripts currently run after the full DOM
+  has been parsed rather than parser-blocking; no async scripts, event
+  handlers, script.src, DOM creation or security-origin model yet.
+

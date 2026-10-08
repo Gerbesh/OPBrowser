@@ -16,6 +16,29 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S7 - Classic inline JS → DOM → native pixels (M4.1)
+
+Status: first bounded end-to-end slice **IMPLEMENTED**.
+
+```text
+op_html::parse_document
+  -> op_engine::scripts::execute_inline (max 16 classic scripts)
+  -> op_js::JsRuntime::eval_script (shared page runtime)
+  -> document.getElementById / element.textContent (owned JS builtins)
+  -> Vec<DomTextMutation> (bounded, detached)
+  -> op_dom::Document::set_text_content
+  -> op_css::compute_styles + op_layout
+  -> op_paint::build_display_list -> Win32 GDI pixels
+```
+
+Verified by the data URL navigation integration test, retained reflow
+test and `examples/js/dom-text.html`. Arbitrary JS errors do not
+invalidate navigation. CSS/layout is recalculated after mutations, but
+scripts currently execute as a one-time phase after full HTML parsing:
+not parser-blocking; external scripts, events, DOM creation and other Web
+APIs remain unimplemented. Generated code slice S7 is source-anchor
+checked under `docs/GENERATED_CODE_SLICES.md`.
+
 ## S0 - Native process startup
 
 Status: COMPLETE at M0 level.

@@ -13,8 +13,10 @@ claim that OPBrowser is ready for everyday browsing.
   images, basic SVG text, CSS backgrounds, relative/absolute/fixed layout,
   floats, basic flex/table formatting, selected compositing/filter effects.
 - Windows WIC-backed raster decoding and ICC color conversion.
-- Independent JavaScript tokenizer/parser, bytecode compiler and VM,
-  **not connected to page scripts or DOM**.
+- Independent JavaScript lexer/parser/bytecode VM now executes **bounded
+  classic inline scripts** and supports `document.getElementById` plus
+  textContent mutation before CSS/layout. External JS, events and Web
+  APIs are not yet supported.
 - Network request filtering foundation; full adblock UI/subscription pipeline
   is **not** implemented.
 
@@ -33,7 +35,7 @@ See [Known Test Divergences](Known-Test-Divergences.md).
 
 ## Biggest gaps
 
-Page-script execution, DOM/Web API bindings, events, modern JavaScript runtime
+Complete page-script lifecycle, broad DOM/Web API bindings, events, modern JavaScript runtime
 coverage, modern layout modes, complete CSS painting/stacking, browser tabs,
 tab freezing, browser task manager, settings and full content blocker remain
 major workstreams. The 98.5% metric measures only **200 selected static tests**.

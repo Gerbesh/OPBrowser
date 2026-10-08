@@ -167,6 +167,10 @@ impl Document {
         self.nodes.get(id.index())
     }
 
+    pub fn node_id(&self, index: usize) -> Option<NodeId> {
+        (index < self.nodes.len()).then_some(NodeId(index))
+    }
+
     pub fn children(&self, id: NodeId) -> &[NodeId] {
         self.node(id)
             .map(|node| node.children.as_slice())
@@ -185,6 +189,25 @@ impl Document {
             NodeKind::Element(element) => Some(element),
             _ => None,
         }
+    }
+
+    /// Replace an element's child subtree with one ordinary text node.
+    /// Detached descendants stay addressable by NodeId but are no longer
+    /// reachable from the document root or considered during style/layout.
+    pub fn set_text_content(&mut self, element: NodeId, text: &str) -> bool {
+        if self.element(element).is_none() || text.len() > 64 * 1024 {
+            return false;
+        }
+        let old_children = std::mem::take(&mut self.nodes[element.index()].children);
+        for old in old_children {
+            self.nodes[old.index()].parent = None;
+        }
+        if !text.is_empty() {
+            let replacement = self.create_text(text);
+            self.append_child(element, replacement)
+                .expect("new text node and parent are valid");
+        }
+        true
     }
 
     pub fn document_type(&self, id: NodeId) -> Option<&DocumentTypeData> {

@@ -35,7 +35,9 @@ Its own tokenizer, tree builder, DOM, text layout and display list render the pa
 into a Win32 window. Text hyperlinks support current-window navigation, including
 relative HTTP(S) and local-file links. PNG/JPEG/GIF/BMP images load from HTTP(S),
 local files and data URLs, with dimensions, transparency, alt fallback and image links.
-Initial embedded, inline and external author CSS plus block/flex/float layout and first relative/absolute/fixed positioning now reach native pixels. A standalone original JavaScript lexer/parser/bytecode/VM with objects, closures, exceptions, `this`, constructors, `arguments` and initial Error objects exists, but page `<script>` execution, DOM bindings and Web APIs are not connected yet.
+Initial embedded, inline and external author CSS plus block/flex/float layout and first relative/absolute/fixed positioning now reach native pixels. A standalone original JavaScript lexer/parser/bytecode/VM with objects, closures, exceptions, `this`, constructors, `arguments` and initial Error objects exists, and a first bounded inline `<script>` execution path can now update
+DOM text by id before paint. Full DOM bindings, external scripts, event
+dispatch and Web APIs are not implemented.
 
 OPBrowser is an experimental Windows 11 browser built around an original web engine.
 
@@ -70,6 +72,11 @@ HTTP(S) URL / local path / file: URL / data:text/html URL
   -> op_platform_win
   -> Win32 pixels
 ```
+
+First JavaScript-to-DOM demonstration:
+`target\\release\\op_browser.exe examples\\js\\dom-text.html`.
+This executes two classic inline scripts through the original VM and
+shows the resulting DOM text in the native window.
 
 Current usage examples:
 

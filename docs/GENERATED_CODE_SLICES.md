@@ -18,7 +18,7 @@ op_platform_win::paint_command
 
 - [`op_net::load_document`](../crates/op_net/src/lib.rs#L141)
 - [`op_html::Tokenizer`](../crates/op_html/src/lib.rs#L56)
-- [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L188)
+- [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L195)
 - [`op_layout::layout`](../crates/op_layout/src/flow.rs#L15)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
 - [`op_platform_win::paint_command`](../crates/op_platform_win/src/lib.rs#L641)
@@ -35,8 +35,8 @@ op_engine::reflow
 op_platform_win::paint_window
 ```
 
-- [`op_engine::navigate`](../crates/op_engine/src/lib.rs#L258)
-- [`op_engine::reflow`](../crates/op_engine/src/lib.rs#L241)
+- [`op_engine::navigate`](../crates/op_engine/src/lib.rs#L268)
+- [`op_engine::reflow`](../crates/op_engine/src/lib.rs#L251)
 - [`op_platform_win::paint_window`](../crates/op_platform_win/src/lib.rs#L554)
 
 No full History API or single-page-application lifecycle.
@@ -77,7 +77,7 @@ Windows WIC performs codec/color conversion; OPBrowser owns resource policy and 
 
 ## S5 — Original JavaScript engine boundary
 
-Status: **Standalone VM; no DOM binding**.
+Status: **Standalone VM with first bounded page DOM binding**.
 
 ```text
 op_js::parse_script
@@ -87,9 +87,35 @@ op_engine::Engine
 
 - [`op_js::parse_script`](../crates/op_js/src/lib.rs#L18)
 - [`op_js::JsRuntime`](../crates/op_js/src/lib.rs#L20)
-- [`op_engine::Engine`](../crates/op_engine/src/lib.rs#L128)
+- [`op_engine::Engine`](../crates/op_engine/src/lib.rs#L131)
 
-No page script evaluation, DOM bindings, or event loop; engine depends on the VM but does not yet execute page scripts.
+Initial classic inline scripts now execute and can update textContent by id. External scripts, events, parser-blocking order and full DOM/Web APIs remain unsupported.
+
+## S7 — Classic inline JavaScript to retained DOM and pixels
+
+Status: **M4.1 first functional page script slice**.
+
+```text
+op_html::parse_document
+op_engine::execute_inline
+op_js::install_dom_snapshot
+op_js::DomGetElementById
+op_dom::set_text_content
+op_css::compute_styles
+op_engine::render
+op_paint::build_display_list
+```
+
+- [`op_html::parse_document`](../crates/op_html/src/lib.rs#L6)
+- [`op_engine::execute_inline`](../crates/op_engine/src/scripts.rs#L109)
+- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L230)
+- [`op_js::DomGetElementById`](../crates/op_js/src/runtime.rs#L51)
+- [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L197)
+- [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
+- [`op_engine::render`](../crates/op_engine/src/lib.rs#L112)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+
+Deliberately bounded, once-per-load execution after the document is parsed; no event loop, external scripts, general DOM mutations or full HTML5test support.
 
 ## S6 — WPT image comparison and reporting
 

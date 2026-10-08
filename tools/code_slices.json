@@ -100,7 +100,7 @@
     {
       "id": "S5",
       "title": "Original JavaScript engine boundary",
-      "status": "Standalone VM; no DOM binding",
+      "status": "Standalone VM with first bounded page DOM binding",
       "steps": [
         {
           "path": "crates/op_js/src/lib.rs",
@@ -115,7 +115,23 @@
           "symbol": "Engine"
         }
       ],
-      "limitation": "No page script evaluation, DOM bindings, or event loop; engine depends on the VM but does not yet execute page scripts."
+      "limitation": "Initial classic inline scripts now execute and can update textContent by id. External scripts, events, parser-blocking order and full DOM/Web APIs remain unsupported."
+    },
+    {
+      "id": "S7",
+      "title": "Classic inline JavaScript to retained DOM and pixels",
+      "status": "M4.1 first functional page script slice",
+      "steps": [
+        {"path": "crates/op_html/src/lib.rs", "symbol": "parse_document"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "execute_inline"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "install_dom_snapshot"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "DomGetElementById"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
+        {"path": "crates/op_css/src/lib.rs", "symbol": "compute_styles"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "render"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Deliberately bounded, once-per-load execution after the document is parsed; no event loop, external scripts, general DOM mutations or full HTML5test support."
     },
     {
       "id": "S6",

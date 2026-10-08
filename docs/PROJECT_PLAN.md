@@ -45,6 +45,28 @@ Primary conformance targets:
 - NEXT keep README, Wiki status, generated reports, manual dependency graph,
   Code Slices and known-divergence log synchronized with future changes.
 
+## M4.1 - Page scripting: first vertical slice (2026-10-08)
+
+- DONE first integration of OPBrowser-owned `op_js` into HTML document
+  preparation. Classic inline scripts execute once, in DOM order, with one
+  shared VM context per loaded page and instruction/heap budgets.
+- DONE minimal, detached browser host binding:
+  `document.getElementById(id)` returns an element snapshot,
+  `element.textContent` gets/sets its text. Changes go through bounded
+  DOM mutation records and update real `op_dom::Document` nodes.
+- DONE CSS styles and layout are calculated after mutations, and retained
+  DOM reflow preserves script-generated content; tests cover initial page,
+  real data URL loading, multiple scripts, unknown IDs and length limits.
+- DONE manual example `examples/js/dom-text.html` renders changed text
+  through the ordinary Win32 browser pipeline.
+- LIMITATION no external `script src`, parser-blocking script timing,
+  synchronous DOM access before later parser nodes, events or `addEventListener`,
+  DOM creation/appendChild, timers, global Web APIs, or HTML5test score.
+  Script failures are non-fatal and reported via `active_script_report()`.
+- NEXT M4.2 execute external same-origin scripts through the normal filtered
+  resource loader; establish script loading order and lifecycle, then
+  implement event dispatch and additional DOM APIs with honest test coverage.
+
 ## M0 - Foundation
 
 Status: DONE at initial level.

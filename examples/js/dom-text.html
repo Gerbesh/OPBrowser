@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>OPBrowser M4.1: JavaScript updates DOM</title>
+  <style>
+    body { font-size:20px; margin:32px; background:#f2f6ff; color:#203054 }
+    h1 { color:#b42318 }
+    .result { border:2px solid #0e7490; background:#dff8ed; padding:12px }
+  </style>
+</head>
+<body>
+  <h1 id="headline">Before executing JavaScript</h1>
+  <p class="result" id="result">Before</p>
+  <script>
+    var message = "JavaScript works!";
+    document.getElementById("headline").textContent = message;
+  </script>
+  <script>
+    document.getElementById("result").textContent = "DOM updated by OPBrowser's own VM";
+  </script>
+  <p>These scripts execute once during initial document preparation.</p>
+  <p>External scripts, click handlers and Web APIs are not implemented yet.</p>
+</body>
+</html>

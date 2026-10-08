@@ -16,6 +16,24 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## First live JS → DOM → repaint boundary (M4.1)
+
+The `op_engine::scripts` preparation step traverses parsed HTML, collects
+at most 16 bounded classic inline scripts and supplies
+`op_js::JsRuntime::install_dom_snapshot` with detached element IDs and
+textContent values. The VM's own builtin getElementById returns an element
+object. Its textContent setter queues bounded `DomTextMutation` records;
+it never borrows or holds a raw pointer to the live DOM. Between scripts,
+`op_engine` applies queued records with `op_dom::Document::set_text_content`,
+then continues normal author CSS collection/computation, layout and paint.
+A `PreparedDocument` retains the mutated DOM so resize reflow remains
+consistent. The runtime reports executed/failed/skipped/mutations rather
+than aborting navigation for unsupported JavaScript.
+
+This is not DOM scripting conformance or a complete script lifecycle:
+external scripts, event loop, DOM mutation observers, document.write and
+real parser-blocking timing remain absent.
+
 ## Crate dependency graph
 
 ```mermaid

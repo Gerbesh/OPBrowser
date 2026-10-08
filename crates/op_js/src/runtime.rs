@@ -40,6 +40,7 @@ enum ObjectKind {
     Ordinary,
     Array,
     Function,
+    DomElement(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +48,7 @@ enum BuiltinFunction {
     Error,
     TypeError,
     ReferenceError,
+    DomGetElementById,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +87,21 @@ enum CallOutcome {
     Thrown(JsValue),
 }
 
+/// A bounded, detached DOM view supplied by OPBrowser's page engine.
+#[derive(Debug, Clone)]
+pub struct DomElementSnapshot {
+    pub node: usize,
+    pub id: String,
+    pub text_content: String,
+}
+
+/// A host mutation applied by the browser only after VM execution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DomTextMutation {
+    pub node: usize,
+    pub text_content: String,
+}
+
 #[derive(Debug)]
 pub struct JsRuntime {
     heap: Vec<JsObject>,
@@ -100,6 +117,9 @@ pub struct JsRuntime {
     object_budget: usize,
     environment_budget: usize,
     call_depth_budget: usize,
+    dom_ids: HashMap<String, usize>,
+    dom_text: HashMap<usize, String>,
+    dom_mutations: Vec<DomTextMutation>,
 }
 
 impl Default for JsRuntime {
@@ -160,6 +180,9 @@ impl Default for JsRuntime {
             object_budget: DEFAULT_OBJECT_BUDGET,
             environment_budget: DEFAULT_ENVIRONMENT_BUDGET,
             call_depth_budget: DEFAULT_CALL_DEPTH_BUDGET,
+            dom_ids: HashMap::new(),
+            dom_text: HashMap::new(),
+            dom_mutations: Vec::new(),
         };
 
         runtime.install_global_binding(
@@ -200,6 +223,48 @@ impl JsRuntime {
             instruction_budget,
             ..Self::default()
         }
+    }
+
+    /// Install a deliberately minimal document host object. DOM identities are
+    /// detached snapshots, never borrowed pointers into the live tree.
+    pub fn install_dom_snapshot(
+        &mut self,
+        elements: impl IntoIterator<Item = DomElementSnapshot>,
+    ) -> Result<(), JsError> {
+        self.dom_ids.clear();
+        self.dom_text.clear();
+        self.dom_mutations.clear();
+        for element in elements.into_iter().take(4096) {
+            self.dom_ids.entry(element.id).or_insert(element.node);
+            self.dom_text.insert(element.node, element.text_content);
+        }
+        let function = self.allocate_object_with_function(
+            ObjectKind::Function,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("name".to_owned(), JsValue::String("getElementById".into())),
+                ("length".to_owned(), JsValue::Number(1.0)),
+            ]),
+            Some(FunctionObject {
+                implementation: FunctionImplementation::Builtin(BuiltinFunction::DomGetElementById),
+            }),
+        )?;
+        let document = self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            HashMap::from([("getElementById".to_owned(), JsValue::Object(function))]),
+        )?;
+        self.install_global_binding(
+            "document",
+            JsValue::Object(document),
+            false,
+            VariableKind::Const,
+        );
+        Ok(())
+    }
+
+    pub fn take_dom_mutations(&mut self) -> Vec<DomTextMutation> {
+        std::mem::take(&mut self.dom_mutations)
     }
 
     pub fn eval_script(&mut self, source: &str) -> Result<JsValue, JsError> {
@@ -675,6 +740,24 @@ impl JsRuntime {
         builtin: BuiltinFunction,
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
+        if matches!(builtin, BuiltinFunction::DomGetElementById) {
+            let Some(id) = arguments.first().map(JsValue::to_js_string) else {
+                return Ok(CallOutcome::Value(JsValue::Null));
+            };
+            let Some(node) = self.dom_ids.get(&id).copied() else {
+                return Ok(CallOutcome::Value(JsValue::Null));
+            };
+            let text = self.dom_text.get(&node).cloned().unwrap_or_default();
+            let element = self.allocate_object(
+                ObjectKind::DomElement(node),
+                Some(self.object_prototype),
+                HashMap::from([
+                    ("textContent".to_owned(), JsValue::String(text)),
+                    ("id".to_owned(), JsValue::String(id)),
+                ]),
+            )?;
+            return Ok(CallOutcome::Value(JsValue::Object(element)));
+        }
         let message = arguments
             .first()
             .filter(|value| !matches!(value, JsValue::Undefined))
@@ -684,6 +767,7 @@ impl JsRuntime {
             BuiltinFunction::Error => ("Error", self.error_prototype),
             BuiltinFunction::TypeError => ("TypeError", self.type_error_prototype),
             BuiltinFunction::ReferenceError => ("ReferenceError", self.reference_error_prototype),
+            BuiltinFunction::DomGetElementById => unreachable!("handled above"),
         };
         let error = self.allocate_error_object(name, &message, prototype)?;
         Ok(CallOutcome::Value(JsValue::Object(error)))
@@ -912,6 +996,22 @@ impl JsRuntime {
             };
         };
 
+        if key == "textContent"
+            && let ObjectKind::DomElement(node) = self.object(*id)?.kind
+        {
+            if self.dom_mutations.len() >= 256 {
+                return Err(JsError::execution_limit("DOM mutation budget exceeded"));
+            }
+            let text = value.to_js_string();
+            if text.len() > 64 * 1024 {
+                return Err(JsError::execution_limit("DOM text length budget exceeded"));
+            }
+            self.dom_text.insert(node, text.clone());
+            self.dom_mutations.push(DomTextMutation {
+                node,
+                text_content: text,
+            });
+        }
         if key == "__proto__" {
             if self.object(*id)?.properties.contains_key(key) {
                 self.object_mut(*id)?
@@ -1324,6 +1424,69 @@ mod tests {
             runtime.eval_script("'2' === 2").unwrap(),
             JsValue::Boolean(false)
         );
+    }
+
+    #[test]
+    fn browser_dom_host_returns_objects_and_records_changes() {
+        let mut runtime = JsRuntime::with_instruction_budget(10_000);
+        runtime
+            .install_dom_snapshot([DomElementSnapshot {
+                node: 12,
+                id: "headline".into(),
+                text_content: "Old".into(),
+            }])
+            .unwrap();
+        assert_eq!(
+            runtime
+                .eval_script("document.getElementById('headline').textContent")
+                .unwrap(),
+            JsValue::String("Old".into())
+        );
+        assert_eq!(
+            runtime
+                .eval_script("document.getElementById('absent')")
+                .unwrap(),
+            JsValue::Null
+        );
+        runtime
+            .eval_script(
+                "var heading=document.getElementById('headline');\
+             heading.textContent='Updated';",
+            )
+            .unwrap();
+        assert_eq!(
+            runtime
+                .eval_script("document.getElementById('headline').textContent")
+                .unwrap(),
+            JsValue::String("Updated".into())
+        );
+        assert_eq!(
+            runtime.take_dom_mutations(),
+            vec![DomTextMutation {
+                node: 12,
+                text_content: "Updated".into(),
+            }]
+        );
+        assert!(runtime.take_dom_mutations().is_empty());
+    }
+
+    #[test]
+    fn browser_dom_host_rejects_oversized_text() {
+        let mut runtime = JsRuntime::new();
+        runtime
+            .install_dom_snapshot([DomElementSnapshot {
+                node: 1,
+                id: "entry".into(),
+                text_content: String::new(),
+            }])
+            .unwrap();
+        let source = format!(
+            "document.getElementById('entry').textContent='{}';",
+            "x".repeat(65537)
+        );
+        let err = runtime.eval_script(&source).unwrap_err();
+        assert_eq!(err.kind, crate::JsErrorKind::ExecutionLimit);
+        assert!(runtime.take_dom_mutations().is_empty());
     }
 
     #[test]

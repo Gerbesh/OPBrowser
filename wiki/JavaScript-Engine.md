@@ -48,7 +48,24 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
-This is still not page scripting. Arrow/default/rest/destructuring forms, labels, for-in/of,
+## M4.1: first actual page scripting slice
+
+Classic inline `<script>` contents now execute once during document
+preparation, in source DOM order with shared JS global bindings. A first
+built-in DOM host exposes `document.getElementById(id)` and
+`element.textContent` reads/writes, returning detached mutation records
+to the browser engine. Real DOM child text is replaced before normal
+CSS/layout/Win32 paint. Reflow retains the change. VM instruction,
+object, string and mutation limits apply; exceptions are tracked via
+`Engine::active_script_report` rather than crashing page navigation.
+
+Try `cargo run -p op_browser -- examples/js/dom-text.html` to see the
+JS-modified heading. This is not browser-grade script processing:
+no `script src`, parser-blocking evaluation, modules, event handlers,
+`addEventListener`, DOM creation, timers or HTML5test score.
+Unsupported scripts can fail while the rest of the page remains visible.
+
+The ECMAScript language/runtime is still incomplete. Arrow/default/rest/destructuring forms, labels, for-in/of,
 property descriptors/accessors, full array-length mutation rules, primitive boxing/ToPrimitive,
 garbage collection, broad standard built-ins, promises/modules and DOM bindings are still absent.
 C-style `for(let ...)` has one loop lexical environment rather than fresh per-iteration bindings,

@@ -10,7 +10,9 @@ use op_layout::{
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link};
 use op_paint::{DisplayList, build_display_list};
 mod images;
+mod scripts;
 mod styles;
+pub use scripts::ScriptReport;
 mod text;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +105,7 @@ struct PreparedDocument {
     style_collection: StyleCollection,
     computed_styles: ComputedStyleMap,
     stylesheet_addresses: std::collections::HashMap<op_dom::NodeId, String>,
+    scripts: ScriptReport,
 }
 
 impl PreparedDocument {
@@ -164,6 +167,10 @@ impl Engine {
         self.network.request_filter_mut()
     }
 
+    pub fn active_script_report(&self) -> Option<ScriptReport> {
+        Some(self.active_document.as_ref()?.scripts)
+    }
+
     pub fn active_styles(&self) -> Option<&StyleMap> {
         Some(&self.active_document.as_ref()?.style_collection.styles)
     }
@@ -191,7 +198,8 @@ impl Engine {
         viewport_width: i32,
         viewport_height: i32,
     ) -> DisplayList {
-        let document = parse_document(html);
+        let mut document = parse_document(html);
+        let _script_report = scripts::execute_inline(&mut document);
         let style_collection = collect_author_styles(&document);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let layout = layout_document_with_computed_styles_and_viewport_metrics(
@@ -218,7 +226,8 @@ impl Engine {
 
     /// Initialize an in-memory page and an empty navigation history for startup.
     pub fn set_html_page(&mut self, html: &str, width: i32, height: i32) -> DisplayList {
-        let document = parse_document(html);
+        let mut document = parse_document(html);
+        let script_report = scripts::execute_inline(&mut document);
         let style_collection = collect_author_styles(&document);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let prepared = PreparedDocument {
@@ -229,6 +238,7 @@ impl Engine {
             style_collection,
             computed_styles,
             stylesheet_addresses: std::collections::HashMap::new(),
+            scripts: script_report,
         };
         let page = prepared.render(width, height);
         self.active_document = Some(prepared);
@@ -326,7 +336,8 @@ impl Engine {
 
     fn prepare_source(&self, source: &str) -> Result<PreparedDocument, LoadError> {
         let loaded: LoadedDocument = self.network.load_document(source)?;
-        let document = parse_document(&loaded.text);
+        let mut document = parse_document(&loaded.text);
+        let script_report = scripts::execute_inline(&mut document);
         let linked_stylesheets = styles::load(&self.network, &document, &loaded.address);
         let mut style_collection =
             collect_author_styles_with_linked(&document, &linked_stylesheets.texts);
@@ -368,6 +379,7 @@ impl Engine {
             style_collection,
             computed_styles,
             stylesheet_addresses: linked_stylesheets.addresses,
+            scripts: script_report,
         })
     }
 }
@@ -382,6 +394,41 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn inline_page_script_changes_visible_text_and_reflow_keeps_the_mutation() {
+        let mut engine = Engine::new();
+        let list = engine.set_html_page(
+            "<!doctype html><html><body><h1 id='title'>Before JS</h1>\
+             <script>document.getElementById('title').textContent = 'JS works';</script>\
+             </body></html>",
+            800,
+            600,
+        );
+        assert!(contains_text(&list, "JS works"));
+        assert!(!contains_text(&list, "Before JS"));
+        assert_eq!(engine.active_script_report().unwrap().executed, 1);
+        assert_eq!(engine.active_script_report().unwrap().mutations, 1);
+        let after_resize = engine.reflow(340, 380).unwrap();
+        assert!(contains_text(&after_resize.display_list, "JS works"));
+        assert!(!contains_text(&after_resize.display_list, "Before JS"));
+    }
+
+    #[test]
+    fn inline_page_script_runs_during_real_data_url_navigation() {
+        let mut engine = Engine::new();
+        let html = "<p id='message'>Initial</p><script>document.getElementById('message').textContent='Updated';</script>";
+        let source = format!(
+            "data:text/html,{}",
+            html.bytes()
+                .map(|b| format!("%{b:02X}"))
+                .collect::<String>()
+        );
+        let page = engine.navigate(&source, 800, 600).unwrap();
+        assert!(contains_text(&page.display_list, "Updated"));
+        assert!(!contains_text(&page.display_list, "Initial"));
+        assert_eq!(engine.active_script_report().unwrap().mutations, 1);
+    }
 
     #[test]
     fn engine_starts_in_created_state() {

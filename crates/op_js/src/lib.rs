@@ -17,7 +17,7 @@ pub use parser::{
     Program, Statement, SwitchCase, UnaryOp, UpdateOp, VariableDeclarator, VariableKind,
     parse_script,
 };
-pub use runtime::JsRuntime;
+pub use runtime::{DomElementSnapshot, DomTextMutation, JsRuntime};
 pub use value::{JsValue, ObjectId};
 
 pub use bytecode::{CompiledScript, compile_script};
