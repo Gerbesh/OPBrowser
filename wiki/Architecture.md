@@ -49,6 +49,14 @@ their own ink into the common z=0 source order even when they have stacked
 children. Because their children keep independent PaintKeys and auto-z does
 not establish an ancestor context, a positive child can paint over later
 siblings and a negative child can remain behind the parent's background.
+Table-part positioning now resolves structural ancestors for each grid cell
+and shifts paint output, not its flow slot, for relative rows, sections, and
+cells. Position-relative row/section backgrounds have their own paint groups.
+An absolute cell descendant can use a positioned table ancestor as its
+containing block. Auto table columns use content-derived preferred widths
+(including pixel-sized descendant blocks), rather than always filling the
+containing block. Empty absolute-only row tracks suppress stray section pixels.
+Some table wrapper metrics and complex spanning backgrounds remain approximate.
 This is not full CSS stacking: additional context triggers, other auto-z
 paint-phase details and exact interleaving remain future work. Win32 drawing
 never decides paint order.

@@ -2372,3 +2372,28 @@ This file is append-only project history.
   38/100 (38.00%), zero render errors. Remaining auto-z paint-phase interleaving
   and additional stacking context triggers still need work.
 
+## 2026-10-08 - Relative table parts and intrinsic auto column widths
+
+- Improve table auto column sizing: include explicit pixel-sized in-flow descendant
+  blocks in cell intrinsic widths, then cap preferred auto column totals by
+  available width instead of stretching all columns to the parent.
+- Traverse each table cell's structural DOM ancestors to apply CSS relative
+  offsets from table rows, row groups, headers, footers, and positioned cells.
+  Translate decoration, text, image, and independently positioned outputs without
+  changing normal grid flow placement. Positioned td backgrounds receive paint
+  keys, and relative row/section backgrounds become separate painted rectangles.
+- Diagnose three final single-pixel failures using rendered BMP comparisons:
+  an empty row with only an absolute child was painting a 1px green section
+  background. Suppress this visual artifact without removing the grid track.
+- Temporarily establish a table-part containing block for absolute descendants
+  during cell layout. The preceding tbody contributes the unshifted row origin,
+  and its relative visual offset is applied after layout. This corrects tfoot
+  children that previously ignored preceding row heights.
+- Add integration regressions for relative tbody geometry, relative td background
+  layering, tfoot containing-block coordinates, and no stray pixel for an
+  absolute-only table row. Clippy is enforced without warnings.
+- Frozen WPT Positioning v1 improves from 38/100 (38.00%) to 53/100 (53.00%):
+  +15 passing tests. Frozen WPT Static v1 remains 187/200 (93.50%), no render
+  errors on either suite. Further work remains for complex table spanning,
+  row backgrounds, auto wrapper sizing, and exact CSS painting phases.
+

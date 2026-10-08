@@ -970,6 +970,17 @@ inline-blocks enter the zero-level sibling order without creating an atomic
 ancestor in collect_paint_groups. The result is an incremental CSS stacking
 slice, not the full CSS painting algorithm.
 
+Table layout adds table_cell_explicit_descendant_width to the existing intrinsic
+column measurement. For width:auto, table_box feeds column widths a shrink-to-
+preferred width basis instead of always using the containing block width.
+table_part_ancestors resolves structural table ancestry for each placed cell;
+table_part_offset and translate_table_cell move the cell's paint records without
+changing its normal flow slot. paint_positioned_table_part_backgrounds emits
+source-ordered relative row/section backgrounds and skips background on empty
+rows whose only contents are absolute. layout_table_cell temporarily adds the
+nearest relative table section/row/cell to the positioning stack for absolute
+children. The fixed manifest moves Positioning WPT 38/100 to 53/100.
+
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting
 an extra empty inline fragment after a block child/pseudo flushed the collection. Nested

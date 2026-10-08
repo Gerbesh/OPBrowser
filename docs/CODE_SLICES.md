@@ -484,6 +484,22 @@ stacking remains incomplete: additional context triggers, auto-z interleaving
 with other CSS paint phases, and some inline/block decoration ordering remain
 coarse.
 
+The next table-positioning slice adds intrinsic pixel-width hints for block
+descendants in table cells, letting auto table columns shrink to the available-
+capped preferred width. After grid layout, table cells collect structural DOM
+ancestors (td/tr/tbody/thead/tfoot), accumulate relative offsets without moving
+normal-flow row slots, and translate their backgrounds/text/images and positioned
+descendant outputs. Positioned row/section backgrounds are emitted as paint groups
+covering each occupied row; a grid track that is only 1px high due to an absolute
+descendant does not emit an incorrect one-pixel row-group background. Cell
+backgrounds with position:relative receive their own positioned paint key.
+During cell layout the nearest relative table ancestor contributes the absolute
+containing-block origin, with the later relative visual translation preserved.
+This closes 15 more frozen Positioning WPT tests, from 38/100 to 53/100.
+Limitations: auto table wrapper width may still differ from intrinsic cell
+tracks, row-group paint beyond basic span/grid cases is approximate, and
+percent-based absolute containing heights remain incomplete.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus

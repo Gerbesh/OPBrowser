@@ -371,10 +371,21 @@ Status: IN PROGRESS.
   Added five regressions for zero-level ties, positive/negative children, explicit
   inline-block stacking isolation and reflow. WPT Static 187/200, Positioning
   38/100 remain unchanged with zero render errors.
-- NEXT complete positioning for inline-block/flex/table and full CSS paint phases,
-  context triggers (opacity/transforms/etc.), accurate auto-z interleaving with
-  floats and line backgrounds, overflow clipping, font fallback and line-height.
-  Multicol, vertical writing and sticky remain unsupported.
+- DONE table-part relative positioning and auto table column sizing: table cells
+  now receive relative offsets inherited from row, row-group, header/footer-group
+  and cell ancestors; relative row/section backgrounds are painted at their own
+  stacking level. Empty all-absolute rows do not emit stray one-pixel section ink.
+  Auto-sized table columns now honor explicit pixel-sized block descendants and
+  shrink toward intrinsic preferred widths rather than always filling the parent.
+  Relative table sections become containing blocks for their absolute cell
+  descendants. New geometry/empty-row/containing-block tests added. Frozen WPT
+  Positioning v1 improved 38/100 -> 53/100, Static v1 held at 187/200, both
+  without render errors.
+- NEXT improve table row/group background painting over multi-column/spanned
+  grids, align auto table wrapper metrics to the computed column widths, handle
+  more absolute containing-block percentage cases, and complete CSS paint phases.
+  Additional context triggers, overflow clipping, font fallback, multicol, vertical
+  writing and sticky remain unsupported.
 
 ## M3 - Original JavaScript engine
 

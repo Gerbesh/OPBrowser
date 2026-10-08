@@ -1893,7 +1893,26 @@ impl<'a> Context<'a, '_> {
                     content_width,
                     horizontal_spacing,
                 );
-                table_column_widths(content_width, &intrinsic, horizontal_spacing)
+                let used_width = if style.width.is_none() {
+                    // CSS auto tables shrink to the larger of their minimum
+                    // content width and the available-space-capped preferred width.
+                    let min = intrinsic
+                        .iter()
+                        .map(|col| col.min)
+                        .fold(0, i32::saturating_add);
+                    let max = intrinsic
+                        .iter()
+                        .map(|col| col.max)
+                        .fold(0, i32::saturating_add);
+                    let spacing =
+                        horizontal_spacing.saturating_mul(intrinsic.len().saturating_add(1) as i32);
+                    max.saturating_add(spacing)
+                        .min(content_width)
+                        .max(min.saturating_add(spacing))
+                } else {
+                    content_width
+                };
+                table_column_widths(used_width, &intrinsic, horizontal_spacing)
             };
             let column_offsets =
                 table_column_offsets(content_x, &column_widths, horizontal_spacing);
@@ -1923,11 +1942,19 @@ impl<'a> Context<'a, '_> {
                         .map(|borders| self.collapsed_border_for_cell(placement, &grid, borders));
                     let layout = self.layout_table_cell(
                         placement,
-                        x,
-                        row_top,
+                        (x, row_top),
                         slot_width,
                         style,
                         collapsed_border,
+                        (
+                            column_offsets.first().copied().unwrap_or(content_x),
+                            table_cell_slot_width(
+                                &column_widths,
+                                0,
+                                column_widths.len(),
+                                horizontal_spacing,
+                            ),
+                        ),
                     );
                     *row_height = (*row_height).max(layout.natural_height);
                     cell_layouts.push(layout);
@@ -1960,7 +1987,16 @@ impl<'a> Context<'a, '_> {
                     .saturating_add(vertical_spacing);
             }
 
-            for cell in cell_layouts {
+            // A row containing only out-of-flow elements has no in-flow
+            // background area, even though the grid retains a 1px track for
+            // stable placement of absolute descendants.
+            let mut row_has_inflow = vec![false; grid.row_count];
+            for cell in &cell_layouts {
+                if cell.content_height > 0 || cell.natural_height > 1 || cell.vertical_extras > 0 {
+                    row_has_inflow[cell.row] = true;
+                }
+            }
+            for (cell, placement) in cell_layouts.into_iter().zip(&grid.cells) {
                 let end = cell.row.saturating_add(cell.rowspan).min(row_heights.len());
                 let span_height = row_heights[cell.row..end]
                     .iter()
@@ -1991,7 +2027,20 @@ impl<'a> Context<'a, '_> {
                         }),
                 };
                 self.shift_table_cell_content(cell, offset);
+                let ancestors = self.table_part_ancestors(&placement.source);
+                let (dx, dy) =
+                    self.table_part_offset(&ancestors, style, content_width, span_height);
+                self.translate_table_cell(cell, dx, dy);
             }
+
+            self.paint_positioned_table_part_backgrounds(
+                &grid,
+                (&row_heights, &row_has_inflow),
+                (&column_widths, &column_offsets),
+                (vertical_spacing, horizontal_spacing),
+                style,
+                content_width,
+            );
 
             self.y = row_top;
         }
@@ -2023,6 +2072,170 @@ impl<'a> Context<'a, '_> {
             baseline: table_offset
                 .saturating_add(first_row_baseline.unwrap_or(table_height))
                 .min(height),
+        }
+    }
+
+    fn table_part_ancestors(&self, source: &TableCellSource) -> Vec<NodeId> {
+        let mut node = match source {
+            TableCellSource::Element(id) => Some(*id),
+            TableCellSource::Anonymous { inherited_from, .. } => Some(*inherited_from),
+        };
+        let mut ancestors = Vec::new();
+        while let Some(id) = node {
+            let Some(element) = self.document.element(id) else {
+                break;
+            };
+            let display = self.element_display(id, &element.tag_name);
+            if matches!(display, Display::Table | Display::InlineTable) {
+                break;
+            }
+            if matches!(
+                display,
+                Display::TableCell
+                    | Display::TableRow
+                    | Display::TableRowGroup
+                    | Display::TableHeaderGroup
+                    | Display::TableFooterGroup
+            ) {
+                ancestors.push(id);
+            }
+            node = self.document.node(id).and_then(|node| node.parent);
+        }
+        ancestors.reverse();
+        ancestors
+    }
+
+    fn table_part_style(&self, id: NodeId, inherited: Style) -> Option<Style> {
+        let element = self.document.element(id)?;
+        Some(self.element_style(id, &element.tag_name, inherited))
+    }
+
+    fn table_part_offset(
+        &self,
+        ancestors: &[NodeId],
+        inherited: Style,
+        width: i32,
+        height: i32,
+    ) -> (i32, i32) {
+        ancestors.iter().fold((0i32, 0i32), |(x, y), &id| {
+            let Some(part) = self.table_part_style(id, inherited) else {
+                return (x, y);
+            };
+            if part.position != Position::Relative {
+                return (x, y);
+            }
+            let (dx, dy) = relative_position_offset(part, width, Some(height));
+            (x.saturating_add(dx), y.saturating_add(dy))
+        })
+    }
+
+    fn translate_table_cell(&mut self, cell: TableCellLayout, dx: i32, dy: i32) {
+        if dx == 0 && dy == 0 {
+            return;
+        }
+        if let Some(index) = cell.decoration {
+            let decoration = &mut self.decorations[index];
+            decoration.x = decoration.x.saturating_add(dx);
+            decoration.y = decoration.y.saturating_add(dy);
+        }
+        for decoration in &mut self.decorations[cell.decoration_start..cell.decoration_end] {
+            decoration.x = decoration.x.saturating_add(dx);
+            decoration.y = decoration.y.saturating_add(dy);
+        }
+        for text in &mut self.text[cell.text_start..cell.text_end] {
+            text.x = text.x.saturating_add(dx);
+            text.y = text.y.saturating_add(dy);
+        }
+        for image in &mut self.images_out[cell.image_start..cell.image_end] {
+            image.x = image.x.saturating_add(dx);
+            image.y = image.y.saturating_add(dy);
+        }
+    }
+
+    fn paint_positioned_table_part_backgrounds(
+        &mut self,
+        grid: &TableGrid,
+        rows: (&[i32], &[bool]),
+        columns: (&[i32], &[i32]),
+        spacing: (i32, i32),
+        inherited: Style,
+        containing_width: i32,
+    ) {
+        let (row_heights, row_has_inflow) = rows;
+        let (column_widths, column_offsets) = columns;
+        let (vertical_spacing, horizontal_spacing) = spacing;
+        let table_x = column_offsets.first().copied().unwrap_or(0);
+        let table_width = column_widths
+            .iter()
+            .copied()
+            .fold(0i32, i32::saturating_add)
+            .saturating_add(
+                horizontal_spacing.saturating_mul(column_widths.len().saturating_sub(1) as i32),
+            );
+        let mut row_y = self.y.saturating_add(vertical_spacing);
+        for (row, &height) in row_heights.iter().enumerate() {
+            if row_has_inflow.get(row) == Some(&false) {
+                row_y = row_y
+                    .saturating_add(height)
+                    .saturating_add(vertical_spacing);
+                continue;
+            }
+            if let Some(placement) = grid.cells.iter().find(|cell| cell.row == row) {
+                let ancestors = self.table_part_ancestors(&placement.source);
+                let mut shift = (0i32, 0i32);
+                for &id in &ancestors {
+                    let Some(part) = self.table_part_style(id, inherited) else {
+                        continue;
+                    };
+                    if part.position != Position::Relative {
+                        continue;
+                    }
+                    let (dx, dy) = relative_position_offset(part, containing_width, Some(height));
+                    shift.0 = shift.0.saturating_add(dx);
+                    shift.1 = shift.1.saturating_add(dy);
+                    let Some(element) = self.document.element(id) else {
+                        continue;
+                    };
+                    let display = self.element_display(id, &element.tag_name);
+                    // Cell backgrounds are already emitted by layout_table_cell.
+                    // A positioned row or section has its own paintable table layer.
+                    if !matches!(
+                        display,
+                        Display::TableRow
+                            | Display::TableRowGroup
+                            | Display::TableHeaderGroup
+                            | Display::TableFooterGroup
+                    ) || part.background.alpha == 0
+                    {
+                        continue;
+                    }
+                    let transparent = DecorationBorder {
+                        width: 0,
+                        color: TextColor {
+                            red: 0,
+                            green: 0,
+                            blue: 0,
+                            alpha: 0,
+                        },
+                    };
+                    self.decorations.push(BoxDecoration {
+                        paint_layer: DecorationPaintLayer::PositionedBlock,
+                        paint_key: Some(self.paint_group(id, part)),
+                        x: table_x.saturating_add(shift.0),
+                        y: row_y.saturating_add(shift.1),
+                        width: table_width.max(1),
+                        height,
+                        background: part.background,
+                        border_top: transparent,
+                        border_right: transparent,
+                        border_bottom: transparent,
+                        border_left: transparent,
+                    });
+                }
+            }
+            row_y = row_y
+                .saturating_add(height)
+                .saturating_add(vertical_spacing);
         }
     }
 
@@ -2523,6 +2736,41 @@ impl<'a> Context<'a, '_> {
         }
     }
 
+    fn table_cell_explicit_descendant_width(&self, source: &TableCellSource) -> i32 {
+        let mut stack = match source {
+            TableCellSource::Element(id) => self.document.children(*id).to_vec(),
+            TableCellSource::Anonymous { nodes, .. } => nodes.clone(),
+        };
+        let mut widest = 0i32;
+        while let Some(id) = stack.pop() {
+            let Some(element) = self.document.element(id) else {
+                continue;
+            };
+            if let Some(style) = self.computed_styles.style_for(id)
+                && !matches!(style.display, Display::None | Display::Contents)
+                && !matches!(style.position, Position::Absolute | Position::Fixed)
+                && let Some(LengthPercentage::Px(width)) = style.width
+            {
+                let padding = resolve_length(style.padding.left, 0)
+                    .max(0)
+                    .saturating_add(resolve_length(style.padding.right, 0).max(0));
+                let border = resolve_border_edges(style.border);
+                let extras = padding
+                    .saturating_add(border.left.width)
+                    .saturating_add(border.right.width);
+                let pixels = bounded_round(width).max(0);
+                widest = widest.max(match style.box_sizing {
+                    BoxSizing::ContentBox => pixels.saturating_add(extras),
+                    BoxSizing::BorderBox => pixels.max(extras),
+                });
+            }
+            if self.element_display(id, &element.tag_name) != Display::None {
+                stack.extend(self.document.children(id));
+            }
+        }
+        widest
+    }
+
     fn table_cell_intrinsic_widths(
         &mut self,
         source: &TableCellSource,
@@ -2563,10 +2811,16 @@ impl<'a> Context<'a, '_> {
             }
         };
         let (text_min, text_max) = self.measure_table_intrinsic_text(&text, style.inline);
-        let mut min = text_min.max(image_width).saturating_add(extras).max(1);
+        let specified_child = self.table_cell_explicit_descendant_width(source);
+        let mut min = text_min
+            .max(image_width)
+            .max(specified_child)
+            .saturating_add(extras)
+            .max(1);
         let mut max = text_max
             .max(text_min)
             .max(image_width)
+            .max(specified_child)
             .saturating_add(extras)
             .max(min);
 
@@ -2893,12 +3147,14 @@ impl<'a> Context<'a, '_> {
     fn layout_table_cell(
         &mut self,
         placement: &TableCellPlacement,
-        x: i32,
-        row_top: i32,
+        origin: (i32, i32),
         slot_width: i32,
         inherited: Style,
         border_override: Option<UsedBorderEdges>,
+        table_origin: (i32, i32),
     ) -> TableCellLayout {
+        let (x, row_top) = origin;
+        let (table_x, table_width) = table_origin;
         let style = self.table_cell_source_style(&placement.source, inherited);
         let padding = Edges {
             top: resolve_length(style.padding.top, slot_width).max(0),
@@ -2918,11 +3174,21 @@ impl<'a> Context<'a, '_> {
             || border.right.width > 0
             || border.bottom.width > 0
             || border.left.width > 0;
+        let cell_paint_key = match placement.source {
+            TableCellSource::Element(id) if style.position == Position::Relative => {
+                Some(self.paint_group(id, style))
+            }
+            _ => None,
+        };
         let decoration = if style.background.alpha > 0 || has_border {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
-                paint_layer: DecorationPaintLayer::Block,
-                paint_key: None,
+                paint_layer: if cell_paint_key.is_some() {
+                    DecorationPaintLayer::PositionedBlock
+                } else {
+                    DecorationPaintLayer::Block
+                },
+                paint_key: cell_paint_key,
                 x,
                 y: row_top,
                 width: slot_width.max(1),
@@ -2964,6 +3230,29 @@ impl<'a> Context<'a, '_> {
             .saturating_add(padding.top);
         self.y = content_top;
         self.pending_margin = None;
+
+        // Table sections/rows/cells can establish an absolute containing block.
+        // Lay out absolute descendants relative to the unshifted row origin;
+        // the table-relative visual offset is applied to their output later.
+        let relative_ancestor = self
+            .table_part_ancestors(&placement.source)
+            .into_iter()
+            .rev()
+            .find(|id| {
+                self.table_part_style(*id, inherited)
+                    .is_some_and(|part| part.position == Position::Relative)
+            });
+        if let Some(id) = relative_ancestor {
+            let cell_owner = self.document.element(id).is_some_and(|element| {
+                self.element_display(id, &element.tag_name) == Display::TableCell
+            });
+            self.positioning_stack.push(PositioningContext {
+                x: if cell_owner { x } else { table_x },
+                y: row_top,
+                width: if cell_owner { slot_width } else { table_width },
+                height: None,
+            });
+        }
 
         let mut items = Vec::new();
         match &placement.source {
@@ -3010,6 +3299,9 @@ impl<'a> Context<'a, '_> {
         }
         self.emit(&mut items, style, content_x, content_width);
         self.flush_pending_margin();
+        if relative_ancestor.is_some() {
+            self.positioning_stack.pop();
+        }
 
         let decoration_end = self.decorations.len();
         let text_end = self.text.len();

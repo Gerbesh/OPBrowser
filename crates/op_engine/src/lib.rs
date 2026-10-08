@@ -2275,6 +2275,156 @@ mod tests {
     }
 
     #[test]
+    fn table_row_group_relative_shift_matches_indicator_geometry() {
+        let html = r#"<style>
+          table { border-collapse:collapse; } td { padding:0; }
+          td > div { height:50px;width:50px; }
+          .group {display:inline-block;position:relative;width:150px;height:200px;}
+          .indicator {position:absolute;background:red;left:100px;height:50px;width:50px;}
+          .relative {position:relative;left:100px;background:green;}
+        </style>
+        <div class="group"><div>
+        <div class="indicator"></div>
+        <table><tbody class="relative"><tr><td><div></div></td></tr></tbody></table>
+        </div></div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let rectangles: Vec<_> = page
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::FillRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                } if (color.r == 255 && color.g == 0 && color.b == 0)
+                    || (color.r == 0 && color.g == 128 && color.b == 0) =>
+                {
+                    Some((color.r, color.g, color.b, *x, *y, *width, *height))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rectangles.len(), 2, "{rectangles:?}");
+        let red = rectangles[0];
+        let green = rectangles[1];
+        assert_eq!(
+            (green.3, green.4, green.5, green.6),
+            (red.3, red.4, red.5, red.6),
+            "{rectangles:?}"
+        );
+    }
+
+    #[test]
+    fn relative_table_footer_is_containing_block_for_absolute_cell_child() {
+        let html = r#"<style>
+          table {border-collapse:collapse} td {padding:0}
+          td > div {width:50px;height:50px}
+          .group {display:inline-block;position:relative;width:150px;height:200px}
+          .relative {position:relative;top:50px;background:white}
+          .absolute {position:absolute;top:50px;background:green}
+        </style>
+        <div class="group">
+          <div style="position:absolute;left:0;top:150px;width:50px;height:50px;background:red"></div>
+          <table><tbody><tr><td><div></div></td></tr></tbody>
+          <tfoot class="relative"><tr><td style="width:50px;height:50px"><div class="absolute"></div></td></tr></tfoot></table>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let positions: Vec<_> = page
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::FillRect {
+                    x,
+                    y,
+                    width: 50,
+                    height: 50,
+                    color,
+                } if (color.r, color.g, color.b) == (255, 0, 0)
+                    || (color.r, color.g, color.b) == (0, 128, 0) =>
+                {
+                    Some((color.r, color.g, color.b, *x, *y))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(positions.len(), 2, "{positions:?}");
+        assert_eq!(
+            (positions[0].3, positions[0].4),
+            (positions[1].3, positions[1].4),
+            "{positions:?}"
+        );
+    }
+
+    #[test]
+    fn empty_relative_table_section_does_not_paint_a_stray_pixel() {
+        let html = r#"<style>
+          table {border-collapse:collapse} td {padding:0}
+          .group {display:inline-block;position:relative;width:150px;height:200px}
+          .relative {position:relative;left:50px;background:green}
+          .absolute {position:absolute;left:50px;width:50px;height:50px;background:green}
+        </style>
+        <div class="group">
+          <table><tbody class="relative"><tr><td><div class="absolute"></div></td></tr></tbody></table>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let fills: Vec<_> = page
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::FillRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                } if (color.r, color.g, color.b) == (0, 128, 0) => Some((*x, *y, *width, *height)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fills.len(), 1, "{fills:?}");
+        assert_eq!(fills[0].2, 50);
+        assert_eq!(fills[0].3, 50);
+    }
+
+    #[test]
+    fn relative_table_cell_background_paints_over_earlier_absolute_indicator() {
+        let html = r#"<style>
+          table {border-collapse:collapse} td {padding:0}
+          td > div {width:50px;height:50px}
+          .group {display:inline-block;position:relative;width:150px;height:200px}
+          .relative {position:relative;top:100px;background:green}
+        </style>
+        <div class="group">
+          <div style="position:absolute;left:0;top:100px;width:50px;height:50px;background:red"></div>
+          <table><tbody><tr><td class="relative"><div></div></td></tr></tbody></table>
+        </div>"#;
+        let page = Engine::new().render_html(html, 800, 600);
+        let fills: Vec<_> = page
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                PaintCommand::FillRect {
+                    x,
+                    y,
+                    width: 50,
+                    height: 50,
+                    color,
+                } if (color.r, color.g, color.b) == (255, 0, 0)
+                    || (color.r, color.g, color.b) == (0, 128, 0) =>
+                {
+                    Some((color.r, color.g, color.b, *x, *y))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fills.len(), 2, "{fills:?}");
+        assert_eq!((fills[0].3, fills[0].4), (fills[1].3, fills[1].4));
+        assert_eq!((fills[1].0, fills[1].1, fills[1].2), (0, 128, 0));
+    }
+
+    #[test]
     fn relative_table_caption_overlays_preceding_absolute_indicator() {
         let html = "<div style='display:inline-block;position:relative;height:200px'>\
             <div style='position:absolute;left:0;top:100px;width:50px;height:50px;background:red'></div>\
