@@ -17,6 +17,92 @@ pub fn parse_stylesheet(input: &str) -> ParseResult<Stylesheet> {
     }
 }
 
+/// Extract named ICC profile declarations from CSS @color-profile rules.
+/// Ordinary selector parsing continues to ignore unknown at-rules; this
+/// resource preflight is bounded and never evaluates arbitrary CSS text.
+pub fn parse_color_profiles(input: &str) -> Vec<(String, String)> {
+    let tokens = tokenize(input).tokens;
+    let mut profiles = Vec::new();
+    let mut index = 0usize;
+    while index < tokens.len() && profiles.len() < 16 {
+        if !matches!(&tokens[index].kind, TokenKind::AtKeyword(name)
+            if name.eq_ignore_ascii_case("color-profile"))
+        {
+            index += 1;
+            continue;
+        }
+        let mut name_at = index + 1;
+        while matches!(
+            tokens.get(name_at).map(|t| &t.kind),
+            Some(TokenKind::Whitespace)
+        ) {
+            name_at += 1;
+        }
+        let Some(Token {
+            kind: TokenKind::Ident(name),
+            ..
+        }) = tokens.get(name_at)
+        else {
+            index += 1;
+            continue;
+        };
+        if !name.starts_with("--") {
+            index += 1;
+            continue;
+        }
+        let mut open = name_at + 1;
+        while matches!(
+            tokens.get(open).map(|t| &t.kind),
+            Some(TokenKind::Whitespace)
+        ) {
+            open += 1;
+        }
+        if !matches!(
+            tokens.get(open).map(|t| &t.kind),
+            Some(TokenKind::OpenCurly)
+        ) {
+            index += 1;
+            continue;
+        }
+        let mut depth = 1usize;
+        let mut close = open + 1;
+        while close < tokens.len() && depth > 0 {
+            match tokens[close].kind {
+                TokenKind::OpenCurly => depth += 1,
+                TokenKind::CloseCurly => depth -= 1,
+                _ => {}
+            }
+            close += 1;
+        }
+        if depth > 0 {
+            break;
+        }
+        let declarations =
+            parse_declaration_list(&input[tokens[open].end..tokens[close - 1].start]);
+        if let Some(src) = declarations.value.iter().rev().find(|d| d.name == "src") {
+            let meaningful: Vec<_> = src
+                .value
+                .iter()
+                .filter(|v| !matches!(v, TokenKind::Whitespace))
+                .collect();
+            let url = match meaningful.as_slice() {
+                [TokenKind::Url(url)] => Some(url),
+                [
+                    TokenKind::Function(name),
+                    TokenKind::String(url),
+                    TokenKind::CloseParen,
+                ] if name.eq_ignore_ascii_case("url") => Some(url),
+                _ => None,
+            };
+            if let Some(url) = url {
+                profiles.push((name.clone(), url.clone()));
+            }
+        }
+        index = close;
+    }
+    profiles
+}
+
 pub fn parse_declaration_list(input: &str) -> ParseResult<Vec<Declaration>> {
     let tokenized = tokenize(input);
     let mut parser = Parser {
@@ -83,10 +169,12 @@ impl Parser<'_> {
 
                 let start = self.tokens[index].start;
                 index = skip_at_rule(self.tokens, index);
-                self.errors.push(CssError {
-                    offset: start,
-                    message: "at-rule is not supported yet and was ignored".into(),
-                });
+                if !name.eq_ignore_ascii_case("color-profile") {
+                    self.errors.push(CssError {
+                        offset: start,
+                        message: "at-rule is not supported yet and was ignored".into(),
+                    });
+                }
                 continue;
             }
 
@@ -1844,6 +1932,27 @@ mod tests {
         assert_eq!(parsed.value.rules.len(), 1);
         assert_eq!(parsed.errors.len(), 1);
         assert!(parsed.errors[0].message.contains("at-rule"));
+    }
+
+    #[test]
+    fn color_profile_rules_extract_only_valid_named_src_urls() {
+        let input = r#"
+            @color-profile --swapped { src: url("support/swapped.icc"); }
+            @color-profile --second { src: url(./color.icc); }
+            @color-profile bad { src: url(invalid.icc); }
+            @color-profile --bad { src: "not-a-url"; }
+            div { content: "@color-profile --fake { src: url(bad.icc) }"; color: red }
+        "#;
+        assert_eq!(
+            parse_color_profiles(input),
+            vec![
+                ("--swapped".to_owned(), "support/swapped.icc".to_owned()),
+                ("--second".to_owned(), "./color.icc".to_owned())
+            ]
+        );
+        let sheet = parse_stylesheet(input);
+        assert_eq!(sheet.value.rules.len(), 1);
+        assert!(sheet.errors.is_empty(), "{:?}", sheet.errors);
     }
 
     #[test]

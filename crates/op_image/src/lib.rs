@@ -380,6 +380,24 @@ pub fn decode(bytes: &[u8], pixel_budget: usize) -> Result<RasterImage, ImageErr
     }
 }
 
+/// Convert one RGB color expressed in an embedded ICC source profile to
+/// output sRGB using Windows Image Component's color-transform pipeline.
+/// Profile loading is separately bounded by the caller.
+pub fn convert_icc_rgb(profile: &[u8], rgb: [u8; 3]) -> Result<[u8; 3], ImageError> {
+    if profile.is_empty() || profile.len() > 1024 * 1024 {
+        return Err(ImageError::TooLarge);
+    }
+    #[cfg(windows)]
+    {
+        wic::convert_icc_rgb(profile, rgb)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = rgb;
+        Err(ImageError::UnsupportedFormat)
+    }
+}
+
 #[cfg(windows)]
 mod wic {
     use super::*;
@@ -392,6 +410,42 @@ mod wic {
         fn drop(&mut self) {
             unsafe { CoUninitialize() };
         }
+    }
+
+    pub(super) fn convert_icc_rgb(profile: &[u8], rgb: [u8; 3]) -> Result<[u8; 3], ImageError> {
+        let operation = || -> windows::core::Result<[u8; 3]> {
+            unsafe {
+                CoInitializeEx(None, COINIT_MULTITHREADED).ok()?;
+            }
+            let _apartment = Apartment;
+            unsafe {
+                let factory: IWICImagingFactory =
+                    CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
+                let source_context = factory.CreateColorContext()?;
+                source_context.InitializeFromMemory(profile)?;
+                let destination = factory.CreateColorContext()?;
+                destination.InitializeFromExifColorSpace(1)?;
+                let pixel = [rgb[2], rgb[1], rgb[0], 255];
+                let bitmap = factory.CreateBitmapFromMemory(
+                    1,
+                    1,
+                    &GUID_WICPixelFormat32bppBGRA,
+                    4,
+                    &pixel,
+                )?;
+                let transform = factory.CreateColorTransformer()?;
+                transform.Initialize(
+                    &bitmap,
+                    &source_context,
+                    &destination,
+                    &GUID_WICPixelFormat32bppBGRA,
+                )?;
+                let mut result = [0; 4];
+                transform.CopyPixels(std::ptr::null(), 4, &mut result)?;
+                Ok([result[2], result[1], result[0]])
+            }
+        };
+        operation().map_err(|error| ImageError::Decode(error.to_string()))
     }
 
     pub(super) fn decode(bytes: &[u8], pixel_budget: usize) -> Result<RasterImage, ImageError> {
@@ -513,6 +567,20 @@ mod wic {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn standalone_icc_colors_transform_to_output_srgb() {
+        let path =
+            std::path::Path::new("../../target/compat-wpt/css/css-color/support/swapped.icc");
+        if !path.is_file() {
+            return;
+        }
+        let bytes = std::fs::read(path).unwrap();
+        assert_eq!(convert_icc_rgb(&bytes, [153, 0, 0]).unwrap(), [0, 153, 0]);
+        assert_eq!(convert_icc_rgb(&bytes, [0, 153, 0]).unwrap(), [153, 0, 0]);
+        assert!(convert_icc_rgb(&[0, 1, 2, 3], [153, 0, 0]).is_err());
+    }
 
     #[test]
     #[cfg(windows)]

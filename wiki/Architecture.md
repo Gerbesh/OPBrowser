@@ -93,7 +93,15 @@ through a color-context transform into the output sRGB surface; PNGs
 without a profile keep the original path. Link matching treats an empty
 href as a visited self-navigation to the already active document, but
 arbitrary navigation-history styling is still intentionally absent.
-These slices raise frozen Static v1 to 194/200 (97.00%).
+These slices raised frozen Static v1 to 194/200 (97.00%). Named
+CSS Color 5 @color-profile handling now extracts bounded ICC declarations
+from inline/linked CSS, resolves their URLs through the same filtered
+resource-loader infrastructure, and resolves 3-component color(--profile ...)
+tokens at author-style preparation time using WIC's ICC to sRGB
+transform. Repeated conversions are memoized within the prepared page;
+quoted CSS strings, unknown profiles and other color syntaxes are not
+rewritten. Static v1 reaches 195/200 (97.50%). This is an initial
+custom RGB profile path, not full CSS Color 5 color management.
 This is not full CSS stacking: additional context triggers, other auto-z
 paint-phase details and exact interleaving remain future work. Win32 drawing
 never decides paint order.

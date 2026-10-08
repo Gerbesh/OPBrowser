@@ -584,6 +584,24 @@ remains 53/100. CSS background gradients, placement, sizing,
 repeat controls, inline decorations and multi-layer backgrounds are still
 incomplete; arbitrary history-linked :visited remains unsupported.
 
+The named CSS ICC profile slice extends the previous color-managed PNG work:
+op_css::parser::parse_color_profiles scans CSS tokens for the bounded
+@color-profile --name { src:url(...) } form, including quoted and unquoted
+URLs. Normal stylesheet parsing recognizes the at-rule without erroneously
+treating it as a selector. The style worker walks inline and linked sheets
+with a capped document traversal, up to eight network requests and a 1 MiB
+aggregate profile budget. Relative URLs use the effective stylesheet base
+and the normal filtered resource path. After matching the author cascade,
+StyleMap::resolve_custom_profile_colors scans declaration token sequences,
+preserving strings and invalid functions, and replaces valid
+color(--name R G B) tokens with ICC-converted sRGB hex. Windows op_image
+creates a one-pixel WIC color-transform source/destination context for
+arbitrary source ICC bytes; the engine caches repeated (profile,RGB)
+conversions per document preparation. This path handles numeric/percentage
+RGB input for 3-channel ICC profiles, but does not implement general
+color-profile alpha, CMYK/device channels or broad CSS Color 5 syntax.
+Frozen Static improves to 195/200, Positioning unchanged at 53/100.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus

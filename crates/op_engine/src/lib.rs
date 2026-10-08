@@ -328,8 +328,30 @@ impl Engine {
         let loaded: LoadedDocument = self.network.load_document(source)?;
         let document = parse_document(&loaded.text);
         let linked_stylesheets = styles::load(&self.network, &document, &loaded.address);
-        let style_collection =
+        let mut style_collection =
             collect_author_styles_with_linked(&document, &linked_stylesheets.texts);
+        let profiles = styles::load_color_profiles(
+            &self.network,
+            &document,
+            &loaded.address,
+            &linked_stylesheets,
+        );
+        if !profiles.is_empty() {
+            let mut converted = std::collections::HashMap::new();
+            style_collection
+                .styles
+                .resolve_custom_profile_colors(|name, channels| {
+                    let key = (name.to_owned(), channels);
+                    if let Some(cached) = converted.get(&key) {
+                        return *cached;
+                    }
+                    let result = profiles
+                        .get(name)
+                        .and_then(|icc| op_image::convert_icc_rgb(icc, channels).ok());
+                    converted.insert(key, result);
+                    result
+                });
+        }
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let images = images::load(
             &self.network,

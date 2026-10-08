@@ -183,7 +183,21 @@ The six remaining Static failures are at-color-profile-001, currentcolor-003,
 predefined-012, rec2020-001, xyz-003 and first-line-bidi-002. The xyz-003
 author-declared fuzzy allowance is still NOT applied by our exact-pixel
 probe; tolerance settings and manifest remain unchanged. Full CSS
-background layers, ICC CSS5 @color-profile, link history and bidi are pending.
+background layers, general ICC CSS5 @color-profile, link history and bidi
+are pending. A subsequent bounded custom-color profile slice now parses
+@color-profile --name { src:url(...) } in inline and linked CSS, loads ICC
+bytes with origin-relative resource resolution, and converts three numeric
+or percentage color(--name R G B) components through Windows WIC's native
+ICC engine before normal computed-style evaluation. Stylesheet strings
+and unknown profiles are preserved, and repeated conversions cached.
+The original frozen at-color-profile-001.html now passes, increasing
+Static to 195/200 (97.50%) from 194/200. Positioning remains 53/100
+without render errors. The five remaining Static failures are
+currentcolor-003, predefined-012, rec2020-001, xyz-003 and
+first-line-bidi-002. The XYZ WPT fuzzy metadata is still not used
+in the exact-pixel score, and no references or tolerances were changed.
+General Color 5 color-profile alpha/CMYK and history-dependent styling
+remain unsupported.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves

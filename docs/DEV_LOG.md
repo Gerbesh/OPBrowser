@@ -2516,6 +2516,35 @@ This file is append-only project history.
   currentcolor-003 effects, XYZ (author-specified fuzzy not used by our
   exact comparator), bidi first-line, and two Rec.2020 reference cases.
 - Limitations: only a single default-repeat image layer with no background
-  position/size/multi-layer controls, no ICC @color-profile rule, and no
-  private arbitrary visited URL history state.
+  position/size/multi-layer controls, no ICC @color-profile rule at this
+  commit, and no private arbitrary visited URL history state.
+
+## 2026-10-08 - Bounded CSS Color 5 named ICC profiles
+
+- Start from 05919f9 with Static WPT 194/200 and Positioning 53/100.
+- Implement a token-aware @color-profile --name { src:url(...) }
+  discovery pass for inline/linked author styles, supporting quoted or
+  unquoted URLs and ignoring unrelated CSS strings and invalid prelude
+  names. Stop emitting an incorrect unsupported-at-rule diagnostic.
+- Load ICC binary resources relative to each effective stylesheet
+  address through the existing filtered network loader. Bound traversal
+  (20k DOM nodes), profile requests (8), payload (1 MiB aggregate),
+  and number of extracted declarations (16/sheet). Unknown or invalid
+  profiles do not paint made-up colors.
+- Extend op_image's WIC bridge to convert standalone 3-channel RGB
+  source values to output sRGB through a 1x1 color-managed bitmap.
+  Validate with pinned swapped.icc: [153,0,0] becomes [0,153,0].
+- Before computed-style cascade, scan matched style declarations,
+  including pseudo-elements, for valid color(--profile R G B) tokens.
+  Resolve numeric and percentage channels to bytes; replace only the
+  recognized function token span, leaving other values and CSS strings
+  intact. Memoize conversions per prepared document.
+- Add parser extraction, token-safe CSS rewriting and WIC conversion
+  regressions. Frozen CSS color at-color-profile-001.html now passes:
+  Static 194/200 -> 195/200 (97.50%) with no fixture edits. Remaining
+  exact-pixel Static cases are currentcolor-003, predefined-012,
+  rec2020-001, xyz-003, and first-line-bidi-002.
+- Limitations: RGB-only custom profiles, no alpha/device-CMYK syntax,
+  incomplete general CSS Color 5 handling; unchanged exact-pixel
+  WPT comparator does not apply WPT fuzzy metadata.
 

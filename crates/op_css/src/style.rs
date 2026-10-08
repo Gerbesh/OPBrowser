@@ -1,7 +1,7 @@
 use crate::{
     AttributeMatcher, AttributeSelector, Combinator, CssError, Declaration, NthSelector,
     PseudoClass, PseudoElement, RelativeSelector, Selector, SimpleSelector, Specificity, StyleRule,
-    parse_declaration_list, parse_stylesheet,
+    TokenKind, parse_declaration_list, parse_stylesheet,
 };
 use op_dom::{Document, NodeId, NodeKind};
 use std::collections::HashMap;
@@ -31,6 +31,79 @@ pub struct StyleMap {
 }
 
 impl StyleMap {
+    /// Replace supported color(--profile R G B) function tokens after the
+    /// named ICC resources have been loaded. This is token-aware: quoted text,
+    /// comments and invalid/unknown color functions remain untouched.
+    pub fn resolve_custom_profile_colors(
+        &mut self,
+        mut resolve: impl FnMut(&str, [u8; 3]) -> Option<[u8; 3]>,
+    ) {
+        for declarations in self
+            .entries
+            .values_mut()
+            .chain(self.pseudo_entries.values_mut())
+        {
+            for matched in declarations {
+                let tokens = &mut matched.declaration.value;
+                let mut index = 0usize;
+                while index < tokens.len() {
+                    if !matches!(&tokens[index], TokenKind::Function(name)
+                        if name.eq_ignore_ascii_case("color"))
+                    {
+                        index += 1;
+                        continue;
+                    }
+                    let mut meaningful = Vec::new();
+                    let mut cursor = index + 1;
+                    while cursor < tokens.len() && meaningful.len() < 8 {
+                        if matches!(tokens[cursor], TokenKind::CloseParen) {
+                            meaningful.push(cursor);
+                            break;
+                        }
+                        if !matches!(tokens[cursor], TokenKind::Whitespace) {
+                            meaningful.push(cursor);
+                        }
+                        cursor += 1;
+                    }
+                    let payload: Vec<_> = meaningful.iter().map(|&at| &tokens[at]).collect();
+                    let Some((profile, components, end)) = (match payload.as_slice() {
+                        [TokenKind::Ident(profile), a, b, c, TokenKind::CloseParen]
+                            if profile.starts_with("--") =>
+                        {
+                            let channels = [*a, *b, *c].map(|t| match t {
+                                TokenKind::Number(v) => v.parse::<f64>().ok(),
+                                TokenKind::Percentage(v) => {
+                                    v.parse::<f64>().ok().map(|x| x / 100.0)
+                                }
+                                _ => None,
+                            });
+                            channels
+                                .into_iter()
+                                .collect::<Option<Vec<_>>>()
+                                .map(|channels| (profile.clone(), channels, meaningful[4]))
+                        }
+                        _ => None,
+                    }) else {
+                        index += 1;
+                        continue;
+                    };
+                    let input = [components[0], components[1], components[2]]
+                        .map(|x| (x.clamp(0.0, 1.0) * 255.0).round() as u8);
+                    if let Some([red, green, blue]) = resolve(&profile, input) {
+                        tokens.splice(
+                            index..=end,
+                            [TokenKind::Hash {
+                                value: format!("{red:02x}{green:02x}{blue:02x}"),
+                                id: false,
+                            }],
+                        );
+                    }
+                    index += 1;
+                }
+            }
+        }
+    }
+
     pub fn declarations_for(&self, node: NodeId) -> &[MatchedDeclaration] {
         self.entries
             .get(&node)
@@ -1017,6 +1090,65 @@ mod tests {
         assert!(matches("fragment", ":link"));
         assert!(!matches("no-href", ":visited"));
         assert!(!matches("no-href", ":link"));
+    }
+
+    #[test]
+    fn custom_icc_color_rewrites_tokens_without_touching_strings_or_unknown_spaces() {
+        let doc = op_html::parse_document(
+            "<style>
+               #known { background: color(--swap 60% 0 0) }
+               #unknown { background:color(--absent 0.6 0 0); color:blue }
+               #content::before { content:'color(--swap 0.6 0 0)' }
+               #mixed { color:color-mix(in srgb, color(--swap 0.6 0 0), white 0%) }
+             </style>
+             <div id='known'></div><div id='unknown'></div>
+             <div id='content'></div><div id='mixed'></div>",
+        );
+        let mut author = collect_author_styles(&doc);
+        let mut calls = 0usize;
+        author.styles.resolve_custom_profile_colors(|name, rgb| {
+            calls += 1;
+            (name == "--swap" && rgb == [153, 0, 0]).then_some([0, 153, 0])
+        });
+        assert_eq!(calls, 3);
+        let styles = crate::computed::compute_styles(&doc, &author.styles);
+        let known = element_by_id(&doc, "known");
+        assert_eq!(
+            styles.style_for(known).unwrap().background_color,
+            crate::computed::CssColor {
+                red: 0,
+                green: 153,
+                blue: 0,
+                alpha: 255
+            }
+        );
+        let unknown = element_by_id(&doc, "unknown");
+        assert_eq!(
+            styles.style_for(unknown).unwrap().color,
+            crate::computed::CssColor::BLUE
+        );
+        let mixed = element_by_id(&doc, "mixed");
+        assert_eq!(
+            styles.style_for(mixed).unwrap().color,
+            crate::computed::CssColor {
+                red: 0,
+                green: 153,
+                blue: 0,
+                alpha: 255
+            }
+        );
+        let content = element_by_id(&doc, "content");
+        assert!(
+            author
+                .styles
+                .declarations_for_pseudo(content, crate::PseudoElement::Before)
+                .iter()
+                .any(|d| d
+                    .declaration
+                    .value
+                    .iter()
+                    .any(|v| matches!(v,TokenKind::String(s) if s=="color(--swap 0.6 0 0)")))
+        );
     }
 
     #[test]

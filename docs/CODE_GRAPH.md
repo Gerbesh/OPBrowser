@@ -1033,6 +1033,18 @@ recognizes only known-current-document empty href self-links and does
 not expose arbitrary user history. This improves frozen Static 192/200
 to 194/200 with no manifest or pixel-tolerance changes.
 
+CSS Color 5 custom profile path: op_css::parse_color_profiles scans
+stylesheet token streams for @color-profile declarations; op_engine::styles
+loads bounded ICC bytes from the corresponding stylesheet-relative base
+using the filtered resource loader. Before op_css::compute_styles, the
+matched StyleMap resolves recognized color(--profile R G B) CSS function
+tokens into output sRGB hex, preserving declaration source order,
+importance, unrelated tokens and unknown color spaces. The resolver uses
+op_image::convert_icc_rgb with native IWICColorTransform on a 1x1 bitmap,
+caching repeated profile/color pairs in the engine. This is a profile-
+aware computed color path, not a new renderer or external browser engine.
+The frozen Static score rises 194 -> 195/200 on the same exact comparator.
+
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting
 an extra empty inline fragment after a block child/pseudo flushed the collection. Nested

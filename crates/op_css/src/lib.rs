@@ -19,7 +19,7 @@ pub use computed::{
     PaddingEdges, Position, TableLayout, TextAlign, TextDecorationLine, TextTransform,
     VerticalAlign, Visibility, WhiteSpace, compute_styles,
 };
-pub use parser::{parse_declaration_list, parse_stylesheet};
+pub use parser::{parse_color_profiles, parse_declaration_list, parse_stylesheet};
 pub use style::{
     MatchedDeclaration, StyleCollection, StyleError, StyleMap, StyleSource, collect_author_styles,
     collect_author_styles_with_linked, selector_matches,

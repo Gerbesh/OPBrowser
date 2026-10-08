@@ -22,6 +22,86 @@ impl LoadedStylesheets {
     }
 }
 
+/// Load bounded CSS @color-profile resources from inline and linked sheets.
+/// URLs are resolved from the stylesheet's own address. No arbitrary file
+/// reads bypass the normal network request filter.
+pub(super) fn load_color_profiles(
+    network: &NetworkContext,
+    document: &Document,
+    document_address: &str,
+    linked: &LoadedStylesheets,
+) -> HashMap<String, Vec<u8>> {
+    const MAX_PROFILES: usize = 8;
+    const MAX_PROFILE_BYTES: usize = 1024 * 1024;
+    let mut profiles = HashMap::new();
+    let mut remaining = MAX_PROFILE_BYTES;
+    let mut requests = 0usize;
+    let mut stack = vec![document.root()];
+    let mut visited = 0usize;
+    while let Some(id) = stack.pop() {
+        visited += 1;
+        if visited > 20_000 {
+            break;
+        }
+        let css = if let Some(element) = document.element(id) {
+            if element.tag_name.eq_ignore_ascii_case("style") {
+                let mut text = String::new();
+                let mut children = document
+                    .children(id)
+                    .iter()
+                    .copied()
+                    .rev()
+                    .collect::<Vec<_>>();
+                while let Some(child) = children.pop() {
+                    if let Some(node) = document.node(child)
+                        && let op_dom::NodeKind::Text(value) = &node.kind
+                    {
+                        text.push_str(value);
+                    }
+                    children.extend(document.children(child).iter().rev().copied());
+                    if text.len() > 1024 * 1024 {
+                        break;
+                    }
+                }
+                Some((text, document_address))
+            } else {
+                linked.texts.get(&id).map(|text| {
+                    (
+                        text.clone(),
+                        linked
+                            .addresses
+                            .get(&id)
+                            .map_or(document_address, String::as_str),
+                    )
+                })
+            }
+        } else {
+            None
+        };
+        if let Some((css, stylesheet_base)) = css {
+            for (name, source) in op_css::parse_color_profiles(&css) {
+                if requests >= MAX_PROFILES || remaining == 0 {
+                    break;
+                }
+                let Ok(url) = op_net::resolve_image_source(Some(stylesheet_base), &source) else {
+                    continue;
+                };
+                requests += 1;
+                if let Ok(bytes) = network.load_image_for_page(
+                    &url,
+                    Some(document_address),
+                    remaining.min(MAX_PROFILE_BYTES),
+                ) {
+                    remaining = remaining.saturating_sub(bytes.len());
+                    profiles.insert(name, bytes);
+                }
+            }
+        }
+        stack.extend(document.children(id).iter().rev().copied());
+    }
+    profiles
+}
+
 pub(super) fn load(network: &NetworkContext, document: &Document, base: &str) -> LoadedStylesheets {
     let started = Instant::now();
     let mut linked = LoadedStylesheets::default();

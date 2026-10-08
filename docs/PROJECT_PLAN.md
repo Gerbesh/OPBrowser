@@ -431,11 +431,20 @@ Status: IN PROGRESS.
   before premultiplication. This closes tagged-images-004 on the unchanged
   exact-pixel WPT Static v1 manifest: 194/200 (97.00%). Positioning stays
   53/100, no render errors. Tests cover cascade, tiling/clipping and ICC.
-- NEXT close the six remaining frozen WPT Static failures: CSS5
-  @color-profile, first-line/currentcolor shadows and gradients, more precise
-  XYZ color or spec-declared fuzzy reftest metadata, complex bidi/first-line
-  layout, and two legacy Rec.2020 transfer references. Full CSS background
-  repeat/position/size/multiple-layer controls remain out of scope.
+- DONE bounded CSS Color 5 @color-profile first slice: tokenize named
+  @color-profile --name { src:url(...) } from inline/linked author CSS; load
+  referenced ICC profiles through the existing filtered/budgeted network
+  worker using stylesheet-relative addresses; resolve color(--name R G B)
+  across matched declaration tokens without altering CSS strings/comments;
+  convert RGB through native WIC into sRGB, caching repeated conversions.
+  Invalid/unknown profiles remain invalid. Parser, CSS token, WIC regressions
+  and the unchanged pinned at-color-profile-001 reference pass. Static
+  194/200 -> 195/200 (97.50%), no WPT render errors.
+- NEXT close five remaining frozen WPT Static failures: first-line/currentcolor
+  backgrounds/shadows/gradients, more precise XYZ or separately reported
+  spec-declared fuzzy metadata, complex bidi/first-line layout, and two
+  legacy Rec.2020 transfer references. Full CSS5 color profile support
+  (alpha, alternative components and device CMYK) remains incomplete.
   Continue row/group tables and CSS positioning as separate workstreams.
 
 ## M3 - Original JavaScript engine
