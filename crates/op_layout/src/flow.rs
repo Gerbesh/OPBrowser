@@ -4040,6 +4040,12 @@ impl<'a> Context<'a, '_> {
                     } else {
                         resolve_inline_box_style(id, None, current, containing_width)
                             .map(|mut box_style| {
+                                if let Some(computed) = self.computed_styles.style_for(id) {
+                                    box_style.background_currentcolor =
+                                        computed.background_depends_on_currentcolor();
+                                    box_style.border_currentcolor =
+                                        computed.border_depends_on_currentcolor();
+                                }
                                 if current.position == Position::Relative {
                                     box_style.paint_key = Some(self.paint_group(id, current));
                                     let (dx, dy) = relative_position_offset(
@@ -4703,6 +4709,9 @@ fn resolve_inline_box_style(
             padding_bottom,
             padding_left,
             background: style.background,
+            inherited_color: style.inline.color,
+            background_currentcolor: false,
+            border_currentcolor: [false; 4],
             border_top: DecorationBorder {
                 width: border.top.width,
                 color: border.top.color,

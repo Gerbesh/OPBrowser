@@ -111,6 +111,12 @@ the same font-metrics height and baseline as an ordinary inline box
 rather than the full line-height. The frozen strict Static score reaches
 196/200 (98.00%); dynamic font/gradient/shadow/currentcolor first-line
 corner cases remain partial.
+Currentcolor-dependent background-color and border-side provenance now
+survive from computed styles into inline box decorations. ::first-line
+resolves dependent backgrounds and borders at paint time for descendants
+inheriting the host color while preserving explicit child colors and later
+line fragments. Strict WPT Static v1 improves 196/200 -> 197/200 (98.50%);
+XYZ precision and two pinned Rec.2020 reference discrepancies remain.
 This is not full CSS stacking: additional context triggers, other auto-z
 paint-phase details and exact interleaving remain future work. Win32 drawing
 never decides paint order.

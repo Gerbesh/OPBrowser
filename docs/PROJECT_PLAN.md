@@ -451,13 +451,16 @@ Status: IN PROGRESS.
   background heights. Frozen WPT Static advances 195/200 -> 196/200
   (98.00%) with first-line-bidi-002 passing exactly; no WPT fixtures
   or comparison thresholds were modified.
-- NEXT close four remaining Static failures: more complete ::first-line
-  currentcolor inheritance across descendant backgrounds/borders and CSS
-  gradient/shadow/filter effects, investigate XYZ color rounding while
-  preserving its WPT fuzzy metadata, and reconcile the two pinned Rec.2020
-  references without violating CSS Color 4's gamma 2.4 rule. Full
-  first-line font metric restyling and dynamic line-break reflow are not yet
-  implemented. Continue row/group tables and CSS positioning separately.
+- DONE first-line currentcolor dependency resolution: preserve relative
+  background-color and border-color provenance through computed style and
+  inline box decoration, re-resolve it only on first-line fragments that
+  inherit the host text color. Explicit colors and subsequent lines retain
+  their original paint. Frozen currentcolor-003 now passes unchanged;
+  Static 196/200 -> 197/200 (98.50%) without render errors or test edits.
+- NEXT investigate XYZ byte rounding (source WPT fuzzy allowance=1) and
+  two Rec.2020 references versus current gamma 2.4 CSS Color 4 transfer.
+  Keep the strict WPT score unmodified; expand gradient/shadow support
+  and positioning separately rather than add test-specific constants.
 
 ## M3 - Original JavaScript engine
 

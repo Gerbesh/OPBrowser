@@ -621,6 +621,16 @@ inherited currentcolor resolution for descendants' borders/backgrounds,
 font reflow under first-line pseudo font changes, and unsupported
 gradients/shadows/filter chains.
 
+The late first-line currentcolor fix preserves computed background-color
+relative identity and per-side border-color dependency flags through
+InlineBoxStyle. The first line renderer replaces only dependent background
+and border ink when a descendant inherits the host color overridden by
+::first-line; explicitly red backgrounds/borders and separately blue text
+remain unchanged, as do subsequent lines. CSS currentcolor-003 now matches
+its frozen reference pixel-for-pixel. Static v1 reaches 197/200 (98.50%)
+with exact comparison intact; general gradient, shadow and outline effects
+are still incomplete.
+
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore
 intervening text nodes, :root/:first-child/:last-child/:only-child/:empty/:link, plus

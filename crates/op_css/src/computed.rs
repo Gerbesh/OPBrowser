@@ -392,6 +392,7 @@ pub struct ComputedStyle {
     pub text_transform: TextTransform,
     pub background_color: CssColor,
     background_color_value: ComputedColorValue,
+    border_currentcolor: [bool; 4],
     pub opacity: f32,
     pub invert_filter: f32,
     pub margin: MarginEdges,
@@ -477,6 +478,18 @@ impl ComputedQuotes {
 }
 
 impl ComputedStyle {
+    /// Preserve currentcolor dependencies until first-line fragment painting.
+    pub fn background_depends_on_currentcolor(self) -> bool {
+        matches!(
+            self.background_color_value,
+            ComputedColorValue::CurrentColor
+        )
+    }
+
+    pub fn border_depends_on_currentcolor(self) -> [bool; 4] {
+        self.border_currentcolor
+    }
+
     pub fn initial() -> Self {
         Self {
             display: Display::Inline,
@@ -501,6 +514,7 @@ impl ComputedStyle {
             text_transform: TextTransform::None,
             background_color: CssColor::TRANSPARENT,
             background_color_value: ComputedColorValue::Absolute(CssColor::TRANSPARENT),
+            border_currentcolor: [true; 4],
             opacity: 1.0,
             invert_filter: 0.0,
             margin: MarginEdges::ZERO,
@@ -1540,6 +1554,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             text_transform: parent.text_transform,
             background_color: initial.background_color,
             background_color_value: initial.background_color_value,
+            border_currentcolor: initial.border_currentcolor,
             opacity: initial.opacity,
             invert_filter: initial.invert_filter,
             margin: initial.margin,
@@ -2539,11 +2554,22 @@ fn apply_border_declarations(
                 BorderStyle::None,
             );
         }
-        if let Some((_, value)) =
+        if let Some((matched, value)) =
             winning_border_color(declarations, side, style.font_size_px, style.color)
         {
             current.color =
                 resolve_non_inherited(value, parent_border.map(|border| border.color), style.color);
+            let explicitly_relative = matched.declaration.value.iter().any(|token| {
+                matches!(token, TokenKind::Ident(name)
+                    if name.eq_ignore_ascii_case("currentcolor"))
+            });
+            style.border_currentcolor[side_index(side)] = match value {
+                Specified::Inherit => {
+                    parent.is_some_and(|p| p.border_currentcolor[side_index(side)])
+                }
+                Specified::Value(_) => explicitly_relative,
+                Specified::Initial | Specified::Unset => true,
+            };
         }
 
         set_border_side(&mut style.border, side, current);

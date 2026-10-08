@@ -919,6 +919,58 @@ mod tests {
     }
 
     #[test]
+    fn first_line_recolors_only_currentcolor_inline_ink() {
+        let html = "<style>
+            p {color:red}
+            p::first-line {color:green}
+            #relative span {background:currentcolor;border:2px solid currentcolor}
+            #fixed span {background:red;border:2px solid red}
+            #blue span {color:blue;background:currentcolor;border:2px solid currentcolor}
+            </style>
+            <p id='relative'><span>first</span><br><span>second</span></p>
+            <p id='fixed'><span>fixed</span></p>
+            <p id='blue'><span>blue</span></p>";
+        let commands = Engine::new().render_html(html, 800, 600).commands;
+        let line_y = |needle: &str| {
+            commands
+                .iter()
+                .find_map(|cmd| match cmd {
+                    PaintCommand::Text { text, y, .. } if text == needle => Some(*y),
+                    _ => None,
+                })
+                .expect("text must be rendered")
+        };
+        let color_near = |y: i32| {
+            commands
+                .iter()
+                .filter_map(|cmd| match cmd {
+                    PaintCommand::FillRect {
+                        y: top,
+                        height,
+                        color,
+                        ..
+                    } if (*top - y).abs() <= 18 && *height >= 2 => {
+                        Some((color.r, color.g, color.b))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let first = color_near(line_y("first"));
+        let second = color_near(line_y("second"));
+        let fixed = color_near(line_y("fixed"));
+        let blue = color_near(line_y("blue"));
+        assert!(first.contains(&(0, 128, 0)), "first: {first:?}");
+        assert!(second.contains(&(255, 0, 0)), "second: {second:?}");
+        assert!(fixed.contains(&(255, 0, 0)), "fixed: {fixed:?}");
+        assert!(blue.contains(&(0, 0, 255)), "blue: {blue:?}");
+        assert!(
+            !fixed.contains(&(0, 128, 0)),
+            "explicit red must stay red: {fixed:?}"
+        );
+    }
+
+    #[test]
     fn first_line_background_uses_same_font_metrics_as_inline_background() {
         let html = "<style>p {font-size:10px}            #styled::first-line {background:#ffc0cb}            #control span {background:#ffc0cb}</style>            <p id='styled'>sample<br>plain</p>            <p id='control'><span>sample</span><br>plain</p>";
         let commands = Engine::new().render_html(html, 800, 600).commands;

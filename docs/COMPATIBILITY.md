@@ -212,6 +212,16 @@ a region where the WPT explicitly declares maxDifference=0-1, but
 the project's strict score intentionally does not apply that allowance.
 Both Rec.2020 pinned reference colors differ from the gamma 2.4 current
 CSS Color 4 transfer; the reference manifests have not been changed.
+Computed CSS now preserves currentcolor-dependent background and per-side
+border color provenance through inline styles. The first-line paint
+resolves only those dependent decorations to the fragment color, leaving
+explicit red colors, independently blue children, and later lines alone.
+The original frozen currentcolor-003 reference now passes pixel-exactly:
+Static 197/200 (98.50%), Positioning still 53/100 (53.00%). Exactly
+three Static failures remain: predefined-012, rec2020-001, xyz-003.
+XYZ differs by one blue channel byte within its WPT-declared fuzzy
+allowance, but the strict score still reports it as a failure. Neither
+thresholds, manifest entries nor reference images have been altered.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves

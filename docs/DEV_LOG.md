@@ -2577,3 +2577,25 @@ This file is append-only project history.
   outline/box/text/drop shadows; the others need precision/spec/reftest
   reconciliation without falsifying comparison scores.
 
+## 2026-10-08 - Dynamic currentcolor in first-line inline decorations
+
+- Start from commit 78dc150 and frozen Static WPT 196/200.
+- Capture actual/reference currentcolor-003 renders: first and third
+  lines had correct green text but red descendant inline backgrounds and
+  borders, while the second line should remain red.
+- Preserve currentcolor dependence in computed background-color and
+  per-side border-color cascade results. Propagate these flags to inline
+  box styles rather than treating matched explicit red as currentcolor.
+- At the first actual line flush, re-resolve dependent background and
+  border decoration colors only when the child inherits the host color
+  changed by ::first-line. Leave explicit red paint, separately blue
+  child text/backgrounds, and later-line ink unchanged.
+- Add engine regression for dependent vs explicit colors, including
+  forced line breaks and a separately colored child. The unchanged
+  currentcolor-003 WPT test now matches pixel-for-pixel.
+- Static v1 improves from 196/200 to 197/200 (98.50%). Three exact
+  failures remain: predefined-012 and rec2020-001 (legacy green refs
+  versus current CSS Color 4 gamma 2.4), and xyz-003 (one channel byte
+  within its own WPT fuzzy metadata). Test fixtures, thresholds and
+  manifest are unchanged.
+

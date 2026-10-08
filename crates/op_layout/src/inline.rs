@@ -23,6 +23,9 @@ pub(super) struct InlineBoxStyle {
     pub padding_bottom: i32,
     pub padding_left: i32,
     pub background: TextColor,
+    pub inherited_color: TextColor,
+    pub background_currentcolor: bool,
+    pub border_currentcolor: [bool; 4],
     pub border_top: DecorationBorder,
     pub border_right: DecorationBorder,
     pub border_bottom: DecorationBorder,
@@ -1086,6 +1089,30 @@ impl<'a, 'm> Lines<'a, 'm> {
                 let decoration = self.decorations.len();
                 let (dx, dy) = self.inline_boxes.visual_offset(Some(id));
                 let paint_key = self.inline_boxes.paint_key(Some(id));
+                let mut background = style.background;
+                let mut borders = [
+                    style.border_top,
+                    style.border_right,
+                    style.border_bottom,
+                    style.border_left,
+                ];
+                if let Some(paint) = first_line_paint
+                    && let Some(color) = paint.text_color
+                    && style.inherited_color == paint.base_color
+                    && style.background_currentcolor
+                {
+                    background = color;
+                }
+                if let Some(paint) = first_line_paint
+                    && let Some(color) = paint.text_color
+                    && style.inherited_color == paint.base_color
+                {
+                    for (index, border) in borders.iter_mut().enumerate() {
+                        if style.border_currentcolor[index] {
+                            border.color = color;
+                        }
+                    }
+                }
                 self.decorations.push(BoxDecoration {
                     paint_layer: if paint_key.is_some() {
                         DecorationPaintLayer::PositionedInline
@@ -1105,12 +1132,12 @@ impl<'a, 'm> Lines<'a, 'm> {
                         .saturating_add(style.top_extra())
                         .saturating_add(style.bottom_extra())
                         .max(0),
-                    background: style.background,
+                    background,
                     background_image: None,
-                    border_top: style.border_top,
-                    border_right: style.border_right,
-                    border_bottom: style.border_bottom,
-                    border_left: style.border_left,
+                    border_top: borders[0],
+                    border_right: borders[1],
+                    border_bottom: borders[2],
+                    border_left: borders[3],
                 });
                 active_fragments.push((id, x, decoration));
                 x = x.saturating_add(style.left_extra());

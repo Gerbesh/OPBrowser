@@ -1056,6 +1056,15 @@ inline-span decoration geometry. The text-line traversal still owns
 wrapping and explicit breaks. Strict Static v1 reaches 196/200 while
 Positioning remains measured independently.
 
+Late currentcolor path: ComputedStyle::background_depends_on_currentcolor
+reads the computed relative color expression; per-side border dependencies
+are tracked in apply_border_declarations. flow::collect passes dependency
+flags into InlineBoxStyle, and inline::Lines::flush re-resolves dependent
+first-line fragment background/border ink to the host's pseudo text color.
+Children with different explicit colors and later lines retain their original
+colors. The unchanged static currentcolor-003 image now passes exactly,
+raising strict Static WPT from 196/200 to 197/200.
+
 Flow synthesizes own EmptyInline items after collecting hidden/empty/collapsible-space
 descendants if no visible item was produced. A block epoch counter guards against emitting
 an extra empty inline fragment after a block child/pseudo flushed the collection. Nested
