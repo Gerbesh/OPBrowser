@@ -40,6 +40,26 @@ fn layout(html: &str, width: i32, measurer: &mut dyn TextMeasurer) -> LayoutTree
 }
 
 #[test]
+fn inline_block_baselines_and_inline_backgrounds_are_independent_of_line_height() {
+    let page = layout(
+        "<div style='margin:0'><div style='display:inline-block;font-size:50px;line-height:200px;color:transparent'><span style='background:blue'>AA</span></div><div style='display:inline-block;font-size:50px;line-height:30px;color:transparent'><span style='background:blue'>AA</span></div><div style='display:inline-block;font-size:50px;line-height:normal;color:transparent'><span style='background:blue'>AA</span></div></div>",
+        800,
+        &mut Fixed,
+    );
+    let blue: Vec<_> = page
+        .box_decorations
+        .iter()
+        .filter(|b| b.background == op_css::CssColor::BLUE.into())
+        .collect();
+    assert_eq!(blue.len(), 3);
+    let y = blue[0].y;
+    for fragment in blue {
+        assert_eq!(fragment.y, y);
+        assert_eq!(fragment.height, 18);
+    }
+}
+
+#[test]
 fn undecorated_relative_inline_establishes_containing_block_for_absolute_child() {
     let page = layout(
         "<div style='margin:0'>Before <span style='position:relative;left:20px;top:9px'>AB<span style='position:absolute;display:block;left:12px;top:7px;width:20px;height:10px;background:blue'></span>CD</span> after</div>",
@@ -403,10 +423,10 @@ fn nested_decorations_keep_outer_geometry_and_paint_order_across_text_styles() {
     );
     assert_eq!(page.box_decorations.len(), 2);
     let (outer, inner) = (&page.box_decorations[0], &page.box_decorations[1]);
-    assert_eq!((outer.x, outer.width, outer.height), (32, 52, 36));
+    assert_eq!((outer.x, outer.width, outer.height), (32, 52, 24));
     assert_eq!(
         (inner.x, inner.y, inner.width, inner.height),
-        (46, outer.y + 3, 24, 30)
+        (46, outer.y - 3, 24, 30)
     );
     assert_eq!(
         page.text_boxes
@@ -443,14 +463,14 @@ fn nested_fragments_reserve_all_edges_on_each_wrapped_line() {
         let inner = &page.box_decorations[index * 2 + 1];
         assert_eq!(
             (outer.x, outer.width, outer.height),
-            (32, text.width + 22, 36)
+            (32, text.width + 22, 24)
         );
         assert_eq!(
             (inner.x, inner.width, inner.height),
             (36, text.width + 14, 30)
         );
         assert_eq!(text.x, 43);
-        assert_eq!(inner.y, outer.y + 3);
+        assert_eq!(inner.y, outer.y - 3);
         assert!(outer.x + outer.width <= 112);
     }
     assert_eq!(page.box_decorations[2].y, page.box_decorations[0].y + 36);
@@ -514,9 +534,9 @@ fn deep_inline_box_stacks_accumulate_geometry_without_recursive_fragment_closing
     assert_eq!(page.box_decorations[0].width, 266);
     for pair in page.box_decorations.windows(2) {
         assert_eq!(pair[1].x, pair[0].x + 1);
-        assert_eq!(pair[1].y, pair[0].y + 1);
+        assert_eq!(pair[1].y, pair[0].y);
         assert_eq!(pair[1].width, pair[0].width - 2);
-        assert_eq!(pair[1].height, pair[0].height - 2);
+        assert_eq!(pair[1].height, pair[0].height);
     }
 }
 

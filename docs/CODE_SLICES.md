@@ -428,9 +428,14 @@ RTL absolute/fixed block-level children with both horizontal insets auto now anc
 hypothetical flow width rather than the viewport width. Fixed descendants with explicit insets still
 use the viewport, and blocks inside unpositioned inline ancestors keep legacy static-position flow.
 Complex/replaced positioned constraints, bidi/vertical writing, multicol, sticky and stacking remain.
-WPT Positioning v1 stays 36/100 (36.00%) on the frozen manifest without regression; eight project
-integration tests now protect the cross-run, nested/RTL and static-position cases. WPT Static
-remains at 187/200 for historical comparison.
+CSS2 inline content rectangles now use the element's font metrics and own padding/borders, not
+its enclosing line-height and ancestor padding. The line strut still determines half-leading and
+normal-flow advance. `Lines` exposes the last line baseline so atomic inline-block boxes align
+by their last in-flow line, falling back to the bottom border if they contain no line boxes.
+`BoxDecoration` now marks Block versus Inline paint phase; `op_paint` renders all block backgrounds
+before inline backgrounds and before text/images, avoiding overwrites where inline ink exceeds the
+following block's top. This is not full positioned stacking/z-index support. Frozen WPT Positioning
+v1 increased 36/100 -> 38/100 (38.00%) with WPT Static holding 187/200 (93.50%).
 
 Selector matching supports attribute existence/equality/token/dash/prefix/suffix/substring
 operators with explicit ASCII `i`/`s` flags, adjacent/general sibling combinators that ignore

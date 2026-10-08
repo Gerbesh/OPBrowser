@@ -1,6 +1,6 @@
 use super::{
-    BoxDecoration, DecorationBorder, FontStyle, FontWeight, ImageBox, LayoutItem, LinkSpan,
-    TextBox, TextColor, TextDecoration, TextMeasurer, TextMetrics,
+    BoxDecoration, DecorationBorder, DecorationPaintLayer, FontStyle, FontWeight, ImageBox,
+    LayoutItem, LinkSpan, TextBox, TextColor, TextDecoration, TextMeasurer, TextMetrics,
 };
 use op_css::{Direction, PseudoElement, TextAlign, TextTransform, VerticalAlign, WhiteSpace};
 
@@ -9,6 +9,9 @@ pub(super) struct InlineBoxStyle {
     pub node: op_dom::NodeId,
     pub pseudo: Option<PseudoElement>,
     pub direction: Direction,
+    pub font_size: i32,
+    pub weight: FontWeight,
+    pub font_style: FontStyle,
     pub positioned: bool,
     pub offset_x: i32,
     pub offset_y: i32,
@@ -392,6 +395,8 @@ pub(super) struct Lines<'a, 'm> {
     pub order: Vec<LayoutItem>,
     pub positioned: Vec<PositionedStatic>,
     pub fragments: Vec<InlineFragment>,
+    /// Baseline of the final line in local layout coordinates.
+    pub last_baseline: Option<i32>,
 }
 
 impl<'a, 'm> Lines<'a, 'm> {
@@ -421,6 +426,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             order: Vec::new(),
             positioned: Vec::new(),
             fragments: Vec::new(),
+            last_baseline: None,
         }
     }
 
@@ -999,7 +1005,8 @@ impl<'a, 'm> Lines<'a, 'm> {
             descent = descent.saturating_add(aligned_height - line_height);
         }
 
-        let baseline = self.y + ascent;
+        let baseline = self.y.saturating_add(ascent);
+        self.last_baseline = Some(baseline);
         let remaining = self.width.saturating_sub(self.line_width).max(0);
         let offset = match self.text_align {
             TextAlign::Start | TextAlign::Left => 0,
@@ -1032,20 +1039,27 @@ impl<'a, 'm> Lines<'a, 'm> {
             }
             for id in path.into_iter().skip(common) {
                 let style = self.inline_boxes.style(id);
-                let parent = self.inline_boxes.parent(id);
-                let top = self.inline_boxes.top(parent);
-                let bottom = self.inline_boxes.bottom(parent);
+                // CSS2's inline content box uses the element's font metrics;
+                // line-height only changes the line box and its half-leading.
+                let metrics =
+                    self.measurer
+                        .measure("", style.font_size, style.weight, style.font_style);
                 x = x.saturating_add(style.margin_left);
                 let decoration = self.decorations.len();
                 let (dx, dy) = self.inline_boxes.visual_offset(Some(id));
                 self.decorations.push(BoxDecoration {
+                    paint_layer: DecorationPaintLayer::Inline,
                     x: x.saturating_add(dx),
-                    y: self.y.saturating_add(top).saturating_add(dy),
+                    y: baseline
+                        .saturating_sub(metrics.ascent)
+                        .saturating_sub(style.top_extra())
+                        .saturating_add(dy),
                     width: 0,
-                    height: ascent
-                        .saturating_add(descent)
-                        .saturating_sub(top)
-                        .saturating_sub(bottom)
+                    height: metrics
+                        .ascent
+                        .saturating_add(metrics.descent)
+                        .saturating_add(style.top_extra())
+                        .saturating_add(style.bottom_extra())
                         .max(0),
                     background: style.background,
                     border_top: style.border_top,
@@ -1067,6 +1081,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                         x = x.saturating_add(box_style.margin_left);
                         let (dx, dy) = self.inline_boxes.visual_offset(style.boxes);
                         self.decorations.push(BoxDecoration {
+                            paint_layer: DecorationPaintLayer::Inline,
                             x: x.saturating_add(dx),
                             y: (baseline - bottom - image.height - top).saturating_add(dy),
                             width: image.width.saturating_add(left).saturating_add(right),

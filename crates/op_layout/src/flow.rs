@@ -51,6 +51,7 @@ pub(super) fn layout(
         inline_fragments: Vec::new(),
         deferred_inline: Vec::new(),
         block_epoch: 0,
+        last_line_baseline: None,
         floats: Vec::new(),
         decorations: Vec::new(),
         text: Vec::new(),
@@ -104,6 +105,7 @@ struct Context<'a, 'm> {
     inline_fragments: Vec<InlineFragment>,
     deferred_inline: Vec<DeferredInlinePositioned<'a>>,
     block_epoch: usize,
+    last_line_baseline: Option<i32>,
     floats: Vec<FloatBox>,
     decorations: Vec<BoxDecoration>,
     text: Vec<TextBox>,
@@ -436,6 +438,9 @@ impl<'a> Context<'a, '_> {
         )
         .layout(std::mem::take(items));
         self.y = lines.bottom();
+        if let Some(baseline) = lines.last_baseline {
+            self.last_line_baseline = Some(baseline);
+        }
         self.order
             .extend(lines.order.into_iter().map(|item| match item {
                 LayoutItem::Text(index) => LayoutItem::Text(index + self.text.len()),
@@ -894,6 +899,7 @@ impl<'a> Context<'a, '_> {
         let decoration = if style.background.alpha > 0 || has_border {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
+                paint_layer: DecorationPaintLayer::Block,
                 x: border_x,
                 y: border_y,
                 width: used.border_width,
@@ -1135,6 +1141,7 @@ impl<'a> Context<'a, '_> {
             inline_fragments: Vec::new(),
             deferred_inline: Vec::new(),
             block_epoch: 0,
+            last_line_baseline: None,
             floats: Vec::new(),
             decorations: Vec::new(),
             text: Vec::new(),
@@ -1220,6 +1227,7 @@ impl<'a> Context<'a, '_> {
             inline_fragments: Vec::new(),
             deferred_inline: Vec::new(),
             block_epoch: 0,
+            last_line_baseline: None,
             floats: Vec::new(),
             decorations: Vec::new(),
             text: Vec::new(),
@@ -1244,6 +1252,7 @@ impl<'a> Context<'a, '_> {
         }
 
         let border_height = local.y.max(0);
+        let baseline = local.last_line_baseline.unwrap_or(border_height);
         InlineAtomic {
             width: margin_left
                 .saturating_add(used.border_width)
@@ -1253,7 +1262,7 @@ impl<'a> Context<'a, '_> {
                 .saturating_add(border_height)
                 .saturating_add(margin_bottom)
                 .max(0),
-            baseline: margin_top.saturating_add(border_height).max(0),
+            baseline: margin_top.saturating_add(baseline).max(0),
             decorations: local.decorations,
             text_boxes: local.text,
             image_boxes: local.images_out,
@@ -1305,6 +1314,7 @@ impl<'a> Context<'a, '_> {
             inline_fragments: Vec::new(),
             deferred_inline: Vec::new(),
             block_epoch: 0,
+            last_line_baseline: None,
             floats: Vec::new(),
             decorations: Vec::new(),
             text: Vec::new(),
@@ -1556,6 +1566,7 @@ impl<'a> Context<'a, '_> {
             inline_fragments: Vec::new(),
             deferred_inline: Vec::new(),
             block_epoch: 0,
+            last_line_baseline: None,
             floats: Vec::new(),
             decorations: Vec::new(),
             text: Vec::new(),
@@ -1697,6 +1708,7 @@ impl<'a> Context<'a, '_> {
         let table_decoration = if style.background.alpha > 0 || has_border {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
+                paint_layer: DecorationPaintLayer::Block,
                 x: border_x,
                 y: border_y,
                 width: used.border_width,
@@ -2778,6 +2790,7 @@ impl<'a> Context<'a, '_> {
         let decoration = if style.background.alpha > 0 || has_border {
             let index = self.decorations.len();
             self.decorations.push(BoxDecoration {
+                paint_layer: DecorationPaintLayer::Block,
                 x,
                 y: row_top,
                 width: slot_width.max(1),
@@ -3876,6 +3889,7 @@ impl<'a> Context<'a, '_> {
         let x = containing_x.saturating_add(used_left);
         if let Some(box_style) = box_style {
             self.decorations.push(BoxDecoration {
+                paint_layer: DecorationPaintLayer::Block,
                 x,
                 y: self.y,
                 width: outer_width,
@@ -4009,6 +4023,9 @@ fn resolve_inline_box_style(
             node,
             pseudo,
             direction: style.direction,
+            font_size: style.inline.font_size,
+            weight: style.inline.weight,
+            font_style: style.inline.font_style,
             positioned: pseudo.is_none() && style.position == Position::Relative,
             offset_x: 0,
             offset_y: 0,

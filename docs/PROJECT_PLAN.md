@@ -335,9 +335,13 @@ Status: IN PROGRESS.
   CSS2 RTL/static horizontal block placement uses hypothetical flow width for absolute and fixed.
   Eight focused layout integration tests were added (36 total in the inline test suite).
   The unchanged WPT Positioning v1 is 36/100 with no score regression.
-- NEXT CSS2 intrinsic inline content-height/line-height work (without regressing the frozen WPT
-  suite), remaining abspos constraints, vertical writing / multicol, sticky and `overflow`;
-  keep WPT Static v1 frozen for historical comparability.
+- DONE CSS2 font-derived inline decoration height is separated from line-height/half-leading.
+  Inline-block vertical-align:baseline uses its last in-flow line baseline rather than its bottom.
+  Block backgrounds now paint before inline backgrounds, preventing following blocks from erasing
+  overlapping inline content. WPT Positioning v1 improved from 36/100 to 38/100; WPT Static v1
+  remains 187/200 on unchanged manifests. Layout and paint regressions added.
+- NEXT font fallback and remaining line-height cases, abspos constraints, vertical writing/multicol,
+  sticky, full stacking contexts and `overflow`; frozen manifests remain unchanged.
 
 ## M3 - Original JavaScript engine
 

@@ -174,6 +174,10 @@ line advance. Nested absolute subtrees drain after their containing parents. RTL
 static positions use the hypothetical flow width; explicit fixed insets still use the viewport.
 Horizontal inline margins, including negative values, participate in advance;
 initial `display:inline-block` runs a local block/BFC layout and enters the line as one atomic box.
+Its baseline is now the baseline of the last in-flow line, rather than the bottom border.
+Inline content rectangles use font metrics instead of the line-height strut. The paint list
+now separates Block and Inline decoration phases, painting block backgrounds before inline
+backgrounds and normal text/images. This is not full stacking context/z-index behavior.
 Block children split active inline decoration paths into continuation nodes, suppressing opposite
 logical fragment edges according to computed LTR/RTL direction. Required zero-width intermediate
 fragments retain line height, later descendants attach to the newest continuation, and relative

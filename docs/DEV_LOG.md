@@ -2253,3 +2253,29 @@ This file is append-only project history.
   Win32 startup/paint smoke passed. The release browser binary from the layout commit
   remains unchanged.
 
+## 2026-10-08 - Font-based inline content boxes, final-line baselines and CSS2 paint phases
+
+- Inline background/border boxes now use their own font ascent/descent plus padding/borders,
+  independently from line-height, which continues to control the strut and half-leading.
+  Previous nested box tests were updated to the font-based geometry.
+- The line formatter exposes the last in-flow baseline to its enclosing layout context.
+  Inline-blocks use this baseline for atomic vertical alignment, with a bottom-border
+  fallback when no line box exists.
+- Added a Block/Inline paint-layer marker to decorations. Backgrounds and borders of
+  block boxes now paint before inline decoration backgrounds/borders; this avoids
+  following block backgrounds erasing inline text-area ink that extends beyond its
+  line box. This is a preliminary paint phase, not full stacking-context support.
+- Added focused inline-block alignment and overlapping paint order tests. The frozen
+  WPT Positioning v1 manifest improved from 36/100 to **38/100 (38%)**; WPT Static v1
+  remains 187/200 (93.50%), Test262 Parser v1 remains 523/1983 (26.37%), with zero
+  render errors.
+- Final rustfmt, warning-free workspace Clippy, all Rust workspace tests, pinned WPT/Test262
+  probes and Win32 startup/paint smoke passed.
+- The active Windows browser process held `target/release/op_browser.exe` open, so the
+  optimized release build was produced independently and copied to
+  `target/release/op_browser_next.exe`, without terminating the user's browser session.
+  New binary: **1,057,792 bytes**, SHA-256
+  `282E9647DE05520A66F15C7E0C27266C8CC44C83F32C0BD6F5CDA150274C8014`.
+  To update the regular executable, close the running browser and replace it with
+  `op_browser_next.exe`; do not overwrite an active Windows executable.
+

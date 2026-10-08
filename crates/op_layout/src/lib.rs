@@ -70,8 +70,17 @@ pub struct DecorationBorder {
     pub color: TextColor,
 }
 
+/// CSS2 block backgrounds paint before inline backgrounds, even where
+/// neighboring blocks overlap an inline's font content area.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecorationPaintLayer {
+    Block,
+    Inline,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoxDecoration {
+    pub paint_layer: DecorationPaintLayer,
     pub x: i32,
     pub y: i32,
     pub width: i32,
@@ -1799,12 +1808,14 @@ mod tests {
             fragments.len() >= 2,
             "the inline span should fragment across wrapped lines"
         );
+        // With font-derived inline content height, a 16px font reserves
+        // 18px of content plus four pixels each of border and padding.
         assert!(fragments.iter().all(|fragment| {
             fragment.border_top.width == 2
                 && fragment.border_right.width == 2
                 && fragment.border_bottom.width == 2
                 && fragment.border_left.width == 2
-                && fragment.height >= 32
+                && fragment.height == 26
         }));
 
         let boxed = layout
@@ -2025,8 +2036,11 @@ mod tests {
         assert_eq!(after.width, 18);
         assert_eq!(before.x + before.width, body.x);
         assert_eq!(body.x + body.width, after.x);
-        assert_eq!(before.y, after.y);
-        assert_eq!(before.height, 34);
+        // Different top padding/borders must meet at the same content
+        // baseline rather than forcing identical border-box tops.
+        assert_eq!(before.y + 3, after.y + 5);
+        assert_eq!(before.height, 24);
+        assert_eq!(after.height, 28);
         let total = before.width + body.width + after.width;
         assert_eq!(before.x, 32 + (436 - total) / 2);
     }
@@ -2084,7 +2098,7 @@ mod tests {
                 layout.box_decorations[0].width,
                 layout.box_decorations[0].height
             ),
-            (12, 32)
+            (12, 26)
         );
     }
 

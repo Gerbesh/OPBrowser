@@ -93,10 +93,10 @@ The first positioning-geometry follow-up reached 21/100 (21.00%), and the inline
 inline-block / replaced-SVG follow-up reached 25/100 (25.00%). After the split-inline continuation pass:
 
 - 100 reftests checked;
-- 36 passed;
-- 64 failed;
+- 38 passed;
+- 62 failed;
 - 0 render/infrastructure errors;
-- **36.00% WPT Positioning v1**.
+- **38.00% WPT Positioning v1**.
 
 The implementation recognizes `position:absolute|fixed`, removes those boxes from normal flow,
 uses the nearest positioned ancestor padding box or viewport as the containing block, preserves

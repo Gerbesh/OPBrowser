@@ -488,9 +488,14 @@ classDiagram
         definite height
     }
     class BoxDecoration {
+        DecorationPaintLayer Block|Inline
         bounds
         background
         border_top/right/bottom/left
+    }
+    class Lines {
+        last_baseline Option<int>
+        font content-box metrics / line strut
     }
     class LayoutTree {
         box_decorations

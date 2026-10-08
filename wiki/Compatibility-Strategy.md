@@ -26,9 +26,10 @@ The project now has three reproducible external metrics rather than milestone gu
   inline-block/replaced sizing and the CSS2 split-inline continuation pass: **36/100, 36.00%**.
   The follow-up absolute/fixed auto-margin constraint pass has four passing project regressions and
   no change to the frozen WPT Positioning v1 score. Follow-up work now accumulates
-  containing inline fragments across separate layout runs and handles RTL static flow widths
-  without changing the pinned result. Unsupported sticky, multicol, stacking and
-  vertical-writing cases remain in the sample.
+  containing inline fragments across separate layout runs and handles RTL static flow widths.
+  The CSS2 font-content/inline-block baseline and block-before-inline paint pass improved the
+  unchanged manifest to **38/100, 38.00%**, without reducing WPT Static (187/200).
+  Unsupported sticky, multicol, full stacking and vertical-writing cases remain in the sample.
 - **Test262 Parser v1**: a 2,000-path deterministic Test262 language sample. Module entries are
   skipped until module parsing is supported. Initial executable baseline: **364/1983, 18.36%**;
   current parser result: **523/1983, 26.37%**.

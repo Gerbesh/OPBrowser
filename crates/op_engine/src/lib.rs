@@ -1846,9 +1846,13 @@ mod tests {
                     } else if *color == (op_paint::Color { r: 0, g: 0, b: 255 }) {
                         let (left, top, outer_width, outer_height) =
                             outer.expect("outer background paints before inner");
-                        assert!(*x >= left && *y >= top);
+                        // Font-derived inline boxes share the text baseline, not
+                        // the outer border top: a deeply padded child can extend
+                        // above or below its ancestor without leaving its line.
+                        assert!(*x >= left);
                         assert!(*x + *width <= left + outer_width);
-                        assert!(*y + *height <= top + outer_height);
+                        assert!(*y < top + outer_height);
+                        assert!(top < *y + *height);
                     }
                 }
             }

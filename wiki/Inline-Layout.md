@@ -70,8 +70,13 @@ emits this sequence instead of painting all text before all images.
   descendants add their own frames inside the existing ancestor frames. A parent-linked arena
   stores each box once; characters carry one index, independent of decorated nesting depth.
   Text, images, empty boxes and generated pseudos share iterative ancestor transitions.
-  All ancestor edges affect wrap/alignment and vertical extents. Outer decorations are
-  allocated before inner decorations so an opaque outer background cannot cover inner paint.
+  All ancestor edges affect wrap/alignment and vertical extents. Inline background and border
+  height uses the element's own font metrics with vertical padding/border, independently
+  from line-height. Line-height still controls the parent line strut and half-leading;
+  inline-block atomic alignment uses the last in-flow line's baseline rather than its box bottom.
+  Outer decorations are allocated before inner decorations so opaque outer backgrounds paint
+  first. The painter also draws block backgrounds before inline backgrounds, preserving inline
+  ink that extends past a following block's top.
 - Block children inside an inline now split the active decorated path into continuation nodes.
   Ending and continuing fragments suppress the appropriate logical edge for computed `direction`,
   so LTR and RTL preserve different physical start/end borders and padding. Later descendants

@@ -84,8 +84,17 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
         color: Color::WHITE,
     });
 
-    for decoration in &layout.box_decorations {
-        push_box_decoration(&mut commands, decoration);
+    // CSS2 block background/border phase precedes inline background/border
+    // paint, including overlapping ink from the previous line.
+    for layer in [
+        op_layout::DecorationPaintLayer::Block,
+        op_layout::DecorationPaintLayer::Inline,
+    ] {
+        for decoration in &layout.box_decorations {
+            if decoration.paint_layer == layer {
+                push_box_decoration(&mut commands, decoration);
+            }
+        }
     }
 
     for item in &layout.order {
@@ -222,6 +231,85 @@ mod tests {
     use op_layout::{DecorationBorder, FontStyle, FontWeight, LayoutTree, TextBox, TextDecoration};
 
     #[test]
+    fn inline_backgrounds_paint_above_later_overlapping_block_backgrounds() {
+        use op_layout::DecorationPaintLayer;
+        let border = DecorationBorder {
+            width: 0,
+            color: TextColor {
+                red: 0,
+                green: 0,
+                blue: 0,
+                alpha: 0,
+            },
+        };
+        let decoration = |layer, y, color| BoxDecoration {
+            paint_layer: layer,
+            x: 10,
+            y,
+            width: 40,
+            height: 20,
+            background: color,
+            border_top: border,
+            border_right: border,
+            border_bottom: border,
+            border_left: border,
+        };
+        let green = TextColor {
+            red: 0,
+            green: 128,
+            blue: 0,
+            alpha: 255,
+        };
+        let red = TextColor {
+            red: 255,
+            green: 0,
+            blue: 0,
+            alpha: 255,
+        };
+        let white = TextColor {
+            red: 255,
+            green: 255,
+            blue: 255,
+            alpha: 255,
+        };
+        let layout = LayoutTree {
+            viewport_width: 200,
+            content_height: 90,
+            // The next block was appended after the inline in layout order.
+            box_decorations: vec![
+                decoration(DecorationPaintLayer::Inline, 20, green),
+                decoration(DecorationPaintLayer::Block, 35, white),
+                decoration(DecorationPaintLayer::Inline, 20, red),
+            ],
+            text_boxes: vec![],
+            image_boxes: vec![],
+            order: vec![],
+        };
+        let commands = build_display_list(&layout, 90).commands;
+        let backgrounds: Vec<Color> = commands
+            .iter()
+            .filter_map(|item| match item {
+                PaintCommand::FillRect {
+                    x: 10,
+                    y,
+                    width: 40,
+                    height: 20,
+                    color,
+                } if *y == 20 || *y == 35 => Some(*color),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            backgrounds,
+            [
+                Color::WHITE,
+                Color { r: 0, g: 128, b: 0 },
+                Color { r: 255, g: 0, b: 0 }
+            ]
+        );
+    }
+
+    #[test]
     fn composites_css_text_alpha_over_white_page_background() {
         assert_eq!(
             composite_text_color(TextColor {
@@ -253,6 +341,7 @@ mod tests {
             viewport_width: 300,
             content_height: 120,
             box_decorations: vec![BoxDecoration {
+                paint_layer: op_layout::DecorationPaintLayer::Block,
                 x: 20,
                 y: 30,
                 width: 200,
