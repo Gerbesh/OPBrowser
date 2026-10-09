@@ -62,6 +62,8 @@ enum ObjectKind {
     DomTagCollection,
     DomQueryNodeList,
     DomEvent,
+    AbortController,
+    AbortSignal,
     DomStyle(usize),
     Headers,
 }
@@ -116,6 +118,11 @@ enum BuiltinFunction {
     LifecycleAddEventListener,
     LifecycleRemoveEventListener,
     LifecycleDispatchEvent,
+    AbortControllerConstructor,
+    AbortControllerAbort,
+    AbortSignalConstructor,
+    AbortSignalAbortStatic,
+    AbortSignalThrowIfAborted,
     SetTimeout,
     ClearTimeout,
     SetInterval,
@@ -288,6 +295,7 @@ pub enum DomOperation {
 struct DomListenerOptions {
     once: bool,
     passive: bool,
+    signal: Option<ObjectId>,
 }
 
 #[derive(Debug)]
@@ -498,6 +506,35 @@ impl Default for JsRuntime {
                 syntax_error_prototype,
             )
             .expect("built-in SyntaxError constructor must fit VM budgets");
+        let abort_ctor = runtime
+            .allocate_lifecycle_method(
+                "AbortController",
+                BuiltinFunction::AbortControllerConstructor,
+            )
+            .expect("AbortController constructor fits VM initial budget");
+        runtime.install_global_binding(
+            "AbortController",
+            JsValue::Object(abort_ctor),
+            false,
+            VariableKind::Const,
+        );
+        let signal_ctor = runtime
+            .allocate_lifecycle_method("AbortSignal", BuiltinFunction::AbortSignalConstructor)
+            .expect("AbortSignal function fits VM initial budget");
+        let static_abort = runtime
+            .allocate_lifecycle_method("abort", BuiltinFunction::AbortSignalAbortStatic)
+            .expect("AbortSignal.abort function fits VM initial budget");
+        runtime
+            .object_mut(signal_ctor)
+            .expect("AbortSignal function is valid")
+            .properties
+            .insert("abort".into(), JsValue::Object(static_abort));
+        runtime.install_global_binding(
+            "AbortSignal",
+            JsValue::Object(signal_ctor),
+            false,
+            VariableKind::Const,
+        );
         runtime
             .install_standard_primitives()
             .expect("standard primitive builtins must fit initial VM budgets");
@@ -1586,6 +1623,126 @@ impl JsRuntime {
         Ok(())
     }
 
+    fn new_abort_signal(&mut self) -> Result<ObjectId, JsError> {
+        let add = self.allocate_lifecycle_method(
+            "addEventListener",
+            BuiltinFunction::LifecycleAddEventListener,
+        )?;
+        let remove = self.allocate_lifecycle_method(
+            "removeEventListener",
+            BuiltinFunction::LifecycleRemoveEventListener,
+        )?;
+        let dispatch = self
+            .allocate_lifecycle_method("dispatchEvent", BuiltinFunction::LifecycleDispatchEvent)?;
+        let check = self.allocate_lifecycle_method(
+            "throwIfAborted",
+            BuiltinFunction::AbortSignalThrowIfAborted,
+        )?;
+        self.allocate_object(
+            ObjectKind::AbortSignal,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("aborted".into(), JsValue::Boolean(false)),
+                ("reason".into(), JsValue::Undefined),
+                ("onabort".into(), JsValue::Null),
+                ("addEventListener".into(), JsValue::Object(add)),
+                ("removeEventListener".into(), JsValue::Object(remove)),
+                ("dispatchEvent".into(), JsValue::Object(dispatch)),
+                ("throwIfAborted".into(), JsValue::Object(check)),
+            ]),
+        )
+    }
+
+    /// Validate EventListenerOptions.signal only on a new registration.
+    fn listener_abort_signal(&self, options: &JsValue) -> Result<Option<ObjectId>, JsError> {
+        let JsValue::Object(options) = options else {
+            return Ok(None);
+        };
+        match self.get_object_property(*options, "signal")? {
+            JsValue::Null | JsValue::Undefined => Ok(None),
+            JsValue::Object(signal) if self.object(signal)?.kind == ObjectKind::AbortSignal => {
+                Ok(Some(signal))
+            }
+            _ => Err(JsError::type_error(
+                "addEventListener signal must be an AbortSignal",
+            )),
+        }
+    }
+
+    /// Drop every listener controlled by this signal before the abort event.
+    /// Delivery loops recheck live listener maps after each callback, so a
+    /// signal aborted inside an event cannot fire subsequent removed entries.
+    fn remove_aborted_signal_listeners(&mut self, signal: ObjectId) {
+        let element_keys = self
+            .dom_listener_options
+            .iter()
+            .filter_map(|(key, options)| (options.signal == Some(signal)).then_some(key.clone()))
+            .collect::<Vec<_>>();
+        for (node, name, capture, callback) in element_keys {
+            self.dom_listener_options
+                .remove(&(node, name.clone(), capture, callback));
+            let callbacks = if name == "click" {
+                if capture {
+                    self.dom_click_capture_listeners.get_mut(&node)
+                } else {
+                    self.dom_click_listeners.get_mut(&node)
+                }
+            } else {
+                self.dom_typed_listeners.get_mut(&(node, name, capture))
+            };
+            if let Some(callbacks) = callbacks {
+                callbacks.retain(|value| *value != JsValue::Object(callback));
+            }
+        }
+        let global_keys = self
+            .lifecycle_listener_options
+            .iter()
+            .filter_map(|(key, options)| (options.signal == Some(signal)).then_some(key.clone()))
+            .collect::<Vec<_>>();
+        for (receiver, name, capture, callback) in global_keys {
+            self.lifecycle_listener_options
+                .remove(&(receiver, name.clone(), capture, callback));
+            if let Some(callbacks) = self.lifecycle_listeners.get_mut(&(receiver, name, capture)) {
+                callbacks.retain(|value| *value != JsValue::Object(callback));
+            }
+        }
+    }
+
+    fn dispatch_abort_signal_event(&mut self, signal: ObjectId) -> Result<(), JsError> {
+        let stop = self
+            .allocate_lifecycle_method("stopPropagation", BuiltinFunction::EventStopPropagation)?;
+        let immediate = self.allocate_lifecycle_method(
+            "stopImmediatePropagation",
+            BuiltinFunction::EventStopImmediatePropagation,
+        )?;
+        let prevent =
+            self.allocate_lifecycle_method("preventDefault", BuiltinFunction::EventPreventDefault)?;
+        let event = self.allocate_object(
+            ObjectKind::DomEvent,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("type".into(), JsValue::String("abort".into())),
+                ("target".into(), JsValue::Object(signal)),
+                ("currentTarget".into(), JsValue::Null),
+                ("eventPhase".into(), JsValue::Number(0.0)),
+                ("bubbles".into(), JsValue::Boolean(false)),
+                ("cancelable".into(), JsValue::Boolean(false)),
+                ("defaultPrevented".into(), JsValue::Boolean(false)),
+                ("isTrusted".into(), JsValue::Boolean(true)),
+                ("stopPropagation".into(), JsValue::Object(stop)),
+                (
+                    "stopImmediatePropagation".into(),
+                    JsValue::Object(immediate),
+                ),
+                ("preventDefault".into(), JsValue::Object(prevent)),
+                ("__initialized".into(), JsValue::Boolean(true)),
+                ("__dispatching".into(), JsValue::Boolean(false)),
+            ]),
+        )?;
+        self.dispatch_global_custom_event(event, signal)?;
+        Ok(())
+    }
+
     /// Deliver registered document/window listeners for one EventTarget phase.
     /// Options and exception handling mirror Element EventTarget delivery.
     fn deliver_lifecycle_listeners(
@@ -1660,6 +1817,10 @@ impl JsRuntime {
                     Some("onreadystatechange")
                 } else if receiver == self.global_object && event_type == "load" {
                     Some("onload")
+                } else if self.object(receiver)?.kind == ObjectKind::AbortSignal
+                    && event_type == "abort"
+                {
+                    Some("onabort")
                 } else {
                     None
                 };
@@ -4193,13 +4354,99 @@ impl JsRuntime {
             }
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
-        if builtin == BuiltinFunction::LifecycleDispatchEvent {
-            let JsValue::Object(receiver) = this_value else {
+        if builtin == BuiltinFunction::AbortSignalConstructor {
+            return Err(JsError::type_error("Illegal constructor: AbortSignal"));
+        }
+        if builtin == BuiltinFunction::AbortSignalAbortStatic {
+            let signal = self.new_abort_signal()?;
+            let reason = arguments
+                .first()
+                .cloned()
+                .unwrap_or(JsValue::String("AbortError".into()));
+            self.object_mut(signal)?
+                .properties
+                .insert("aborted".into(), JsValue::Boolean(true));
+            self.object_mut(signal)?
+                .properties
+                .insert("reason".into(), reason);
+            return Ok(CallOutcome::Value(JsValue::Object(signal)));
+        }
+        if builtin == BuiltinFunction::AbortSignalThrowIfAborted {
+            let JsValue::Object(signal) = this_value else {
+                return Err(JsError::type_error("throwIfAborted requires AbortSignal"));
+            };
+            if self.object(signal)?.kind != ObjectKind::AbortSignal {
+                return Err(JsError::type_error("throwIfAborted requires AbortSignal"));
+            }
+            if self
+                .object(signal)?
+                .properties
+                .get("aborted")
+                .is_some_and(JsValue::is_truthy)
+            {
+                let reason = self.get_object_property(signal, "reason")?;
+                return Ok(CallOutcome::Thrown(reason));
+            }
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
+        if builtin == BuiltinFunction::AbortControllerConstructor {
+            let signal = self.new_abort_signal()?;
+            let abort =
+                self.allocate_lifecycle_method("abort", BuiltinFunction::AbortControllerAbort)?;
+            let controller = self.allocate_object(
+                ObjectKind::AbortController,
+                Some(self.object_prototype),
+                HashMap::from([
+                    ("signal".into(), JsValue::Object(signal)),
+                    ("abort".into(), JsValue::Object(abort)),
+                ]),
+            )?;
+            return Ok(CallOutcome::Value(JsValue::Object(controller)));
+        }
+        if builtin == BuiltinFunction::AbortControllerAbort {
+            let JsValue::Object(controller) = this_value else {
                 return Err(JsError::type_error(
-                    "dispatchEvent requires document or window",
+                    "abort requires AbortController receiver",
                 ));
             };
-            if Some(receiver) != self.dom_document && receiver != self.global_object {
+            if self.object(controller)?.kind != ObjectKind::AbortController {
+                return Err(JsError::type_error(
+                    "abort requires AbortController receiver",
+                ));
+            }
+            let JsValue::Object(signal) = self.get_object_property(controller, "signal")? else {
+                return Err(JsError::type_error("AbortController has invalid signal"));
+            };
+            if self
+                .object(signal)?
+                .properties
+                .get("aborted")
+                .is_some_and(JsValue::is_truthy)
+            {
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
+            let reason = arguments
+                .first()
+                .cloned()
+                .unwrap_or(JsValue::String("AbortError".into()));
+            self.object_mut(signal)?
+                .properties
+                .insert("aborted".into(), JsValue::Boolean(true));
+            self.object_mut(signal)?
+                .properties
+                .insert("reason".into(), reason);
+            self.remove_aborted_signal_listeners(signal);
+            self.dispatch_abort_signal_event(signal)?;
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
+        if builtin == BuiltinFunction::LifecycleDispatchEvent {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("dispatchEvent requires an EventTarget"));
+            };
+            if Some(receiver) != self.dom_document
+                && receiver != self.global_object
+                && self.object(receiver)?.kind != ObjectKind::AbortSignal
+            {
                 return Err(JsError::type_error("unsupported event target"));
             }
             let Some(JsValue::Object(event)) = arguments.first() else {
@@ -4218,10 +4465,13 @@ impl JsRuntime {
         ) {
             let JsValue::Object(receiver) = this_value else {
                 return Err(JsError::type_error(
-                    "event target must be document or window",
+                    "event target must be document, window or AbortSignal",
                 ));
             };
-            if Some(receiver) != self.dom_document && receiver != self.global_object {
+            if Some(receiver) != self.dom_document
+                && receiver != self.global_object
+                && self.object(receiver)?.kind != ObjectKind::AbortSignal
+            {
                 return Err(JsError::type_error("unsupported event target"));
             }
             let event = arguments
@@ -4257,6 +4507,7 @@ impl JsRuntime {
                     DomListenerOptions {
                         once: self.get_object_property(id, "once")?.is_truthy(),
                         passive: self.get_object_property(id, "passive")?.is_truthy(),
+                        signal: self.listener_abort_signal(&raw_options)?,
                     }
                 } else {
                     DomListenerOptions::default()
@@ -4264,6 +4515,18 @@ impl JsRuntime {
             } else {
                 DomListenerOptions::default()
             };
+            if !remove
+                && options.signal.is_some_and(|id| {
+                    self.object(id).ok().is_some_and(|signal| {
+                        signal
+                            .properties
+                            .get("aborted")
+                            .is_some_and(JsValue::is_truthy)
+                    })
+                })
+            {
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
             let key = (receiver, event, capture);
             let option_key = (receiver, key.1.clone(), capture, *callback);
             if remove {
@@ -5229,6 +5492,7 @@ impl JsRuntime {
                     DomListenerOptions {
                         once: self.get_object_property(id, "once")?.is_truthy(),
                         passive: self.get_object_property(id, "passive")?.is_truthy(),
+                        signal: self.listener_abort_signal(&raw_options)?,
                     }
                 } else {
                     DomListenerOptions::default()
@@ -5236,6 +5500,18 @@ impl JsRuntime {
             } else {
                 DomListenerOptions::default()
             };
+            if matches!(builtin, BuiltinFunction::DomAddEventListener)
+                && options.signal.is_some_and(|id| {
+                    self.object(id).ok().is_some_and(|signal| {
+                        signal
+                            .properties
+                            .get("aborted")
+                            .is_some_and(JsValue::is_truthy)
+                    })
+                })
+            {
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
             let option_key = (node, event_type.clone(), capture, function);
             if event_type != "click" {
                 let key = (node, event_type, capture);
@@ -5351,6 +5627,11 @@ impl JsRuntime {
             | BuiltinFunction::LifecycleAddEventListener
             | BuiltinFunction::LifecycleRemoveEventListener
             | BuiltinFunction::LifecycleDispatchEvent
+            | BuiltinFunction::AbortControllerConstructor
+            | BuiltinFunction::AbortControllerAbort
+            | BuiltinFunction::AbortSignalConstructor
+            | BuiltinFunction::AbortSignalAbortStatic
+            | BuiltinFunction::AbortSignalThrowIfAborted
             | BuiltinFunction::SetTimeout
             | BuiltinFunction::ClearTimeout
             | BuiltinFunction::SetInterval
@@ -6009,6 +6290,13 @@ impl JsRuntime {
             return Ok(());
         }
         if key == "readyState" && self.dom_document == Some(*id) {
+            return Ok(());
+        }
+        if self.object(*id)?.kind == ObjectKind::AbortSignal && matches!(key, "aborted" | "reason")
+        {
+            return Ok(());
+        }
+        if self.object(*id)?.kind == ObjectKind::AbortController && key == "signal" {
             return Ok(());
         }
         if let ObjectKind::DomStyle(node) = self.object(*id)?.kind {
@@ -6963,6 +7251,207 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn m430_abort_signal_static_abort_and_throw_if_aborted() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var idle=new AbortController().signal;
+            var safe=idle.throwIfAborted()===undefined;
+            var signal=AbortSignal.abort('closed');
+            var threw=false;
+            try { signal.throwIfAborted(); } catch(e){ threw=e==='closed'; }
+            var forbidden=false;
+            try { new AbortSignal(); } catch(e){ forbidden=true; }
+            var result=typeof AbortSignal==='function'&&safe&&forbidden&&
+                       signal.aborted&&signal.reason==='closed'&&threw;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m430_abort_controller_signal_state_reason_and_idempotent_abort_event() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "node".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var ctrl=new AbortController();
+            var signal=ctrl.signal;
+            var same=signal===ctrl.signal;
+            var before=!signal.aborted&&signal.reason===undefined;
+            var hits=0;
+            signal.addEventListener('abort',function(e){
+                if(e.type==='abort'&&e.target===signal&&this===signal&&e.eventPhase===2)hits=hits+1;
+            });
+            signal.onabort=function(){hits=hits+10;};
+            ctrl.abort('finished');
+            ctrl.abort('ignored');
+            signal.aborted=false;
+            signal.reason='forged';
+            ctrl.signal=null;
+            var state=same&&before&&signal.aborted&&signal.reason==='finished'&&
+                      hits===11&&ctrl.signal===signal;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("state"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m430_signal_removes_element_window_document_handlers_and_skips_aborted_registration() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "button".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.eval_script(
+            r#"
+            var ctrl=new AbortController();
+            var button=document.getElementById('button');
+            var trace='';
+            button.addEventListener('ping',function(){trace=trace+'E';},{signal:ctrl.signal});
+            document.addEventListener('ping',function(){trace=trace+'D';},{signal:ctrl.signal});
+            window.addEventListener('ping',function(){trace=trace+'W';},
+                {signal:ctrl.signal,capture:true});
+            button.addEventListener('ping',function(){trace=trace+'K';});
+            button.dispatchEvent(new Event('ping',{bubbles:true}));
+            ctrl.abort();
+            button.dispatchEvent(new Event('ping',{bubbles:true}));
+            button.addEventListener('ping',function(){trace=trace+'BAD';},{signal:ctrl.signal});
+            button.dispatchEvent(new Event('ping',{bubbles:true}));
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("WEKDKK".into())));
+        assert!(vm.event_listener_errors().is_empty());
+    }
+
+    #[test]
+    fn m430_abort_during_callback_removes_pending_handlers_in_same_dispatch() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 2,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var ctrl=new AbortController();
+            var button=document.getElementById('button');
+            var trace='';
+            button.addEventListener('ping',function(){
+                trace=trace+'A';
+                ctrl.abort('cancel');
+            });
+            button.addEventListener('ping',function(){trace=trace+'BAD';},{signal:ctrl.signal});
+            button.addEventListener('ping',function(){trace=trace+'Z';});
+            button.dispatchEvent(new Event('ping'));
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("AZ".into())));
+    }
+
+    #[test]
+    fn m430_duplicate_registration_keeps_initial_signal_options() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 3,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var ctrl=new AbortController();
+            var button=document.getElementById('button');
+            var trace='';
+            function cb(){trace=trace+'A';}
+            function free(){trace=trace+'B';}
+            button.addEventListener('ping',cb);
+            button.addEventListener('ping',cb,{signal:ctrl.signal,once:true});
+            button.addEventListener('ping',free,{signal:ctrl.signal});
+            ctrl.abort();
+            button.dispatchEvent(new Event('ping'));
+            button.dispatchEvent(new Event('ping'));
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("AA".into())));
+    }
+
+    #[test]
+    fn m430_abort_signal_event_reports_exceptions_without_stopping_handlers() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 4,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var ctrl=new AbortController();
+            var trace='';
+            ctrl.signal.addEventListener('abort',function(){throw new Error('abort error')});
+            ctrl.signal.addEventListener('abort',function(){trace=trace+'ok';},{once:true});
+            ctrl.abort();
+            ctrl.abort();
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("ok".into())));
+        let errors = vm.take_event_listener_errors();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("abort error"), "{errors:?}");
+    }
+
+    #[test]
+    fn m430_invalid_listener_signal_throws_and_manual_removal_still_works() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 5,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var ctrl=new AbortController();
+            var button=document.getElementById('button');
+            var invalid=false;
+            function handler(){}
+            try { button.addEventListener('ping',handler,{signal:{aborted:false}}); }
+            catch(e) { invalid=true; }
+            button.addEventListener('ping',handler,{signal:ctrl.signal});
+            button.removeEventListener('ping',handler,false);
+            ctrl.abort();
+            var result=invalid&&ctrl.signal.aborted;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
     }
 
     #[test]

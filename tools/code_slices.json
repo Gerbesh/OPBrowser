@@ -336,6 +336,22 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S36",
+      "title": "AbortController signal listener cancellation through original DOM and native paint",
+      "status": "M4.30a bounded native AbortController/AbortSignal and listener options.signal",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "new_abort_signal"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "listener_abort_signal"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "remove_aborted_signal_listeners"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_abort_signal_event"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_element_listeners"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_lifecycle_listeners"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "No DOMException default reason, AbortSignal.timeout/any, signal cancellation of fetch/timers, or broad WPT Events conformance."
+    },
+    {
       "id": "S35",
       "title": "Connected Element event capture/target/bubble through document/window to native paint",
       "status": "M4.29b bounded original Element global propagation and native click handling",

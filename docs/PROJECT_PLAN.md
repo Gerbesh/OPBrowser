@@ -2,6 +2,30 @@
 
 Last updated: 2026-10-10
 
+## M4.30a - AbortController and signal-driven listener cancellation (2026-10-10)
+
+- DONE original AbortController constructor with persistent signal identity;
+  AbortController.abort(reason) is idempotent, records signal.aborted and
+  reason and delivers one nonbubbling, noncancelable 'abort' event.
+- DONE AbortSignal event target with add/removeEventListener, dispatchEvent,
+  onabort property, and native AbortSignal.abort(reason) factory.
+  signal.throwIfAborted() throws the stored reason.
+- DONE read-only exposed signal.aborted/reason and controller.signal in
+  the bounded VM's property assignment path.
+- DONE Element/document/window addEventListener options.signal validates
+  AbortSignal, rejects invalid objects, skips already-aborted signals,
+  preserves first registration options on duplicates, and removes matching
+  listeners synchronously on abort, including within an active dispatch.
+- DONE seven new VM regressions and two original JS -> DOM -> native-paint
+  integrations, including abort from a timer after initial page paint.
+- LIMITS: default abort reason currently a string 'AbortError' rather than
+  a DOMException; AbortSignal.timeout(), AbortSignal.any(), abort-driven
+  cancellation of fetch/timers and complete DOM EventTarget semantics
+  remain unsupported. No new original-source WPT/DOM metrics.
+- NEXT M4.30b: native DOMException AbortError and AbortSignal.timeout/any,
+  then connect AbortSignal to fetch's request cancellation and expand
+  original pinned WPT Events coverage.
+
 ## M4.29b - Connected Element events through Document/Window (2026-10-10)
 
 - DONE original Element.dispatchEvent(Event), synthetic element.click(), and

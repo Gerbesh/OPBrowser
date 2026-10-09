@@ -16,6 +16,25 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S36 - Abort signal -> listener cancellation -> original native paint (M4.30a)
+
+Status: IMPLEMENTED bounded original AbortController/AbortSignal APIs.
+
+JavaScript constructs AbortController and registers Element, Document
+or Window callbacks using EventListenerOptions.signal. The original
+op_js runtime records a signal ObjectId in DomListenerOptions, and
+remove_aborted_signal_listeners synchronously removes linked callbacks
+when abort() changes signal.aborted and reason. The native AbortSignal
+EventTarget emits one abort event, supports onabort, static
+AbortSignal.abort(reason) and throwIfAborted(). Aborting inside a
+listener prevents later removed callbacks from running in the same
+dispatch. New JS-driven text mutations still pass through op_engine
+DOM operation replay and op_paint native display lists. Seven VM
+tests and two native paint tests (including timer-driven abort)
+verify this path. Default reason is a string placeholder, not
+DOMException; AbortSignal.timeout/any, fetch cancellation and broad
+WPT/Events conformance are still incomplete.
+
 ## S35 - Connected Element events to global targets and native pixels (M4.29b)
 
 Status: IMPLEMENTED bounded original EventTarget propagation path.

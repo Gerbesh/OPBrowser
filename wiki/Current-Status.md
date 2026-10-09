@@ -234,6 +234,21 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.30a: AbortController/AbortSignal and signal listener options
+
+Original JavaScript now supports new AbortController(), the persistent
+controller.signal with read-only aborted/reason state, abort(reason),
+AbortSignal.abort(reason) and signal.throwIfAborted(). AbortSignal is
+a bounded EventTarget supporting 'abort' listeners and onabort.
+Element, Document and Window addEventListener accept {signal};
+aborted signals suppress new registrations and abort() synchronously
+removes existing signal-bound callbacks, even during active dispatch.
+Seven VM and two real DOM/native paint tests pass, including
+post-load timer cancellation. Limitations: default reason is a
+string rather than DOMException; AbortSignal.timeout()/any(), fetch
+cancellation, and complete WPT Events compatibility are pending.
+Frozen original upstream compatibility metrics remain unchanged.
+
 ## M4.29b: connected Element events reach Document and Window
 
 Original Element.dispatchEvent, Element.click and native hit-tested

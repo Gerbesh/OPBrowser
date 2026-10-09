@@ -2,6 +2,75 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m430_abort_signal_cancels_element_and_global_listeners_before_native_repaint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><button id='button'>RUN</button><p id='result'>WAIT</p><script>",
+            "var ctrl=new AbortController();",
+            "var button=document.getElementById('button');",
+            "var trace='';",
+            "window.addEventListener('ping',function(){trace=trace+'W';},",
+            "{capture:true,signal:ctrl.signal});",
+            "button.addEventListener('ping',function(){trace=trace+'B';},{signal:ctrl.signal});",
+            "document.addEventListener('ping',function(){trace=trace+'D';},{signal:ctrl.signal});",
+            "button.addEventListener('ping',function(){trace=trace+'K';});",
+            "button.dispatchEvent(new Event('ping',{bubbles:true}));",
+            "ctrl.abort('cancel');",
+            "button.dispatchEvent(new Event('ping',{bubbles:true}));",
+            "document.getElementById('result').textContent=",
+            "trace==='WBKDK'&&ctrl.signal.aborted&&ctrl.signal.reason==='cancel'?",
+            "'M430-SYNC-PASS':'M430-SYNC-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M430-SYNC-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m430_timer_abort_event_and_click_update_pixels_after_initial_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><button id='button'>RUN</button><p id='result'>WAIT</p><script>",
+            "var ctrl=new AbortController();",
+            "var button=document.getElementById('button');",
+            "var trace='';",
+            "button.addEventListener('click',function(){trace=trace+'S';},{signal:ctrl.signal});",
+            "button.addEventListener('click',function(){trace=trace+'P';});",
+            "ctrl.signal.addEventListener('abort',function(e){",
+            "if(e.target===ctrl.signal&&e.type==='abort')trace=trace+'A';});",
+            "button.click();",
+            "setTimeout(function(){",
+            "ctrl.abort('timer');ctrl.abort('ignored');",
+            "button.click();",
+            "document.getElementById('result').textContent=",
+            "trace==='SPAP'&&ctrl.signal.reason==='timer'?",
+            "'M430-TIMER-PASS':'M430-TIMER-FAIL';",
+            "},0);",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M430-TIMER-PASS")
+    )));
+    let repaint = engine
+        .tick_timers(800, 600)
+        .expect("timer abort should repaint");
+    assert!(repaint.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M430-TIMER-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m429b_element_to_document_window_event_phases_repaint_native_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

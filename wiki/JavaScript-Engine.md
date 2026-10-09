@@ -48,6 +48,30 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.30a: original AbortController and AbortSignal
+
+The page VM allocates native AbortController and AbortSignal object
+kinds, with a stable controller.signal reference. The signal exposes
+read-only aborted/reason, an abort event target with onabort, and
+throwIfAborted() that throws the stored JS reason. AbortController
+abort(reason) is idempotent and dispatches the abort event once;
+AbortSignal.abort(reason) creates an already-aborted signal without
+dispatching a new event.
+
+EventListenerOptions.signal is validated on Element/Document/Window
+addEventListener. A previously aborted signal skips registration;
+active signals are stored with first-registration listener options.
+Abort synchronously removes matching listeners from both native
+Element and global listener maps. Delivery checks active lists so
+abort inside a handler skips later removed callbacks. Existing
+once/passive, exception isolation and native click event routing
+remain in effect. Test coverage includes six further handler cases,
+signal factory/throw checks, and native repaint after timer abort.
+
+Limitations: default AbortError reason is currently a string rather
+than DOMException, signal.timeout/any and fetch/timer cancellation
+are not implemented, and this is not full WPT compliance.
+
 ## M4.29b: unified connected Element event propagation
 
 The page VM receives the authoritative parser document root from

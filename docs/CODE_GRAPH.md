@@ -16,6 +16,22 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.30a: bounded original AbortController/AbortSignal flow
+
+op_js owns new ObjectKind::AbortController and AbortSignal and
+BuiltinFunction handlers for their constructors, abort operation,
+static signal factory and throwIfAborted(). JsRuntime::new_abort_signal
+builds the native signal event target. DomListenerOptions now carries
+an optional AbortSignal ObjectId in both Element and Document/Window
+listener maps. AbortController.abort marks signal state, synchronously
+calls remove_aborted_signal_listeners across both maps, then uses
+dispatch_abort_signal_event and the existing lifecycle EventTarget
+delivery and exception isolation. Existing native click/path dispatch
+checks live registrations before invoking each callback, so abort
+during dispatch suppresses later queued callbacks. op_engine/DOM/
+layout/op_paint flow remains unchanged. No third-party engine or new
+crate dependency.
+
 ## M4.29b: connected Element event path and native hit testing
 
 op_engine::scripts::sync_dom_tree publishes the real document-root

@@ -38,6 +38,15 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.30a adds original AbortController and AbortSignal objects, native
+abort(reason), signal state/onabort, AbortSignal.abort(reason) and
+throwIfAborted(), and {signal} listener cancellation for Element,
+Document and Window. Aborting during dispatch synchronously removes
+linked callbacks; VM and native paint tests cover cancelation from
+timers. Default reason still uses a string, not DOMException;
+signal.timeout/any and aborting fetch/timers are future work.
+Frozen original WPT scores were not changed.
+
 M4.29b connects Element.dispatchEvent, Element.click and native
 hit-tested clicks to the complete bounded Window/Document/Element
 capture-target-bubble path. Native clicks now recognize document/

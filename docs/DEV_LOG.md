@@ -3196,3 +3196,26 @@ This file is append-only project history.
   nonbubbling events, global-only clicks and programmatic click.
 - Frozen external WPT sample and public Test262 scores are unchanged;
   no new conformance claim without a verified upstream checkout.
+
+## 2026-10-10 - M4.30a original AbortController and AbortSignal
+
+- Implemented original VM object kinds and standard-shaped
+  AbortController, AbortSignal.abort, and signal.throwIfAborted.
+- AbortController.abort(reason) records signal state once, removes
+  signal-bound listeners synchronously, dispatches one trusted abort
+  event and invokes native AbortSignal onabort callbacks.
+- Element/document/window listener registration now validates signal,
+  preserves first-registration options, skips already-aborted signals
+  and removes linked callbacks even within a synchronous dispatch.
+- Aborted/reason and controller.signal cannot be forged through
+  the bounded VM's ordinary property assignment.
+- Seven VM tests check reasons, identity, native abort events,
+  reentrant/current-dispatch cancellation, duplicate and invalid
+  options, static signal factory and throwIfAborted.
+- Two native page integrations prove direct and delayed timer abort
+  still update authoritative DOM and original display list pixels.
+- Deliberate limits: default reason is an AbortError string placeholder,
+  not DOMException; AbortSignal.timeout/any, fetch/timer abort and
+  general upstream WPT conformance remain future milestones.
+- No external JS engine, new dependency or changed frozen upstream
+  WPT/DOM/Event sample/score.
