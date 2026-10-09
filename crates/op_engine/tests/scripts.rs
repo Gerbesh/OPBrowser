@@ -2,6 +2,72 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m424_live_element_children_collection_ignores_text_nodes() {
+    let mut engine = Engine::new();
+    let page=engine.set_html_page(concat!(
+        "<main id='host'>plain <b id='first'>FIRST</b> mid <i name='named'>SECOND</i> tail</main>",
+        "<script>",
+        "var host=document.getElementById('host');",
+        "var children=host.children;",
+        "var first=document.getElementById('first');",
+        "var initially=children===host.children && children.length===2 && ",
+        " children[0]===first && children.item(0)===first && ",
+        " children.namedItem('first')===first && ",
+        " children.namedItem('named')===children[1] && ",
+        " children.namedItem('absent')===null && ",
+        " children.item(100)===null && host.childElementCount===2;",
+        "var other=document.createElement('em');",
+        "other.id='third';other.textContent='THIRD';",
+        "host.appendChild(other);",
+        "var inserted=children.length===3 && children[2]===other && ",
+        " children.namedItem('third')===other && host.lastElementChild===other;",
+        "first.remove();",
+        "var removed=children.length===2 && children[0]!==first && ",
+        " children.namedItem('first')===null && ",
+        " host.firstElementChild===children[0] && host.childElementCount===2;",
+        "other.textContent=(initially && inserted && removed)?",
+        " 'M424-CHILDREN-PASS':'M424-CHILDREN-FAIL';",
+        "</script>"
+    ),800,600);
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M424-CHILDREN-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m424_children_live_across_timer_and_native_binding() {
+    let mut engine = Engine::new();
+    let initial = engine.set_html_page(
+        concat!(
+            "<body><script>",
+            "var parent=document.createElement('section');",
+            "var children=parent.children;",
+            "document.body.appendChild(parent);",
+            "setTimeout(function(){",
+            " var child=document.createElement('b');",
+            " child.textContent='M424-TIMER-FAIL';",
+            " parent.appendChild(child);",
+            " if(children===parent.children && children.length===1 && ",
+            "   children.item(0)===child && child.parentNode===parent) ",
+            "   child.textContent='M424-TIMER-PASS';",
+            "},0);",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(!initial.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M424-TIMER-PASS")
+    )));
+    let after = engine.tick_timers(800, 600).expect("timer creates element");
+    assert!(after.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M424-TIMER-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m423_classlist_variadic_mutations_are_atomic() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

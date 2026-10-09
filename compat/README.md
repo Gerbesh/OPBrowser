@@ -127,3 +127,9 @@ after checking out the revision in compat/upstream.env. The runner
 pins the commit, reads original source, uses a narrow sync
 testharness adapter and validates a native render verdict. Do
 not interpret 1 attempted/1 pass as overall DOM or browser score.
+
+M4.24: WPT DOM smoke v2 uses ten manually scoped source fixture
+paths at the pinned revision; seven executed/pass, three explicit
+SKIP. Run cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt.
+The original v1 manifest is retained; v2 is not an official
+or representative WPT DOM conformance suite.

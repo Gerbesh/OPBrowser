@@ -336,6 +336,21 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S28",
+      "title": "Live HTMLCollection and original pinned WPT DOM fixtures through native pixels",
+      "status": "M4.24 limited WPT DOM smoke v2 and retained Element.children",
+      "steps": [
+        {"path": "crates/op_engine/src/bin/wpt_dom_probe.rs", "symbol": "instrument"},
+        {"path": "crates/op_engine/src/bin/wpt_dom_probe.rs", "symbol": "run"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "get_property"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dom_html_collection_object"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "remove_child"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Seven manually scoped real WPT DOM fixtures, three explicit skips; no official WPT compliance score."
+    },
+    {
       "id": "S27",
       "title": "Pinned upstream WPT DOM fixture through original JS and native paint",
       "status": "M4.23 fixed original WPT file with scoped synchronous harness adapter",

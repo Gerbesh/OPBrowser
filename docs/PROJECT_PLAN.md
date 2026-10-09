@@ -1206,3 +1206,28 @@ counts must not be mislabeled as external conformance percentages.
   broaden DOM collection/Document interfaces and event pipeline,
   then independently track attempted/passed/skipped WPT DOM tests.
   Avoid presenting 1/1 selected-pass as overall browser readiness.
+
+## M4.24 - Pinned WPT DOM smoke v2 and live Element.children (2026-10-09)
+
+- DONE original WPT DOM fixture manifest v2 with ten manually selected
+  tests: seven attempted and passing, three explicit unsupported SKIPs.
+  Existing v1 smoke manifest frozen. Not a representative WPT score.
+- DONE multiple original upstream HTML fixture execution with only
+  external testharness imports replaced by the tiny synchronous
+  test/assert_equals/assert_true/assert_false adapter. Original
+  assertions untouched. Fail closed on commit mismatch, missing
+  paths, duplicates, skipped/failed harness scripts and changed
+  fixture shape. Visible native PASS marker required.
+- DONE live childElementCount, firstElementChild, lastElementChild,
+  previousElementSibling, nextElementSibling; text nodes skipped.
+- DONE retained Element.children HTMLCollection with filtered length,
+  numeric indexes, item, basic namedItem and name property lookup;
+  persists through synthetic-to-real binding, callbacks and timers.
+- TESTED two native end-to-end scenarios for live collections and
+  timers; seven pinned upstream DOM fixtures also passed.
+- LIMITATIONS original WPT subset is manually selected, narrow,
+  synchronous, and not an official WPT testharness. No overall DOM
+  pass rate. Complete HTMLCollection named semantics, iframe,
+  iterable Array.from, event Web APIs and CSSOM remain incomplete.
+- NEXT M4.25: expand genuine WPT harness and DOM fixture coverage,
+  improve DOM Document/Element interfaces and event semantics.

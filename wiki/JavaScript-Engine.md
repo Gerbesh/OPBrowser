@@ -526,3 +526,13 @@ test/assert_equals adapter. The WPT DOM smoke v1 manifest contains
 four manually selected files: one attempted/pass and three
 unsupported skips. This is not an official or representative WPT
 DOM score. Broader harness, iframe, JS and DOM APIs remain missing.
+
+## M4.24: Element.children and expanded pinned WPT DOM smoke
+
+Original JS now supports live Element.children with filtered
+indices/item/basic namedItem, childElementCount, first/last
+element child and element siblings. Two native page tests check
+identity and timer-driven mutations. Seven original upstream
+WPT DOM fixtures now pass using the limited synchronous
+testharness adapter, with three explicit skips. This is a
+manually selected smoke test, not broad WPT conformance.

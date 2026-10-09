@@ -38,6 +38,12 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.24 adds live Element.children (numeric indices, item, basic namedItem),
+childElementCount, firstElementChild, lastElementChild and element sibling
+relationships. The pinned WPT DOM smoke now attempts and passes seven
+manually selected original upstream fixtures, with three explicit skips.
+The narrow sync harness is not official WPT or overall DOM conformance.
+
 M4.23 adds Node.previousSibling/nextSibling/isConnected/contains,
 nodeName/tagName/ownerDocument and Text.length, plus atomic
 multi-token DOMTokenList mutations and semicolon-aware CSS style

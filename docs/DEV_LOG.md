@@ -3077,3 +3077,13 @@ This file is append-only project history.
   skips; no full dynamic DOM WPT conformance claim.
 - Full Rust workspace, pinned JS runtime metrics and Win32 smoke
   remain separate from these new DOM capabilities.
+
+## 2026-10-09 - M4.24 live HTMLCollection and seven WPT DOM fixtures
+
+- Added element-only child count, first/last and sibling relationships.
+- Added live Element.children with item, numeric and basic named lookup.
+- Pinned original WPT DOM smoke expanded from one to seven executed,
+  passing fixtures; three remain explicit SKIP. No test assertions
+  were altered and the commit hash is checked.
+- Two new native DOM page integration tests cover deletion and timers.
+- Explicitly distinguish this manually scoped test from WPT conformance.

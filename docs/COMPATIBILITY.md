@@ -515,3 +515,20 @@ Use a checkout at the pinned WPT revision. A wrong revision fails
 rather than silently comparing different fixtures. Test262 Runtime
 v1 (82/91) and v2 (78/179 attempted, 110 SKIP) are independent
 JS samples and must not be merged with the DOM smoke count.
+
+## M4.24: pinned original WPT DOM smoke v2
+
+The fixed manual manifest compat/wpt-dom-smoke-v2.tsv lists ten
+upstream WPT DOM source files at revision
+97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d.
+Seven are attempted and pass; three are explicitly SKIP. Cases
+cover Node.childNodes caching and Element.childElementCount and
+first/lastElementChild, including dynamic insertion/removal.
+The runner checks all source paths, rejects duplicates, checks
+exact revision and requires visible native PASS. It replaces
+only the external WPT testharness imports with a tiny synchronous
+assertion shim, not the original test assertions.
+
+Reproduce: cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
+This is not an official or representative WPT run. No WPT DOM
+conformance percentage can be inferred. Test262 remains separate.

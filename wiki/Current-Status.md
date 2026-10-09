@@ -205,3 +205,11 @@ A limited adapter executes unchanged assertions from the pinned
 upstream WPT Node-childNodes-cache.html fixture: one attempted/pass,
 three manually chosen fixtures explicitly unsupported/skipped.
 No representative DOM WPT conformance percentage exists yet.
+
+## M4.24: seven original WPT DOM fixtures and live Element.children
+
+Manual pinned WPT DOM v2 selection has seven attempted/passing
+original source files and three explicit unsupported SKIPs.
+Native Element.children now exposes a live HTMLCollection with
+basic indices/item/namedItem and physical node identity.
+No official WPT DOM conformance score is claimed.

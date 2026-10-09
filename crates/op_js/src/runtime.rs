@@ -58,6 +58,7 @@ enum ObjectKind {
     DomText(usize),
     DomClassList(usize),
     DomNodeList(usize),
+    DomHtmlCollection(usize),
     DomStyle(usize),
     Headers,
 }
@@ -84,6 +85,7 @@ enum BuiltinFunction {
     DomClassContains,
     DomClassToggle,
     DomNodeListItem,
+    DomHtmlCollectionNamedItem,
     DomContains,
     DomStyleSetProperty,
     DomStyleGetPropertyValue,
@@ -292,6 +294,7 @@ pub struct JsRuntime {
     dom_attributes: HashMap<usize, HashMap<String, String>>,
     dom_class_lists: HashMap<usize, ObjectId>,
     dom_node_lists: HashMap<usize, ObjectId>,
+    dom_html_collections: HashMap<usize, ObjectId>,
     dom_styles: HashMap<usize, ObjectId>,
     dom_children: HashMap<usize, Vec<usize>>,
     dom_text_nodes: std::collections::HashSet<usize>,
@@ -392,6 +395,7 @@ impl Default for JsRuntime {
             dom_attributes: HashMap::new(),
             dom_class_lists: HashMap::new(),
             dom_node_lists: HashMap::new(),
+            dom_html_collections: HashMap::new(),
             dom_styles: HashMap::new(),
             dom_children: HashMap::new(),
             dom_text_nodes: std::collections::HashSet::new(),
@@ -497,6 +501,7 @@ impl JsRuntime {
         self.dom_attributes.clear();
         self.dom_class_lists.clear();
         self.dom_node_lists.clear();
+        self.dom_html_collections.clear();
         self.dom_styles.clear();
         self.dom_children.clear();
         self.dom_text_nodes.clear();
@@ -1470,6 +1475,10 @@ impl JsRuntime {
             self.dom_node_lists.insert(physical_node, list);
             self.heap[list.0].kind = ObjectKind::DomNodeList(physical_node);
         }
+        if let Some(collection) = self.dom_html_collections.remove(&virtual_node) {
+            self.dom_html_collections.insert(physical_node, collection);
+            self.heap[collection.0].kind = ObjectKind::DomHtmlCollection(physical_node);
+        }
         if let Some(list) = self.dom_class_lists.remove(&virtual_node) {
             self.dom_class_lists.insert(physical_node, list);
             self.heap[list.0].kind = ObjectKind::DomClassList(physical_node);
@@ -1890,6 +1899,53 @@ impl JsRuntime {
             .join("; ");
         self.stage_dom_attribute(node, "style", css)?;
         Ok(original)
+    }
+
+    fn html_collection_nodes(&self, parent: usize) -> Vec<usize> {
+        self.dom_children
+            .get(&parent)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|node| self.dom_tags.contains_key(node))
+            .collect()
+    }
+
+    fn html_collection_named(&self, parent: usize, name: &str) -> Option<usize> {
+        if name.is_empty() {
+            return None;
+        }
+        self.html_collection_nodes(parent).into_iter().find(|node| {
+            self.dom_attributes.get(node).is_some_and(|attrs| {
+                attrs.get("id").is_some_and(|id| id == name)
+                    || attrs.get("name").is_some_and(|value| value == name)
+            })
+        })
+    }
+
+    fn dom_html_collection_object(&mut self, parent: usize) -> Result<ObjectId, JsError> {
+        if let Some(&collection) = self.dom_html_collections.get(&parent) {
+            return Ok(collection);
+        }
+        let item = self.allocate_lifecycle_method("item", BuiltinFunction::DomNodeListItem)?;
+        self.object_mut(item)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        let named = self
+            .allocate_lifecycle_method("namedItem", BuiltinFunction::DomHtmlCollectionNamedItem)?;
+        self.object_mut(named)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        let object = self.allocate_object(
+            ObjectKind::DomHtmlCollection(parent),
+            Some(self.object_prototype),
+            HashMap::from([
+                ("item".into(), JsValue::Object(item)),
+                ("namedItem".into(), JsValue::Object(named)),
+            ]),
+        )?;
+        self.dom_html_collections.insert(parent, object);
+        Ok(object)
     }
 
     fn dom_node_list_object(&mut self, node: usize) -> Result<ObjectId, JsError> {
@@ -3306,19 +3362,49 @@ impl JsRuntime {
             }
             return Err(JsError::execution_limit("DOM ancestor depth exceeded"));
         }
+        if builtin == BuiltinFunction::DomHtmlCollectionNamedItem {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("namedItem requires HTMLCollection"));
+            };
+            let ObjectKind::DomHtmlCollection(parent) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error("namedItem requires HTMLCollection"));
+            };
+            let name = arguments
+                .first()
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            return match self.html_collection_named(parent, &name) {
+                Some(node) => self
+                    .dom_any_node_object(node)
+                    .map(|obj| CallOutcome::Value(JsValue::Object(obj))),
+                None => Ok(CallOutcome::Value(JsValue::Null)),
+            };
+        }
         if builtin == BuiltinFunction::DomNodeListItem {
             let JsValue::Object(receiver) = this_value else {
                 return Err(JsError::type_error("item requires NodeList"));
             };
-            let ObjectKind::DomNodeList(parent) = self.object(receiver)?.kind else {
-                return Err(JsError::type_error("item requires NodeList"));
+            let kind = self.object(receiver)?.kind;
+            let parent = match kind {
+                ObjectKind::DomNodeList(parent) | ObjectKind::DomHtmlCollection(parent) => parent,
+                _ => {
+                    return Err(JsError::type_error(
+                        "item requires NodeList or HTMLCollection",
+                    ));
+                }
             };
             let number = arguments.first().unwrap_or(&JsValue::Undefined).to_number();
             let child = if number.is_finite() && number >= 0.0 && number.fract() == 0.0 {
-                self.dom_children
-                    .get(&parent)
-                    .and_then(|children| children.get(number as usize))
-                    .copied()
+                if matches!(kind, ObjectKind::DomHtmlCollection(_)) {
+                    self.html_collection_nodes(parent)
+                        .get(number as usize)
+                        .copied()
+                } else {
+                    self.dom_children
+                        .get(&parent)
+                        .and_then(|children| children.get(number as usize))
+                        .copied()
+                }
             } else {
                 None
             };
@@ -3771,6 +3857,7 @@ impl JsRuntime {
             | BuiltinFunction::DomClassContains
             | BuiltinFunction::DomClassToggle
             | BuiltinFunction::DomNodeListItem
+            | BuiltinFunction::DomHtmlCollectionNamedItem
             | BuiltinFunction::DomContains
             | BuiltinFunction::DomStyleSetProperty
             | BuiltinFunction::DomStyleGetPropertyValue
@@ -4144,6 +4231,72 @@ impl JsRuntime {
                         if key == "childNodes" {
                             return self.dom_node_list_object(node).map(JsValue::Object);
                         }
+                        if matches!(kind, ObjectKind::DomElement(_)) {
+                            if key == "children" {
+                                return self.dom_html_collection_object(node).map(JsValue::Object);
+                            }
+                            if key == "childElementCount" {
+                                let children = self.dom_children.get(&node);
+                                let count = children.map_or(0, |children| {
+                                    children
+                                        .iter()
+                                        .filter(|id| self.dom_tags.contains_key(id))
+                                        .count()
+                                });
+                                return Ok(JsValue::Number(count as f64));
+                            }
+                            if key == "firstElementChild" || key == "lastElementChild" {
+                                let children = self.dom_children.get(&node);
+                                let child = if key == "firstElementChild" {
+                                    children.and_then(|children| {
+                                        children
+                                            .iter()
+                                            .copied()
+                                            .find(|id| self.dom_tags.contains_key(id))
+                                    })
+                                } else {
+                                    children.and_then(|children| {
+                                        children
+                                            .iter()
+                                            .rev()
+                                            .copied()
+                                            .find(|id| self.dom_tags.contains_key(id))
+                                    })
+                                };
+                                return match child {
+                                    Some(child) => {
+                                        self.dom_any_node_object(child).map(JsValue::Object)
+                                    }
+                                    None => Ok(JsValue::Null),
+                                };
+                            }
+                            if key == "previousElementSibling" || key == "nextElementSibling" {
+                                let parent = self.dom_pending_parents.get(&node).copied();
+                                let siblings =
+                                    parent.and_then(|parent| self.dom_children.get(&parent));
+                                let other = siblings.and_then(|siblings| {
+                                    let index = siblings.iter().position(|&other| other == node)?;
+                                    if key == "previousElementSibling" {
+                                        siblings[..index]
+                                            .iter()
+                                            .rev()
+                                            .copied()
+                                            .find(|other| self.dom_tags.contains_key(other))
+                                    } else {
+                                        siblings[index + 1..]
+                                            .iter()
+                                            .copied()
+                                            .find(|other| self.dom_tags.contains_key(other))
+                                    }
+                                });
+                                return match other {
+                                    Some(other) => {
+                                        self.dom_any_node_object(other).map(JsValue::Object)
+                                    }
+                                    None => Ok(JsValue::Null),
+                                };
+                            }
+                        }
                         if key == "firstChild" || key == "lastChild" {
                             let children = self.dom_children.get(&node);
                             let child = if key == "firstChild" {
@@ -4221,6 +4374,24 @@ impl JsRuntime {
                                 .find(|(name_key, _)| name_key == &name)
                                 .map_or_else(String::new, |(_, value)| value);
                             return Ok(JsValue::String(value));
+                        }
+                    }
+                    ObjectKind::DomHtmlCollection(node) => {
+                        if key == "length" {
+                            return Ok(JsValue::Number(
+                                self.html_collection_nodes(node).len() as f64
+                            ));
+                        }
+                        if let Ok(index) = key.parse::<usize>() {
+                            return match self.html_collection_nodes(node).get(index).copied() {
+                                Some(child) => self.dom_any_node_object(child).map(JsValue::Object),
+                                None => Ok(JsValue::Undefined),
+                            };
+                        }
+                        if !matches!(key, "item" | "namedItem")
+                            && let Some(child) = self.html_collection_named(node, key)
+                        {
+                            return self.dom_any_node_object(child).map(JsValue::Object);
                         }
                     }
                     ObjectKind::DomNodeList(node) => {

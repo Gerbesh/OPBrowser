@@ -16,6 +16,20 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.24: live Element children and pinned WPT DOM multi-fixture probe
+
+The original JS VM computes childElementCount, firstElementChild,
+lastElementChild and previous/nextElementSibling from live child
+linkage and DOM element tags. Element.children retains the same
+HTMLCollection object across mutation and synthetic-to-physical
+binding, with basic item and namedItem resolution.
+
+The pinned WPT DOM probe now reads seven upstream original
+source files, runs their unchanged synchronous test bodies
+with a narrow testharness substitute, and checks a native
+paint-visible PASS marker. Three selected fixtures remain SKIP.
+The sample is not representative WPT conformance.
+
 ## M4.23: Node connectivity and original WPT source to native pixels
 
 op_js::JsRuntime derives Node siblings, isConnected,

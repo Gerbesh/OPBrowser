@@ -16,6 +16,15 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S28 - Element.children and expanded WPT DOM fixtures to pixels (M4.24)
+
+Status: IMPLEMENTED bounded HTMLCollection and seven original WPT
+fixtures. Native JS reads live element-only child collections and
+passes updates through authoritative op_dom and retained paint.
+The pinned WPT runner executes unchanged fixture assertions
+with a limited synchronous shim, reporting seven attempted PASS
+and three explicit SKIP from a manually scoped fixed selection.
+
 ## S27 - live Node state and pinned upstream WPT -> native pixels (M4.23)
 
 Status: IMPLEMENTED narrow WPT smoke plus original DOM changes.

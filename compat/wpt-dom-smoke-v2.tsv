@@ -1,0 +1,13 @@
+# M4.24 manually scoped upstream WPT DOM smoke v2 (not official WPT or a representative sample)
+# WPT pinned revision 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d
+# path<TAB>attempt|skip<TAB>fixed status reason
+dom/nodes/Node-childNodes-cache.html	attempt	Original synchronous childNodes removal assertions
+dom/nodes/Element-childElementCount-nochild.html	attempt	Original no-element-child count assertions
+dom/nodes/Element-childElementCount-dynamic-add.html	attempt	Original appending child-element count assertions
+dom/nodes/Element-childElementCount-dynamic-remove.html	attempt	Original removal and lastElementChild assertions
+dom/nodes/Element-firstElementChild.html	attempt	Original firstElementChild and attribute assertions
+dom/nodes/Element-lastElementChild.html	attempt	Original lastElementChild and attribute assertions
+dom/nodes/Element-childElement-null.html	attempt	Original null element child assertions
+dom/nodes/Node-childNodes-cache-2.html	skip	Requires Array.from and arrow-function implementation
+dom/nodes/Node-contains.html	skip	Requires eval, array iteration and common.js fixtures
+dom/nodes/Node-isConnected.html	skip	Requires iframe/contentDocument and full WPT harness
