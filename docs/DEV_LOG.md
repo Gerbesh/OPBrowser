@@ -3117,3 +3117,22 @@ This file is append-only project history.
   3 explicit skips across 14 manually selected files.
 - Added five end-to-end native paint regression tests and retained
   all prior workspace and WPT DOM checks.
+
+## 2026-10-09 - M4.27 compound selectors and EventTarget dispatch
+
+- Improved original DOM querySelector/querySelectorAll to match
+  compound selector atoms, descendants, direct children and
+  comma-separated groups, with finite parsing/traversal budgets.
+  Added Element.matches and closest over the same subset.
+- Implemented original native-JS Event and element.dispatchEvent
+  with typed listener registration/removal, propagation phases,
+  cancelation, reentrancy safeguards and timer/virtual-node support.
+  Added legacy document.createEvent, initEvent and returnValue.
+- Added seven native render integration checks; updated previous
+  M4.26 test to accept descendant selectors now supported.
+- Pinned original-source WPT DOM/Events smoke v5 adds two
+  unmodified upstream EventTarget return-value tests:
+  12 original files attempted/pass, 3 SKIP, 14 callbacks.
+  Limited shim and selected sample cannot establish broad
+  WPT/DOM compatibility; uncaught callback-error semantics
+  and other event features remain incomplete.

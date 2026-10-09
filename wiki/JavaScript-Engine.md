@@ -567,3 +567,25 @@ The manually pinned original-source WPT DOM smoke v4 has
 14 selected files: 11 attempted and passed, 3 explicit SKIP,
 12 original synchronous test() callbacks. This is not an
 official WPT conformance result.
+
+## M4.27: compound Selectors and EventTarget.dispatchEvent
+
+Original VM DOM selectors support bounded tag.class#id,
+descendant, direct-child and comma-group matching with
+Document/Element.querySelector/querySelectorAll and
+Element.matches/closest. Complex pseudo, attribute and
+sibling syntax is not yet supported.
+
+The new original Event(type,{bubbles,cancelable}) and
+Element.dispatchEvent use typed listener capture/target/
+bubble propagation, preventDefault, stopPropagation,
+defaultPrevented, and return cancelation status.
+Legacy document.createEvent/initEvent/returnValue is also
+available in a restricted form. Recursion and event path
+budgets apply, but full EventTarget/DOMException semantics
+and listener exception handling remain incomplete.
+
+Pinned manually scoped original WPT DOM/Events smoke v5:
+15 files selected, 12 original files attempted/passed,
+3 explicit SKIP, 14 synchronous test() callbacks.
+Not a representative WPT conformance rate.

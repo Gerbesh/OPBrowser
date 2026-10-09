@@ -589,3 +589,40 @@ WPT DOM and need to be reported separately. Five new original
 VM -> real DOM -> CSS/layout/native pixel integration tests
 verify selector scope, static collection behavior, click bubbling
 and timer callbacks.
+
+## M4.27 bounded selectors and original event system with pinned WPT Events v5
+
+The original JavaScript/DOM host now supports bounded compound
+selectors (tag.class#id, descendant/child combinators, comma
+grouping) for Document/Element.querySelector/querySelectorAll,
+and Element.matches/closest. querySelectorAll remains a static
+NodeList. Sibling combinators, attribute selectors, pseudo-
+classes, namespaces and full Selectors spec are unsupported.
+
+The initial native Event constructor, Element.dispatchEvent,
+typed add/removeEventListener, capture/target/bubble, bubbles,
+cancelable, preventDefault, stopPropagation and defaultPrevented
+operate in the original VM. Limited legacy document.createEvent
+('Event'), initEvent and returnValue are also provided.
+This does not implement full Web Events: passive/once options,
+stopImmediatePropagation, listener exception reporting,
+document/window generic dispatch, browser activation defaults
+and DOMException matching remain incomplete.
+
+Manually frozen compat/wpt-dom-smoke-v5.tsv selects 15 pinned
+original WPT DOM/Events HTML files at upstream revision
+97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d.
+12 attempted original files PASS, 0 FAIL, 3 explicitly SKIP.
+They contain 14 original synchronous test() callbacks.
+New: dom/events/EventTarget-dispatchEvent-returnvalue.html has
+two original callbacks and passes with its untouched assertions
+for preventDefault and legacy returnValue. The testharness
+adapter stays small and synchronous, using pinned original
+sources and a sticky error result.
+
+Reproduce:
+  cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
+
+These are manually selected smoke tests, NOT representative
+WPT DOM/Events conformance. The separately pinned Test262
+runtime v1/v2 baselines must not be averaged with them.

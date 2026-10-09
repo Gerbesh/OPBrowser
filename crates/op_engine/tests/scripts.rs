@@ -2,6 +2,237 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m427_matches_and_closest_use_compound_selector_chains() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='outer' class='page'>",
+            "<section id='section' class='box'><p id='target' class='item active'>OK</p>",
+            "</section></main><p id='result'>WAIT</p><script>",
+            "var target=document.getElementById('target');",
+            "var section=document.getElementById('section');",
+            "var outer=document.getElementById('outer');",
+            "var matched=target.matches('p.item.active') && ",
+            " target.matches('main.page > section.box > p#target') && ",
+            " !target.matches('.missing') && !target.matches('section');",
+            "var parents=target.closest('section.box')===section && ",
+            " target.closest('main.page')===outer && ",
+            " target.closest('p.item')===target && ",
+            " target.closest('.absent')===null && ",
+            " target.closest('#outer, section.box')===section;",
+            "document.getElementById('result').textContent=",
+            " matched&&parents?'M427-MATCHES-PASS':'M427-MATCHES-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M427-MATCHES-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m427_original_legacy_event_and_returnvalue_sync() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><button id='target'>BTN</button><p id='result'>WAIT</p><script>",
+            "var node=document.getElementById('target');",
+            "var e=document.createEvent('Event');",
+            "var uninitialized=e.type==='' && e.target===null;",
+            "e.initEvent('update',false,true);",
+            "node.addEventListener('update',function(event){event.returnValue=false;});",
+            "var accepted=node.dispatchEvent(e);",
+            "document.getElementById('result').textContent=",
+            " uninitialized && !accepted && e.defaultPrevented && !e.returnValue?",
+            " 'M427-LEGACY-PASS':'M427-LEGACY-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M427-LEGACY-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m427_same_event_cannot_dispatch_recursively() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><button id='target'>BTN</button><p id='result'>WAIT</p><script>",
+            "var node=document.getElementById('target');",
+            "var event=new Event('repeat');",
+            "var rejected=false;",
+            "node.addEventListener('repeat',function(){",
+            " try{node.dispatchEvent(event)}catch(e){rejected=true}",
+            "});",
+            "var accepted=node.dispatchEvent(event);",
+            "document.getElementById('result').textContent=",
+            " accepted&&rejected?'M427-REENTRY-PASS':'M427-REENTRY-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M427-REENTRY-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m427_compound_child_descendant_and_comma_selectors() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='root' class='screen'><section class='container'>",
+            "<p id='first' class='item active'>ONE</p>",
+            "<aside><p id='second' class='item'>TWO</p></aside>",
+            "</section></main><p class='item' id='outside'>OUTSIDE</p>",
+            "<p id='result'>WAIT</p><script>",
+            "var root=document.getElementById('root');",
+            "var first=document.getElementById('first');",
+            "var second=document.getElementById('second');",
+            "var direct=root.querySelector('section > p.item.active')===first;",
+            "var descendant=root.querySelector('section p.item')===first && ",
+            " root.querySelector('main.screen p.item')===first;",
+            "var grouped=root.querySelectorAll('p#first.active, aside > p#second');",
+            "var groups=grouped.length===2 && grouped[0]===first && grouped[1]===second;",
+            "var noDuplicate=root.querySelectorAll('p.item, .active').length===2;",
+            "var limited=root.querySelector('p#outside')===null && ",
+            " root.querySelector('section > aside > p.item')===second;",
+            "var rejected=false;",
+            "try{root.querySelector('p:hover')}catch(e){rejected=true}",
+            "document.getElementById('result').textContent=",
+            " direct&&descendant&&groups&&noDuplicate&&limited&&rejected?",
+            " 'M427-SELECTORS-PASS':'M427-SELECTORS-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M427-SELECTORS-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m427_custom_event_capture_target_bubble_cancelation() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='outer'><button id='inner'>BTN</button></main>",
+            "<p id='result'>WAIT</p><script>",
+            "var parent=document.getElementById('outer');",
+            "var button=document.getElementById('inner');",
+            "var order='';",
+            "parent.addEventListener('change',function(e){",
+            " order=order+'C'+e.eventPhase;",
+            "},true);",
+            "button.addEventListener('change',function(e){",
+            " order=order+'T'+e.eventPhase;",
+            " if(e.target===button && e.currentTarget===button)e.preventDefault();",
+            "});",
+            "parent.addEventListener('change',function(e){",
+            " order=order+'B'+e.eventPhase;",
+            "});",
+            "var evt=new Event('change',{bubbles:true,cancelable:true});",
+            "var uncanceled=button.dispatchEvent(evt);",
+            "var done=!uncanceled && evt.defaultPrevented && ",
+            " evt.eventPhase===0 && evt.currentTarget===null && ",
+            " evt.target===button && order==='C1T2B3';",
+            "document.getElementById('result').textContent=",
+            " done?'M427-EVENT-PASS':'M427-EVENT-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M427-EVENT-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m427_event_nonbubbling_and_stop_propagation() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='outer'><button id='inner'>BTN</button></main>",
+            "<p id='result'>WAIT</p><script>",
+            "var parent=document.getElementById('outer');",
+            "var child=document.getElementById('inner');",
+            "var order='';",
+            "parent.addEventListener('select',function(e){order=order+'CAP';},true);",
+            "parent.addEventListener('select',function(e){order=order+'BUB';});",
+            "child.addEventListener('select',function(e){",
+            " order=order+'TARGET';e.preventDefault();",
+            "});",
+            "var evt=new Event('select',{bubbles:false,cancelable:false});",
+            "var accepted=child.dispatchEvent(evt);",
+            "var nonbubble=accepted && !evt.defaultPrevented && order==='CAPTARGET';",
+            "child.addEventListener('hold',function(e){e.stopPropagation();order=order+'STOP';});",
+            "parent.addEventListener('hold',function(e){order=order+'WRONG';});",
+            "child.dispatchEvent(new Event('hold',{bubbles:true}));",
+            "document.getElementById('result').textContent=",
+            " nonbubble && order==='CAPTARGETSTOP'?",
+            " 'M427-STOP-PASS':'M427-STOP-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M427-STOP-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m427_event_target_timer_and_object_reuse() {
+    let mut engine = Engine::new();
+    let initial = engine.set_html_page(
+        concat!(
+            "<body><section id='region'></section><p id='result'>WAIT</p>",
+            "<script>",
+            "var root=document.getElementById('region');",
+            "var child=document.createElement('button');",
+            "root.appendChild(child);",
+            "var seen=0;",
+            "child.addEventListener('save',function(e){seen=seen+1;});",
+            "var evt=new Event('save',{bubbles:true});",
+            "setTimeout(function(){",
+            " var first=child.dispatchEvent(evt);",
+            " var second=child.dispatchEvent(evt);",
+            " document.getElementById('result').textContent=",
+            " first&&second&&seen===2 && evt.target===child?",
+            " 'M427-TIMER-PASS':'M427-TIMER-FAIL';",
+            "},0);",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(!initial.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M427-TIMER-PASS")
+    )));
+    let after = engine
+        .tick_timers(800, 600)
+        .expect("event dispatched from timer");
+    assert!(after.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M427-TIMER-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m426_programmatic_click_bubbles_and_repaints_native_dom() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(
@@ -90,10 +321,9 @@ fn m426_query_selector_static_results_and_scoped_live_lookup() {
             "var retained=newest.length===2 && newest[1]===created && ",
             " host.querySelectorAll('.item').length===1 && ",
             " host.getElementsByTagName('p').length===1;",
-            "var rejected=false;",
-            "try{host.querySelector('main p')}catch(error){rejected=true}",
+            "var supported=host.querySelector('main p')===one;",
             "document.getElementById('result').textContent=",
-            " first&&snapshot&&scoped&&retained&&rejected?",
+            " first&&snapshot&&scoped&&retained&&supported?",
             " 'M426-QUERY-PASS':'M426-QUERY-FAIL';",
             "</script></body>"
         ),

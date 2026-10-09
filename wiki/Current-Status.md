@@ -233,3 +233,18 @@ handlers. Five new native rendering integrations pass, including
 deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
+
+## M4.27: bounded compound selectors and dispatchEvent
+
+Original Document/Element selectors now match descendant
+and direct-child chains plus compound tag/class/id
+and comma groups. Element.matches/closest share the
+same bounded grammar. Event() / Element.dispatchEvent
+support custom event types, capture/target/bubble,
+preventDefault, stopPropagation and return-value semantics,
+with legacy createEvent/initEvent. Seven new native page
+integration tests pass.
+
+Original pinned WPT DOM/Events smoke v5: 12 attempted
+original HTML files passing, 3 explicit unsupported SKIP.
+This remains manually scoped, not an overall DOM score.

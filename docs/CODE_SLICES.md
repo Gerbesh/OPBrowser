@@ -16,6 +16,23 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S31 - Compound selector and typed DOM event dispatch -> native pixels (M4.27)
+
+Status: IMPLEMENTED bounded original DOM Selectors and Events slice.
+
+The page's original JS evaluates compound child/descendant
+selector chains against op_js staged real DOM node attributes,
+and can call Element.matches/closest. Event() / dispatchEvent()
+perform original typed listener capture/target/bubble propagation
+with cancelation, stopPropagation and bounded reentry. The
+subsequent mutation replay through op_engine and op_dom plus
+layout/op_paint changes actual pixels, including timer dispatch.
+Seven new cross-crate tests validate it.
+
+Original pinned WPT DOM/Events v5 executes 12 attempted/pass
+upstream HTML sources, 14 callback tests, three explicit SKIPs.
+It is a small manual sample, NOT full WPT conformance.
+
 ## S30 - relational in and DOM selector/click -> native pixels (M4.26)
 
 Status: IMPLEMENTED bounded selector and event-dispatch slice.

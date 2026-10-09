@@ -1302,3 +1302,54 @@ counts must not be mislabeled as external conformance percentages.
 - NEXT M4.27: selector combinators/attribute syntax and standards
   errors, safe general event dispatch, broader real WPT DOM
   coverage and a proper async testharness protocol.
+
+## M4.27 - Compound DOM selectors and general Event dispatch with real WPT Events (2026-10-09)
+
+- DONE expanded bounded original JS Document/Element querySelector and
+  querySelectorAll: compound selectors like tag.class#id,
+  descendant whitespace and direct-child > relationships,
+  comma-separated groups, document order, duplicate elimination
+  and element-scoped ancestor matching. Existing querySelectorAll
+  static snapshot semantics retained. Selector tokens capped at
+  256 ASCII bytes / 8 groups / 16 segments and traversal budgets.
+  Attribute selectors, pseudo-classes, sibling combinators and
+  full CSS syntax still unsupported, with explicit errors.
+- DONE original-VM Element.matches and closest on the same
+  bounded selector grammar, including matching self/ancestor
+  chains and basic null/not-found handling.
+- DONE custom Event(type, {bubbles,cancelable}) constructor and
+  Element.dispatchEvent for target-specific typed listeners,
+  capture/target/bubble propagation, listener removal, correct
+  defaultPrevented/return boolean, stopPropagation and currentTarget
+  reset, reusable events, trusted=false and guarded reentrancy.
+  Typed listener tables persist across synthetic->native NodeId
+  mapping, and DOM mutations commit to native paint after events.
+- DONE initial legacy Document.createEvent('Event') and
+  Event.initEvent / returnValue accessors for older pages.
+  Duplicate dispatch while an event is active is rejected;
+  nested dispatch depth limited to 16 and path to 64.
+- TESTED seven native original JS -> actual op_dom -> native
+  display-list integration scenarios: compound selector groups,
+  matches/closest, custom event phase/cancelation/stopPropagation,
+  event from timers/reuse, legacy returnValue and reentrancy.
+  Updated a former M4.26 test which previously required rejection
+  of descendant selectors to assert their new successful behavior.
+- DONE frozen compat/wpt-dom-smoke-v5.tsv with one additional
+  original upstream DOM Events fixture:
+  dom/events/EventTarget-dispatchEvent-returnvalue.html.
+  Its two original test() callbacks pass unchanged, verifying
+  preventDefault() and returnValue. WPT DOM/Events v5:
+  15 manually selected files, 12 attempted/pass, 3 explicit SKIP,
+  14 executed original synchronous test() callbacks. Pinned
+  upstream revision and limited fail-sticky harness retained.
+- LIMITATIONS: this is a bounded partial custom event system,
+  not standards-complete EventTarget: no stopImmediatePropagation,
+  AddEventListener options/once/passive, proper DOMException
+  hierarchy, default browser event activation, generic document/window
+  dispatchEvent, async tests or exception-isolating listener reports.
+  Uncaught event listener errors may stop later listeners.
+  Selector grammar is intentionally restricted; Test262 JS
+  runtime v1/v2 is separate from WPT DOM/Events metrics.
+- NEXT M4.28: WPT-backed selector/error behavior, comprehensive
+  listener options and exception handling, broader official
+  testharness capabilities and responsive interactive sites.

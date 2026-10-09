@@ -147,3 +147,11 @@ pinned original-source WPT DOM files, 11 attempted/PASS with
 Element-childElementCount fixture exercises relational JS in
 and live DOM properties without changing upstream assertions.
 This is not the official WPT testharness or a general DOM score.
+
+M4.27: compat/wpt-dom-smoke-v5.tsv lists 15 manually selected
+pinned original WPT DOM/Events HTML files, 12 executed/pass,
+3 explicit skips, 14 original synchronous test() callbacks.
+The new original EventTarget-dispatchEvent-returnvalue fixture
+contains two callback tests for canceled dispatch and the
+legacy returnValue property. The shim is deliberately
+limited and is not the official WPT/DOM Events harness.

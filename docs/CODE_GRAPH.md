@@ -16,6 +16,30 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.27: selector chains and original typed DOM events to native pixels
+
+Original op_js now matches bounded compound selector tokens
+through descendant/child ancestor chains against the live
+parent/child/attribute snapshot. Document/Element querySelector,
+querySelectorAll, Element.matches and closest share this
+matcher; static NodeLists keep their snapshot and identity.
+
+Original typed DOM event listener maps now carry event type
+and capture mode, alongside the existing original click tables.
+Event constructor, Element.dispatchEvent and legacy Event
+initialization execute callback chains through capture/target/
+bubble. The return boolean reflects cancelation, with guarded
+reentry/depth. Event-driven DOM mutations are replayed by
+op_engine::scripts into authoritative op_dom then laid out/
+painted by original CSS/layout/op_paint. Seven end-to-end
+tests assert updated native text output.
+
+Pinned original WPT DOM/Events v5 includes the untouched
+EventTarget-dispatchEvent-returnvalue.html (two tests).
+Twelve manually chosen original HTML source files pass;
+three files explicitly skipped. No representative WPT
+compatibility can be inferred from this sample.
+
 ## M4.26: JS in, scoped query selectors, programmatic click and WPT DOM v4
 
 op_js lexer and parser now recognize relational in. The original

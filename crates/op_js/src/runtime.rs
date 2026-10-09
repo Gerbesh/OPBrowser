@@ -61,6 +61,7 @@ enum ObjectKind {
     DomHtmlCollection(usize),
     DomTagCollection,
     DomQueryNodeList,
+    DomEvent,
     DomStyle(usize),
     Headers,
 }
@@ -78,6 +79,8 @@ enum BuiltinFunction {
     DomGetElementsByTagName,
     DomQuerySelector,
     DomQuerySelectorAll,
+    DomMatches,
+    DomClosest,
     DomHasAttribute,
     DomHasAttributes,
     DomCreateElement,
@@ -95,6 +98,10 @@ enum BuiltinFunction {
     DomHtmlCollectionNamedItem,
     DomContains,
     DomClick,
+    DomDispatchEvent,
+    DomEventConstructor,
+    DomCreateEvent,
+    DomInitEvent,
     DomStyleSetProperty,
     DomStyleGetPropertyValue,
     DomStyleRemoveProperty,
@@ -314,6 +321,8 @@ pub struct JsRuntime {
     dom_click_listeners: HashMap<usize, Vec<JsValue>>,
     dom_click_capture_listeners: HashMap<usize, Vec<JsValue>>,
     dom_onclick: HashMap<usize, JsValue>,
+    dom_typed_listeners: HashMap<(usize, String, bool), Vec<JsValue>>,
+    dom_dispatch_depth: usize,
     dom_programmatic_click_depth: usize,
     dom_document: Option<ObjectId>,
     lifecycle_listeners: HashMap<(ObjectId, String, bool), Vec<JsValue>>,
@@ -418,6 +427,8 @@ impl Default for JsRuntime {
             dom_click_listeners: HashMap::new(),
             dom_click_capture_listeners: HashMap::new(),
             dom_onclick: HashMap::new(),
+            dom_typed_listeners: HashMap::new(),
+            dom_dispatch_depth: 0,
             dom_programmatic_click_depth: 0,
             dom_document: None,
             lifecycle_listeners: HashMap::new(),
@@ -448,6 +459,15 @@ impl Default for JsRuntime {
                 type_error_prototype,
             )
             .expect("built-in TypeError constructor must fit initial runtime budgets");
+        let event_ctor = runtime
+            .allocate_lifecycle_method("Event", BuiltinFunction::DomEventConstructor)
+            .expect("Event constructor fits VM initial budget");
+        runtime.install_global_binding(
+            "Event",
+            JsValue::Object(event_ctor),
+            false,
+            VariableKind::Const,
+        );
         runtime
             .install_error_constructor(
                 "ReferenceError",
@@ -527,6 +547,8 @@ impl JsRuntime {
         self.dom_click_listeners.clear();
         self.dom_click_capture_listeners.clear();
         self.dom_onclick.clear();
+        self.dom_typed_listeners.clear();
+        self.dom_dispatch_depth = 0;
         self.dom_programmatic_click_depth = 0;
         self.lifecycle_listeners.clear();
         self.timers.clear();
@@ -572,6 +594,8 @@ impl JsRuntime {
             .insert("length".into(), JsValue::Number(1.0));
         let create =
             self.allocate_lifecycle_method("createElement", BuiltinFunction::DomCreateElement)?;
+        let create_event =
+            self.allocate_lifecycle_method("createEvent", BuiltinFunction::DomCreateEvent)?;
         let create_text =
             self.allocate_lifecycle_method("createTextNode", BuiltinFunction::DomCreateTextNode)?;
         let add_listener = self.allocate_lifecycle_method(
@@ -592,6 +616,7 @@ impl JsRuntime {
                 ("querySelectorAll".into(), JsValue::Object(query_all)),
                 ("createElement".into(), JsValue::Object(create)),
                 ("createTextNode".into(), JsValue::Object(create_text)),
+                ("createEvent".into(), JsValue::Object(create_event)),
                 ("body".into(), JsValue::Null),
                 ("addEventListener".into(), JsValue::Object(add_listener)),
                 (
@@ -1696,6 +1721,23 @@ impl JsRuntime {
                 .or_default()
                 .append(&mut listeners);
         }
+        let typed_keys = self
+            .dom_typed_listeners
+            .keys()
+            .filter(|(node, _, _)| *node == virtual_node)
+            .cloned()
+            .collect::<Vec<_>>();
+        for (node, name, capture) in typed_keys {
+            if let Some(mut handlers) =
+                self.dom_typed_listeners
+                    .remove(&(node, name.clone(), capture))
+            {
+                self.dom_typed_listeners
+                    .entry((physical_node, name, capture))
+                    .or_default()
+                    .append(&mut handlers);
+            }
+        }
         if let Some(callback) = self.dom_onclick.remove(&virtual_node) {
             self.dom_onclick.insert(physical_node, callback);
         }
@@ -1855,6 +1897,174 @@ impl JsRuntime {
         }
         self.finish_event_dispatch(event)?;
         Ok(handled)
+    }
+
+    /// Bounded synchronous EventTarget.dispatchEvent for original DOM element
+    /// listeners, including click listeners installed by the existing API.
+    /// No default browser activation occurs.
+    fn dispatch_custom_event(&mut self, event: ObjectId, path: &[usize]) -> Result<bool, JsError> {
+        if self.dom_dispatch_depth >= 16 {
+            return Err(JsError::execution_limit(
+                "event dispatch recursion budget exceeded",
+            ));
+        }
+        if !self
+            .object(event)?
+            .properties
+            .get("__initialized")
+            .is_some_and(JsValue::is_truthy)
+        {
+            return Err(JsError::type_error("event is not initialized"));
+        }
+        if matches!(
+            self.object(event)?.properties.get("__dispatching"),
+            Some(JsValue::Boolean(true))
+        ) {
+            return Err(JsError::type_error("event is already being dispatched"));
+        }
+        let event_type = self
+            .object(event)?
+            .properties
+            .get("type")
+            .cloned()
+            .unwrap_or(JsValue::Undefined)
+            .to_js_string();
+        let bubbles = self
+            .object(event)?
+            .properties
+            .get("bubbles")
+            .is_some_and(JsValue::is_truthy);
+        if let Some(target) = path.first().copied() {
+            let object = self.dom_any_node_object(target)?;
+            self.object_mut(event)?
+                .properties
+                .insert("target".into(), JsValue::Object(object));
+        }
+        self.object_mut(event)?
+            .properties
+            .insert("__dispatching".into(), JsValue::Boolean(true));
+        self.object_mut(event)?
+            .properties
+            .insert("__stopPropagation".into(), JsValue::Boolean(false));
+        self.dom_dispatch_depth += 1;
+        let result = self.dispatch_custom_event_inner(event, path, &event_type, bubbles);
+        self.dom_dispatch_depth -= 1;
+        self.object_mut(event)?
+            .properties
+            .insert("__dispatching".into(), JsValue::Boolean(false));
+        self.finish_event_dispatch(event)?;
+        result?;
+        let canceled = self
+            .object(event)?
+            .properties
+            .get("defaultPrevented")
+            .is_some_and(JsValue::is_truthy);
+        Ok(!canceled)
+    }
+
+    fn dispatch_custom_event_inner(
+        &mut self,
+        event: ObjectId,
+        path: &[usize],
+        event_type: &str,
+        bubbles: bool,
+    ) -> Result<(), JsError> {
+        let Some(&target) = path.first() else {
+            return Ok(());
+        };
+        let mut steps = 0usize;
+        for &node in path.iter().take(64).skip(1).rev() {
+            let mut handlers = self
+                .dom_typed_listeners
+                .get(&(node, event_type.into(), true))
+                .cloned()
+                .unwrap_or_default();
+            if event_type == "click" {
+                handlers.extend(
+                    self.dom_click_capture_listeners
+                        .get(&node)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
+            }
+            if !handlers.is_empty() {
+                let receiver = self.dom_element_object(node)?;
+                self.prepare_event_callback(event, receiver, 1)?;
+                for handler in handlers {
+                    self.call_event_handler(handler, receiver, event, &mut steps)?;
+                }
+            }
+            if self.event_propagation_stopped(event)? {
+                return Ok(());
+            }
+        }
+        let receiver = self.dom_element_object(target)?;
+        let mut target_handlers = self
+            .dom_typed_listeners
+            .get(&(target, event_type.into(), true))
+            .cloned()
+            .unwrap_or_default();
+        if event_type == "click" {
+            target_handlers.extend(
+                self.dom_click_capture_listeners
+                    .get(&target)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+        }
+        target_handlers.extend(
+            self.dom_typed_listeners
+                .get(&(target, event_type.into(), false))
+                .cloned()
+                .unwrap_or_default(),
+        );
+        if event_type == "click" {
+            target_handlers.extend(
+                self.dom_click_listeners
+                    .get(&target)
+                    .cloned()
+                    .unwrap_or_default(),
+            );
+            if let Some(handler) = self.dom_onclick.get(&target).cloned() {
+                target_handlers.push(handler);
+            }
+        }
+        self.prepare_event_callback(event, receiver, 2)?;
+        for handler in target_handlers {
+            self.call_event_handler(handler, receiver, event, &mut steps)?;
+        }
+        if !bubbles || self.event_propagation_stopped(event)? {
+            return Ok(());
+        }
+        for &node in path.iter().take(64).skip(1) {
+            let mut handlers = self
+                .dom_typed_listeners
+                .get(&(node, event_type.into(), false))
+                .cloned()
+                .unwrap_or_default();
+            if event_type == "click" {
+                handlers.extend(
+                    self.dom_click_listeners
+                        .get(&node)
+                        .cloned()
+                        .unwrap_or_default(),
+                );
+                if let Some(handler) = self.dom_onclick.get(&node).cloned() {
+                    handlers.push(handler);
+                }
+            }
+            if !handlers.is_empty() {
+                let receiver = self.dom_element_object(node)?;
+                self.prepare_event_callback(event, receiver, 3)?;
+                for handler in handlers {
+                    self.call_event_handler(handler, receiver, event, &mut steps)?;
+                }
+            }
+            if self.event_propagation_stopped(event)? {
+                break;
+            }
+        }
+        Ok(())
     }
 
     /// Make a previously detached subtree discoverable through getElementById
@@ -2162,48 +2372,153 @@ impl JsRuntime {
         Ok(object)
     }
 
-    fn simple_selector_matches(&self, node: usize, selector: &str) -> bool {
+    /// Deliberately bounded ASCII subset of compound selectors; this is
+    /// separate from the layout CSS parser and is not full Selectors Level 4.
+    fn simple_selector_matches(&self, node: usize, compound: &str) -> bool {
         let Some(tag) = self.dom_tags.get(&node) else {
             return false;
         };
-        if selector == "*" {
-            return true;
+        let bytes = compound.as_bytes();
+        let mut pos = 0usize;
+        if pos < bytes.len() && bytes[pos] != b'#' && bytes[pos] != b'.' {
+            while pos < bytes.len() && bytes[pos] != b'#' && bytes[pos] != b'.' {
+                pos += 1;
+            }
+            let expected = &compound[..pos];
+            if expected != "*" && !tag.eq_ignore_ascii_case(expected) {
+                return false;
+            }
         }
-        if let Some(id) = selector.strip_prefix('#') {
-            return self
-                .dom_attributes
-                .get(&node)
-                .and_then(|a| a.get("id"))
-                .is_some_and(|v| v == id);
+        if pos == 0 && bytes.first().is_none_or(|b| *b != b'#' && *b != b'.') {
+            return false;
         }
-        if let Some(class) = selector.strip_prefix('.') {
-            return self
-                .dom_attributes
-                .get(&node)
-                .and_then(|a| a.get("class"))
-                .is_some_and(|v| v.split_ascii_whitespace().any(|part| part == class));
+        while pos < bytes.len() {
+            let marker = bytes[pos];
+            pos += 1;
+            let start = pos;
+            while pos < bytes.len() && bytes[pos] != b'#' && bytes[pos] != b'.' {
+                pos += 1;
+            }
+            let value = &compound[start..pos];
+            if value.is_empty() {
+                return false;
+            }
+            let matches = match marker {
+                b'#' => self
+                    .dom_attributes
+                    .get(&node)
+                    .and_then(|attrs| attrs.get("id"))
+                    .is_some_and(|id| id == value),
+                b'.' => self
+                    .dom_attributes
+                    .get(&node)
+                    .and_then(|attrs| attrs.get("class"))
+                    .is_some_and(|class| {
+                        class.split_ascii_whitespace().any(|token| token == value)
+                    }),
+                _ => false,
+            };
+            if !matches {
+                return false;
+            }
         }
-        tag.eq_ignore_ascii_case(selector)
+        true
+    }
+
+    /// Parse tag.class#id, descendant and direct-child combinators plus comma
+    /// lists. Fail closed on pseudo classes, attribute selectors and escapes.
+    fn selector_groups(selector: &str) -> Result<Vec<Vec<(String, bool)>>, JsError> {
+        if selector.len() > 256 || !selector.is_ascii() {
+            return Err(JsError::type_error("unsupported CSS selector"));
+        }
+        let mut groups = Vec::new();
+        for group in selector.split(',') {
+            if groups.len() >= 8 {
+                return Err(JsError::execution_limit("selector groups exceeded"));
+            }
+            let spaced = group.replace('>', " > ");
+            let mut sequence: Vec<(String, bool)> = Vec::new();
+            let mut direct = false;
+            for word in spaced.split_ascii_whitespace() {
+                if word == ">" {
+                    if sequence.is_empty() || direct {
+                        return Err(JsError::type_error("invalid child combinator"));
+                    }
+                    direct = true;
+                    continue;
+                }
+                let bytes = word.as_bytes();
+                if bytes.is_empty()
+                    || !bytes.iter().all(|b| {
+                        b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'#' | b'.' | b'*')
+                    })
+                    || word[1..].contains('*')
+                    || (word.contains('*') && word != "*")
+                    || bytes.last().is_some_and(|b| *b == b'#' || *b == b'.')
+                    || bytes.windows(2).any(|pair| {
+                        matches!(
+                            pair,
+                            [b'#', b'#'] | [b'#', b'.'] | [b'.', b'#'] | [b'.', b'.']
+                        )
+                    })
+                    || sequence.len() >= 16
+                {
+                    return Err(JsError::type_error("unsupported compound CSS selector"));
+                }
+                sequence.push((word.into(), direct));
+                direct = false;
+            }
+            if sequence.is_empty() || direct {
+                return Err(JsError::type_error("empty or unfinished CSS selector"));
+            }
+            groups.push(sequence);
+        }
+        Ok(groups)
+    }
+
+    fn selector_chain_matches(
+        &self,
+        node: usize,
+        root: usize,
+        sequence: &[(String, bool)],
+    ) -> bool {
+        let Some((last, _)) = sequence.last() else {
+            return false;
+        };
+        if !self.simple_selector_matches(node, last) {
+            return false;
+        }
+        let mut current = node;
+        for part in (1..sequence.len()).rev() {
+            let (wanted, _) = &sequence[part - 1];
+            let direct = sequence[part].1;
+            let mut ancestor = self.dom_pending_parents.get(&current).copied();
+            let mut found = None;
+            let mut checked = 0usize;
+            while let Some(candidate) = ancestor {
+                checked += 1;
+                if checked > 256 {
+                    return false;
+                }
+                if self.simple_selector_matches(candidate, wanted) {
+                    found = Some(candidate);
+                    break;
+                }
+                if candidate == root || direct {
+                    break;
+                }
+                ancestor = self.dom_pending_parents.get(&candidate).copied();
+            }
+            let Some(match_node) = found else {
+                return false;
+            };
+            current = match_node;
+        }
+        true
     }
 
     fn query_descendants(&self, root: usize, selector: &str) -> Result<Vec<usize>, JsError> {
-        if selector.len() > 128
-            || selector.is_empty()
-            || !selector.trim().is_ascii()
-            || !selector.bytes().all(|b| {
-                b.is_ascii_alphanumeric()
-                    || b == b'-'
-                    || b == b'_'
-                    || b == b'#'
-                    || b == b'.'
-                    || b == b'*'
-            })
-            || selector[1..].contains('#')
-            || selector[1..].contains('.')
-            || (selector.contains('*') && selector != "*")
-        {
-            return Err(JsError::type_error("unsupported complex CSS selector"));
-        }
+        let groups = Self::selector_groups(selector)?;
         let mut matches = Vec::new();
         let mut stack = self.dom_children.get(&root).cloned().unwrap_or_default();
         stack.reverse();
@@ -2212,7 +2527,10 @@ impl JsRuntime {
             if !visited.insert(node) || visited.len() > 20_000 {
                 break;
             }
-            if self.simple_selector_matches(node, selector) {
+            if groups
+                .iter()
+                .any(|group| self.selector_chain_matches(node, root, group))
+            {
                 matches.push(node);
                 if matches.len() >= 4096 {
                     break;
@@ -2353,6 +2671,11 @@ impl JsRuntime {
             self.allocate_lifecycle_method("replaceChild", BuiltinFunction::DomReplaceChild)?;
         let remove_self =
             self.allocate_lifecycle_method("remove", BuiltinFunction::DomRemoveSelf)?;
+        let dispatch =
+            self.allocate_lifecycle_method("dispatchEvent", BuiltinFunction::DomDispatchEvent)?;
+        self.object_mut(dispatch)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
         let click = self.allocate_lifecycle_method("click", BuiltinFunction::DomClick)?;
         self.object_mut(click)?
             .properties
@@ -2392,6 +2715,14 @@ impl JsRuntime {
         self.object_mut(query_all)?
             .properties
             .insert("length".into(), JsValue::Number(1.0));
+        let matches = self.allocate_lifecycle_method("matches", BuiltinFunction::DomMatches)?;
+        let closest = self.allocate_lifecycle_method("closest", BuiltinFunction::DomClosest)?;
+        self.object_mut(matches)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        self.object_mut(closest)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
         let remove_attr =
             self.allocate_lifecycle_method("removeAttribute", BuiltinFunction::DomRemoveAttribute)?;
         let element = self.allocate_object(
@@ -2415,6 +2746,7 @@ impl JsRuntime {
                 ("remove".into(), JsValue::Object(remove_self)),
                 ("contains".into(), JsValue::Object(contains)),
                 ("click".into(), JsValue::Object(click)),
+                ("dispatchEvent".into(), JsValue::Object(dispatch)),
                 ("setAttribute".into(), JsValue::Object(set_attr)),
                 ("getAttribute".into(), JsValue::Object(get_attr)),
                 ("hasAttribute".into(), JsValue::Object(has_attr)),
@@ -2422,6 +2754,8 @@ impl JsRuntime {
                 ("getElementsByTagName".into(), JsValue::Object(by_tag)),
                 ("querySelector".into(), JsValue::Object(query)),
                 ("querySelectorAll".into(), JsValue::Object(query_all)),
+                ("matches".into(), JsValue::Object(matches)),
+                ("closest".into(), JsValue::Object(closest)),
                 ("removeAttribute".into(), JsValue::Object(remove_attr)),
             ]),
         )?;
@@ -3470,9 +3804,16 @@ impl JsRuntime {
                         .insert("__stopPropagation".into(), JsValue::Boolean(true));
                 }
                 BuiltinFunction::EventPreventDefault => {
-                    self.object_mut(event)?
+                    if self
+                        .object(event)?
                         .properties
-                        .insert("defaultPrevented".into(), JsValue::Boolean(true));
+                        .get("cancelable")
+                        .is_some_and(JsValue::is_truthy)
+                    {
+                        self.object_mut(event)?
+                            .properties
+                            .insert("defaultPrevented".into(), JsValue::Boolean(true));
+                    }
                 }
                 _ => unreachable!(),
             }
@@ -3662,6 +4003,159 @@ impl JsRuntime {
             }
             self.set_dom_style_property(node, &name, Some(value))?;
             return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
+        if builtin == BuiltinFunction::DomCreateEvent {
+            if Some(this_value.clone()) != self.dom_document.map(JsValue::Object) {
+                return Err(JsError::type_error("createEvent requires Document"));
+            }
+            let name = arguments
+                .first()
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            if !matches!(name.as_str(), "Event" | "Events" | "HTMLEvents") {
+                return Err(JsError::type_error("unsupported legacy event interface"));
+            }
+            let stop = self.allocate_lifecycle_method(
+                "stopPropagation",
+                BuiltinFunction::EventStopPropagation,
+            )?;
+            let prevent = self.allocate_lifecycle_method(
+                "preventDefault",
+                BuiltinFunction::EventPreventDefault,
+            )?;
+            let init =
+                self.allocate_lifecycle_method("initEvent", BuiltinFunction::DomInitEvent)?;
+            let event = self.allocate_object(
+                ObjectKind::DomEvent,
+                Some(self.object_prototype),
+                HashMap::from([
+                    ("type".into(), JsValue::String(String::new())),
+                    ("target".into(), JsValue::Null),
+                    ("currentTarget".into(), JsValue::Null),
+                    ("bubbles".into(), JsValue::Boolean(false)),
+                    ("cancelable".into(), JsValue::Boolean(false)),
+                    ("defaultPrevented".into(), JsValue::Boolean(false)),
+                    ("isTrusted".into(), JsValue::Boolean(false)),
+                    ("eventPhase".into(), JsValue::Number(0.0)),
+                    ("stopPropagation".into(), JsValue::Object(stop)),
+                    ("preventDefault".into(), JsValue::Object(prevent)),
+                    ("initEvent".into(), JsValue::Object(init)),
+                    ("__initialized".into(), JsValue::Boolean(false)),
+                    ("__dispatching".into(), JsValue::Boolean(false)),
+                    ("__stopPropagation".into(), JsValue::Boolean(false)),
+                ]),
+            )?;
+            return Ok(CallOutcome::Value(JsValue::Object(event)));
+        }
+        if builtin == BuiltinFunction::DomInitEvent {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("initEvent receiver is not Event"));
+            };
+            if self.object(receiver)?.kind != ObjectKind::DomEvent {
+                return Err(JsError::type_error("initEvent requires Event"));
+            }
+            if self
+                .object(receiver)?
+                .properties
+                .get("__dispatching")
+                .is_some_and(JsValue::is_truthy)
+            {
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
+            let kind = arguments
+                .first()
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            if kind.len() > 128 {
+                return Err(JsError::execution_limit("event type budget exceeded"));
+            }
+            let bubbles = arguments.get(1).is_some_and(JsValue::is_truthy);
+            let cancelable = arguments.get(2).is_some_and(JsValue::is_truthy);
+            let properties = &mut self.object_mut(receiver)?.properties;
+            properties.insert("type".into(), JsValue::String(kind));
+            properties.insert("bubbles".into(), JsValue::Boolean(bubbles));
+            properties.insert("cancelable".into(), JsValue::Boolean(cancelable));
+            properties.insert("defaultPrevented".into(), JsValue::Boolean(false));
+            properties.insert("__initialized".into(), JsValue::Boolean(true));
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
+        if builtin == BuiltinFunction::DomEventConstructor {
+            let event_type = arguments
+                .first()
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            if event_type.len() > 128 {
+                return Err(JsError::execution_limit(
+                    "Event.type length budget exceeded",
+                ));
+            }
+            let options = arguments.get(1).cloned().unwrap_or(JsValue::Undefined);
+            let bubbles = if let JsValue::Object(id) = options {
+                self.get_object_property(id, "bubbles")?.is_truthy()
+            } else {
+                false
+            };
+            let cancelable = if let JsValue::Object(id) = options {
+                self.get_object_property(id, "cancelable")?.is_truthy()
+            } else {
+                false
+            };
+            let stop = self.allocate_lifecycle_method(
+                "stopPropagation",
+                BuiltinFunction::EventStopPropagation,
+            )?;
+            let prevent = self.allocate_lifecycle_method(
+                "preventDefault",
+                BuiltinFunction::EventPreventDefault,
+            )?;
+            let init =
+                self.allocate_lifecycle_method("initEvent", BuiltinFunction::DomInitEvent)?;
+            let event = self.allocate_object(
+                ObjectKind::DomEvent,
+                Some(self.object_prototype),
+                HashMap::from([
+                    ("initEvent".into(), JsValue::Object(init)),
+                    ("__initialized".into(), JsValue::Boolean(true)),
+                    ("type".into(), JsValue::String(event_type)),
+                    ("target".into(), JsValue::Null),
+                    ("currentTarget".into(), JsValue::Null),
+                    ("bubbles".into(), JsValue::Boolean(bubbles)),
+                    ("cancelable".into(), JsValue::Boolean(cancelable)),
+                    ("defaultPrevented".into(), JsValue::Boolean(false)),
+                    ("isTrusted".into(), JsValue::Boolean(false)),
+                    ("eventPhase".into(), JsValue::Number(0.0)),
+                    ("stopPropagation".into(), JsValue::Object(stop)),
+                    ("preventDefault".into(), JsValue::Object(prevent)),
+                    ("__dispatching".into(), JsValue::Boolean(false)),
+                    ("__stopPropagation".into(), JsValue::Boolean(false)),
+                ]),
+            )?;
+            return Ok(CallOutcome::Value(JsValue::Object(event)));
+        }
+        if builtin == BuiltinFunction::DomDispatchEvent {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("dispatchEvent needs Element receiver"));
+            };
+            let ObjectKind::DomElement(node) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error("dispatchEvent needs Element receiver"));
+            };
+            let Some(JsValue::Object(event)) = arguments.first() else {
+                return Err(JsError::type_error("dispatchEvent requires an Event"));
+            };
+            if self.object(*event)?.kind != ObjectKind::DomEvent {
+                return Err(JsError::type_error("dispatchEvent requires an Event"));
+            }
+            let mut path = vec![node];
+            let mut cursor = self.dom_pending_parents.get(&node).copied();
+            while let Some(parent) = cursor {
+                if path.len() >= 64 {
+                    return Err(JsError::execution_limit("event path budget exceeded"));
+                }
+                path.push(parent);
+                cursor = self.dom_pending_parents.get(&parent).copied();
+            }
+            let uncanceled = self.dispatch_custom_event(*event, &path)?;
+            return Ok(CallOutcome::Value(JsValue::Boolean(uncanceled)));
         }
         if builtin == BuiltinFunction::DomClick {
             let JsValue::Object(receiver) = this_value else {
@@ -3943,6 +4437,51 @@ impl JsRuntime {
                 self.detach_dom_subtree(old_child)?;
             }
             return Ok(CallOutcome::Value(JsValue::Object(old_object)));
+        }
+        if matches!(
+            builtin,
+            BuiltinFunction::DomMatches | BuiltinFunction::DomClosest
+        ) {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("matches/closest requires an Element"));
+            };
+            let ObjectKind::DomElement(node) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error("matches/closest requires an Element"));
+            };
+            let selector = arguments
+                .first()
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            let groups = Self::selector_groups(&selector)?;
+            let mut cursor = Some(node);
+            let mut visited = std::collections::HashSet::new();
+            while let Some(current) = cursor {
+                if !visited.insert(current) || visited.len() > 256 {
+                    return Err(JsError::execution_limit("closest ancestor budget exceeded"));
+                }
+                if groups
+                    .iter()
+                    .any(|group| self.selector_chain_matches(current, 0, group))
+                {
+                    if builtin == BuiltinFunction::DomMatches {
+                        return Ok(CallOutcome::Value(JsValue::Boolean(true)));
+                    }
+                    return self
+                        .dom_any_node_object(current)
+                        .map(|id| CallOutcome::Value(JsValue::Object(id)));
+                }
+                if builtin == BuiltinFunction::DomMatches {
+                    break;
+                }
+                cursor = self.dom_pending_parents.get(&current).copied();
+            }
+            return Ok(CallOutcome::Value(
+                if builtin == BuiltinFunction::DomMatches {
+                    JsValue::Boolean(false)
+                } else {
+                    JsValue::Null
+                },
+            ));
         }
         if matches!(
             builtin,
@@ -4242,12 +4781,14 @@ impl JsRuntime {
                     "addEventListener receiver is not an element",
                 ));
             };
-            if arguments
+            let event_type = arguments
                 .first()
-                .is_none_or(|v| v.to_js_string() != "click")
-            {
-                return Ok(CallOutcome::Value(JsValue::Undefined));
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            if event_type.len() > 128 {
+                return Err(JsError::execution_limit("listener type budget exceeded"));
             }
+
             let Some(callback) = arguments.get(1).cloned() else {
                 if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
                     return Ok(CallOutcome::Value(JsValue::Undefined));
@@ -4267,6 +4808,29 @@ impl JsRuntime {
                 return Err(JsError::type_error("event listener must be callable"));
             }
             let capture = matches!(arguments.get(2), Some(JsValue::Boolean(true)));
+            if event_type != "click" {
+                let key = (node, event_type, capture);
+                if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
+                    if let Some(listeners) = self.dom_typed_listeners.get_mut(&key) {
+                        listeners.retain(|value| value != &JsValue::Object(function));
+                    }
+                    return Ok(CallOutcome::Value(JsValue::Undefined));
+                }
+                if self
+                    .dom_typed_listeners
+                    .values()
+                    .map(Vec::len)
+                    .sum::<usize>()
+                    >= 256
+                {
+                    return Err(JsError::execution_limit("typed listener budget exceeded"));
+                }
+                let listeners = self.dom_typed_listeners.entry(key).or_default();
+                if !listeners.contains(&JsValue::Object(function)) {
+                    listeners.push(JsValue::Object(function));
+                }
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
             if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
                 let listeners = if capture {
                     self.dom_click_capture_listeners.get_mut(&node)
@@ -4317,6 +4881,8 @@ impl JsRuntime {
             | BuiltinFunction::DomGetElementsByTagName
             | BuiltinFunction::DomQuerySelector
             | BuiltinFunction::DomQuerySelectorAll
+            | BuiltinFunction::DomMatches
+            | BuiltinFunction::DomClosest
             | BuiltinFunction::DomHasAttribute
             | BuiltinFunction::DomHasAttributes
             | BuiltinFunction::DomCreateElement
@@ -4334,6 +4900,10 @@ impl JsRuntime {
             | BuiltinFunction::DomHtmlCollectionNamedItem
             | BuiltinFunction::DomContains
             | BuiltinFunction::DomClick
+            | BuiltinFunction::DomDispatchEvent
+            | BuiltinFunction::DomEventConstructor
+            | BuiltinFunction::DomCreateEvent
+            | BuiltinFunction::DomInitEvent
             | BuiltinFunction::DomStyleSetProperty
             | BuiltinFunction::DomStyleGetPropertyValue
             | BuiltinFunction::DomStyleRemoveProperty
@@ -4619,6 +5189,14 @@ impl JsRuntime {
             JsValue::Object(id) => {
                 let kind = self.object(*id)?.kind;
                 match kind {
+                    ObjectKind::DomEvent if key == "returnValue" => {
+                        let prevented = self
+                            .object(*id)?
+                            .properties
+                            .get("defaultPrevented")
+                            .is_some_and(JsValue::is_truthy);
+                        return Ok(JsValue::Boolean(!prevented));
+                    }
                     ObjectKind::DomElement(node) | ObjectKind::DomText(node) => {
                         if key == "nodeName" {
                             let name = if matches!(kind, ObjectKind::DomText(_)) {
@@ -4976,6 +5554,20 @@ impl JsRuntime {
             };
         };
 
+        if key == "returnValue" && self.object(*id)?.kind == ObjectKind::DomEvent {
+            if !value.is_truthy()
+                && self
+                    .object(*id)?
+                    .properties
+                    .get("cancelable")
+                    .is_some_and(JsValue::is_truthy)
+            {
+                self.object_mut(*id)?
+                    .properties
+                    .insert("defaultPrevented".into(), JsValue::Boolean(true));
+            }
+            return Ok(());
+        }
         if key == "readyState" && self.dom_document == Some(*id) {
             return Ok(());
         }

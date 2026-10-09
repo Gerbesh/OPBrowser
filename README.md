@@ -38,6 +38,18 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.27 expands original DOM selectors to bounded compound #id.class /
+tag.class forms, descendant and direct-child combinators, selector
+grouping and Element.matches()/closest(). Original Event(type,{bubbles,
+cancelable}) and Element.dispatchEvent() now deliver synchronous custom
+events through capture/target/bubble phases with cancelation and
+stopPropagation; document.createEvent()/initEvent() and returnValue are
+available as limited legacy compatibility. Seven new native integration
+tests pass, including reentrant dispatch and delayed callbacks.
+Pinned WPT DOM/Events smoke v5 now selects 15 original upstream files:
+12 attempted/pass (14 test() callbacks), 3 explicit unsupported SKIPs.
+This is NOT an official WPT harness or a representative DOM pass rate.
+
 M4.26 broadens the original JavaScript parser/runtime with an initial bounded
 relational 'in' operator and original DOM with limited querySelector
 and querySelectorAll (simple #id, .class, tag or * selectors).
