@@ -16,6 +16,34 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S40 - Chronological onclick and lifecycle property handlers -> pixels (M4.31)
+
+Status: IMPLEMENTED bounded original target-phase handler ordering.
+
+Original JsRuntime assigns registration IDs when onclick,
+onreadystatechange, onload or onabort is activated. Normal
+EventTarget listeners and property handlers are dispatched through
+the same chronologically ordered target-phase snapshot. A cleared
+and reattached property handler obtains a new slot, whereas replacing
+a lifecycle property callback in place retains its position.
+Immediate-stop behavior, removed-property checks and isolated
+handler exceptions still apply. Resulting script DOM mutations
+travel through op_engine, original op_dom, layout and op_paint to
+native pixels. VM and integration regressions cover ordering.
+
+## S39 - Stable EventTarget registrations across dispatch snapshots (M4.31)
+
+Status: IMPLEMENTED original registration token and live-map recheck.
+
+The original VM stores monotonic IDs with each callback registered
+on an Element, Document, Window or AbortSignal. A dispatch snapshot
+retains the registration ID and skips a callback removed and
+re-added under the same JS function identity. once/passive/signal
+metadata and synthetic-to-native node identity survive this
+process. Two native and five original VM tests exercise remove-
+and-readd, abort/once interactions and delayed dynamic DOM clicks.
+This remains a bounded EventTarget subset, not broad WPT conformance.
+
 ## S38 - Abort-driven Request/fetch Promise rejection to native paint (M4.30c-d)
 
 Status: IMPLEMENTED bounded original page fetch cancellation.

@@ -16,6 +16,27 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.31: stable EventTarget listener IDs and property-slot chronology
+
+The owned op_js::JsRuntime now numbers registrations through
+next_listener_registration_id and version_listener_options.
+Element dom_listener_options and document/window/AbortSignal
+lifecycle_listener_options retain a registration ID alongside
+once/passive/signal. deliver_element_listeners and
+deliver_lifecycle_listeners snapshot both the callback and the ID,
+then recheck the live option map before dispatch: removing and
+re-adding the same function cannot activate an obsolete snapshot.
+
+dom_onclick_registration and lifecycle_property_registration
+track property handlers separately. Target-phase callbacks now use
+one registration-ordered stream for onclick plus Element callbacks
+or onreadystatechange/onload/onabort plus global callbacks.
+stopImmediatePropagation and callback exception isolation are shared
+with the existing native EventTarget delivery. The click property's
+registration ID remaps with synthetic-to-native op_dom node identity.
+Engine mutation replay and original op_layout/op_paint remain unchanged.
+No dependencies or external JS engines added.
+
 ## M4.30b-d: DOMException -> AbortSignal composition -> fetch completion
 
 op_js::JsRuntime::new_dom_exception creates branded original

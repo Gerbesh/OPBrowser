@@ -234,6 +234,25 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.31: stable EventTarget listener identity and handler ordering
+
+Original Element, document, window and AbortSignal listeners now
+carry registration identity tokens. Removing and re-adding the same
+JS callback during a dispatch no longer accidentally fires the new
+registration from an earlier event snapshot. The IDs carry across
+JS-created Element virtual-to-native DOM binding and interact with
+once/passive/AbortSignal listener options.
+
+onclick callbacks now share registration-time ordering with Element
+listeners; document.onreadystatechange, window.onload and
+AbortSignal.onabort similarly use the target-phase listener order,
+rather than always executing last. Removing/replacing properties
+honors event snapshots. Eleven new JS VM tests and four native
+DOM-paint integrations pass. Shadow DOM, full WebIDL, callback
+listener objects, default activation and broad original upstream
+WPT Events conformance remain unsupported. Previous WPT scores
+are unchanged.
+
 ## M4.30b-d: DOMException, AbortSignal.any/timeout, fetch abort
 
 OPBrowser now has original VM DOMException objects with readable

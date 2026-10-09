@@ -3244,3 +3244,24 @@ This file is append-only project history.
   and strict Clippy stayed green.
 - Preserved same-origin GET-only fetch policy, budget caps, original
   parser/DOM/paint stack, and all frozen WPT/Test262 metrics.
+
+## 2026-10-10 - M4.31 EventTarget identity and property order
+
+- Added monotonically increasing listener registration IDs to owned
+  Element, Document, Window and AbortSignal option records. Delivery
+  snapshots now verify live registration identity, not merely the
+  JS function pointer. Remove/re-add during dispatch skips old slots.
+- Kept once/passive/AbortSignal semantics and remapped IDs when
+  virtual DOM Elements receive native op_dom NodeIds.
+- Added registered onclick property IDs, merged onclick callbacks with
+  normal Element listeners according to registration order and skipped
+  stale handlers after clear/reassignment.
+- Unified document.onreadystatechange, window.onload and
+  AbortSignal.onabort property handlers into their target listener
+  stream with registration-time order, stable slots when replaced
+  directly and new slots when cleared.
+- Added eleven original VM tests for identity/ordering/stop control
+  and four native text-paint regressions including dynamic DOM,
+  timer and lifecycle/abort deliveries.
+- No foreign JS engine, crate dependencies or manipulation of frozen
+  WPT/Test262 scores; complete EventTarget remains future work.

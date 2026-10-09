@@ -336,6 +336,34 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S40",
+      "title": "Chronological onclick and lifecycle property handler delivery to original native paint",
+      "status": "M4.31 owned EventTarget property slots share normal registration order",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "lifecycle_handler_property"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_lifecycle_listeners"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_lifecycle_target"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_element_listeners"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Bounded original property handler ordering; no complete WHATWG EventTarget/HTML activation or broad WPT Events coverage."
+    },
+    {
+      "id": "S39",
+      "title": "Stable EventTarget callback registration identity through original DOM/native paint",
+      "status": "M4.31 listener tokens distinguish a removed/readded function during dispatch",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "version_listener_options"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_element_listeners"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_lifecycle_listeners"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "bind_dom_node"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Original JS function callbacks only; no listener object interface or full WPT/DOM EventTarget conformance."
+    },
+    {
       "id": "S38",
       "title": "AbortSignal cancels Promise fetch queues and late network callbacks to original paint",
       "status": "M4.30c-d original native-signal fetch rejection and late network suppression",

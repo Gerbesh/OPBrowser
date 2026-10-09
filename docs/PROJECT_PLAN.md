@@ -2,6 +2,34 @@
 
 Last updated: 2026-10-10
 
+## M4.31 - Stable EventTarget registrations and property handler order (2026-10-10)
+
+- DONE assigned monotonically advancing registration IDs to each original
+  Element, document, window and AbortSignal event listener registration.
+  Dispatch snapshots now distinguish a removed callback from a subsequent
+  registration of the same JS function; the later registration is not
+  invoked from the old snapshot.
+- DONE preserved listener metadata (once/passive/signal/registration ID)
+  when JS-created elements bind to native op_dom NodeIds.
+- DONE integrated onclick with normal target-phase callback delivery,
+  ordered by registration time rather than always invoking it last.
+  Null/removal plus re-registration gets a new slot; stale handler
+  snapshots do not accidentally run.
+- DONE unified readystatechange/onreadystatechange, window load/onload
+  and AbortSignal abort/onabort target-phase callback ordering, with
+  preserved property slot on direct reassignment and distinct slot after
+  clearing. stopImmediatePropagation and isolated exceptions apply.
+- VERIFIED eleven new VM event-order/identity regressions and four native
+  JS -> DOM -> paint tests, including virtual-to-physical node binding,
+  post-load timers and lifecycle/abort events.
+- LIMITS: bounded partial EventTarget; handler-object callbacks,
+  standards-level property descriptor behavior, Shadow DOM/retargeting,
+  trusted default activation, generic WebIDL and full DOM WPT Events
+  conformance remain unimplemented. Frozen external WPT counts unchanged.
+- NEXT M4.32: expand independently pinned upstream WPT Events samples,
+  refine listener snapshot/at-target behavior and consider active
+  WinHTTP cancellation rather than only dropping late JS completions.
+
 ## M4.30d - DOMException, composable signals and abort-aware fetch (2026-10-10)
 
 - DONE original VM DOMException constructor and branded instances with

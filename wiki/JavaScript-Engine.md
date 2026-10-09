@@ -48,6 +48,30 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.31: registration identity and ordered EventTarget delivery
+
+Every original VM Element, Document, Window or AbortSignal callback
+registration obtains a monotonic token. Dispatch snapshots retain
+callback identity *and* registration token; a remove/re-add of the
+same function within a running dispatch creates a different record,
+which cannot be called from the old snapshot. EventListenerOptions
+once/passive/signal and dynamically bound node references preserve
+their existing semantics.
+
+Element.onclick now joins addEventListener target callbacks in
+registration order. The native document.onreadystatechange,
+window.onload and AbortSignal.onabort property handlers also take
+their corresponding position in the event target's registration
+stream. Stale property records are skipped after removal; direct
+lifecycle property reassignment preserves its slot. Native
+DOM-to-pixels regressions include newly created elements, timers,
+load events and abort events.
+
+The dispatch algorithm remains a bounded partial original
+implementation. It does not support listener object callbacks,
+complete WHATWG event path/Shadow DOM retargeting, native default
+activation or broad official upstream WPT Events compatibility.
+
 ## M4.30b-d: DOMException, composed/timeout signals, fetch cancellation
 
 The original JS VM constructs branded DOMException instances with

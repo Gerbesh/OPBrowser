@@ -307,6 +307,7 @@ struct DomListenerOptions {
     once: bool,
     passive: bool,
     signal: Option<ObjectId>,
+    registration_id: u64,
 }
 
 #[derive(Debug)]
@@ -349,14 +350,17 @@ pub struct JsRuntime {
     dom_click_listeners: HashMap<usize, Vec<JsValue>>,
     dom_click_capture_listeners: HashMap<usize, Vec<JsValue>>,
     dom_onclick: HashMap<usize, JsValue>,
+    dom_onclick_registration: HashMap<usize, u64>,
     dom_typed_listeners: HashMap<(usize, String, bool), Vec<JsValue>>,
     dom_listener_options: HashMap<(usize, String, bool, ObjectId), DomListenerOptions>,
+    next_listener_registration_id: u64,
     event_listener_errors: Vec<String>,
     dom_dispatch_depth: usize,
     dom_programmatic_click_depth: usize,
     dom_document: Option<ObjectId>,
     lifecycle_listeners: HashMap<(ObjectId, String, bool), Vec<JsValue>>,
     lifecycle_listener_options: HashMap<(ObjectId, String, bool, ObjectId), DomListenerOptions>,
+    lifecycle_property_registration: HashMap<(ObjectId, String), u64>,
     abort_deadlines: Vec<PendingAbortDeadline>,
     abort_followers: HashMap<ObjectId, Vec<ObjectId>>,
     timers: Vec<PendingTimer>,
@@ -462,14 +466,17 @@ impl Default for JsRuntime {
             dom_click_listeners: HashMap::new(),
             dom_click_capture_listeners: HashMap::new(),
             dom_onclick: HashMap::new(),
+            dom_onclick_registration: HashMap::new(),
             dom_typed_listeners: HashMap::new(),
             dom_listener_options: HashMap::new(),
+            next_listener_registration_id: 1,
             event_listener_errors: Vec::new(),
             dom_dispatch_depth: 0,
             dom_programmatic_click_depth: 0,
             dom_document: None,
             lifecycle_listeners: HashMap::new(),
             lifecycle_listener_options: HashMap::new(),
+            lifecycle_property_registration: HashMap::new(),
             abort_deadlines: Vec::new(),
             abort_followers: HashMap::new(),
             timers: Vec::new(),
@@ -650,13 +657,16 @@ impl JsRuntime {
         self.dom_click_listeners.clear();
         self.dom_click_capture_listeners.clear();
         self.dom_onclick.clear();
+        self.dom_onclick_registration.clear();
         self.dom_typed_listeners.clear();
         self.dom_listener_options.clear();
+        self.next_listener_registration_id = 1;
         self.event_listener_errors.clear();
         self.dom_dispatch_depth = 0;
         self.dom_programmatic_click_depth = 0;
         self.lifecycle_listeners.clear();
         self.lifecycle_listener_options.clear();
+        self.lifecycle_property_registration.clear();
         self.abort_deadlines.clear();
         self.abort_followers.clear();
         self.timers.clear();
@@ -1776,6 +1786,16 @@ impl JsRuntime {
     }
 
     /// Validate EventListenerOptions.signal only on a new registration.
+    /// A callback can be removed and re-registered with identical identity
+    /// during a dispatch. The new registration must not inherit the old
+    /// dispatch snapshot slot.
+    fn version_listener_options(&mut self, mut options: DomListenerOptions) -> DomListenerOptions {
+        options.registration_id = self.next_listener_registration_id;
+        self.next_listener_registration_id =
+            self.next_listener_registration_id.wrapping_add(1).max(1);
+        options
+    }
+
     fn listener_abort_signal(&self, options: &JsValue) -> Result<Option<ObjectId>, JsError> {
         let JsValue::Object(options) = options else {
             return Ok(None);
@@ -1913,6 +1933,27 @@ impl JsRuntime {
 
     /// Deliver registered document/window listeners for one EventTarget phase.
     /// Options and exception handling mirror Element EventTarget delivery.
+    fn lifecycle_handler_property(
+        &self,
+        receiver: ObjectId,
+        event_type: &str,
+    ) -> Option<&'static str> {
+        if Some(receiver) == self.dom_document && event_type == "readystatechange" {
+            Some("onreadystatechange")
+        } else if receiver == self.global_object && event_type == "load" {
+            Some("onload")
+        } else if self
+            .object(receiver)
+            .ok()
+            .is_some_and(|object| object.kind == ObjectKind::AbortSignal)
+            && event_type == "abort"
+        {
+            Some("onabort")
+        } else {
+            None
+        }
+    }
+
     fn deliver_lifecycle_listeners(
         &mut self,
         receiver: ObjectId,
@@ -1927,9 +1968,57 @@ impl JsRuntime {
             .lifecycle_listeners
             .get(&key)
             .cloned()
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .into_iter()
+            .map(|handler| {
+                let registration = if let JsValue::Object(callback) = handler {
+                    self.lifecycle_listener_options
+                        .get(&(receiver, event_type.to_owned(), capture, callback))
+                        .map_or(0, |options| options.registration_id)
+                } else {
+                    0
+                };
+                (handler, registration, false)
+            })
+            .collect::<Vec<_>>();
+        let mut handlers = handlers;
+        let property = if !capture && phase == 2 {
+            self.lifecycle_handler_property(receiver, event_type)
+        } else {
+            None
+        };
+        if let Some(name) = property
+            && let Some(handler) = self.object(receiver)?.properties.get(name).cloned()
+            && let JsValue::Object(callback) = handler
+            && self.object(callback)?.function.is_some()
+        {
+            let registration = self
+                .lifecycle_property_registration
+                .get(&(receiver, name.to_owned()))
+                .copied()
+                .unwrap_or(0);
+            handlers.push((handler, registration, true));
+        }
+        handlers.sort_by_key(|(_, registration, _)| *registration);
         self.prepare_event_callback(event, receiver, phase)?;
-        for handler in handlers {
+        for (handler, registration, is_property) in handlers {
+            if is_property {
+                if let Some(name) = property
+                    && registration != 0
+                    && self
+                        .lifecycle_property_registration
+                        .get(&(receiver, name.to_owned()))
+                        .copied()
+                        == Some(registration)
+                    && self.object(receiver)?.properties.get(name) == Some(&handler)
+                {
+                    self.call_isolated_event_handler(handler, receiver, event, steps)?;
+                }
+                if self.event_immediate_stopped(event)? {
+                    break;
+                }
+                continue;
+            }
             let JsValue::Object(callback) = handler else {
                 continue;
             };
@@ -1946,6 +2035,9 @@ impl JsRuntime {
                 .get(&option_key)
                 .copied()
                 .unwrap_or_default();
+            if registration == 0 || options.registration_id != registration {
+                continue;
+            }
             if options.once {
                 if let Some(live) = self.lifecycle_listeners.get_mut(&key) {
                     live.retain(|item| item != &handler);
@@ -1978,32 +2070,6 @@ impl JsRuntime {
         self.deliver_lifecycle_listeners(receiver, event_type, event, true, 2, steps)?;
         if !self.event_immediate_stopped(event)? {
             self.deliver_lifecycle_listeners(receiver, event_type, event, false, 2, steps)?;
-        }
-        if !self.event_immediate_stopped(event)? {
-            let property =
-                if Some(receiver) == self.dom_document && event_type == "readystatechange" {
-                    Some("onreadystatechange")
-                } else if receiver == self.global_object && event_type == "load" {
-                    Some("onload")
-                } else if self.object(receiver)?.kind == ObjectKind::AbortSignal
-                    && event_type == "abort"
-                {
-                    Some("onabort")
-                } else {
-                    None
-                };
-            if let Some(property) = property
-                && let Some(JsValue::Object(callback)) =
-                    self.object(receiver)?.properties.get(property)
-                && self.object(*callback)?.function.is_some()
-            {
-                self.call_isolated_event_handler(
-                    JsValue::Object(*callback),
-                    receiver,
-                    event,
-                    steps,
-                )?;
-            }
         }
         Ok(())
     }
@@ -2326,6 +2392,10 @@ impl JsRuntime {
         }
         if let Some(callback) = self.dom_onclick.remove(&virtual_node) {
             self.dom_onclick.insert(physical_node, callback);
+        }
+        if let Some(registration) = self.dom_onclick_registration.remove(&virtual_node) {
+            self.dom_onclick_registration
+                .insert(physical_node, registration);
         }
     }
 
@@ -3400,19 +3470,57 @@ impl JsRuntime {
                 .get(&(node, event_type.to_owned(), capture))
         }
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .map(|handler| {
+            let registration = if let JsValue::Object(callback) = handler {
+                self.dom_listener_options
+                    .get(&(node, event_type.to_owned(), capture, callback))
+                    .map_or(0, |options| options.registration_id)
+            } else {
+                0
+            };
+            (handler, registration, false)
+        })
+        .collect::<Vec<_>>();
         let property_handler = if event_type == "click" && !capture {
-            self.dom_onclick.get(&node).cloned()
+            self.dom_onclick.get(&node).cloned().map(|handler| {
+                (
+                    handler,
+                    self.dom_onclick_registration
+                        .get(&node)
+                        .copied()
+                        .unwrap_or(0),
+                )
+            })
         } else {
             None
         };
-        if handlers.is_empty() && property_handler.is_none() {
+        let mut handlers = handlers;
+        if let Some((handler, registration)) = property_handler {
+            handlers.push((handler, registration, true));
+        }
+        if handlers.is_empty() {
             return Ok(false);
         }
+        handlers.sort_by_key(|(_, registration, _)| *registration);
         let receiver = self.dom_element_object(node)?;
         self.prepare_event_callback(event, receiver, phase)?;
         let mut delivered = false;
-        for callback in handlers {
+        for (callback, registration, is_property) in handlers {
+            if is_property {
+                if registration != 0
+                    && self.dom_onclick.get(&node) == Some(&callback)
+                    && self.dom_onclick_registration.get(&node).copied() == Some(registration)
+                {
+                    self.call_isolated_event_handler(callback, receiver, event, steps)?;
+                    delivered = true;
+                }
+                if self.event_immediate_stopped(event)? {
+                    break;
+                }
+                continue;
+            }
             let JsValue::Object(function) = callback else {
                 continue;
             };
@@ -3436,6 +3544,9 @@ impl JsRuntime {
                 .get(&key)
                 .copied()
                 .unwrap_or_default();
+            if registration == 0 || options.registration_id != registration {
+                continue;
+            }
             if options.once {
                 // Remove before invoking: nested dispatch cannot fire this entry twice.
                 if event_type == "click" {
@@ -3468,16 +3579,6 @@ impl JsRuntime {
             if self.event_immediate_stopped(event)? {
                 break;
             }
-        }
-        // A property handler replaced or cleared during an earlier callback
-        // must not run from a stale dispatch snapshot.
-        if !capture
-            && !self.event_immediate_stopped(event)?
-            && let Some(handler) = property_handler
-            && self.dom_onclick.get(&node) == Some(&handler)
-        {
-            self.call_isolated_event_handler(handler, receiver, event, steps)?;
-            delivered = true;
         }
         Ok(delivered)
     }
@@ -4813,6 +4914,7 @@ impl JsRuntime {
                         once: self.get_object_property(id, "once")?.is_truthy(),
                         passive: self.get_object_property(id, "passive")?.is_truthy(),
                         signal: self.listener_abort_signal(&raw_options)?,
+                        registration_id: 0,
                     }
                 } else {
                     DomListenerOptions::default()
@@ -4832,6 +4934,11 @@ impl JsRuntime {
             {
                 return Ok(CallOutcome::Value(JsValue::Undefined));
             }
+            let options = if remove {
+                options
+            } else {
+                self.version_listener_options(options)
+            };
             let key = (receiver, event, capture);
             let option_key = (receiver, key.1.clone(), capture, *callback);
             if remove {
@@ -5798,6 +5905,7 @@ impl JsRuntime {
                         once: self.get_object_property(id, "once")?.is_truthy(),
                         passive: self.get_object_property(id, "passive")?.is_truthy(),
                         signal: self.listener_abort_signal(&raw_options)?,
+                        registration_id: 0,
                     }
                 } else {
                     DomListenerOptions::default()
@@ -5817,6 +5925,11 @@ impl JsRuntime {
             {
                 return Ok(CallOutcome::Value(JsValue::Undefined));
             }
+            let options = if matches!(builtin, BuiltinFunction::DomAddEventListener) {
+                self.version_listener_options(options)
+            } else {
+                options
+            };
             let option_key = (node, event_type.clone(), capture, function);
             if event_type != "click" {
                 let key = (node, event_type, capture);
@@ -6601,6 +6714,28 @@ impl JsRuntime {
         if key == "readyState" && self.dom_document == Some(*id) {
             return Ok(());
         }
+        let lifecycle_property = (Some(*id) == self.dom_document && key == "onreadystatechange")
+            || (*id == self.global_object && key == "onload")
+            || (self.object(*id)?.kind == ObjectKind::AbortSignal && key == "onabort");
+        if lifecycle_property {
+            let entry = (*id, key.to_owned());
+            let callable = matches!(
+                value,
+                JsValue::Object(function)
+                    if self.object(function)?.function.is_some()
+            );
+            if callable {
+                if !self.lifecycle_property_registration.contains_key(&entry) {
+                    let registration = self
+                        .version_listener_options(DomListenerOptions::default())
+                        .registration_id;
+                    self.lifecycle_property_registration
+                        .insert(entry, registration);
+                }
+            } else {
+                self.lifecycle_property_registration.remove(&entry);
+            }
+        }
         if self.object(*id)?.kind == ObjectKind::DomException
             && matches!(key, "message" | "name" | "code")
         {
@@ -6658,8 +6793,15 @@ impl JsRuntime {
             match &value {
                 JsValue::Null | JsValue::Undefined => {
                     self.dom_onclick.remove(&node);
+                    self.dom_onclick_registration.remove(&node);
                 }
                 JsValue::Object(function) if self.object(*function)?.function.is_some() => {
+                    if self.dom_onclick.get(&node) != Some(&value) {
+                        let registration = self
+                            .version_listener_options(DomListenerOptions::default())
+                            .registration_id;
+                        self.dom_onclick_registration.insert(node, registration);
+                    }
                     self.dom_onclick.insert(node, value.clone());
                 }
                 _ => return Err(JsError::type_error("onclick must be callable")),
@@ -7565,6 +7707,303 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn m431c_window_document_and_signal_property_handlers_keep_insertion_order() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            document.onreadystatechange=function(){trace=trace+'D';};
+            document.addEventListener('readystatechange',function(){trace=trace+'d';});
+            window.onload=function(){trace=trace+'W';};
+            window.addEventListener('load',function(){trace=trace+'w';});
+            var controller=new AbortController();
+            controller.signal.onabort=function(){trace=trace+'S';};
+            controller.signal.addEventListener('abort',function(){trace=trace+'s';});
+        "#,
+        )
+        .unwrap();
+        vm.dispatch_lifecycle_event("readystatechange").unwrap();
+        vm.dispatch_lifecycle_event("load").unwrap();
+        vm.eval_script("controller.abort();").unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("DdWwSs".into())));
+    }
+
+    #[test]
+    fn m431c_window_onload_removed_then_reregistered_same_function_is_new_slot() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            var changed=false;
+            function later(){trace=trace+'B';}
+            window.addEventListener('load',function(){
+                trace=trace+'A';
+                if(!changed){
+                    changed=true;
+                    window.onload=null;
+                    window.onload=later;
+                }
+            });
+            window.onload=later;
+        "#,
+        )
+        .unwrap();
+        vm.dispatch_lifecycle_event("load").unwrap();
+        vm.dispatch_lifecycle_event("load").unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("AAB".into())));
+    }
+
+    #[test]
+    fn m431c_reassigning_property_without_null_preserves_event_handler_slot() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            window.onload=function(){trace=trace+'P';};
+            window.addEventListener('load',function(){trace=trace+'L';});
+            window.onload=function(){trace=trace+'Q';};
+        "#,
+        )
+        .unwrap();
+        vm.dispatch_lifecycle_event("load").unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("QL".into())));
+    }
+
+    #[test]
+    fn m431b_onclick_listener_order_depends_on_registration_time() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "early".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "late".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            var early=document.getElementById('early');
+            var late=document.getElementById('late');
+            early.onclick=function(){trace=trace+'P';};
+            early.addEventListener('click',function(){trace=trace+'A';});
+            late.addEventListener('click',function(){trace=trace+'B';});
+            late.onclick=function(){trace=trace+'Q';};
+            early.click();
+            late.click();
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("PABQ".into())));
+    }
+
+    #[test]
+    fn m431b_onclick_clear_then_reassign_moves_handler_to_new_slot() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var b=document.getElementById('button');
+            var trace='';
+            function cb(){trace=trace+'P';}
+            b.onclick=cb;
+            b.addEventListener('click',function(){trace=trace+'A';});
+            b.click();
+            b.onclick=null;
+            b.onclick=cb;
+            b.click();
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("PAAP".into())));
+    }
+
+    #[test]
+    fn m431b_onclick_immediate_stop_prevents_later_listeners() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            var b=document.getElementById('button');
+            b.onclick=function(e){trace=trace+'P';e.stopImmediatePropagation();};
+            b.addEventListener('click',function(){trace=trace+'WRONG';});
+            b.click();
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("P".into())));
+    }
+
+    #[test]
+    fn m431_element_remove_readd_same_function_does_not_reenter_current_event() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var button=document.getElementById('button');
+            var trace='';
+            var changed=false;
+            function later(){trace=trace+'B';}
+            button.addEventListener('pulse',function(){
+                trace=trace+'A';
+                if(!changed){
+                    changed=true;
+                    button.removeEventListener('pulse',later);
+                    button.addEventListener('pulse',later);
+                }
+            });
+            button.addEventListener('pulse',later);
+            button.dispatchEvent(new Event('pulse'));
+            button.dispatchEvent(new Event('pulse'));
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("AAB".into())));
+    }
+
+    #[test]
+    fn m431_window_remove_readd_same_function_respects_dispatch_snapshot() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            var changed=false;
+            function later(){trace=trace+'B';}
+            window.addEventListener('pulse',function(){
+                trace=trace+'A';
+                if(!changed){
+                    changed=true;
+                    window.removeEventListener('pulse',later);
+                    window.addEventListener('pulse',later);
+                }
+            });
+            window.addEventListener('pulse',later);
+            window.dispatchEvent(new Event('pulse'));
+            window.dispatchEvent(new Event('pulse'));
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("AAB".into())));
+    }
+
+    #[test]
+    fn m431_abort_signal_event_target_remove_readd_semantics() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var signal=new AbortController().signal;
+            var trace='';
+            var changed=false;
+            function later(){trace=trace+'B';}
+            signal.addEventListener('probe',function(){
+                trace=trace+'A';
+                if(!changed){
+                    changed=true;
+                    signal.removeEventListener('probe',later);
+                    signal.addEventListener('probe',later);
+                }
+            });
+            signal.addEventListener('probe',later);
+            signal.dispatchEvent(new Event('probe'));
+            signal.dispatchEvent(new Event('probe'));
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("AAB".into())));
+    }
+
+    #[test]
+    fn m431_onclick_readded_same_callback_during_dispatch_does_not_run_stale_slot() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var button=document.getElementById('button');
+            var trace='';
+            var changed=false;
+            function later(){trace=trace+'B';}
+            button.addEventListener('click',function(){
+                trace=trace+'A';
+                if(!changed){
+                    changed=true;
+                    button.onclick=null;
+                    button.onclick=later;
+                }
+            });
+            button.onclick=later;
+            button.click();
+            button.click();
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("AAB".into())));
+    }
+
+    #[test]
+    fn m431_once_and_abort_signal_do_not_reanimate_stale_listener() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var button=document.getElementById('button');
+            var c=new AbortController();
+            var trace='';
+            function once(){trace=trace+'O';}
+            button.addEventListener('click',function(){
+                if(trace===''){
+                    button.removeEventListener('click',once);
+                    button.addEventListener('click',once,{signal:c.signal,once:true});
+                }
+                trace=trace+'A';
+            });
+            button.addEventListener('click',once,{signal:c.signal});
+            button.click();
+            button.click();
+            c.abort();
+            button.click();
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("AAOA".into())));
     }
 
     #[test]

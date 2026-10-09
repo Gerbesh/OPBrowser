@@ -38,6 +38,15 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.31 adds stable listener registration identities to original
+Element/Document/Window/AbortSignal EventTargets, so removing and
+re-adding one function during dispatch cannot invoke a stale
+registration. onclick, onreadystatechange, onload and onabort
+property handlers now respect registration chronology rather
+than unconditionally executing last. VM and native DOM-to-pixels
+regressions verify these improvements. Full WHATWG EventTarget and
+upstream WPT Events conformance remain future goals.
+
 M4.30b-d adds original DOMException objects with legacy codes,
 AbortError/TimeoutError default reasons, AbortSignal.timeout (0-60s),
 AbortSignal.any (bounded array-like inputs), and Request/fetch signal

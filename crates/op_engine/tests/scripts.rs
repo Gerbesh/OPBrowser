@@ -2,6 +2,120 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m431c_window_onload_property_orders_before_later_listener_on_native_page() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='out'>WAIT</p><script>",
+            "var trace='';",
+            "window.onload=function(){trace=trace+'P';};",
+            "window.addEventListener('load',function(){",
+            "trace=trace+'A';",
+            "document.getElementById('out').textContent=trace==='PA'?",
+            "'M431C-LOAD-PASS':'M431C-LOAD-FAIL';",
+            "});",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M431C-LOAD-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m431c_abort_property_orders_before_listener_and_paints() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='out'>WAIT</p><script>",
+            "var trace='';var controller=new AbortController();",
+            "controller.signal.onabort=function(){trace=trace+'P';};",
+            "controller.signal.addEventListener('abort',function(){trace=trace+'A';});",
+            "controller.abort();",
+            "document.getElementById('out').textContent=trace==='PA'?",
+            "'M431C-ABORT-PASS':'M431C-ABORT-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M431C-ABORT-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m431_event_listener_remove_readd_respects_native_dom_and_paints() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><button id='target'>RUN</button><p id='result'>WAIT</p><script>",
+            "var target=document.getElementById('target');",
+            "var trace='';var changed=false;",
+            "function later(){trace=trace+'B';}",
+            "target.addEventListener('ping',function(){",
+            "trace=trace+'A';",
+            "if(!changed){changed=true;target.removeEventListener('ping',later);",
+            "target.addEventListener('ping',later);}",
+            "});",
+            "target.addEventListener('ping',later);",
+            "target.dispatchEvent(new Event('ping'));",
+            "target.dispatchEvent(new Event('ping'));",
+            "document.getElementById('result').textContent=trace==='AAB'?",
+            "'M431-IDENTITY-PASS':'M431-IDENTITY-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M431-IDENTITY-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m431_dynamic_onclick_registration_identity_survives_host_node_binding() {
+    let mut engine = Engine::new();
+    let initial = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var target=document.createElement('button');target.id='target';",
+            "document.body.appendChild(target);",
+            "var trace='';var changed=false;",
+            "function later(){trace=trace+'B';}",
+            "target.addEventListener('click',function(){",
+            "trace=trace+'A';",
+            "if(!changed){changed=true;target.onclick=null;target.onclick=later;}",
+            "});",
+            "target.onclick=later;",
+            "setTimeout(function(){",
+            "target.click();target.click();",
+            "document.getElementById('result').textContent=trace==='AAB'?",
+            "'M431-DYNAMIC-PASS':'M431-DYNAMIC-FAIL';",
+            "},0);",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(!initial.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M431-DYNAMIC-PASS")
+    )));
+    let repaint = engine
+        .tick_timers(800, 600)
+        .expect("post-bind click redraws");
+    assert!(repaint.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M431-DYNAMIC-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m430c_abort_pending_http_fetch_ignores_real_delayed_completion() {
     use std::io::{Read, Write};
     use std::net::TcpListener;
