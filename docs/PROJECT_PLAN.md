@@ -2,6 +2,33 @@
 
 Last updated: 2026-10-10
 
+## M4.29b - Connected Element events through Document/Window (2026-10-10)
+
+- DONE original Element.dispatchEvent(Event), synthetic element.click(), and
+  native hit-tested clicks follow the complete bounded connected event path:
+  window capture -> document capture -> ancestor captures -> target ->
+  ancestor bubbles -> document bubble -> window bubble.
+- DONE capture phases still execute for nonbubbling events; bubbling-only
+  phases are suppressed when Event.bubbles=false.
+- DONE document/window-only native click listeners can trigger dispatch and
+  DOM repaint even without an Element listener. Host-side pre-dispatch
+  filtering now checks the full attached path.
+- DONE original op_js receives actual parser document-root identity from
+  op_engine::scripts::sync_dom_tree. Detached and subsequently removed
+  nodes do not propagate to global targets; non-element root nodes are not
+  mistaken for DOM Elements.
+- TESTED five new VM event-path/removal tests, one native click integration
+  and one original JS -> native paint custom-event integration. Earlier
+  M4.29a and original DOM click regressions remain unchanged.
+- LIMITS: intentionally bounded path (64 elements), no Shadow DOM/retargeting,
+  no user-gesture/default-activation algorithms, no AbortSignal and no
+  full EventTarget/Web Platform Test coverage. Pinned upstream WPT DOM/Events
+  v5 manifest and score unchanged; unavailable original upstream checkout
+  is not represented as a verified new result.
+- NEXT M4.30: original AbortController/AbortSignal listener removal,
+  signal state and interoperable option handling, then broaden real WPT
+  EventTarget fixtures with independently pinned source revisions.
+
 ## M4.29a - Document/Window EventTarget and lifecycle listener options (2026-10-10)
 
 - DONE original document/window addEventListener/removeEventListener accept

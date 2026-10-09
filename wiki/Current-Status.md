@@ -234,6 +234,21 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.29b: connected Element events reach Document and Window
+
+Original Element.dispatchEvent, Element.click and native hit-tested
+clicks now travel through window capture, document capture, ancestor
+capture, target, ancestor bubble, document bubble and window bubble.
+Global capture runs even for nonbubbling events. Event.bubbles,
+stopPropagation and stopImmediatePropagation retain their restrictions.
+Detached and removed nodes do not deliver to document/window. Native
+hit testing recognizes document/window-only click listeners and
+replays resulting JavaScript DOM changes into the original native
+layout and paint engine. Five VM and two native integration tests
+cover these scenarios. No new dependency or third-party web engine.
+AbortSignal, Shadow DOM, default actions and broad WPT conformance
+remain unsupported; frozen original WPT counts are unchanged.
+
 ## M4.29a: document/window EventTarget
 
 Document and window accept event listener option dictionaries with

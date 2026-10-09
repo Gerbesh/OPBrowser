@@ -3179,3 +3179,20 @@ This file is append-only project history.
   old lifecycle tests remain green.
 - No new dependencies, no foreign JS/DOM engine, no redefinition of
   frozen WPT DOM/Events v5 or broad compatibility claims.
+
+## 2026-10-10 - M4.29b connected Element events and native click propagation
+
+- Stored authoritative parser Document root in JsRuntime, with the
+  document-root identity reset on new page snapshots.
+- Built bounded Element event ancestry without interpreting the
+  non-Element parser root as an ordinary Element.
+- Routed original synthetic/custom Element events and native clicks
+  through Window and Document capture, Element target, and optional
+  Document/Window bubble, preserving stop semantics and event reuse.
+- Updated native click prefilter to recognize listeners on Document or
+  Window even when none are attached to the clicked element.
+- Added five original VM tests and two engine/native repaint
+  regressions for connected/detached nodes, removal, phase ordering,
+  nonbubbling events, global-only clicks and programmatic click.
+- Frozen external WPT sample and public Test262 scores are unchanged;
+  no new conformance claim without a verified upstream checkout.

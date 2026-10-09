@@ -157,6 +157,7 @@ fn find_body(document: &Document) -> Option<NodeId> {
 /// A bounded traversal ensures removeChild and insertBefore validate
 /// real parser-built nodes as well as new nodes created in the VM.
 fn sync_dom_tree(document: &Document, runtime: &mut JsRuntime) {
+    runtime.set_dom_document_root(document.root().index());
     let mut stack = vec![(document.root(), None)];
     let mut count = 0usize;
     while let Some((node, parent)) = stack.pop() {
@@ -788,7 +789,7 @@ pub(crate) fn dispatch_click(
         }
         current = document.node(id).and_then(|n| n.parent);
     }
-    if !path.iter().any(|&id| runtime.has_dom_click_listener(id)) {
+    if !runtime.has_dom_click_path_listener(&path) {
         return (false, 0);
     }
     let handled = runtime.dispatch_dom_click_path(&path).unwrap_or(false);

@@ -16,6 +16,25 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S35 - Connected Element events to global targets and native pixels (M4.29b)
+
+Status: IMPLEMENTED bounded original EventTarget propagation path.
+
+op_engine::scripts::sync_dom_tree records the actual DOM parser root,
+separating it from ordinary Elements. For a connected Element, original
+op_js::dispatch_custom_event_inner or dispatch_dom_click_path delivers
+Window capture, Document capture, Element ancestor captures, target
+callbacks, ancestor bubbles, Document bubble, and Window bubble
+(subject to stopPropagation and Event.bubbles). Detached elements
+never enter the global path. Native hit testing calls
+JsRuntime::has_dom_click_path_listener, allowing Document/Window-only
+click listeners to update the authoritative op_dom text, then
+op_layout/op_paint to redraw native pixels. Five VM and two engine
+tests verify phase order, nonbubbling capture, propagation stops,
+event reuse, removal, programmatic/native click and real pixels.
+Shadow DOM, AbortSignal, default browser actions and complete WPT
+conformance are not implemented.
+
 ## S34 - Document/window EventTarget and lifecycle callbacks to pixels (M4.29a)
 
 Status: IMPLEMENTED bounded document/window custom EventTarget and

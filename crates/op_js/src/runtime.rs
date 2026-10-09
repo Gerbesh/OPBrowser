@@ -314,6 +314,7 @@ pub struct JsRuntime {
     dom_node_aliases: HashMap<usize, usize>,
     dom_pending_ids: HashMap<usize, String>,
     dom_pending_parents: HashMap<usize, usize>,
+    dom_document_root: Option<usize>,
     dom_attributes: HashMap<usize, HashMap<String, String>>,
     dom_class_lists: HashMap<usize, ObjectId>,
     dom_node_lists: HashMap<usize, ObjectId>,
@@ -423,6 +424,7 @@ impl Default for JsRuntime {
             dom_node_aliases: HashMap::new(),
             dom_pending_ids: HashMap::new(),
             dom_pending_parents: HashMap::new(),
+            dom_document_root: None,
             dom_attributes: HashMap::new(),
             dom_class_lists: HashMap::new(),
             dom_node_lists: HashMap::new(),
@@ -546,6 +548,7 @@ impl JsRuntime {
         self.dom_node_aliases.clear();
         self.dom_pending_ids.clear();
         self.dom_pending_parents.clear();
+        self.dom_document_root = None;
         self.dom_attributes.clear();
         self.dom_class_lists.clear();
         self.dom_node_lists.clear();
@@ -1829,6 +1832,41 @@ impl JsRuntime {
             .insert(node, attributes.into_iter().collect());
     }
 
+    /// Real HTML parser root, not an Element. Only paths reaching this node
+    /// should propagate further to document and window.
+    pub fn set_dom_document_root(&mut self, node: usize) {
+        self.dom_document_root = Some(node);
+    }
+
+    fn path_reaches_document(&self, path: &[usize]) -> bool {
+        self.dom_document_root.is_some_and(|root| {
+            path.last().is_some_and(|last| {
+                *last == root || self.dom_pending_parents.get(last) == Some(&root)
+            })
+        })
+    }
+
+    /// An element, its known ancestors, and a connected parser Document root.
+    /// Skip non-element tree roots: they are represented by document itself.
+    fn element_event_path(&self, node: usize) -> Result<Vec<usize>, JsError> {
+        let mut path = vec![node];
+        let mut cursor = self.dom_pending_parents.get(&node).copied();
+        while let Some(parent) = cursor {
+            if path.len() >= 64 {
+                return Err(JsError::execution_limit("event path budget exceeded"));
+            }
+            if self.dom_document_root == Some(parent) {
+                break;
+            }
+            if !self.dom_tags.contains_key(&parent) {
+                break;
+            }
+            path.push(parent);
+            cursor = self.dom_pending_parents.get(&parent).copied();
+        }
+        Ok(path)
+    }
+
     pub fn sync_dom_existing_node(
         &mut self,
         node: usize,
@@ -1989,10 +2027,66 @@ impl JsRuntime {
         self.dispatch_dom_click_path(&[node])
     }
 
+    /// Capture for an Element event whose ancestry reaches the real Document.
+    /// window -> document -> element ancestors, even when bubbles is false.
+    fn deliver_element_global_capture(
+        &mut self,
+        event: ObjectId,
+        event_type: &str,
+        steps: &mut usize,
+    ) -> Result<(), JsError> {
+        self.deliver_lifecycle_listeners(self.global_object, event_type, event, true, 1, steps)?;
+        if !self.event_propagation_stopped(event)?
+            && let Some(document) = self.dom_document
+        {
+            self.deliver_lifecycle_listeners(document, event_type, event, true, 1, steps)?;
+        }
+        Ok(())
+    }
+
+    /// Bubble for an Element event through document -> window.
+    fn deliver_element_global_bubble(
+        &mut self,
+        event: ObjectId,
+        event_type: &str,
+        steps: &mut usize,
+    ) -> Result<(), JsError> {
+        if let Some(document) = self.dom_document {
+            self.deliver_lifecycle_listeners(document, event_type, event, false, 3, steps)?;
+        }
+        if !self.event_propagation_stopped(event)? {
+            self.deliver_lifecycle_listeners(
+                self.global_object,
+                event_type,
+                event,
+                false,
+                3,
+                steps,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Native hit testing must include window/document-only click handlers.
+    pub fn has_dom_click_path_listener(&self, path: &[usize]) -> bool {
+        path.iter().any(|&node| self.has_dom_click_listener(node))
+            || (self.path_reaches_document(path)
+                && [self.global_object]
+                    .into_iter()
+                    .chain(self.dom_document)
+                    .any(|receiver| {
+                        [true, false].into_iter().any(|capture| {
+                            self.lifecycle_listeners
+                                .get(&(receiver, "click".to_owned(), capture))
+                                .is_some_and(|handlers| !handlers.is_empty())
+                        })
+                    }))
+    }
+
     /// Deliver a click through capture, target, then bubbling phases.
     /// The supplied path is target-first and bounded by the page engine.
     pub fn dispatch_dom_click_path(&mut self, path: &[usize]) -> Result<bool, JsError> {
-        if path.is_empty() || !path.iter().any(|&node| self.has_dom_click_listener(node)) {
+        if path.is_empty() || !self.has_dom_click_path_listener(path) {
             return Ok(false);
         }
         let target = path[0];
@@ -2049,7 +2143,15 @@ impl JsRuntime {
             ]),
         )?;
         let mut steps = 0;
-        let mut handled = false;
+        let mut handled = true;
+        let connected = self.path_reaches_document(path);
+        if connected {
+            self.deliver_element_global_capture(event, "click", &mut steps)?;
+            if self.event_propagation_stopped(event)? {
+                self.finish_event_dispatch(event)?;
+                return Ok(handled);
+            }
+        }
         for &node in path.iter().take(64).skip(1).rev() {
             handled |= self.deliver_element_listeners(event, node, "click", true, 1, &mut steps)?;
             if self.event_propagation_stopped(event)? {
@@ -2069,6 +2171,9 @@ impl JsRuntime {
                 if self.event_propagation_stopped(event)? {
                     break;
                 }
+            }
+            if connected && !self.event_propagation_stopped(event)? {
+                self.deliver_element_global_bubble(event, "click", &mut steps)?;
             }
         }
         self.finish_event_dispatch(event)?;
@@ -2152,6 +2257,13 @@ impl JsRuntime {
             return Ok(());
         };
         let mut steps = 0usize;
+        let connected = self.path_reaches_document(path);
+        if connected {
+            self.deliver_element_global_capture(event, event_type, &mut steps)?;
+            if self.event_propagation_stopped(event)? {
+                return Ok(());
+            }
+        }
         for &node in path.iter().take(64).skip(1).rev() {
             self.deliver_element_listeners(event, node, event_type, true, 1, &mut steps)?;
             if self.event_propagation_stopped(event)? {
@@ -2170,6 +2282,9 @@ impl JsRuntime {
             if self.event_propagation_stopped(event)? {
                 break;
             }
+        }
+        if connected && !self.event_propagation_stopped(event)? {
+            self.deliver_element_global_bubble(event, event_type, &mut steps)?;
         }
         Ok(())
     }
@@ -4457,15 +4572,7 @@ impl JsRuntime {
             if self.object(*event)?.kind != ObjectKind::DomEvent {
                 return Err(JsError::type_error("dispatchEvent requires an Event"));
             }
-            let mut path = vec![node];
-            let mut cursor = self.dom_pending_parents.get(&node).copied();
-            while let Some(parent) = cursor {
-                if path.len() >= 64 {
-                    return Err(JsError::execution_limit("event path budget exceeded"));
-                }
-                path.push(parent);
-                cursor = self.dom_pending_parents.get(&parent).copied();
-            }
+            let path = self.element_event_path(node)?;
             let uncanceled = self.dispatch_custom_event(*event, &path)?;
             return Ok(CallOutcome::Value(JsValue::Boolean(uncanceled)));
         }
@@ -4481,15 +4588,7 @@ impl JsRuntime {
                     "nested programmatic click budget exceeded",
                 ));
             }
-            let mut path = Vec::new();
-            let mut cursor = Some(node);
-            while let Some(current) = cursor {
-                if path.len() >= 256 {
-                    return Err(JsError::execution_limit("DOM click path too deep"));
-                }
-                path.push(current);
-                cursor = self.dom_pending_parents.get(&current).copied();
-            }
+            let path = self.element_event_path(node)?;
             self.dom_programmatic_click_depth += 1;
             let dispatched = self.dispatch_dom_click_path(&path);
             self.dom_programmatic_click_depth -= 1;
@@ -6864,6 +6963,226 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn m429b_element_event_reaches_window_document_with_full_phase_order() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "outer".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "inner".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "div".into());
+        vm.sync_dom_tag(2, "button".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.sync_dom_existing_node(2, Some(1), vec![]);
+        vm.eval_script(
+            r#"
+            var outer=document.getElementById('outer');
+            var inner=document.getElementById('inner');
+            var trace='';
+            window.addEventListener('ping',function(e){
+                if(e.eventPhase===1&&e.target===inner)trace=trace+'W';
+            },true);
+            document.addEventListener('ping',function(e){
+                if(e.eventPhase===1&&e.currentTarget===document)trace=trace+'D';
+            },true);
+            outer.addEventListener('ping',function(e){
+                if(e.eventPhase===1)trace=trace+'R';
+            },true);
+            inner.addEventListener('ping',function(e){
+                if(e.eventPhase===2)trace=trace+'T';
+            },true);
+            inner.addEventListener('ping',function(e){
+                if(e.eventPhase===2)trace=trace+'A';
+            });
+            outer.addEventListener('ping',function(e){
+                if(e.eventPhase===3)trace=trace+'r';
+            });
+            document.addEventListener('ping',function(e){
+                if(e.eventPhase===3)trace=trace+'d';
+            });
+            window.addEventListener('ping',function(e){
+                if(e.eventPhase===3)trace=trace+'w';
+            });
+            var full=new Event('ping',{bubbles:true});
+            var accepted=inner.dispatchEvent(full);
+            var fullResult=trace+'|'+accepted+'|'+full.eventPhase+'|'+(full.currentTarget===null);
+            trace='';
+            var short=new Event('ping');
+            inner.dispatchEvent(short);
+            var shortResult=trace;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("fullResult"),
+            Some(&JsValue::String("WDRTArdw|true|0|true".into()))
+        );
+        assert_eq!(
+            vm.global("shortResult"),
+            Some(&JsValue::String("WDRTA".into()))
+        );
+    }
+
+    #[test]
+    fn m429b_global_only_click_handlers_receive_native_and_programmatic_click() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "outer".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "inner".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "div".into());
+        vm.sync_dom_tag(2, "button".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.sync_dom_existing_node(2, Some(1), vec![]);
+        vm.eval_script(
+            r#"
+            var trace='';
+            window.addEventListener('click',function(e){trace=trace+'C';},true);
+            document.addEventListener('click',function(e){trace=trace+'D';},true);
+            document.addEventListener('click',function(e){trace=trace+'d';});
+            window.addEventListener('click',function(e){trace=trace+'w';});
+        "#,
+        )
+        .unwrap();
+        assert!(!vm.has_dom_click_listener(2));
+        assert!(vm.has_dom_click_path_listener(&[2, 1]));
+        assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
+        vm.eval_script("document.getElementById('inner').click();")
+            .unwrap();
+        assert_eq!(
+            vm.global("trace"),
+            Some(&JsValue::String("CDdwCDdw".into()))
+        );
+    }
+
+    #[test]
+    fn m429b_removed_connected_element_stops_reaching_window_and_document() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "parent".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "child".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "div".into());
+        vm.sync_dom_tag(2, "button".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.sync_dom_existing_node(2, Some(1), vec![]);
+        vm.eval_script(
+            r#"
+            var parent=document.getElementById('parent');
+            var child=document.getElementById('child');
+            var trace='';
+            window.addEventListener('gone',function(){trace=trace+'W';},true);
+            document.addEventListener('gone',function(){trace=trace+'D';});
+            child.addEventListener('gone',function(){trace=trace+'T';});
+            child.dispatchEvent(new Event('gone',{bubbles:true}));
+            var whileConnected=trace;
+            trace='';
+            child.remove();
+            child.dispatchEvent(new Event('gone',{bubbles:true}));
+            var afterRemove=trace;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("whileConnected"),
+            Some(&JsValue::String("WTD".into()))
+        );
+        assert_eq!(vm.global("afterRemove"), Some(&JsValue::String("T".into())));
+    }
+
+    #[test]
+    fn m429b_detached_nodes_do_not_reach_global_event_targets() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "attached".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "div".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.eval_script(
+            r#"
+            var trace='';
+            document.addEventListener('signal',function(){trace=trace+'D';});
+            window.addEventListener('signal',function(){trace=trace+'W';},true);
+            var lone=document.createElement('span');
+            lone.addEventListener('signal',function(){trace=trace+'L';});
+            lone.dispatchEvent(new Event('signal',{bubbles:true}));
+            var afterLone=trace;
+            document.getElementById('attached').dispatchEvent(
+                new Event('signal',{bubbles:true}));
+            var afterAttached=trace;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("afterLone"), Some(&JsValue::String("L".into())));
+        assert_eq!(
+            vm.global("afterAttached"),
+            Some(&JsValue::String("LW D".replace(" ", "")))
+        );
+    }
+
+    #[test]
+    fn m429b_document_capture_stop_blocks_element_then_allows_event_reuse() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "inner".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "button".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.eval_script(
+            r#"
+            var trace='';
+            function stop(e){trace=trace+'C';e.stopPropagation();}
+            document.addEventListener('ping',stop,true);
+            document.getElementById('inner').addEventListener('ping',
+                function(){trace=trace+'T';});
+            var event=new Event('ping',{bubbles:true});
+            document.getElementById('inner').dispatchEvent(event);
+            document.removeEventListener('ping',stop,{capture:true});
+            document.getElementById('inner').dispatchEvent(event);
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("CT".into())));
     }
 
     #[test]

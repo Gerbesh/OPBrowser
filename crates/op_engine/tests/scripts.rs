@@ -2,6 +2,46 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m429b_element_to_document_window_event_phases_repaint_native_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><div id='outer'><button id='inner'>GO</button></div>",
+            "<p id='result'>WAIT</p><script>",
+            "var trace='';",
+            "var outer=document.getElementById('outer');",
+            "var inner=document.getElementById('inner');",
+            "window.addEventListener('pulse',function(e){",
+            "if(e.eventPhase===1&&e.target===inner)trace=trace+'W';},true);",
+            "document.addEventListener('pulse',function(e){",
+            "if(e.eventPhase===1)trace=trace+'D';},true);",
+            "outer.addEventListener('pulse',function(e){",
+            "if(e.eventPhase===1)trace=trace+'R';},true);",
+            "inner.addEventListener('pulse',function(e){",
+            "if(e.eventPhase===2)trace=trace+'T';});",
+            "outer.addEventListener('pulse',function(e){",
+            "if(e.eventPhase===3)trace=trace+'r';});",
+            "document.addEventListener('pulse',function(e){",
+            "if(e.eventPhase===3)trace=trace+'d';});",
+            "window.addEventListener('pulse',function(e){",
+            "if(e.eventPhase===3)trace=trace+'w';});",
+            "var e=new Event('pulse',{bubbles:true});",
+            "var ok=inner.dispatchEvent(e);",
+            "document.getElementById('result').textContent=",
+            "ok&&trace==='WDRTrdw'&&e.currentTarget===null?",
+            "'M429B-FULL-PASS':'M429B-FULL-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M429B-FULL-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m429_lifecycle_once_and_throw_reach_native_paint_without_aborting() {
     let mut engine = Engine::new();
     let page=engine.set_html_page(

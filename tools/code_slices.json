@@ -336,6 +336,23 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S35",
+      "title": "Connected Element event capture/target/bubble through document/window to native paint",
+      "status": "M4.29b bounded original Element global propagation and native click handling",
+      "steps": [
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "sync_dom_tree"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "element_event_path"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "path_reaches_document"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_element_global_capture"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_custom_event_inner"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_dom_click_path"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "has_dom_click_path_listener"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "dispatch_click"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "64-element ancestry budget, no Shadow DOM, default activation, AbortSignal or broad WPT conformance."
+    },
+    {
       "id": "S34",
       "title": "Document/window lifecycle and custom EventTarget through original native paint",
       "status": "M4.29a original document/window listener options, dispatchEvent and error isolation",

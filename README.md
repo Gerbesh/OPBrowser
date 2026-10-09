@@ -38,6 +38,14 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.29b connects Element.dispatchEvent, Element.click and native
+hit-tested clicks to the complete bounded Window/Document/Element
+capture-target-bubble path. Native clicks now recognize document/
+window-only listeners; detached/removed elements do not reach global
+targets. Five VM and two engine-native rendering tests verify this.
+No Shadow DOM, AbortSignal, default browser activation or broad WPT
+conformance yet. The original pinned WPT baseline is unchanged.
+
 M4.29a extends original EventTarget to document/window with
 options {capture, once, passive}, once-before-callback removal,
 exception-isolating host lifecycle events, and synchronous

@@ -48,6 +48,23 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.29b: unified connected Element event propagation
+
+The page VM receives the authoritative parser document root from
+op_engine. Connected Element.dispatchEvent(Event), Element.click()
+and hit-tested native clicks now dispatch across the full bounded
+Window -> Document -> Element ancestry route. Capture executes even
+for events with bubbles=false; bubbling to ancestors and globals
+requires bubbles=true. Once/passive listeners, handler exceptions,
+stopPropagation and stopImmediatePropagation follow the prior owned
+listener implementation. Detached or removed nodes remain local.
+Native document/window-only click listeners participate even when
+no Element registers a callback.
+
+The final event path is not yet standards-complete: no Shadow DOM
+event retargeting, composed paths, default activation or AbortSignal;
+the frozen original WPT sample does not establish global compatibility.
+
 ## M4.29a: document/window custom events and lifecycle options
 
 Document and window now implement bounded addEventListener and

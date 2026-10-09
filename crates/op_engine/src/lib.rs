@@ -787,6 +787,58 @@ mod tests {
     }
 
     #[test]
+    fn m429b_native_click_triggers_global_only_listeners_and_repaints() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            concat!(
+                "<div id='press' style='display:block;width:210px;height:70px;background:#ddd'>",
+                "CLICK ME</div><p id='result'>WAIT</p><script>",
+                "var trace='';",
+                "window.addEventListener('click',function(e){",
+                "if(e.eventPhase===1&&e.target.id==='press')trace=trace+'W';},true);",
+                "document.addEventListener('click',function(e){",
+                "if(e.eventPhase===1)trace=trace+'D';},true);",
+                "document.addEventListener('click',function(e){",
+                "if(e.eventPhase===3)trace=trace+'d';});",
+                "window.addEventListener('click',function(e){",
+                "if(e.eventPhase===3)trace=trace+'w';",
+                "document.getElementById('result').textContent='M429B-'+trace;",
+                "});",
+                "</script>"
+            ),
+            800,
+            600,
+        );
+        let active = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_backgrounds_and_resources(
+            &active.document,
+            800,
+            600,
+            (&active.images.elements, &active.images.backgrounds),
+            &active.images.generated,
+            &active.computed_styles,
+            &mut text::Measurer::new(),
+        );
+        let region = layout
+            .click_regions
+            .iter()
+            .find(|region| {
+                active.document.element(region.node).is_some_and(|element| {
+                    element
+                        .attributes
+                        .iter()
+                        .any(|attr| attr.name == "id" && attr.value == "press")
+                })
+            })
+            .expect("real native click hit region");
+        let result = engine
+            .click_at(region.x + 3, region.y + 3, 800, 600)
+            .expect("document/window click listeners must trigger dispatch");
+        assert!(contains_text(&result.display_list, "M429B-WDdw"));
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    }
+
+    #[test]
     fn native_click_on_child_bubbles_to_parent_listener() {
         let mut engine = Engine::new();
         engine.set_html_page(

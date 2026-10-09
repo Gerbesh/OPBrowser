@@ -16,6 +16,21 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.29b: connected Element event path and native hit testing
+
+op_engine::scripts::sync_dom_tree publishes the real document-root
+NodeId to op_js::JsRuntime before parser scripts and later resyncs.
+The original JS runtime's dom_document_root is reset with navigation,
+and element_event_path stops at the non-Element parser root.
+path_reaches_document gates delivery to attached Document/Window.
+dispatch_custom_event_inner and dispatch_dom_click_path now use
+deliver_element_global_capture/bubble around existing Element
+capture/target/bubble. The native op_engine::scripts::dispatch_click
+prefilter calls has_dom_click_path_listener to detect global-only
+handlers. Synthetic click, page event dispatch, host native clicks,
+op_dom mutation replay, layout and op_paint remain owned components.
+Detached/removal behavior is covered by VM tests. No new dependencies.
+
 ## M4.29a: Document/Window EventTarget and lifecycle dispatch
 
 The original op_js now stores lifecycle_listener_options per
