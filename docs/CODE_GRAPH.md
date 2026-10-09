@@ -16,6 +16,14 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.19: native String/Array methods -> JS script -> DOM repaint
+
+JsRuntime::install_standard_primitives owns Array.push/pop and the
+String.charAt method, and a dedicated SyntaxError constructor/prototype
+used by JSON.parse. The op_engine integration test confirms results
+update existing textContent and render to native pixels. No foreign JS
+engine or fake dynamic DOM nodes are used.
+
 ## M4.18: Test262 broader fixture -> own syntax VM -> native pixels
 
 The pinned runtime v2 manifest is generated deterministically from

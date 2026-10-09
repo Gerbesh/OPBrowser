@@ -336,6 +336,20 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S23",
+      "title": "Native standard String and Array methods to DOM text repaint",
+      "status": "M4.19 original VM builtins / SyntaxError",
+      "steps": [
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "render_html"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "install_standard_primitives"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "call_builtin"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "get_property"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Existing text DOM only; no insertion, lone UTF-16 surrogates or generic array-like methods."
+    },
+    {
       "id": "S22",
       "title": "Page script typeof and ternary through native DOM repaint",
       "status": "M4.18 original JS syntax and standard static helpers",

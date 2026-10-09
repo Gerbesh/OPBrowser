@@ -63,6 +63,10 @@ enum BuiltinFunction {
     Error,
     TypeError,
     ReferenceError,
+    SyntaxError,
+    StringCharAt,
+    ArrayPush,
+    ArrayPop,
     DomGetElementById,
     DomAddEventListener,
     DomRemoveEventListener,
@@ -201,6 +205,7 @@ pub struct JsRuntime {
     error_prototype: ObjectId,
     type_error_prototype: ObjectId,
     reference_error_prototype: ObjectId,
+    syntax_error_prototype: ObjectId,
     global_object: ObjectId,
     instruction_budget: usize,
     object_budget: usize,
@@ -233,6 +238,7 @@ impl Default for JsRuntime {
         let type_error_prototype = ObjectId(3);
         let reference_error_prototype = ObjectId(4);
         let global_object = ObjectId(5);
+        let syntax_error_prototype = ObjectId(6);
 
         let ordinary = |prototype, properties| JsObject {
             properties,
@@ -260,6 +266,13 @@ impl Default for JsRuntime {
             ordinary(Some(error_prototype), type_error_properties),
             ordinary(Some(error_prototype), reference_error_properties),
             ordinary(Some(object_prototype), HashMap::new()),
+            ordinary(
+                Some(error_prototype),
+                HashMap::from([
+                    ("name".into(), JsValue::String("SyntaxError".into())),
+                    ("message".into(), JsValue::String(String::new())),
+                ]),
+            ),
         ];
 
         let global_env = EnvironmentId(0);
@@ -278,6 +291,7 @@ impl Default for JsRuntime {
             error_prototype,
             type_error_prototype,
             reference_error_prototype,
+            syntax_error_prototype,
             global_object,
             instruction_budget: DEFAULT_INSTRUCTION_BUDGET,
             object_budget: DEFAULT_OBJECT_BUDGET,
@@ -325,6 +339,13 @@ impl Default for JsRuntime {
                 reference_error_prototype,
             )
             .expect("built-in ReferenceError constructor must fit initial runtime budgets");
+        runtime
+            .install_error_constructor(
+                "SyntaxError",
+                BuiltinFunction::SyntaxError,
+                syntax_error_prototype,
+            )
+            .expect("built-in SyntaxError constructor must fit VM budgets");
         runtime
             .install_standard_primitives()
             .expect("standard primitive builtins must fit initial VM budgets");
@@ -562,6 +583,18 @@ impl JsRuntime {
             ("valueOf".into(), JsValue::Object(value_of)),
             ("toString".into(), JsValue::Object(to_string)),
         ]);
+        let push = self.allocate_lifecycle_method("push", BuiltinFunction::ArrayPush)?;
+        let pop = self.allocate_lifecycle_method("pop", BuiltinFunction::ArrayPop)?;
+        self.object_mut(push)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        self.object_mut(pop)?
+            .properties
+            .insert("length".into(), JsValue::Number(0.0));
+        self.object_mut(self.array_prototype)?.properties.extend([
+            ("push".into(), JsValue::Object(push)),
+            ("pop".into(), JsValue::Object(pop)),
+        ]);
         for (name, builtin) in [
             ("Object", BuiltinFunction::ObjectConstructor),
             ("Array", BuiltinFunction::ArrayConstructor),
@@ -604,6 +637,23 @@ impl JsRuntime {
                 self.object_mut(id)?
                     .properties
                     .insert("prototype".into(), JsValue::Object(proto));
+                let intrinsic = match name {
+                    "String" => JsValue::String(String::new()),
+                    "Number" => JsValue::Number(0.0),
+                    "Boolean" => JsValue::Boolean(false),
+                    _ => unreachable!("primitive constructor"),
+                };
+                self.boxed_values.insert(proto, intrinsic);
+                if name == "String" {
+                    let char_at =
+                        self.allocate_lifecycle_method("charAt", BuiltinFunction::StringCharAt)?;
+                    self.object_mut(char_at)?
+                        .properties
+                        .insert("length".into(), JsValue::Number(1.0));
+                    self.object_mut(proto)?
+                        .properties
+                        .insert("charAt".into(), JsValue::Object(char_at));
+                }
             }
             self.install_global_binding(name, JsValue::Object(id), true, VariableKind::Var);
         }
@@ -788,6 +838,19 @@ impl JsRuntime {
             right
         };
         Ok(CallOutcome::Value(apply_binary(op, left, right)))
+    }
+
+    fn array_length(&self, id: ObjectId) -> Result<usize, JsError> {
+        let obj = self.object(id)?;
+        let value = obj.properties.get("length");
+        match value {
+            Some(JsValue::Number(n))
+                if n.is_finite() && *n >= 0.0 && *n <= 4096.0 && n.fract() == 0.0 =>
+            {
+                Ok(*n as usize)
+            }
+            _ => Err(JsError::type_error("invalid array length")),
+        }
     }
 
     fn install_json_methods(&mut self) -> Result<(), JsError> {
@@ -1989,6 +2052,84 @@ impl JsRuntime {
                         .to_js_string(),
                 )));
             }
+            BuiltinFunction::StringCharAt => {
+                let primitive = match &this_value {
+                    JsValue::String(text) => JsValue::String(text.clone()),
+                    JsValue::Object(id) => self
+                        .boxed_values
+                        .get(id)
+                        .cloned()
+                        .unwrap_or_else(|| this_value.clone()),
+                    JsValue::Null | JsValue::Undefined => {
+                        return Err(JsError::type_error(
+                            "String.prototype.charAt receiver is null or undefined",
+                        ));
+                    }
+                    _ => this_value.clone(),
+                };
+                let text = primitive.to_js_string();
+                let index = arguments.first().map(JsValue::to_number).unwrap_or(0.0);
+                let index = if index.is_nan() { 0.0 } else { index.trunc() };
+                if index < 0.0 || index >= text.encode_utf16().count() as f64 {
+                    return Ok(CallOutcome::Value(JsValue::String(String::new())));
+                }
+                let units: Vec<u16> = text.encode_utf16().collect();
+                let unit = units[index as usize];
+                // VM strings currently use valid Unicode scalar strings rather
+                // than arbitrary UTF-16 code units. A lone surrogate cannot
+                // be represented exactly; reject instead of corrupting UTF-8.
+                if (0xd800..=0xdfff).contains(&unit) {
+                    return Err(JsError::type_error(
+                        "charAt lone UTF-16 surrogate is not yet supported",
+                    ));
+                }
+                let value = String::from_utf16(&[unit])
+                    .map_err(|_| JsError::type_error("invalid charAt code unit"))?;
+                return Ok(CallOutcome::Value(JsValue::String(value)));
+            }
+            BuiltinFunction::ArrayPush => {
+                let JsValue::Object(id) = this_value else {
+                    return Err(JsError::type_error("Array.push receiver must be an array"));
+                };
+                if self.object(id)?.kind != ObjectKind::Array {
+                    return Err(JsError::type_error("Array.push receiver must be an array"));
+                }
+                let length = self.array_length(id)?;
+                let next = length
+                    .checked_add(arguments.len())
+                    .ok_or_else(|| JsError::execution_limit("array size overflow"))?;
+                if next > 4096 {
+                    return Err(JsError::execution_limit("Array.push capacity exceeded"));
+                }
+                for (index, value) in arguments.into_iter().enumerate() {
+                    self.object_mut(id)?
+                        .properties
+                        .insert((length + index).to_string(), value);
+                }
+                self.object_mut(id)?
+                    .properties
+                    .insert("length".into(), JsValue::Number(next as f64));
+                return Ok(CallOutcome::Value(JsValue::Number(next as f64)));
+            }
+            BuiltinFunction::ArrayPop => {
+                let JsValue::Object(id) = this_value else {
+                    return Err(JsError::type_error("Array.pop receiver must be an array"));
+                };
+                if self.object(id)?.kind != ObjectKind::Array {
+                    return Err(JsError::type_error("Array.pop receiver must be an array"));
+                }
+                let length = self.array_length(id)?;
+                if length == 0 {
+                    return Ok(CallOutcome::Value(JsValue::Undefined));
+                }
+                let key = (length - 1).to_string();
+                let value = self.get_object_property(id, &key)?;
+                self.object_mut(id)?.properties.remove(&key);
+                self.object_mut(id)?
+                    .properties
+                    .insert("length".into(), JsValue::Number((length - 1) as f64));
+                return Ok(CallOutcome::Value(value));
+            }
             BuiltinFunction::BooleanConstructor => {
                 return Ok(CallOutcome::Value(JsValue::Boolean(
                     arguments.first().is_some_and(JsValue::is_truthy),
@@ -2144,8 +2285,11 @@ impl JsRuntime {
             let value = match crate::json::parse(&source) {
                 Ok(value) => value,
                 Err(message) => {
-                    let error =
-                        self.allocate_error_object("SyntaxError", &message, self.error_prototype)?;
+                    let error = self.allocate_error_object(
+                        "SyntaxError",
+                        &message,
+                        self.syntax_error_prototype,
+                    )?;
                     return Ok(CallOutcome::Thrown(JsValue::Object(error)));
                 }
             };
@@ -2555,6 +2699,7 @@ impl JsRuntime {
             BuiltinFunction::Error => ("Error", self.error_prototype),
             BuiltinFunction::TypeError => ("TypeError", self.type_error_prototype),
             BuiltinFunction::ReferenceError => ("ReferenceError", self.reference_error_prototype),
+            BuiltinFunction::SyntaxError => ("SyntaxError", self.syntax_error_prototype),
             BuiltinFunction::DomGetElementById
             | BuiltinFunction::DomAddEventListener
             | BuiltinFunction::DomRemoveEventListener
@@ -2576,6 +2721,9 @@ impl JsRuntime {
             | BuiltinFunction::HeadersDelete
             | BuiltinFunction::JsonParse
             | BuiltinFunction::JsonStringify
+            | BuiltinFunction::StringCharAt
+            | BuiltinFunction::ArrayPush
+            | BuiltinFunction::ArrayPop
             | BuiltinFunction::ObjectConstructor
             | BuiltinFunction::ArrayConstructor
             | BuiltinFunction::BooleanConstructor
@@ -2620,6 +2768,9 @@ impl JsRuntime {
                 builtin,
                 BuiltinFunction::ArrayIsArray
                     | BuiltinFunction::ArrayOf
+                    | BuiltinFunction::StringCharAt
+                    | BuiltinFunction::ArrayPush
+                    | BuiltinFunction::ArrayPop
                     | BuiltinFunction::NumberIsNaN
                     | BuiltinFunction::NumberIsFinite
                     | BuiltinFunction::ObjectIs
@@ -2827,6 +2978,11 @@ impl JsRuntime {
     pub fn get_property(&self, target: &JsValue, key: &str) -> Result<JsValue, JsError> {
         match target {
             JsValue::Object(id) => {
+                if key == "length"
+                    && let Some(JsValue::String(value)) = self.boxed_values.get(id)
+                {
+                    return Ok(JsValue::Number(value.encode_utf16().count() as f64));
+                }
                 if key == "textContent"
                     && let ObjectKind::DomElement(node) = self.object(*id)?.kind
                 {
@@ -2848,6 +3004,17 @@ impl JsRuntime {
             }
             JsValue::String(value) if key == "length" => {
                 Ok(JsValue::Number(value.encode_utf16().count() as f64))
+            }
+            JsValue::String(_) => {
+                let Some(JsValue::Object(string_ctor)) = self.global("String") else {
+                    return Ok(JsValue::Undefined);
+                };
+                let JsValue::Object(prototype) =
+                    self.get_object_property(*string_ctor, "prototype")?
+                else {
+                    return Ok(JsValue::Undefined);
+                };
+                self.get_object_property(prototype, key)
             }
             JsValue::Null | JsValue::Undefined => Err(JsError::type_error(
                 "cannot read properties of null or undefined",
@@ -3293,6 +3460,70 @@ mod tests {
             JsValue::Number(1.0)
         );
         assert_eq!(runtime.global("x"), Some(&JsValue::Number(5.0)));
+    }
+
+    #[test]
+    fn m419_string_char_at_handles_positions_and_boxed_receivers() {
+        let mut vm = JsRuntime::new();
+        let source = r#"
+            var plain="Hello";
+            var boxed=new String("Hi");
+            plain.charAt(0)==="H" && plain.charAt(4)==="o" &&
+            plain.charAt(5)==="" && plain.charAt(-1)==="" &&
+            plain.charAt(1.99)==="e" && plain.charAt(NaN)==="H" &&
+            boxed.charAt(1)==="i" && boxed.length===2 &&
+            String.prototype.charAt.length===1 &&
+            String.prototype.charAt(0)==="" &&
+            typeof "hello".charAt==="function" &&
+            (new Number(42)).toString()==="42"
+        "#;
+        assert_eq!(vm.eval_script(source).unwrap(), JsValue::Boolean(true));
+        assert!(
+            vm.eval_script(
+                "var error=false; try{String.prototype.charAt(0)}catch(e){error=true}; error"
+            )
+            .is_ok()
+        ); // prototype itself is a normal object, converted to text
+    }
+
+    #[test]
+    fn m419_array_push_pop_preserves_length_holes_and_receiver_checks() {
+        let mut vm = JsRuntime::new();
+        let src = r#"
+            var a=[1,2];
+            var x=a.push(3,4);
+            var y=a.pop();
+            var z=a.pop();
+            var n=a.pop();
+            var m=a.pop();
+            var missing=a.pop();
+            var gap=new Array(2);
+            var blank=gap.pop();
+            var end=gap.push("X");
+            x===4 && y===4 && z===3 && n===2 && m===1 &&
+            missing===undefined && a.length===0 &&
+            blank===undefined && gap.length===2 &&
+            end===2 && gap[1]==="X" &&
+            Array.prototype.push.length===1 &&
+            Array.prototype.pop.length===0
+        "#;
+        assert_eq!(vm.eval_script(src).unwrap(), JsValue::Boolean(true));
+        assert_eq!(
+            vm.eval_script("var a=[]; a.pop()").unwrap(),
+            JsValue::Undefined
+        );
+        assert!(vm.eval_script("Array.prototype.push(3)").is_err());
+    }
+
+    #[test]
+    fn m419_syntax_error_is_constructor_and_json_parse_throws_it() {
+        let mut vm = JsRuntime::new();
+        assert_eq!(vm.eval_script(
+            "var a=new SyntaxError('bad');\
+             var caught=false;\
+             try{JSON.parse('{bad')}catch(e){caught=e instanceof SyntaxError && e.name==='SyntaxError'}\
+             caught && a instanceof SyntaxError && a instanceof Error && a.message==='bad'"
+        ).unwrap(),JsValue::Boolean(true));
     }
 
     #[test]

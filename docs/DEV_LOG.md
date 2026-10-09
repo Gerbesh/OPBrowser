@@ -3008,3 +3008,14 @@ This file is append-only project history.
   attempted passing; 110 SKIP explicit; v1 unchanged at 82/91.
 - Added original VM and native rendering integration tests; documented
   gap to modern ECMAScript, iterator/test harness, strict mode and DOM.
+
+## 2026-10-09 - M4.19 Array/String prototype methods
+
+- Added bounded Array.push/pop, String.charAt on original VM values and
+  default primitive prototype values. Added correct SyntaxError
+  prototype and JSON.parse exception identity.
+- New unit and native browser integration tests verify behavior and
+  visible DOM textContent repaint.
+- Test262 runtime v2 fixed sample improves 65/179 to 78/179 (43.58%)
+  with the same 110 skips; v1 remains at 82/91.
+- Dynamic DOM node insertion deferred until it can alter real trees.

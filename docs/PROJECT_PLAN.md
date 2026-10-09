@@ -1056,3 +1056,18 @@ counts must not be mislabeled as external conformance percentages.
 - NEXT M4.19: strengthen standard built-ins and DOM tree manipulation,
   implement more real Test262 helpers and metadata when semantics are
   supported, and keep v2 fixed while improving measured behavior.
+
+## M4.19 - String, Array prototype and SyntaxError (2026-10-09)
+
+- DONE original VM String.prototype.charAt on primitive/boxed strings
+  with integer-truncated index and valid UTF-16 scalar coverage.
+- DONE original-VM Array.prototype.push/pop for genuine bounded arrays,
+  correct length/index/holes and method arities.
+- DONE real SyntaxError constructor and prototype for malformed JSON.parse,
+  including instanceof behavior; native integration test updates DOM text.
+- MEASURED pinned runtime v2 from 65/179 to 78/179 (43.58%) with 110
+  explicit SKIP unchanged; narrow v1 stays at 82/91.
+- LIMITATION incomplete generic array-like receivers and UTF-16 lone
+  surrogates, no live DOM createElement/appendChild mutation pipeline.
+- NEXT M4.20: actual DOM tree mutations with persistent node identity,
+  authoritative DOM model, layout recalculation and native repaint.

@@ -437,3 +437,13 @@ flags and labels the machine-readable suite name by manifest version.
 Run both with tools/compatibility.ps1 -ExternalOnly -RuntimeOnly
 -Test262Path <pinned-Test262/test>. Parse-only v1 and WPT retain their
 separate metrics; they were not rerun by the narrow runtime-only command.
+
+## Test262 Runtime v2 after M4.19
+
+The unchanged pinned 289-file v2 sample passes 78/179 attempted
+(43.58%) instead of 65/179 (36.31%). Exactly 110 tests remain
+explicit SKIP and 101 attempted tests FAIL. Narrow v1 stays 82/91.
+Changes are native String.prototype.charAt, bounded Array.push/pop and
+SyntaxError inheritance for JSON.parse. This is not overall JavaScript
+or website compatibility. UTF-16 lone-surrogate string construction and
+generic array-like methods are still incomplete.

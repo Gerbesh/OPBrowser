@@ -460,3 +460,13 @@ An integration test verifies DOM text updates become native pixels.
 Major omissions persist: modern ECMAScript syntax, Symbol, Date,
 iterators, Array.of custom constructor semantics, strict modes,
 many Test262 includes and complete JS/DOM/Web API compatibility.
+
+## M4.19: String/Array methods and SyntaxError
+
+Original native JS now supports String.prototype.charAt for primitive
+and boxed string values, bounded Array.prototype.push/pop, and
+SyntaxError inheritance for malformed JSON.parse. A native page test
+verifies visible DOM text changes through these methods.
+Pinned Runtime v2: 78/179 (43.58%) PASS, 101 FAIL, 110 SKIP;
+narrow Runtime v1 unchanged at 82/91. Dynamic DOM insertion, generic
+array-like methods and lone UTF-16 surrogates remain incomplete.

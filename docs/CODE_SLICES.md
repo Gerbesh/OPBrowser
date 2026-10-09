@@ -16,6 +16,16 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S23 - Native String/Array methods -> DOM text -> pixels (M4.19)
+
+Status: IMPLEMENTED in original JS VM and engine paint path.
+Prototype String.charAt and Array.push/pop execute inside op_js;
+SyntaxError is an owned prototype. Page script stores computed values
+in existing DOM textContent; op_engine and op_paint render them as
+visible native text. Test262 runtime v2 improved from 65/179 to
+78/179 attempted, while 110 SKIPs remain explicit. Dynamic node
+insertion is not part of this slice.
+
 ## S22 - typeof/conditional/standards -> DOM -> pixels and Test262 v2 (M4.18)
 
 Status: IMPLEMENTED, pinned broad v2 runtime benchmark.

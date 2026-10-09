@@ -11,7 +11,7 @@ externally measured web-compatibility score.
 | WPT Positioning v1 strict | 53/100 (53.00%) | 100 selected positioning cases |
 | Test262 Parser v1 | 523/1983 (26.37%) | Parse-only tests, not JS execution |
 | Test262 Runtime v1 (M4.17) | 82/91 (90.11%) | Narrow, pinned classic arithmetic/equality subset only |
-| Test262 Runtime v2 (M4.18) | 65/179 (36.31%) | 289 selected across 25 families, 110 explicitly skipped |
+| Test262 Runtime v2 (M4.19) | 78/179 (43.58%) | 289 selected across 25 families, 110 skipped, formerly 65/179 |
 
 The Runtime v1 subset was rerun during M4.17 against the verified pinned
 upstream revision; the three other subset scores are carried forward

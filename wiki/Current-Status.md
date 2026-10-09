@@ -155,3 +155,11 @@ Native typeof, ternary expressions, Array.isArray/of, Number.isNaN/
 isFinite and Object.is now work and are tested through native page
 rendering. Modern application compatibility remains substantially
 behind the narrow static CSS metrics.
+
+## M4.19: more standard JavaScript primitives
+
+Native String.charAt and bounded Array.push/pop now work, and JSON.parse
+errors have proper SyntaxError inheritance. Locked Test262 Runtime v2
+rose from 65/179 to 78/179 (43.58%) with 110 unchanged SKIPs and
+101 FAIL. Narrow Runtime v1 remains 82/91. Full modern JS support and
+real dynamic DOM node insertion are still unfinished.

@@ -2,6 +2,31 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m419_string_and_array_methods_reach_native_repaint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<p id='result'>Loading</p><script>",
+            "var letters=['A','B'];",
+            "letters.push('C');",
+            "var suffix=letters.pop();",
+            "var label='ok'.charAt(0)+suffix;",
+            "var caught=false;",
+            "try{JSON.parse('{bad')}catch(e){caught=e instanceof SyntaxError;}",
+            "if(caught && letters.length===2)",
+            " document.getElementById('result').textContent='M419-'+label;",
+            "</script>",
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text{text,..} if text.contains("M419-oC")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn typeof_conditional_and_std_static_functions_repaint_native_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

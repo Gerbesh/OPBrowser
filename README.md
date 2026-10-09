@@ -22,6 +22,9 @@ Test262 runtime M4.18 adds a pinned and deterministic 289-case selection
 across 25 language and built-in families. On the supported classic-script
 harness subset, 65/179 (36.31%) pass and 110 unsupported cases are explicitly
 SKIP. This is broader but still not a full Test262 or website score.
+M4.19 adds String.prototype.charAt, Array.prototype.push/pop,
+and SyntaxError inheritance for malformed JSON.parse. The pinned broad
+runtime v2 reaches 78/179 (43.58%) with the same 110 explicit SKIPs.
 The former 91-case arithmetic/equality suite remains 82/91 (90.11%);
 the two scores are separate and must not be averaged.
 Two Rec.2020 tests remain counted as failures but are classified as

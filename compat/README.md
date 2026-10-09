@@ -112,3 +112,7 @@ version instead of silently redefining v1.
 - Native end-to-end engine test verifies typeof/conditional/static
   functions paint the expected DOM text. Full Test262 runtime coverage
   and most browser Web APIs remain distant targets.
+
+M4.19 on unchanged Test262 Runtime v2: 78/179 (43.58%) attempted
+PASS, 101 FAIL and 110 explicit SKIP, up from 65/179; v1 82/91
+unchanged. No fixture manifest was modified.
