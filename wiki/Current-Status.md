@@ -183,3 +183,13 @@ elements, changes attributes and recascades styles after callbacks.
 Nine end-to-end page tests pass, including same-script nested
 ID lookup on detach/reinsert. Test262 Runtime v1 82/91, v2
 78/179 attempted (110 skipped), unchanged and limited in scope.
+
+## M4.22: live DOM collections and CSS interfaces
+
+DOM Elements/Text now have limited live parentNode/childNodes/
+firstChild/lastChild semantics; classList and element.style
+update real author attributes and native CSS. replaceChild
+and remove can reorder/retire real nodes. Nine new
+script-to-native-pixels scenarios are covered, including
+timer callbacks and synthetic-to-physical node identity.
+Full DOM/CSSOM/WPT compatibility is still unmeasured and partial.

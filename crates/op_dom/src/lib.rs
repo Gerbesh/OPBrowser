@@ -189,6 +189,31 @@ impl Document {
         Ok(())
     }
 
+    /// Replace an existing direct child without losing node IDs or partial
+    /// mutations on failure. Reusing the old child is a no-op.
+    pub fn replace_child(
+        &mut self,
+        parent: NodeId,
+        new_child: NodeId,
+        old_child: NodeId,
+    ) -> Result<(), DocumentError> {
+        if parent.index() >= self.nodes.len() {
+            return Err(DocumentError::UnknownParent);
+        }
+        if old_child.index() >= self.nodes.len() || new_child.index() >= self.nodes.len() {
+            return Err(DocumentError::UnknownChild);
+        }
+        if self.nodes[old_child.index()].parent != Some(parent) {
+            return Err(DocumentError::NotAChild);
+        }
+        if old_child == new_child {
+            return Ok(());
+        }
+        self.insert_before(parent, new_child, Some(old_child))?;
+        self.remove_child(parent, old_child)?;
+        Ok(())
+    }
+
     /// Detach a direct child without deleting its identity or descendants.
     /// Invalid removals leave both nodes and their linkage unchanged.
     pub fn remove_child(&mut self, parent: NodeId, child: NodeId) -> Result<(), DocumentError> {
@@ -355,5 +380,41 @@ mod dynamic_remove_move_tests {
         dom.append_child(root, first).unwrap();
         assert_eq!(dom.children(root), &[second, first]);
         assert_eq!(dom.node(first).unwrap().parent, Some(root));
+    }
+}
+
+#[cfg(test)]
+mod replace_child_tests {
+    use super::*;
+    #[test]
+    fn replace_child_is_ordered_and_rejects_cross_parent_reference() {
+        let mut dom = Document::new();
+        let a = dom.create_element("main");
+        let b = dom.create_element("section");
+        let first = dom.create_element("p");
+        let old = dom.create_element("em");
+        let last = dom.create_element("strong");
+        let next = dom.create_element("i");
+        dom.append_child(dom.root(), a).unwrap();
+        dom.append_child(dom.root(), b).unwrap();
+        for child in [first, old, last] {
+            dom.append_child(a, child).unwrap();
+        }
+        dom.append_child(b, next).unwrap();
+        assert_eq!(
+            dom.replace_child(b, first, old),
+            Err(DocumentError::NotAChild)
+        );
+        assert_eq!(dom.children(a), &[first, old, last]);
+        dom.replace_child(a, next, old).unwrap();
+        assert_eq!(dom.children(a), &[first, next, last]);
+        assert_eq!(dom.node(old).unwrap().parent, None);
+        assert_eq!(dom.node(next).unwrap().parent, Some(a));
+        dom.replace_child(a, next, next).unwrap();
+        assert_eq!(dom.children(a), &[first, next, last]);
+        assert_eq!(
+            dom.replace_child(next, a, first),
+            Err(DocumentError::NotAChild)
+        );
     }
 }

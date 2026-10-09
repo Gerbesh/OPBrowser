@@ -3048,3 +3048,16 @@ This file is append-only project history.
   while retaining previously loaded external CSS and color profiles.
 - Nine end-to-end DOM/native text paint checks; pinned Test262
   runtime v1/v2 unchanged at 82/91 and 78/179 attempted.
+
+## 2026-10-09 - M4.22 live DOM nodes and first CSSOM conveniences
+
+- Added original-JS parentNode, firstChild, lastChild, stable live
+  childNodes NodeList indexed/item access and updates across timers.
+- Added native Document::replace_child and JS replaceChild/remove
+  with ownership validation, ordered DOM op replay and stable IDs.
+- Added bounded classList, className and live element.style methods,
+  mutating real class/style attributes used by the CSS engine.
+- Hardened synthetic-to-real node binding to preserve previously
+  retained DOM, childNodes, classList and style objects.
+- Nine new native-pixel integration tests pass, old M4.21 tests
+  retained; Test262 Runtime v1/v2 unchanged.

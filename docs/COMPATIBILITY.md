@@ -470,3 +470,23 @@ The unchanged Test262 Runtime v1 and v2 scores remain 82/91 and
 78/179 (110 explicit skips). These DOM tests are narrow, not a
 full DOM WPT score. Many live Node, CSSOM and MutationObserver
 surfaces are absent.
+
+## M4.22 live DOM accessors, classList, style and replacement
+
+The browser now exposes a limited real parentNode / firstChild /
+lastChild and live Element.childNodes NodeList, including indexed
+access and item(), plus replaceChild/remove, Element.classList,
+className and a small CSSStyleDeclaration-style Element.style
+surface. Native DOM mutation and CSS recascade are tested across
+timers and original JS handle rebinding.
+
+Nine new end-to-end tests confirm DOM identity and actual pixels,
+not WPT DOM conformance. This is a bounded partial subset:
+incomplete Document/Node/Element prototype surfaces, selector and
+CSS syntax, CSSStyleDeclaration parsing, style priorities,
+variadic DOMTokenList mutation and browser event model.
+
+Pinned ECMAScript subsets remain independent and unchanged:
+Test262 Runtime v1 82/91 (90.11%), Runtime v2 78/179
+(43.58%) attempted with 110 explicit skips. No overall
+website readiness score can be inferred.

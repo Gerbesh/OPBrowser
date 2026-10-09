@@ -336,6 +336,21 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S26",
+      "title": "Live NodeList and DOMTokenList style mutations to native pixels",
+      "status": "M4.22 retained JS DOM references, ordered operations and CSS recascade",
+      "steps": [
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "render_html"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "get_property"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "call_builtin"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "replace_child"},
+        {"path": "crates/op_css/src/lib.rs", "symbol": "compute_styles"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Limited bounded live NodeList, DOMTokenList and CSSStyleDeclaration only, not broad WPT DOM/CSSOM compliance."
+    },
+    {
       "id": "S25",
       "title": "DOM removal and attributes trigger style recascade and native paint",
       "status": "M4.21 actual DOM and CSS update",

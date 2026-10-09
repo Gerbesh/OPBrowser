@@ -56,6 +56,9 @@ enum ObjectKind {
     Function,
     DomElement(usize),
     DomText(usize),
+    DomClassList(usize),
+    DomNodeList(usize),
+    DomStyle(usize),
     Headers,
 }
 
@@ -74,6 +77,16 @@ enum BuiltinFunction {
     DomAppendChild,
     DomInsertBefore,
     DomRemoveChild,
+    DomReplaceChild,
+    DomRemoveSelf,
+    DomClassAdd,
+    DomClassRemove,
+    DomClassContains,
+    DomClassToggle,
+    DomNodeListItem,
+    DomStyleSetProperty,
+    DomStyleGetPropertyValue,
+    DomStyleRemoveProperty,
     DomSetAttribute,
     DomGetAttribute,
     DomRemoveAttribute,
@@ -230,6 +243,11 @@ pub enum DomOperation {
         parent: usize,
         child: usize,
     },
+    ReplaceChild {
+        parent: usize,
+        new_child: usize,
+        old_child: usize,
+    },
     SetAttribute {
         node: usize,
         name: String,
@@ -271,6 +289,11 @@ pub struct JsRuntime {
     dom_pending_ids: HashMap<usize, String>,
     dom_pending_parents: HashMap<usize, usize>,
     dom_attributes: HashMap<usize, HashMap<String, String>>,
+    dom_class_lists: HashMap<usize, ObjectId>,
+    dom_node_lists: HashMap<usize, ObjectId>,
+    dom_styles: HashMap<usize, ObjectId>,
+    dom_children: HashMap<usize, Vec<usize>>,
+    dom_text_nodes: std::collections::HashSet<usize>,
     dom_attached: std::collections::HashSet<usize>,
     next_virtual_dom_node: usize,
     dom_click_listeners: HashMap<usize, Vec<JsValue>>,
@@ -365,6 +388,11 @@ impl Default for JsRuntime {
             dom_pending_ids: HashMap::new(),
             dom_pending_parents: HashMap::new(),
             dom_attributes: HashMap::new(),
+            dom_class_lists: HashMap::new(),
+            dom_node_lists: HashMap::new(),
+            dom_styles: HashMap::new(),
+            dom_children: HashMap::new(),
+            dom_text_nodes: std::collections::HashSet::new(),
             dom_attached: std::collections::HashSet::new(),
             next_virtual_dom_node: 1,
             dom_click_listeners: HashMap::new(),
@@ -464,6 +492,11 @@ impl JsRuntime {
         self.dom_pending_ids.clear();
         self.dom_pending_parents.clear();
         self.dom_attributes.clear();
+        self.dom_class_lists.clear();
+        self.dom_node_lists.clear();
+        self.dom_styles.clear();
+        self.dom_children.clear();
+        self.dom_text_nodes.clear();
         self.dom_attached.clear();
         self.next_virtual_dom_node = 1;
         self.dom_click_listeners.clear();
@@ -1400,12 +1433,57 @@ impl JsRuntime {
         }
         self.sync_dom_attributes(node, attrs);
     }
+
+    pub fn sync_dom_children(&mut self, node: usize, children: Vec<usize>) {
+        self.dom_children.insert(node, children);
+    }
+
+    pub fn sync_dom_text_node(&mut self, node: usize, parent: Option<usize>, value: String) {
+        self.dom_text_nodes.insert(node);
+        self.dom_text.insert(node, value);
+        self.dom_attached.insert(node);
+        if let Some(parent) = parent {
+            self.dom_pending_parents.insert(node, parent);
+        }
+    }
     /// A host may associate a newly committed synthetic element with its
     /// physical NodeId. This preserves JS object identity across later reads.
     pub fn bind_dom_node(&mut self, virtual_node: usize, physical_node: usize) {
         self.dom_node_aliases.insert(virtual_node, physical_node);
         if let Some(&object) = self.dom_node_objects.get(&virtual_node) {
             self.dom_node_objects.insert(physical_node, object);
+            self.heap[object.0].kind = match self.heap[object.0].kind {
+                ObjectKind::DomElement(_) => ObjectKind::DomElement(physical_node),
+                ObjectKind::DomText(_) => ObjectKind::DomText(physical_node),
+                kind => kind,
+            };
+        }
+        if let Some(list) = self.dom_node_lists.remove(&virtual_node) {
+            self.dom_node_lists.insert(physical_node, list);
+            self.heap[list.0].kind = ObjectKind::DomNodeList(physical_node);
+        }
+        if let Some(list) = self.dom_class_lists.remove(&virtual_node) {
+            self.dom_class_lists.insert(physical_node, list);
+            self.heap[list.0].kind = ObjectKind::DomClassList(physical_node);
+        }
+        if let Some(style) = self.dom_styles.remove(&virtual_node) {
+            self.dom_styles.insert(physical_node, style);
+            self.heap[style.0].kind = ObjectKind::DomStyle(physical_node);
+        }
+        if let Some(children) = self.dom_children.remove(&virtual_node) {
+            self.dom_children.insert(physical_node, children);
+        }
+        if let Some(parent) = self.dom_pending_parents.remove(&virtual_node) {
+            self.dom_pending_parents.insert(physical_node, parent);
+        }
+        if let Some(attributes) = self.dom_attributes.remove(&virtual_node) {
+            self.dom_attributes.insert(physical_node, attributes);
+        }
+        if let Some(text) = self.dom_text.remove(&virtual_node) {
+            self.dom_text.insert(physical_node, text);
+        }
+        if self.dom_text_nodes.remove(&virtual_node) {
+            self.dom_text_nodes.insert(physical_node);
         }
         self.dom_attached.insert(virtual_node);
         self.dom_attached.insert(physical_node);
@@ -1614,6 +1692,243 @@ impl JsRuntime {
         }
     }
 
+    fn detach_dom_subtree(&mut self, root: usize) -> Result<(), JsError> {
+        for children in self.dom_children.values_mut() {
+            children.retain(|&node| node != root);
+        }
+        let mut by_parent: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (&child, &parent) in &self.dom_pending_parents {
+            by_parent.entry(parent).or_default().push(child);
+        }
+        let mut visited = std::collections::HashSet::new();
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if !visited.insert(node) {
+                continue;
+            }
+            if visited.len() > 20_000 {
+                return Err(JsError::execution_limit("DOM subtree limit exceeded"));
+            }
+            if let Some(children) = by_parent.get(&node) {
+                stack.extend(children.iter().copied());
+            }
+        }
+        self.dom_attached.retain(|node| !visited.contains(node));
+        self.dom_ids.retain(|_, node| !visited.contains(node));
+        Ok(())
+    }
+
+    fn dom_any_node_object(&mut self, node: usize) -> Result<ObjectId, JsError> {
+        if let Some(&existing) = self.dom_node_objects.get(&node) {
+            return Ok(existing);
+        }
+        if self.dom_text_nodes.contains(&node) {
+            let text = self.dom_text.get(&node).cloned().unwrap_or_default();
+            let object = self.allocate_object(
+                ObjectKind::DomText(node),
+                Some(self.object_prototype),
+                HashMap::from([
+                    ("data".into(), JsValue::String(text.clone())),
+                    ("nodeValue".into(), JsValue::String(text.clone())),
+                    ("textContent".into(), JsValue::String(text)),
+                    ("nodeType".into(), JsValue::Number(3.0)),
+                ]),
+            )?;
+            self.dom_node_objects.insert(node, object);
+            return Ok(object);
+        }
+        self.dom_element_object(node)
+    }
+
+    fn dom_style_object(&mut self, node: usize) -> Result<ObjectId, JsError> {
+        if let Some(&style) = self.dom_styles.get(&node) {
+            return Ok(style);
+        }
+        let mut methods = HashMap::new();
+        for (name, builtin, length) in [
+            ("setProperty", BuiltinFunction::DomStyleSetProperty, 2.0),
+            (
+                "getPropertyValue",
+                BuiltinFunction::DomStyleGetPropertyValue,
+                1.0,
+            ),
+            (
+                "removeProperty",
+                BuiltinFunction::DomStyleRemoveProperty,
+                1.0,
+            ),
+        ] {
+            let function = self.allocate_lifecycle_method(name, builtin)?;
+            self.object_mut(function)?
+                .properties
+                .insert("length".into(), JsValue::Number(length));
+            methods.insert(name.into(), JsValue::Object(function));
+        }
+        let object = self.allocate_object(
+            ObjectKind::DomStyle(node),
+            Some(self.object_prototype),
+            methods,
+        )?;
+        self.dom_styles.insert(node, object);
+        Ok(object)
+    }
+
+    fn dom_style_declarations(&self, node: usize) -> Vec<(String, String)> {
+        let css = self
+            .dom_attributes
+            .get(&node)
+            .and_then(|attrs| attrs.get("style"))
+            .map_or("", String::as_str);
+        let mut result: Vec<(String, String)> = Vec::new();
+        for declaration in css.split(';').take(128) {
+            let Some((name, value)) = declaration.split_once(':') else {
+                continue;
+            };
+            let name = name.trim().to_ascii_lowercase();
+            if name.is_empty() {
+                continue;
+            }
+            let value = value.trim().to_owned();
+            if let Some(old) = result.iter_mut().find(|(k, _)| k == &name) {
+                old.1 = value;
+            } else {
+                result.push((name, value));
+            }
+        }
+        result
+    }
+
+    fn style_property_name(name: &str) -> String {
+        let mut output = String::new();
+        for c in name.chars() {
+            if c.is_ascii_uppercase() {
+                output.push('-');
+                output.push(c.to_ascii_lowercase());
+            } else {
+                output.push(c);
+            }
+        }
+        output
+    }
+
+    fn set_dom_style_property(
+        &mut self,
+        node: usize,
+        name: &str,
+        value: Option<String>,
+    ) -> Result<String, JsError> {
+        if name.len() > 128
+            || name.is_empty()
+            || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        {
+            return Err(JsError::type_error("unsupported CSS property name"));
+        }
+        let mut declarations = self.dom_style_declarations(node);
+        let original = declarations
+            .iter()
+            .find(|(key, _)| key == name)
+            .map_or_else(String::new, |(_, v)| v.clone());
+        declarations.retain(|(key, _)| key != name);
+        if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
+            declarations.push((name.into(), value));
+        }
+        let css = declarations
+            .iter()
+            .map(|(key, value)| format!("{key}: {value}"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        self.stage_dom_attribute(node, "style", css)?;
+        Ok(original)
+    }
+
+    fn dom_node_list_object(&mut self, node: usize) -> Result<ObjectId, JsError> {
+        if let Some(&existing) = self.dom_node_lists.get(&node) {
+            return Ok(existing);
+        }
+        let item = self.allocate_lifecycle_method("item", BuiltinFunction::DomNodeListItem)?;
+        self.object_mut(item)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        let object = self.allocate_object(
+            ObjectKind::DomNodeList(node),
+            Some(self.object_prototype),
+            HashMap::from([("item".into(), JsValue::Object(item))]),
+        )?;
+        self.dom_node_lists.insert(node, object);
+        Ok(object)
+    }
+
+    fn stage_dom_move(&mut self, parent: usize, child: usize, reference: Option<usize>) {
+        for children in self.dom_children.values_mut() {
+            children.retain(|&existing| existing != child);
+        }
+        let siblings = self.dom_children.entry(parent).or_default();
+        let position = reference.and_then(|ref_id| siblings.iter().position(|&n| n == ref_id));
+        if let Some(position) = position {
+            siblings.insert(position, child);
+        } else {
+            siblings.push(child);
+        }
+        self.dom_pending_parents.insert(child, parent);
+    }
+
+    fn dom_class_list_object(&mut self, node: usize) -> Result<ObjectId, JsError> {
+        if let Some(&object) = self.dom_class_lists.get(&node) {
+            return Ok(object);
+        }
+        let mut methods = HashMap::new();
+        for (name, builtin, length) in [
+            ("add", BuiltinFunction::DomClassAdd, 1.0),
+            ("remove", BuiltinFunction::DomClassRemove, 1.0),
+            ("contains", BuiltinFunction::DomClassContains, 1.0),
+            ("toggle", BuiltinFunction::DomClassToggle, 1.0),
+        ] {
+            let function = self.allocate_lifecycle_method(name, builtin)?;
+            self.object_mut(function)?
+                .properties
+                .insert("length".into(), JsValue::Number(length));
+            methods.insert(name.to_owned(), JsValue::Object(function));
+        }
+        let list = self.allocate_object(
+            ObjectKind::DomClassList(node),
+            Some(self.object_prototype),
+            methods,
+        )?;
+        self.dom_class_lists.insert(node, list);
+        Ok(list)
+    }
+
+    fn class_tokens(&self, node: usize) -> Vec<String> {
+        self.dom_attributes
+            .get(&node)
+            .and_then(|attrs| attrs.get("class"))
+            .map(|value| value.split_ascii_whitespace().map(str::to_owned).collect())
+            .unwrap_or_default()
+    }
+
+    fn stage_dom_attribute(
+        &mut self,
+        node: usize,
+        name: &str,
+        value: String,
+    ) -> Result<(), JsError> {
+        if self.dom_operations.len() >= 256 || value.len() > 64 * 1024 {
+            return Err(JsError::execution_limit(
+                "DOM attribute mutation budget exceeded",
+            ));
+        }
+        self.dom_attributes
+            .entry(node)
+            .or_default()
+            .insert(name.to_owned(), value.clone());
+        self.dom_operations.push(DomOperation::SetAttribute {
+            node,
+            name: name.to_owned(),
+            value,
+        });
+        Ok(())
+    }
+
     fn dom_element_object(&mut self, node: usize) -> Result<ObjectId, JsError> {
         if let Some(&id) = self.dom_node_objects.get(&node) {
             return Ok(id);
@@ -1636,6 +1951,10 @@ impl JsRuntime {
             self.allocate_lifecycle_method("insertBefore", BuiltinFunction::DomInsertBefore)?;
         let remove =
             self.allocate_lifecycle_method("removeChild", BuiltinFunction::DomRemoveChild)?;
+        let replace =
+            self.allocate_lifecycle_method("replaceChild", BuiltinFunction::DomReplaceChild)?;
+        let remove_self =
+            self.allocate_lifecycle_method("remove", BuiltinFunction::DomRemoveSelf)?;
         let set_attr =
             self.allocate_lifecycle_method("setAttribute", BuiltinFunction::DomSetAttribute)?;
         let get_attr =
@@ -1659,6 +1978,8 @@ impl JsRuntime {
                 ("appendChild".into(), JsValue::Object(append)),
                 ("insertBefore".into(), JsValue::Object(insert)),
                 ("removeChild".into(), JsValue::Object(remove)),
+                ("replaceChild".into(), JsValue::Object(replace)),
+                ("remove".into(), JsValue::Object(remove_self)),
                 ("setAttribute".into(), JsValue::Object(set_attr)),
                 ("getAttribute".into(), JsValue::Object(get_attr)),
                 ("removeAttribute".into(), JsValue::Object(remove_attr)),
@@ -2838,6 +3159,7 @@ impl JsRuntime {
             let node = usize::MAX - self.next_virtual_dom_node;
             self.next_virtual_dom_node += 1;
             self.dom_text.insert(node, text.clone());
+            self.dom_text_nodes.insert(node);
             self.dom_operations.push(DomOperation::CreateText {
                 node,
                 text: text.clone(),
@@ -2854,6 +3176,195 @@ impl JsRuntime {
             )?;
             self.dom_node_objects.insert(node, object);
             return Ok(CallOutcome::Value(JsValue::Object(object)));
+        }
+        if matches!(
+            builtin,
+            BuiltinFunction::DomStyleSetProperty
+                | BuiltinFunction::DomStyleGetPropertyValue
+                | BuiltinFunction::DomStyleRemoveProperty
+        ) {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error(
+                    "style method requires CSSStyleDeclaration",
+                ));
+            };
+            let ObjectKind::DomStyle(node) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error(
+                    "style method requires CSSStyleDeclaration",
+                ));
+            };
+            let name = arguments
+                .first()
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            let name = Self::style_property_name(name.trim());
+            if builtin == BuiltinFunction::DomStyleGetPropertyValue {
+                let value = self
+                    .dom_style_declarations(node)
+                    .into_iter()
+                    .find(|(key, _)| key == &name)
+                    .map_or_else(String::new, |(_, value)| value);
+                return Ok(CallOutcome::Value(JsValue::String(value)));
+            }
+            if builtin == BuiltinFunction::DomStyleRemoveProperty {
+                let previous = self.set_dom_style_property(node, &name, None)?;
+                return Ok(CallOutcome::Value(JsValue::String(previous)));
+            }
+            let value = arguments
+                .get(1)
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            if value.len() > 64 * 1024 {
+                return Err(JsError::execution_limit(
+                    "CSS property value budget exceeded",
+                ));
+            }
+            self.set_dom_style_property(node, &name, Some(value))?;
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
+        if builtin == BuiltinFunction::DomNodeListItem {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("item requires NodeList"));
+            };
+            let ObjectKind::DomNodeList(parent) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error("item requires NodeList"));
+            };
+            let number = arguments.first().unwrap_or(&JsValue::Undefined).to_number();
+            let child = if number.is_finite() && number >= 0.0 && number.fract() == 0.0 {
+                self.dom_children
+                    .get(&parent)
+                    .and_then(|children| children.get(number as usize))
+                    .copied()
+            } else {
+                None
+            };
+            return match child {
+                Some(child) => self
+                    .dom_any_node_object(child)
+                    .map(|id| CallOutcome::Value(JsValue::Object(id))),
+                None => Ok(CallOutcome::Value(JsValue::Null)),
+            };
+        }
+        if matches!(
+            builtin,
+            BuiltinFunction::DomClassAdd
+                | BuiltinFunction::DomClassRemove
+                | BuiltinFunction::DomClassContains
+                | BuiltinFunction::DomClassToggle
+        ) {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error(
+                    "classList method requires a DOMTokenList",
+                ));
+            };
+            let ObjectKind::DomClassList(node) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error(
+                    "classList method requires a DOMTokenList",
+                ));
+            };
+            let token = arguments
+                .first()
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            if token.is_empty()
+                || token.len() > 512
+                || token.bytes().any(|b| b.is_ascii_whitespace())
+            {
+                return Err(JsError::type_error("classList token invalid"));
+            }
+            let mut tokens = self.class_tokens(node);
+            let exists = tokens.iter().any(|value| value == &token);
+            if builtin == BuiltinFunction::DomClassContains {
+                return Ok(CallOutcome::Value(JsValue::Boolean(exists)));
+            }
+            let desired = match builtin {
+                BuiltinFunction::DomClassAdd => true,
+                BuiltinFunction::DomClassRemove => false,
+                BuiltinFunction::DomClassToggle => {
+                    arguments.get(1).map(JsValue::is_truthy).unwrap_or(!exists)
+                }
+                _ => unreachable!(),
+            };
+            if desired != exists {
+                if desired {
+                    tokens.push(token);
+                } else {
+                    tokens.retain(|v| v != &token);
+                }
+                self.stage_dom_attribute(node, "class", tokens.join(" "))?;
+            }
+            if builtin == BuiltinFunction::DomClassToggle {
+                return Ok(CallOutcome::Value(JsValue::Boolean(desired)));
+            }
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
+        if builtin == BuiltinFunction::DomRemoveSelf {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("remove needs an element receiver"));
+            };
+            let ObjectKind::DomElement(node) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error("remove needs an element receiver"));
+            };
+            if let Some(&parent) = self.dom_pending_parents.get(&node) {
+                if self.dom_operations.len() >= 256 {
+                    return Err(JsError::execution_limit("DOM mutation budget exceeded"));
+                }
+                self.dom_pending_parents.remove(&node);
+                self.dom_operations.push(DomOperation::RemoveChild {
+                    parent,
+                    child: node,
+                });
+                self.detach_dom_subtree(node)?;
+            }
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
+        if builtin == BuiltinFunction::DomReplaceChild {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("replaceChild needs element receiver"));
+            };
+            let ObjectKind::DomElement(parent) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error("replaceChild needs element receiver"));
+            };
+            let node_arg = |at: usize| -> Result<(usize, ObjectId), JsError> {
+                let Some(JsValue::Object(id)) = arguments.get(at) else {
+                    return Err(JsError::type_error("replaceChild expects two nodes"));
+                };
+                let node = match self.object(*id)?.kind {
+                    ObjectKind::DomElement(n) | ObjectKind::DomText(n) => n,
+                    _ => return Err(JsError::type_error("replaceChild expects DOM nodes")),
+                };
+                Ok((node, *id))
+            };
+            let (new_child, _) = node_arg(0)?;
+            let (old_child, old_object) = node_arg(1)?;
+            if self.dom_pending_parents.get(&old_child).copied() != Some(parent) {
+                return Err(JsError::type_error("replaceChild old node is not a child"));
+            }
+            let mut cursor = Some(parent);
+            for _ in 0..=20_000 {
+                let Some(current) = cursor else {
+                    break;
+                };
+                if current == new_child && new_child != old_child {
+                    return Err(JsError::type_error("cyclic DOM replacement"));
+                }
+                cursor = self.dom_pending_parents.get(&current).copied();
+            }
+            if cursor.is_some() || self.dom_operations.len() >= 256 {
+                return Err(JsError::execution_limit("DOM replace budget exceeded"));
+            }
+            if new_child != old_child {
+                self.dom_operations.push(DomOperation::ReplaceChild {
+                    parent,
+                    new_child,
+                    old_child,
+                });
+                self.stage_dom_move(parent, new_child, Some(old_child));
+                self.attach_dom_subtree(new_child);
+                self.dom_pending_parents.remove(&old_child);
+                self.detach_dom_subtree(old_child)?;
+            }
+            return Ok(CallOutcome::Value(JsValue::Object(old_object)));
         }
         if matches!(
             builtin,
@@ -2960,32 +3471,13 @@ impl JsRuntime {
                         "removeChild target is not a direct child",
                     ));
                 }
-                // Hide IDs of the detached node and every descendant.
-                let mut by_parent: HashMap<usize, Vec<usize>> = HashMap::new();
-                for (&node, &owner) in &self.dom_pending_parents {
-                    by_parent.entry(owner).or_default().push(node);
-                }
-                let mut detached = std::collections::HashSet::new();
-                let mut stack = vec![child];
-                while let Some(node) = stack.pop() {
-                    if !detached.insert(node) {
-                        continue;
-                    }
-                    if let Some(children) = by_parent.get(&node) {
-                        stack.extend(children.iter().copied());
-                    }
-                    if detached.len() > 20_000 {
-                        return Err(JsError::execution_limit("DOM subtree size exceeded"));
-                    }
-                }
                 if self.dom_operations.len() >= 256 {
                     return Err(JsError::execution_limit("DOM operation budget exceeded"));
                 }
                 self.dom_pending_parents.remove(&child);
-                self.dom_attached.retain(|node| !detached.contains(node));
-                self.dom_ids.retain(|_, node| !detached.contains(node));
                 self.dom_operations
                     .push(DomOperation::RemoveChild { parent, child });
+                self.detach_dom_subtree(child)?;
                 return Ok(CallOutcome::Value(JsValue::Object(*child_object)));
             }
             let reference = match arguments.get(1) {
@@ -3027,7 +3519,7 @@ impl JsRuntime {
             if self.dom_operations.len() >= 256 {
                 return Err(JsError::execution_limit("DOM operation budget exceeded"));
             }
-            self.dom_pending_parents.insert(child, parent);
+            self.stage_dom_move(parent, child, reference);
             self.dom_operations.push(DomOperation::InsertBefore {
                 parent,
                 child,
@@ -3073,7 +3565,7 @@ impl JsRuntime {
                     "dynamic DOM mutation budget exceeded",
                 ));
             }
-            self.dom_pending_parents.insert(child, parent);
+            self.stage_dom_move(parent, child, None);
             self.dom_operations
                 .push(DomOperation::AppendChild { parent, child });
             if self.dom_attached.contains(&parent) {
@@ -3172,6 +3664,16 @@ impl JsRuntime {
             | BuiltinFunction::DomAppendChild
             | BuiltinFunction::DomInsertBefore
             | BuiltinFunction::DomRemoveChild
+            | BuiltinFunction::DomReplaceChild
+            | BuiltinFunction::DomRemoveSelf
+            | BuiltinFunction::DomClassAdd
+            | BuiltinFunction::DomClassRemove
+            | BuiltinFunction::DomClassContains
+            | BuiltinFunction::DomClassToggle
+            | BuiltinFunction::DomNodeListItem
+            | BuiltinFunction::DomStyleSetProperty
+            | BuiltinFunction::DomStyleGetPropertyValue
+            | BuiltinFunction::DomStyleRemoveProperty
             | BuiltinFunction::DomSetAttribute
             | BuiltinFunction::DomGetAttribute
             | BuiltinFunction::DomRemoveAttribute
@@ -3449,9 +3951,120 @@ impl JsRuntime {
             .ok_or_else(|| JsError::type_error("cannot exit root lexical environment"))
     }
 
-    pub fn get_property(&self, target: &JsValue, key: &str) -> Result<JsValue, JsError> {
+    pub fn get_property(&mut self, target: &JsValue, key: &str) -> Result<JsValue, JsError> {
         match target {
             JsValue::Object(id) => {
+                let kind = self.object(*id)?.kind;
+                match kind {
+                    ObjectKind::DomElement(node) | ObjectKind::DomText(node) => {
+                        if key == "parentNode" {
+                            return match self.dom_pending_parents.get(&node).copied() {
+                                Some(parent) if parent == 0 && self.dom_document.is_some() => {
+                                    Ok(JsValue::Object(self.dom_document.expect("present")))
+                                }
+                                Some(parent) => {
+                                    self.dom_any_node_object(parent).map(JsValue::Object)
+                                }
+                                None => Ok(JsValue::Null),
+                            };
+                        }
+                        if key == "childNodes" {
+                            return self.dom_node_list_object(node).map(JsValue::Object);
+                        }
+                        if key == "firstChild" || key == "lastChild" {
+                            let children = self.dom_children.get(&node);
+                            let child = if key == "firstChild" {
+                                children.and_then(|c| c.first()).copied()
+                            } else {
+                                children.and_then(|c| c.last()).copied()
+                            };
+                            return match child {
+                                Some(child) => self.dom_any_node_object(child).map(JsValue::Object),
+                                None => Ok(JsValue::Null),
+                            };
+                        }
+                        if key == "nodeType" {
+                            return Ok(JsValue::Number(
+                                if matches!(kind, ObjectKind::DomText(_)) {
+                                    3.0
+                                } else {
+                                    1.0
+                                },
+                            ));
+                        }
+                        if key == "className" && matches!(kind, ObjectKind::DomElement(_)) {
+                            return Ok(JsValue::String(
+                                self.dom_attributes
+                                    .get(&node)
+                                    .and_then(|attrs| attrs.get("class"))
+                                    .cloned()
+                                    .unwrap_or_default(),
+                            ));
+                        }
+                        if key == "classList" && matches!(kind, ObjectKind::DomElement(_)) {
+                            return self.dom_class_list_object(node).map(JsValue::Object);
+                        }
+                        if key == "style" && matches!(kind, ObjectKind::DomElement(_)) {
+                            return self.dom_style_object(node).map(JsValue::Object);
+                        }
+                    }
+                    ObjectKind::DomClassList(node) => {
+                        let tokens = self.class_tokens(node);
+                        if key == "length" {
+                            return Ok(JsValue::Number(tokens.len() as f64));
+                        }
+                        if key == "value" {
+                            return Ok(JsValue::String(
+                                self.dom_attributes
+                                    .get(&node)
+                                    .and_then(|attrs| attrs.get("class"))
+                                    .cloned()
+                                    .unwrap_or_default(),
+                            ));
+                        }
+                        if let Ok(index) = key.parse::<usize>() {
+                            return Ok(tokens
+                                .get(index)
+                                .cloned()
+                                .map(JsValue::String)
+                                .unwrap_or(JsValue::Undefined));
+                        }
+                    }
+                    ObjectKind::DomStyle(node) => {
+                        if key == "cssText" {
+                            return Ok(JsValue::String(
+                                self.dom_attributes
+                                    .get(&node)
+                                    .and_then(|attrs| attrs.get("style"))
+                                    .cloned()
+                                    .unwrap_or_default(),
+                            ));
+                        }
+                        if !matches!(key, "setProperty" | "getPropertyValue" | "removeProperty") {
+                            let name = Self::style_property_name(key);
+                            let value = self
+                                .dom_style_declarations(node)
+                                .into_iter()
+                                .find(|(name_key, _)| name_key == &name)
+                                .map_or_else(String::new, |(_, value)| value);
+                            return Ok(JsValue::String(value));
+                        }
+                    }
+                    ObjectKind::DomNodeList(node) => {
+                        let children = self.dom_children.get(&node);
+                        if key == "length" {
+                            return Ok(JsValue::Number(children.map_or(0, Vec::len) as f64));
+                        }
+                        if let Ok(index) = key.parse::<usize>() {
+                            let child = children.and_then(|c| c.get(index)).copied();
+                            return match child {
+                                Some(child) => self.dom_any_node_object(child).map(JsValue::Object),
+                                None => Ok(JsValue::Undefined),
+                            };
+                        }
+                    }
+                    _ => {}
+                }
                 if key == "length"
                     && let Some(JsValue::String(value)) = self.boxed_values.get(id)
                 {
@@ -3519,6 +4132,22 @@ impl JsRuntime {
         if key == "readyState" && self.dom_document == Some(*id) {
             return Ok(());
         }
+        if let ObjectKind::DomStyle(node) = self.object(*id)?.kind {
+            if key == "cssText" {
+                self.stage_dom_attribute(node, "style", value.to_js_string())?;
+                return Ok(());
+            }
+            let name = Self::style_property_name(key);
+            self.set_dom_style_property(node, &name, Some(value.to_js_string()))?;
+            return Ok(());
+        }
+        if key == "className"
+            && let ObjectKind::DomElement(node) = self.object(*id)?.kind
+        {
+            self.stage_dom_attribute(node, "class", value.to_js_string())?;
+            return Ok(());
+        }
+
         if key == "id"
             && let ObjectKind::DomElement(node) = self.object(*id)?.kind
         {

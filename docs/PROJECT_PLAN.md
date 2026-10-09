@@ -1130,3 +1130,43 @@ counts must not be mislabeled as external conformance percentages.
   invalid changes asynchronously. Dynamic CSS/image fetches missing.
 - NEXT M4.22: live node relationships, richer attributes and style
   object, correctness under reparenting and interactive smoke tests.
+
+## M4.22 - Live Node relationships, classList and bounded style object (2026-10-09)
+
+- DONE live parentNode, firstChild, lastChild and stable childNodes
+  collection for DOM Elements and Text nodes, with fresh length,
+  numeric index and item(index) lookups after insert/remove/reparent.
+  Already-held collection references remain live across timers.
+- DONE original native op_dom::replace_child validates direct
+  membership and reuses stable node identities, plus JS
+  Element.replaceChild and Element.remove() through ordered
+  authoritative DomOperation replay and native paint.
+- DONE bound DOMTokenList for Element.classList: stable identity,
+  length/value/numeric access, contains/add/remove/toggle with an
+  optional force argument; reflects the original class attribute
+  used in selector matching and supports direct className reads/
+  assignments.
+- DONE initial live Element.style object with display and simple
+  camelCase property reflection, cssText, setProperty, getPropertyValue
+  and removeProperty. Bounded property/value validation and
+  original DOM style attributes trigger native author CSS recascade.
+- DONE physical NodeId binding now retargets previously held element,
+  text, NodeList, classList and style objects; cached linked CSS
+  and color profiles remain intact across dynamic repaints.
+- TESTED nine new M4.22 engine-to-native-paint scenarios: live lists
+  through synchronous changes/timers, Text nodes, replace/remove,
+  CSS classes/visibility, style objects, and synthetic->physical
+  identity transition. Full Rust workspace, Clippy, smoke and
+  independent pinned Test262 baseline verified.
+- METRICS unchanged: Test262 Runtime v1 82/91 (90.11%) and v2
+  78/179 attempted (43.58%, 110 explicitly skipped). These are
+  scoped ECMAScript runtime tests, NOT DOM WPT compliance.
+- LIMITATIONS: this is a bounded DOM/CSSOM initial implementation,
+  not full web standards. No Document childNodes/complete Node
+  interface, live element.children HTMLCollection, full CSS grammar
+  or CSSOM cascade, style priorities, computedStyle, DOM observers,
+  comprehensive HTML events or modern framework readiness.
+  classList variadic token inputs and DOMStringMap not supported.
+- NEXT M4.23: broaden live Node/Element properties, robust
+  CSSStyleDeclaration parsing and classList behavior, WPT-based
+  dynamic DOM subset and interactive page compatibility smoke tests.

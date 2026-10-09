@@ -2,6 +2,276 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m422_classlist_remove_and_camelcase_style_reflect_attributes() {
+    let mut engine = Engine::new();
+    let page=engine.set_html_page(concat!(
+        "<main id='host'><p id='message' class='first second'>BEFORE-422-METHODS</p></main>",
+        "<script>",
+        "var p=document.getElementById('message');",
+        "var tokens=p.classList;",
+        "var initial=tokens.contains('first') && tokens.contains('second') && tokens.length===2;",
+        "tokens.remove('first');",
+        "tokens.add('third');",
+        "var updated=p.getAttribute('class')==='second third' && ",
+        " tokens.contains('third') && !tokens.contains('first');",
+        "var error=false;",
+        "try{tokens.add('invalid token')}catch(e){error=true}",
+        "p.style.backgroundColor='red';",
+        "var css=p.style.getPropertyValue('background-color')==='red' && ",
+        " p.getAttribute('style')==='background-color: red';",
+        "p.style.cssText='color: blue; display: block';",
+        "var written=p.style.getPropertyValue('color')==='blue' && ",
+        " p.style.display==='block';",
+        "p.textContent=(initial&&updated&&error&&css&&written)?'METHODS-PASSED-422':'METHODS-FAILED-422';",
+        "</script>"
+    ),800,600);
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("METHODS-PASSED-422")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m422_created_node_saved_live_handles_survive_physical_binding() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><script>",
+            "var p=document.createElement('section');",
+            "p.id='created';",
+            "var list=p.childNodes;",
+            "var classes=p.classList;",
+            "var css=p.style;",
+            "classes.add('bound');",
+            "css.setProperty('display','block');",
+            "document.body.appendChild(p);",
+            "setTimeout(function(){",
+            " var same=p===document.getElementById('created') && ",
+            " list===p.childNodes && classes===p.classList && css===p.style;",
+            " var child=document.createElement('b');",
+            " child.textContent=(same && classes.contains('bound') && ",
+            " css.display==='block')?'BOUND-OK-422':'BOUND-BAD-422';",
+            " p.appendChild(child);",
+            " if(list.length!==1 || list[0]!==child || child.parentNode!==p)",
+            "   child.textContent='BOUND-LIST-BAD-422';",
+            "},0);",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("BOUND-OK-422")
+    )));
+    let updated = engine
+        .tick_timers(800, 600)
+        .expect("new node handles should survive commit");
+    assert!(updated.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("BOUND-OK-422")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m422_style_object_methods_and_properties_repaint_after_timers() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'><p id='message'>VISIBLE-M422-STYLE</p></main>",
+            "<script>",
+            "var node=document.getElementById('message');",
+            "var style=node.style;",
+            "var initial=style===node.style && style.getPropertyValue('display')==='';",
+            "style.setProperty('display','none');",
+            "var set=style.display==='none' && style.getPropertyValue('display')==='none';",
+            "var removed=style.removeProperty('display')==='none';",
+            "var cleared=style.display==='' && style.cssText==='';",
+            "style.display=(initial && set && removed && cleared)?'none':'block';",
+            "setTimeout(function(){",
+            " if(style.display==='none') style.setProperty('display','block');",
+            "},0);",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("VISIBLE-M422-STYLE")
+    )));
+    let updated = engine
+        .tick_timers(800, 600)
+        .expect("style timer causes repaint");
+    assert!(updated.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("VISIBLE-M422-STYLE")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m422_child_nodes_live_collection_updates_across_timer() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'><p id='one'>START-M422</p></main>",
+            "<script>",
+            "var host=document.getElementById('host');",
+            "var nodes=host.childNodes;",
+            "setTimeout(function(){",
+            " var two=document.createElement('p');",
+            " two.textContent=nodes.length===1?'TIMER-LIVE-M422':'TIMER-BROKEN-M422';",
+            " host.appendChild(two);",
+            " if(nodes.length===2 && nodes[1]===two && two.parentNode===host)",
+            "   two.textContent='TIMER-LIVE-PASSED-M422';",
+            "},0);",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("TIMER-LIVE-PASSED-M422")
+    )));
+    let updated = engine
+        .tick_timers(800, 600)
+        .expect("timer must modify live NodeList");
+    assert!(updated.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("TIMER-LIVE-PASSED-M422")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m422_live_parent_node_and_child_nodes_track_mutations() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'><p id='one'>OLD-422</p></main>",
+            "<script>",
+            "var host=document.getElementById('host');",
+            "var first=document.getElementById('one');",
+            "var nodes=host.childNodes;",
+            "var initially=nodes.length===1 && nodes[0]===first && nodes.item(0)===first && ",
+            " first.parentNode===host && host.firstChild===first && host.lastChild===first;",
+            "var added=document.createElement('b');",
+            "added.textContent='LIVE-422';",
+            "host.appendChild(added);",
+            "var afterAdd=nodes===host.childNodes && nodes.length===2 && nodes[1]===added && ",
+            " added.parentNode===host && host.lastChild===added;",
+            "host.removeChild(first);",
+            "var afterRemove=nodes.length===1 && nodes.item(0)===added && ",
+            " first.parentNode===null && host.firstChild===added && nodes.item(5)===null;",
+            "if(initially && afterAdd && afterRemove) added.textContent='LIVE-PASSED-422';",
+            "else added.textContent='LIVE-FAILED-422';",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("LIVE-PASSED-422")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m422_text_node_live_list_preserves_identity() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'></main><script>",
+            "var host=document.getElementById('host');",
+            "var nodes=host.childNodes;",
+            "var text=document.createTextNode('TEXT-422');",
+            "host.appendChild(text);",
+            "var correct=nodes.length===1 && nodes.item(0)===text && ",
+            " text.parentNode===host && host.firstChild===text;",
+            "text.data=correct?'TEXT-LIVE-422':'TEXT-BROKEN-422';",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("TEXT-LIVE-422")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m422_replace_child_preserves_old_identity_and_dom_order() {
+    let mut engine = Engine::new();
+    let page=engine.set_html_page(concat!(
+        "<main id='host'><p id='old'>TO-REPLACE-422</p></main><script>",
+        "var host=document.getElementById('host');",
+        "var old=document.getElementById('old');",
+        "var newNode=document.createElement('b');",
+        "newNode.id='new';newNode.textContent='REPLACED-422';",
+        "var before=host.childNodes.length;",
+        "var removed=host.replaceChild(newNode,old);",
+        "var valid=removed===old && old.parentNode===null && ",
+        " newNode.parentNode===host && host.childNodes[0]===newNode && ",
+        " document.getElementById('old')===null && ",
+        " document.getElementById('new')===newNode && before===1 && host.childNodes.length===1;",
+        "newNode.textContent=valid?'REPLACE-PASSED-422':'REPLACE-FAILED-422';",
+        "</script>"
+    ),800,600);
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("REPLACE-PASSED-422")
+    )));
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("TO-REPLACE-422")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m422_class_list_changes_real_selector_visibility() {
+    let mut engine = Engine::new();
+    let page=engine.set_html_page(concat!(
+        "<style>.hidden { display:none }</style>",
+        "<main id='host'><p id='message' class='old'>MESSAGE-422</p></main><script>",
+        "var p=document.getElementById('message');",
+        "var classes=p.classList;",
+        "var same=classes===p.classList && classes.length===1 && classes[0]==='old';",
+        "classes.add('hidden');",
+        "var hidden=classes.contains('hidden') && p.className==='old hidden' && ",
+        " classes.length===2 && classes.toggle('hidden')===false && !classes.contains('hidden');",
+        "classes.toggle('hidden',true);",
+        "p.className=hidden&&same?'hidden':'old';",
+        "p.setAttribute('data-test',classes.value);",
+        "</script>"
+    ),800,600);
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("MESSAGE-422")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m422_element_remove_and_reparent_preserve_node_refs() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'><p id='old'>DELETE-422</p></main><script>",
+            "var p=document.getElementById('old');",
+            "var host=document.getElementById('host');",
+            "p.remove();",
+            "var detached=document.getElementById('old')===null && p.parentNode===null;",
+            "host.appendChild(p);",
+            "if(detached && p.parentNode===host && document.getElementById('old')===p)",
+            " p.textContent='REMOVED-AND-RETURNED-422';",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("REMOVED-AND-RETURNED-422")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m421_detach_reattach_subtree_restores_nested_id_same_script() {
     let mut engine = Engine::new();
     let page=engine.set_html_page(concat!(

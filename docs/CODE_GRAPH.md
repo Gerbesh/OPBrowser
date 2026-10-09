@@ -16,6 +16,23 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.22: live JS NodeList/DOMTokenList/style to physical tree and pixels
+
+The original JS runtime builds stable per-node live childNodes,
+classList and style objects plus parentNode and first/last child
+property access; NodeList length, item and index read the current
+staged tree rather than a frozen snapshot. Element.replaceChild
+and remove are queued as ordered op_js DomOperation records.
+
+op_engine::scripts syncs child arrays, physical Text nodes and
+attributes from the op_dom authoritative tree. Native
+op_dom::replace_child validates ownership/ancestor constraints.
+When virtual JS handles become physical NodeIds, cached
+childNodes/classList/style objects and JS element identity survive.
+Style/class changes flow through original CSS matching, computed
+layout and op_paint. Nine integration tests verify resulting pixels
+even after native timer callbacks. No external DOM or JS engine.
+
 ## M4.21: reparenting and Text creation -> host DOM -> CSS -> pixels
 
 Original JS creates real Text nodes and stages removeChild,

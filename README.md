@@ -38,6 +38,14 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.22 adds live parentNode, firstChild/lastChild and stable childNodes
+collections (length/index/item), replaceChild/remove, classList token
+operations and a bounded live style object (display/cssText,
+setProperty/getPropertyValue/removeProperty). These operate on actual
+native DOM and author CSS, even across timer callbacks and transition
+from newly created JS node handles to physical NodeIds. Nine new
+end-to-end page tests verify the visible results.
+
 M4.21 adds genuine Text nodes, insertBefore/removeChild,
 setAttribute/getAttribute/removeAttribute, and live id/class/style changes.
 Nested detach/reattach retains JS identity and updates lookup. Author CSS

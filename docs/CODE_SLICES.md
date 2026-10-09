@@ -16,6 +16,23 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S26 - live NodeList / classList / style -> original DOM repaint (M4.22)
+
+Status: IMPLEMENTED bounded dynamic DOM/CSSOM bridge.
+
+JS-held Element.childNodes, classList and style objects have
+stable identity and query/update native staged state on each
+operation. parentNode/firstChild/lastChild, replaceChild/remove
+and CSS property reflection connect through VM DomOperation,
+op_engine replay, op_dom mutations and CSS recascade to native
+paint. Child order, attributes and Text nodes are synchronized
+after each script/timer commit, preserving object references
+across synthetic-to-physical NodeId binding.
+
+Nine integration tests cover live collection changes, timer
+callbacks, CSS visibility and node replacement. Full Node/DOM/
+CSSOM spec and WPT compliance are not claimed.
+
 ## S25 - DOM removal, reinsert, Text and attributes -> pixels (M4.21)
 
 Status: IMPLEMENTED bounded original VM through native DOM.

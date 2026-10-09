@@ -492,3 +492,22 @@ modifies the authoritative DOM tree with reference and cycle
 checks. CSS rematching after timers/clicks preserves loaded
 external CSS and color profiles. Tests verify actual paint.
 Missing: full live Node relations, classList, CSSOM and observers.
+
+## M4.22: live childNodes, classList and style
+
+The original JS VM now supports Element/Text parentNode,
+firstChild/lastChild and stable live childNodes, with current
+length, item(index) and bracket access. Original native
+replaceChild/remove mutate the real tree and preserve handles.
+
+A bounded Element.classList exposes contains/add/remove/toggle
+and reflects className and the original CSS cascade. Element.style
+supports a first subset of property reads/writes and
+setProperty/getPropertyValue/removeProperty plus cssText.
+Retained JS handles remain valid when newly created nodes
+receive physical native NodeIds. Timer-driven changes reach
+original DOM, author style recascade and native pixels.
+
+Nine new end-to-end checks pass, but many DOM/CSSOM/Web API
+semantics are incomplete. Pinned Test262 v1/v2 JS runtime
+scores remain unchanged at 82/91 and 78/179 attempted.

@@ -164,6 +164,21 @@ fn sync_dom_tree(document: &Document, runtime: &mut JsRuntime) {
         if count > MAX_NODES {
             break;
         }
+        runtime.sync_dom_children(
+            node.index(),
+            document
+                .children(node)
+                .iter()
+                .map(|child| child.index())
+                .collect(),
+        );
+        if let Some(op_dom::NodeKind::Text(text)) = document.node(node).map(|node| &node.kind) {
+            runtime.sync_dom_text_node(
+                node.index(),
+                parent.map(|id: NodeId| id.index()),
+                text.clone(),
+            );
+        }
         if let Some(element) = document.element(node) {
             runtime.sync_dom_existing_node(
                 node.index(),
@@ -218,6 +233,22 @@ pub(crate) fn apply_dom_operations(document: &mut Document, runtime: &mut JsRunt
                 if let (Some(parent), Some(child)) = (parent, child)
                     && document.element(parent).is_some()
                     && document.insert_before(parent, child, reference).is_ok()
+                {
+                    changed += 1;
+                }
+            }
+            DomOperation::ReplaceChild {
+                parent,
+                new_child,
+                old_child,
+            } => {
+                let parent = document.node_id(runtime.resolve_dom_node(parent));
+                let new_child = document.node_id(runtime.resolve_dom_node(new_child));
+                let old_child = document.node_id(runtime.resolve_dom_node(old_child));
+                if let (Some(parent), Some(new_child), Some(old_child)) =
+                    (parent, new_child, old_child)
+                    && document.element(parent).is_some()
+                    && document.replace_child(parent, new_child, old_child).is_ok()
                 {
                     changed += 1;
                 }
