@@ -133,3 +133,10 @@ paths at the pinned revision; seven executed/pass, three explicit
 SKIP. Run cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt.
 The original v1 manifest is retained; v2 is not an official
 or representative WPT DOM conformance suite.
+
+M4.25 adds compat/wpt-dom-smoke-v3.tsv, 13 manually scoped
+pinned original-source WPT DOM fixtures: 10 attempted/pass,
+3 explicit SKIP, 11 actual synchronous WPT test() callbacks.
+The multi-test adapter retains failures, checks expected counts
+and does not rewrite original assertions. This is not the
+official WPT harness or DOM conformance.

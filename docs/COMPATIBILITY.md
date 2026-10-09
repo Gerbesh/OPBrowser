@@ -532,3 +532,31 @@ assertion shim, not the original test assertions.
 Reproduce: cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
 This is not an official or representative WPT run. No WPT DOM
 conformance percentage can be inferred. Test262 remains separate.
+
+## M4.25: pinned WPT DOM smoke v3, multi-case harness
+
+Frozen manually selected manifest compat/wpt-dom-smoke-v3.tsv
+lists 13 original DOM WPT HTML files at the unchanged pinned
+revision 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d.
+10 are attempted and pass; 3 remain explicit unsupported SKIP.
+The ten attempted files contain 11 test(callback) calls.
+The runner now requires the manifest's expected number of test()
+calls, and uses a sticky failure state so a failing earlier test
+cannot be overwritten by a passing later test. Dedicated
+pass/failure-control tests exercise the shim. The original WPT
+test callback bodies and assertions are not edited. The only
+substitution is a deliberately limited synchronous testharness
+adapter, NOT the official WPT harness.
+
+New actual original fixtures include Element-nextElementSibling,
+Element-previousElementSibling and Element-hasAttributes (two
+test callbacks). The original VM now supports hasAttribute(s)
+and live getElementsByTagName on Document/Element, with
+corresponding native paint and timer integration regressions.
+
+Reproduce:
+  cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
+
+The 10/10 result is a manually chosen smoke sample, NOT
+a representative full DOM WPT pass percentage. It cannot
+be compared directly with separate pinned Test262 runtime v1/v2.

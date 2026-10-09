@@ -1231,3 +1231,36 @@ counts must not be mislabeled as external conformance percentages.
   iterable Array.from, event Web APIs and CSSOM remain incomplete.
 - NEXT M4.25: expand genuine WPT harness and DOM fixture coverage,
   improve DOM Document/Element interfaces and event semantics.
+
+## M4.25 - Multi-test original WPT DOM and live tag collections (2026-10-09)
+
+- DONE WPT DOM smoke v3, same pinned WPT revision:
+  13 manually selected original HTML files, 10 attempted/pass, 0 fail,
+  3 explicit SKIPs. Ten executable files include 11 original test()
+  assertions/callbacks, since Element-hasAttributes.html has two tests.
+  The frozen prior v1/v2 manifests remain unchanged.
+- DONE limited synchronous testharness shim supports multiple original
+  test(callback) calls, assert_equals/true/false, a persistent failure
+  flag and strict expected test count per fixture. Later pass cannot
+  erase an earlier failure. Two separate negative/positive harness
+  unit tests prove error stickiness and fail-closed fixture counting.
+  Original WPT assertions themselves remain unchanged.
+- DONE original-JS Element.hasAttribute and hasAttributes methods,
+  validating receivers and real (parsed or newly added) attributes.
+- DONE original-JS Document.getElementsByTagName and
+  Element.getElementsByTagName with a live, bounded descendant-only
+  element collection (length, indexed access and item) refreshed
+  after append/remove/attribute operations and delayed timer mutation.
+- DONE two new script-to-authoritative-DOM-to-native-pixel regressions
+  testing parsed/new attributes, live global/scoped tag collections,
+  removal, late timed creation and persistent collection identity.
+- TESTED pinned WPT smoke v3 10/10 attempted, 3 SKIP; Test262
+  v1/v2 are independently pinned ECMAScript samples and must not
+  be merged. These ten files are manually selected and do NOT
+  imply 100% DOM compatibility. No official async WPT harness.
+- LIMITATIONS: tag collection covers common HTML names and '*' only,
+  not complete namespace/case and named property semantics;
+  no live CSS selector querySelector, shadow DOM, iframe,
+  official WPT harness, async tests or general Web API completeness.
+- NEXT M4.26: additional pinned WPT DOM fixtures, document/element
+  lookup semantics, asynchronous test harness and browser events.

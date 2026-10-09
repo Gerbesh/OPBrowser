@@ -2,6 +2,79 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m425_live_tag_collections_and_attributes_repaint_after_mutations() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='host'><b id='initial'>BASE</b></main><p id='result'>START</p>",
+            "<script>",
+            "var all=document.getElementsByTagName('b');",
+            "var host=document.getElementById('host');",
+            "var scoped=host.getElementsByTagName('b');",
+            "var initial=all.length===1 && all[0]===scoped.item(0) && ",
+            "  scoped.length===1 && all.item(99)===null;",
+            "var extra=document.createElement('b');",
+            "var noAttrs=!extra.hasAttributes() && !extra.hasAttribute('title');",
+            "extra.setAttribute('title','inserted');",
+            "var attrs=extra.hasAttributes() && extra.hasAttribute('TITLE') && ",
+            " extra.getAttribute('title')==='inserted';",
+            "host.appendChild(extra);",
+            "var inserted=all.length===2 && scoped.length===2 && ",
+            " all[1]===extra && scoped.item(1)===extra;",
+            "extra.removeAttribute('title');",
+            "var gone=!extra.hasAttribute('title') && !extra.hasAttributes();",
+            "extra.remove();",
+            "var removed=all.length===1 && scoped.length===1 && ",
+            " scoped.item(0)===document.getElementById('initial');",
+            "document.getElementById('result').textContent=",
+            " initial&&noAttrs&&attrs&&inserted&&gone&&removed?",
+            " 'M425-TAG-LIVE-PASS':'M425-TAG-LIVE-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M425-TAG-LIVE-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m425_tag_collection_persists_across_delayed_dom_mutations() {
+    let mut engine = Engine::new();
+    let before = engine.set_html_page(
+        concat!(
+            "<body><main id='host'></main><p id='result'>WAITING</p><script>",
+            "var host=document.getElementById('host');",
+            "var collection=document.getElementsByTagName('mark');",
+            "setTimeout(function(){",
+            "var added=document.createElement('mark');",
+            "host.appendChild(added);",
+            "var now=collection.length===1 && collection.item(0)===added;",
+            "added.setAttribute('id','late');",
+            "var valid=now && host.getElementsByTagName('mark')[0]===added;",
+            "document.getElementById('result').textContent=",
+            " valid?'M425-TIMER-PASS':'M425-TIMER-FAIL';",
+            "},0);",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(!before.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M425-TIMER-PASS")
+    )));
+    let after = engine
+        .tick_timers(800, 600)
+        .expect("timer DOM mutation should repaint");
+    assert!(after.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M425-TIMER-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m424_live_element_children_collection_ignores_text_nodes() {
     let mut engine = Engine::new();
     let page=engine.set_html_page(concat!(

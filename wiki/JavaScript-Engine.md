@@ -536,3 +536,17 @@ identity and timer-driven mutations. Seven original upstream
 WPT DOM fixtures now pass using the limited synchronous
 testharness adapter, with three explicit skips. This is a
 manually selected smoke test, not broad WPT conformance.
+
+## M4.25: live getElementsByTagName and multi-test WPT DOM smoke
+
+The original VM supports Element.hasAttribute/hasAttributes,
+Document/Element.getElementsByTagName and live descendant-only
+collections with current length, item and indexed lookup across
+parser scripts, DOM edits and timer callbacks.
+
+Manually scoped WPT DOM smoke v3 executes ten original pinned
+upstream files successfully (11 test() callbacks); three files
+are explicitly unsupported/skipped. The synchronous adapter
+now keeps a sticky failure bit and verifies expected test calls,
+so later successes cannot mask earlier failures. Not the
+official WPT harness or representative DOM conformance.

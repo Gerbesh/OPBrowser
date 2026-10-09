@@ -59,6 +59,7 @@ enum ObjectKind {
     DomClassList(usize),
     DomNodeList(usize),
     DomHtmlCollection(usize),
+    DomTagCollection,
     DomStyle(usize),
     Headers,
 }
@@ -73,6 +74,9 @@ enum BuiltinFunction {
     ArrayPush,
     ArrayPop,
     DomGetElementById,
+    DomGetElementsByTagName,
+    DomHasAttribute,
+    DomHasAttributes,
     DomCreateElement,
     DomCreateTextNode,
     DomAppendChild,
@@ -295,6 +299,7 @@ pub struct JsRuntime {
     dom_class_lists: HashMap<usize, ObjectId>,
     dom_node_lists: HashMap<usize, ObjectId>,
     dom_html_collections: HashMap<usize, ObjectId>,
+    dom_tag_collections: HashMap<ObjectId, (usize, String)>,
     dom_styles: HashMap<usize, ObjectId>,
     dom_children: HashMap<usize, Vec<usize>>,
     dom_text_nodes: std::collections::HashSet<usize>,
@@ -396,6 +401,7 @@ impl Default for JsRuntime {
             dom_class_lists: HashMap::new(),
             dom_node_lists: HashMap::new(),
             dom_html_collections: HashMap::new(),
+            dom_tag_collections: HashMap::new(),
             dom_styles: HashMap::new(),
             dom_children: HashMap::new(),
             dom_text_nodes: std::collections::HashSet::new(),
@@ -502,6 +508,7 @@ impl JsRuntime {
         self.dom_class_lists.clear();
         self.dom_node_lists.clear();
         self.dom_html_collections.clear();
+        self.dom_tag_collections.clear();
         self.dom_styles.clear();
         self.dom_children.clear();
         self.dom_text_nodes.clear();
@@ -536,6 +543,13 @@ impl JsRuntime {
                 implementation: FunctionImplementation::Builtin(BuiltinFunction::DomGetElementById),
             }),
         )?;
+        let get_by_tag = self.allocate_lifecycle_method(
+            "getElementsByTagName",
+            BuiltinFunction::DomGetElementsByTagName,
+        )?;
+        self.object_mut(get_by_tag)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
         let create =
             self.allocate_lifecycle_method("createElement", BuiltinFunction::DomCreateElement)?;
         let create_text =
@@ -553,6 +567,7 @@ impl JsRuntime {
             Some(self.object_prototype),
             HashMap::from([
                 ("getElementById".into(), JsValue::Object(function)),
+                ("getElementsByTagName".into(), JsValue::Object(get_by_tag)),
                 ("createElement".into(), JsValue::Object(create)),
                 ("createTextNode".into(), JsValue::Object(create_text)),
                 ("body".into(), JsValue::Null),
@@ -1923,6 +1938,43 @@ impl JsRuntime {
         })
     }
 
+    fn elements_by_tag(&self, root: usize, tag: &str) -> Vec<usize> {
+        let mut matches = Vec::new();
+        let mut stack = self.dom_children.get(&root).cloned().unwrap_or_default();
+        stack.reverse();
+        let mut visited = std::collections::HashSet::new();
+        while let Some(node) = stack.pop() {
+            if !visited.insert(node) || visited.len() > 20_000 {
+                break;
+            }
+            if self
+                .dom_tags
+                .get(&node)
+                .is_some_and(|name| tag == "*" || name.eq_ignore_ascii_case(tag))
+            {
+                matches.push(node);
+            }
+            if let Some(children) = self.dom_children.get(&node) {
+                stack.extend(children.iter().rev().copied());
+            }
+        }
+        matches
+    }
+
+    fn dom_tag_collection_object(&mut self, root: usize, tag: String) -> Result<ObjectId, JsError> {
+        let item = self.allocate_lifecycle_method("item", BuiltinFunction::DomNodeListItem)?;
+        self.object_mut(item)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        let collection = self.allocate_object(
+            ObjectKind::DomTagCollection,
+            Some(self.object_prototype),
+            HashMap::from([("item".into(), JsValue::Object(item))]),
+        )?;
+        self.dom_tag_collections.insert(collection, (root, tag));
+        Ok(collection)
+    }
+
     fn dom_html_collection_object(&mut self, parent: usize) -> Result<ObjectId, JsError> {
         if let Some(&collection) = self.dom_html_collections.get(&parent) {
             return Ok(collection);
@@ -2070,6 +2122,23 @@ impl JsRuntime {
             self.allocate_lifecycle_method("setAttribute", BuiltinFunction::DomSetAttribute)?;
         let get_attr =
             self.allocate_lifecycle_method("getAttribute", BuiltinFunction::DomGetAttribute)?;
+        let has_attr =
+            self.allocate_lifecycle_method("hasAttribute", BuiltinFunction::DomHasAttribute)?;
+        self.object_mut(has_attr)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        let has_attrs =
+            self.allocate_lifecycle_method("hasAttributes", BuiltinFunction::DomHasAttributes)?;
+        self.object_mut(has_attrs)?
+            .properties
+            .insert("length".into(), JsValue::Number(0.0));
+        let by_tag = self.allocate_lifecycle_method(
+            "getElementsByTagName",
+            BuiltinFunction::DomGetElementsByTagName,
+        )?;
+        self.object_mut(by_tag)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
         let remove_attr =
             self.allocate_lifecycle_method("removeAttribute", BuiltinFunction::DomRemoveAttribute)?;
         let element = self.allocate_object(
@@ -2094,6 +2163,9 @@ impl JsRuntime {
                 ("contains".into(), JsValue::Object(contains)),
                 ("setAttribute".into(), JsValue::Object(set_attr)),
                 ("getAttribute".into(), JsValue::Object(get_attr)),
+                ("hasAttribute".into(), JsValue::Object(has_attr)),
+                ("hasAttributes".into(), JsValue::Object(has_attrs)),
+                ("getElementsByTagName".into(), JsValue::Object(by_tag)),
                 ("removeAttribute".into(), JsValue::Object(remove_attr)),
             ]),
         )?;
@@ -3387,6 +3459,26 @@ impl JsRuntime {
             let kind = self.object(receiver)?.kind;
             let parent = match kind {
                 ObjectKind::DomNodeList(parent) | ObjectKind::DomHtmlCollection(parent) => parent,
+                ObjectKind::DomTagCollection => {
+                    let (root, tag) = self
+                        .dom_tag_collections
+                        .get(&receiver)
+                        .ok_or_else(|| JsError::type_error("invalid tag collection"))?;
+                    let number = arguments.first().unwrap_or(&JsValue::Undefined).to_number();
+                    let child = if number.is_finite() && number >= 0.0 && number.fract() == 0.0 {
+                        self.elements_by_tag(*root, tag)
+                            .get(number as usize)
+                            .copied()
+                    } else {
+                        None
+                    };
+                    return match child {
+                        Some(child) => self
+                            .dom_any_node_object(child)
+                            .map(|id| CallOutcome::Value(JsValue::Object(id))),
+                        None => Ok(CallOutcome::Value(JsValue::Null)),
+                    };
+                }
                 _ => {
                     return Err(JsError::type_error(
                         "item requires NodeList or HTMLCollection",
@@ -3552,10 +3644,52 @@ impl JsRuntime {
             }
             return Ok(CallOutcome::Value(JsValue::Object(old_object)));
         }
+        if builtin == BuiltinFunction::DomGetElementsByTagName {
+            let root = match this_value {
+                JsValue::Object(id) if Some(id) == self.dom_document => 0,
+                JsValue::Object(id) => match self.object(id)?.kind {
+                    ObjectKind::DomElement(root) => root,
+                    _ => {
+                        return Err(JsError::type_error(
+                            "getElementsByTagName needs Document or Element",
+                        ));
+                    }
+                },
+                _ => {
+                    return Err(JsError::type_error(
+                        "getElementsByTagName needs DOM receiver",
+                    ));
+                }
+            };
+            let tag = arguments
+                .first()
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string()
+                .to_ascii_lowercase();
+            if tag.len() > 128 {
+                return Err(JsError::execution_limit("tag name too long"));
+            }
+            let list = self.dom_tag_collection_object(root, tag)?;
+            return Ok(CallOutcome::Value(JsValue::Object(list)));
+        }
+        if builtin == BuiltinFunction::DomHasAttributes {
+            let JsValue::Object(id) = this_value else {
+                return Err(JsError::type_error("hasAttributes requires an Element"));
+            };
+            let ObjectKind::DomElement(node) = self.object(id)?.kind else {
+                return Err(JsError::type_error("hasAttributes requires an Element"));
+            };
+            return Ok(CallOutcome::Value(JsValue::Boolean(
+                self.dom_attributes
+                    .get(&node)
+                    .is_some_and(|attrs| !attrs.is_empty()),
+            )));
+        }
         if matches!(
             builtin,
             BuiltinFunction::DomSetAttribute
                 | BuiltinFunction::DomGetAttribute
+                | BuiltinFunction::DomHasAttribute
                 | BuiltinFunction::DomRemoveAttribute
         ) {
             let JsValue::Object(receiver) = this_value else {
@@ -3579,6 +3713,13 @@ impl JsRuntime {
                     .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b':')
             {
                 return Err(JsError::type_error("invalid attribute name"));
+            }
+            if builtin == BuiltinFunction::DomHasAttribute {
+                return Ok(CallOutcome::Value(JsValue::Boolean(
+                    self.dom_attributes
+                        .get(&node)
+                        .is_some_and(|attrs| attrs.contains_key(&name)),
+                )));
             }
             if builtin == BuiltinFunction::DomGetAttribute {
                 return Ok(CallOutcome::Value(
@@ -3845,6 +3986,9 @@ impl JsRuntime {
             BuiltinFunction::ReferenceError => ("ReferenceError", self.reference_error_prototype),
             BuiltinFunction::SyntaxError => ("SyntaxError", self.syntax_error_prototype),
             BuiltinFunction::DomGetElementById
+            | BuiltinFunction::DomGetElementsByTagName
+            | BuiltinFunction::DomHasAttribute
+            | BuiltinFunction::DomHasAttributes
             | BuiltinFunction::DomCreateElement
             | BuiltinFunction::DomCreateTextNode
             | BuiltinFunction::DomAppendChild
@@ -4392,6 +4536,22 @@ impl JsRuntime {
                             && let Some(child) = self.html_collection_named(node, key)
                         {
                             return self.dom_any_node_object(child).map(JsValue::Object);
+                        }
+                    }
+                    ObjectKind::DomTagCollection => {
+                        let (root, tag) = self
+                            .dom_tag_collections
+                            .get(id)
+                            .ok_or_else(|| JsError::type_error("missing tag collection"))?;
+                        let matching = self.elements_by_tag(*root, tag);
+                        if key == "length" {
+                            return Ok(JsValue::Number(matching.len() as f64));
+                        }
+                        if let Ok(index) = key.parse::<usize>() {
+                            return match matching.get(index).copied() {
+                                Some(node) => self.dom_any_node_object(node).map(JsValue::Object),
+                                None => Ok(JsValue::Undefined),
+                            };
                         }
                     }
                     ObjectKind::DomNodeList(node) => {

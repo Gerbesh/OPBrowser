@@ -38,6 +38,16 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.25 extends the **manually selected** original-source WPT DOM smoke
+to v3: 13 selected upstream files, 10 attempted/passed, 3 explicit SKIP.
+The 10 attempted files contain 11 synchronous test() callbacks,
+all accounted for by a sticky-failure multi-test shim. A failing
+callback cannot be overwritten by later successes. This is NOT the
+official WPT testharness or a broad DOM conformance percentage.
+The original JS/DOM engine now supports Element.hasAttribute(s)
+and live Document/Element.getElementsByTagName with indexed/item
+access across DOM edits and timers.
+
 M4.24 adds live Element.children (numeric indices, item, basic namedItem),
 childElementCount, firstElementChild, lastElementChild and element sibling
 relationships. The pinned WPT DOM smoke now attempts and passes seven

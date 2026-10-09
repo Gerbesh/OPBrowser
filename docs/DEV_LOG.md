@@ -3087,3 +3087,17 @@ This file is append-only project history.
   were altered and the commit hash is checked.
 - Two new native DOM page integration tests cover deletion and timers.
 - Explicitly distinguish this manually scoped test from WPT conformance.
+
+## 2026-10-09 - M4.25 WPT DOM multi-test harness and tag collections
+
+- Built live Element.hasAttribute(s) and Document/Element
+  getElementsByTagName on original VM/authoritative DOM tree.
+- Upgraded manually scoped original-source WPT DOM smoke to v3:
+  10 passing attempted files (11 synchronous test callbacks),
+  3 explicitly skipped files from same pinned WPT revision.
+- Hardened shim: failure sticky across test() callbacks; exact per-file
+  test count, pinned upstream and manifest validation; original test
+  assertions remain unchanged. Added harness negative-case regressions.
+- Two native paint tests cover live tag collections and DOM mutations
+  through parser scripts and timer callback.
+- WPT smoke v3 is not a representative DOM/WPT conformance rate.

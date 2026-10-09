@@ -213,3 +213,13 @@ original source files and three explicit unsupported SKIPs.
 Native Element.children now exposes a live HTMLCollection with
 basic indices/item/namedItem and physical node identity.
 No official WPT DOM conformance score is claimed.
+
+## M4.25: ten original WPT DOM fixtures and live tag lookup
+
+Live Document/Element.getElementsByTagName and hasAttribute(s)
+now operate on the authoritative original DOM; added native
+script/timer repaint regressions. The manually selected WPT DOM
+smoke v3 attempts/passes ten original pinned HTML fixtures,
+eleven test() callbacks in total, with three explicit skips.
+Failure status cannot be erased by later tests. Broader WPT
+conformance and async harness are still incomplete.

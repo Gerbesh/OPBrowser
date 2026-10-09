@@ -16,6 +16,23 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.25: live tag-name search plus hardened WPT multi-case runner
+
+Original op_js now implements Document/Element.getElementsByTagName,
+Element.hasAttribute and hasAttributes. Live tag collections query
+the current bounded element tree with descendant-only traversal;
+parser snapshots and later DOM operations/timers feed the same
+authoritative state. Script DOM changes recascade and paint
+through op_engine and op_paint as before.
+
+op_engine wpt_dom_probe reads the pinned upstream original source
+and executes each original synchronous test body. The shim
+counts callbacks, stores failures persistently, and verifies the
+manifest's exact per-file test count and native PASS marker.
+Ten original WPT DOM files pass, three explicitly unsupported
+files remain SKIP. Two additional harness unit tests demonstrate
+sticky-failure behavior. No official WPT conformance claim.
+
 ## M4.24: live Element children and pinned WPT DOM multi-fixture probe
 
 The original JS VM computes childElementCount, firstElementChild,

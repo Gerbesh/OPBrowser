@@ -16,6 +16,18 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S29 - live tag lookup and pinned multi-test WPT DOM (M4.25)
+
+Status: IMPLEMENTED bounded original VM/DOM/native paint slice.
+Original WPT DOM fixture bodies reach the original JS engine
+through the pinned source runner and synchronous shim with
+sticky failures and per-file expected test count. Live
+Document/Element.getElementsByTagName and hasAttribute(s)
+query the authoritative native DOM and reflect timer changes.
+Two native page tests cover retained collections and paint.
+Scope: ten manually selected attempted WPT files, three
+explicit SKIPs, NOT broad DOM conformance.
+
 ## S28 - Element.children and expanded WPT DOM fixtures to pixels (M4.24)
 
 Status: IMPLEMENTED bounded HTMLCollection and seven original WPT

@@ -1,0 +1,16 @@
+# WPT DOM smoke v3, pinned manual selection; not official WPT or representative DOM conformance
+# pinned upstream 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d
+# fixture<TAB>attempt|skip<TAB>expected_test_calls(0 for SKIP)<TAB>reason
+dom/nodes/Node-childNodes-cache.html	attempt	1	Original synchronous childNodes removal assertions
+dom/nodes/Element-childElementCount-nochild.html	attempt	1	Original no-element-child count assertions
+dom/nodes/Element-childElementCount-dynamic-add.html	attempt	1	Original appending child-element count assertions
+dom/nodes/Element-childElementCount-dynamic-remove.html	attempt	1	Original removal and lastElementChild assertions
+dom/nodes/Element-firstElementChild.html	attempt	1	Original firstElementChild and attribute assertions
+dom/nodes/Element-lastElementChild.html	attempt	1	Original lastElementChild and attribute assertions
+dom/nodes/Element-childElement-null.html	attempt	1	Original null element child assertions
+dom/nodes/Node-childNodes-cache-2.html	skip	0	Requires Array.from and arrow-function implementation
+dom/nodes/Node-contains.html	skip	0	Requires eval, array iteration and common.js fixtures
+dom/nodes/Node-isConnected.html	skip	0	Requires iframe/contentDocument and full WPT harness
+dom/nodes/Element-nextElementSibling.html	attempt	1	Original element sibling test
+dom/nodes/Element-previousElementSibling.html	attempt	1	Original preceding element sibling test
+dom/nodes/Element-hasAttributes.html	attempt	2	Original two synchronous hasAttributes tests including document tag collection
