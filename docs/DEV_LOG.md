@@ -3136,3 +3136,11 @@ This file is append-only project history.
   Limited shim and selected sample cannot establish broad
   WPT/DOM compatibility; uncaught callback-error semantics
   and other event features remain incomplete.
+
+## 2026-10-09 - M4.28a stopImmediatePropagation
+
+- Added stopImmediatePropagation to original native click, Event() and legacy createEvent() objects.
+- Dispatch checks immediate-stop after each callback, skipping other listeners on that target and preventing ancestor traversal.
+- Custom Event reuse clears dispatch-specific immediate-stop state.
+- Added VM native click and real DOM-to-native-paint integration regressions.
+- Frozen original upstream WPT v5 is unchanged; once/passive options and exception isolation remain future work.

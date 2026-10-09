@@ -48,6 +48,10 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.28a: stopImmediatePropagation
+
+Original JS native click, Event() and createEvent('Event') objects now expose stopImmediatePropagation(). Unlike stopPropagation(), it prevents later listeners on the current target as well as propagation to ancestors. Reused custom Events reset dispatch-specific stop state. VM and original DOM-to-pixel tests verify the behavior. once/passive listener options, exceptions across listeners and full DOM EventTarget conformance remain unfinished.
+
 ## M4.1: first actual page scripting slice
 
 Classic inline `<script>` contents now execute once during document

@@ -111,6 +111,7 @@ enum BuiltinFunction {
     DomAddEventListener,
     DomRemoveEventListener,
     EventStopPropagation,
+    EventStopImmediatePropagation,
     EventPreventDefault,
     LifecycleAddEventListener,
     LifecycleRemoveEventListener,
@@ -1804,6 +1805,10 @@ impl JsRuntime {
                 ),
             }),
         )?;
+        let immediate = self.allocate_lifecycle_method(
+            "stopImmediatePropagation",
+            BuiltinFunction::EventStopImmediatePropagation,
+        )?;
         let event = self.allocate_object(
             ObjectKind::Ordinary,
             Some(self.object_prototype),
@@ -1816,8 +1821,13 @@ impl JsRuntime {
                 ("defaultPrevented".into(), JsValue::Boolean(false)),
                 ("eventPhase".into(), JsValue::Number(0.0)),
                 ("stopPropagation".into(), JsValue::Object(stop)),
+                (
+                    "stopImmediatePropagation".into(),
+                    JsValue::Object(immediate),
+                ),
                 ("preventDefault".into(), JsValue::Object(prevent)),
                 ("__stopPropagation".into(), JsValue::Boolean(false)),
+                ("__stopImmediatePropagation".into(), JsValue::Boolean(false)),
             ]),
         )?;
         let mut steps = 0;
@@ -1838,6 +1848,9 @@ impl JsRuntime {
             self.prepare_event_callback(event, receiver, 1)?;
             for handler in handlers {
                 self.call_event_handler(handler, receiver, event, &mut steps)?;
+                if self.event_immediate_stopped(event)? {
+                    break;
+                }
             }
             if self.event_propagation_stopped(event)? {
                 self.finish_event_dispatch(event)?;
@@ -1865,6 +1878,9 @@ impl JsRuntime {
             self.prepare_event_callback(event, receiver, 2)?;
             for handler in captures.into_iter().chain(ordinary) {
                 self.call_event_handler(handler, receiver, event, &mut steps)?;
+                if self.event_immediate_stopped(event)? {
+                    break;
+                }
             }
         }
         if self.event_propagation_stopped(event)? {
@@ -1890,6 +1906,9 @@ impl JsRuntime {
             self.prepare_event_callback(event, receiver, 3)?;
             for handler in handlers {
                 self.call_event_handler(handler, receiver, event, &mut steps)?;
+                if self.event_immediate_stopped(event)? {
+                    break;
+                }
             }
             if self.event_propagation_stopped(event)? {
                 break;
@@ -1946,6 +1965,9 @@ impl JsRuntime {
         self.object_mut(event)?
             .properties
             .insert("__stopPropagation".into(), JsValue::Boolean(false));
+        self.object_mut(event)?
+            .properties
+            .insert("__stopImmediatePropagation".into(), JsValue::Boolean(false));
         self.dom_dispatch_depth += 1;
         let result = self.dispatch_custom_event_inner(event, path, &event_type, bubbles);
         self.dom_dispatch_depth -= 1;
@@ -1992,6 +2014,9 @@ impl JsRuntime {
                 self.prepare_event_callback(event, receiver, 1)?;
                 for handler in handlers {
                     self.call_event_handler(handler, receiver, event, &mut steps)?;
+                    if self.event_immediate_stopped(event)? {
+                        break;
+                    }
                 }
             }
             if self.event_propagation_stopped(event)? {
@@ -2032,6 +2057,9 @@ impl JsRuntime {
         self.prepare_event_callback(event, receiver, 2)?;
         for handler in target_handlers {
             self.call_event_handler(handler, receiver, event, &mut steps)?;
+            if self.event_immediate_stopped(event)? {
+                break;
+            }
         }
         if !bubbles || self.event_propagation_stopped(event)? {
             return Ok(());
@@ -2058,6 +2086,9 @@ impl JsRuntime {
                 self.prepare_event_callback(event, receiver, 3)?;
                 for handler in handlers {
                     self.call_event_handler(handler, receiver, event, &mut steps)?;
+                    if self.event_immediate_stopped(event)? {
+                        break;
+                    }
                 }
             }
             if self.event_propagation_stopped(event)? {
@@ -2797,6 +2828,14 @@ impl JsRuntime {
                 Err(JsError::exception(self.describe_thrown_value(&value)))
             }
         }
+    }
+
+    fn event_immediate_stopped(&self, event: ObjectId) -> Result<bool, JsError> {
+        Ok(self
+            .object(event)?
+            .properties
+            .get("__stopImmediatePropagation")
+            .is_some_and(JsValue::is_truthy))
     }
 
     fn event_propagation_stopped(&self, event: ObjectId) -> Result<bool, JsError> {
@@ -3790,7 +3829,9 @@ impl JsRuntime {
         }
         if matches!(
             builtin,
-            BuiltinFunction::EventStopPropagation | BuiltinFunction::EventPreventDefault
+            BuiltinFunction::EventStopPropagation
+                | BuiltinFunction::EventStopImmediatePropagation
+                | BuiltinFunction::EventPreventDefault
         ) {
             let JsValue::Object(event) = this_value else {
                 return Err(JsError::type_error(
@@ -3802,6 +3843,11 @@ impl JsRuntime {
                     self.object_mut(event)?
                         .properties
                         .insert("__stopPropagation".into(), JsValue::Boolean(true));
+                }
+                BuiltinFunction::EventStopImmediatePropagation => {
+                    let properties = &mut self.object_mut(event)?.properties;
+                    properties.insert("__stopPropagation".into(), JsValue::Boolean(true));
+                    properties.insert("__stopImmediatePropagation".into(), JsValue::Boolean(true));
                 }
                 BuiltinFunction::EventPreventDefault => {
                     if self
@@ -4019,6 +4065,10 @@ impl JsRuntime {
                 "stopPropagation",
                 BuiltinFunction::EventStopPropagation,
             )?;
+            let immediate = self.allocate_lifecycle_method(
+                "stopImmediatePropagation",
+                BuiltinFunction::EventStopImmediatePropagation,
+            )?;
             let prevent = self.allocate_lifecycle_method(
                 "preventDefault",
                 BuiltinFunction::EventPreventDefault,
@@ -4038,11 +4088,16 @@ impl JsRuntime {
                     ("isTrusted".into(), JsValue::Boolean(false)),
                     ("eventPhase".into(), JsValue::Number(0.0)),
                     ("stopPropagation".into(), JsValue::Object(stop)),
+                    (
+                        "stopImmediatePropagation".into(),
+                        JsValue::Object(immediate),
+                    ),
                     ("preventDefault".into(), JsValue::Object(prevent)),
                     ("initEvent".into(), JsValue::Object(init)),
                     ("__initialized".into(), JsValue::Boolean(false)),
                     ("__dispatching".into(), JsValue::Boolean(false)),
                     ("__stopPropagation".into(), JsValue::Boolean(false)),
+                    ("__stopImmediatePropagation".into(), JsValue::Boolean(false)),
                 ]),
             )?;
             return Ok(CallOutcome::Value(JsValue::Object(event)));
@@ -4104,6 +4159,10 @@ impl JsRuntime {
                 "stopPropagation",
                 BuiltinFunction::EventStopPropagation,
             )?;
+            let immediate = self.allocate_lifecycle_method(
+                "stopImmediatePropagation",
+                BuiltinFunction::EventStopImmediatePropagation,
+            )?;
             let prevent = self.allocate_lifecycle_method(
                 "preventDefault",
                 BuiltinFunction::EventPreventDefault,
@@ -4125,9 +4184,14 @@ impl JsRuntime {
                     ("isTrusted".into(), JsValue::Boolean(false)),
                     ("eventPhase".into(), JsValue::Number(0.0)),
                     ("stopPropagation".into(), JsValue::Object(stop)),
+                    (
+                        "stopImmediatePropagation".into(),
+                        JsValue::Object(immediate),
+                    ),
                     ("preventDefault".into(), JsValue::Object(prevent)),
                     ("__dispatching".into(), JsValue::Boolean(false)),
                     ("__stopPropagation".into(), JsValue::Boolean(false)),
+                    ("__stopImmediatePropagation".into(), JsValue::Boolean(false)),
                 ]),
             )?;
             return Ok(CallOutcome::Value(JsValue::Object(event)));
@@ -4913,6 +4977,7 @@ impl JsRuntime {
             | BuiltinFunction::DomAddEventListener
             | BuiltinFunction::DomRemoveEventListener
             | BuiltinFunction::EventStopPropagation
+            | BuiltinFunction::EventStopImmediatePropagation
             | BuiltinFunction::EventPreventDefault
             | BuiltinFunction::LifecycleAddEventListener
             | BuiltinFunction::LifecycleRemoveEventListener
@@ -6494,6 +6559,35 @@ mod tests {
         vm.eval_script("parent.removeEventListener('click',obsolete);")
             .unwrap();
         assert!(vm.has_dom_click_listener(10));
+    }
+
+    #[test]
+    fn native_click_stop_immediate_blocks_same_target_and_ancestors() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "root".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "child".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.eval_script(
+            "var trace=''; var root=document.getElementById('root');\
+             var child=document.getElementById('child');\
+             child.addEventListener('click',function(e){\
+               trace=trace+'first;';e.stopImmediatePropagation();},true);\
+             child.addEventListener('click',function(){trace=trace+'second;';});\
+             root.addEventListener('click',function(){trace=trace+'parent;';});",
+        )
+        .unwrap();
+        assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
     }
 
     #[test]

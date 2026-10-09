@@ -16,6 +16,10 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.28a: immediate-stop event control
+
+In op_js, EventStopImmediatePropagation marks the event's immediate-stop and path-stop flags; dispatch_dom_click_path and dispatch_custom_event_inner check after each callback. The custom event path resets its immediate-stop state for reuse. Engine script mutation replay through op_dom, layout and op_paint remains unchanged. VM and cross-crate native paint tests verify the flow. No new crate dependencies.
+
 ## M4.27: selector chains and original typed DOM events to native pixels
 
 Original op_js now matches bounded compound selector tokens

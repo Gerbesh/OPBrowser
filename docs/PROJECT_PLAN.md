@@ -1303,6 +1303,15 @@ counts must not be mislabeled as external conformance percentages.
   errors, safe general event dispatch, broader real WPT DOM
   coverage and a proper async testharness protocol.
 
+## M4.28a - Immediate event propagation stop (2026-10-09)
+
+- DONE Event.stopImmediatePropagation on native click events, custom Event() and legacy createEvent('Event').
+- DONE stops remaining same-target callbacks and later event-path traversal; stopPropagation continues to allow same-target callbacks.
+- DONE custom Event reuse resets the immediate-stop dispatch flag.
+- TESTED a native-click VM test and an original JS-to-native-DOM/paint integration test.
+- UNCHANGED frozen WPT DOM/Events v5: 12 attempted/pass, 3 SKIP in a manually selected set, not full conformance.
+- NEXT complete M4.28 with once/passive listener options, listener-error reporting and wider original WPT event coverage.
+
 ## M4.27 - Compound DOM selectors and general Event dispatch with real WPT Events (2026-10-09)
 
 - DONE expanded bounded original JS Document/Element querySelector and

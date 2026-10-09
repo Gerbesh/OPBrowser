@@ -2,6 +2,41 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m428_stop_immediate_event_reuse_and_native_repaint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='outer'><button id='inner'>BUTTON</button></main>",
+            "<p id='result'>WAIT</p><script>",
+            "var outer=document.getElementById('outer');",
+            "var inner=document.getElementById('inner');",
+            "var order='';",
+            "function halt(e){order=order+'A';e.stopImmediatePropagation();}",
+            "inner.addEventListener('signal',halt);",
+            "inner.addEventListener('signal',function(){order=order+'B';});",
+            "outer.addEventListener('signal',function(){order=order+'P';});",
+            "var event=new Event('signal',{bubbles:true});",
+            "var first=inner.dispatchEvent(event);",
+            "inner.removeEventListener('signal',halt);",
+            "var second=inner.dispatchEvent(event);",
+            "document.getElementById('result').textContent=",
+            " first&&second&&order==='ABP'&&event.eventPhase===0&&",
+            " event.currentTarget===null?",
+            " 'M428-STOPIMMEDIATE-PASS':'M428-STOPIMMEDIATE-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|command| matches!(
+        command,
+        op_paint::PaintCommand::Text { text, .. }
+            if text.contains("M428-STOPIMMEDIATE-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m427_matches_and_closest_use_compound_selector_chains() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

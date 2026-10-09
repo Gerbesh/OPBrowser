@@ -38,6 +38,13 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.28a adds stopImmediatePropagation() on original native-click
+and custom/legacy Event objects, with correct same-target listener
+interruption and per-dispatch reset for reused custom events.
+Native VM and DOM-to-pixels tests cover the feature; once/passive
+and exception-isolating delivery remain future work. The pinned
+upstream WPT sample and scores were not changed.
+
 M4.27 expands original DOM selectors to bounded compound #id.class /
 tag.class forms, descendant and direct-child combinators, selector
 grouping and Element.matches()/closest(). Original Event(type,{bubbles,

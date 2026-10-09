@@ -234,6 +234,10 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.28a: stopImmediatePropagation
+
+Native clicks and custom/legacy Event objects support stopImmediatePropagation(), which skips remaining callbacks on the same target and halts further propagation. Custom events reset this flag before each new dispatch. VM and native DOM/paint tests pass. once/passive options and exception isolation remain incomplete; the frozen WPT DOM/Events v5 sample is unchanged.
+
 ## M4.27: bounded compound selectors and dispatchEvent
 
 Original Document/Element selectors now match descendant

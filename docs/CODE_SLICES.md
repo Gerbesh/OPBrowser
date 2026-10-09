@@ -16,6 +16,11 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S32 - stopImmediatePropagation -> native DOM pixels (M4.28a)
+
+Status: IMPLEMENTED partial original EventTarget semantics.
+Native click or custom Event callbacks set immediate-stop state via the original op_js builtin. The listener loop skips other same-target handlers and the event path stops. Custom Event reuse resets this state on the next dispatch. Subsequent JS text mutations still travel through op_engine, op_dom and op_paint to visible pixels. VM and native engine tests cover both dispatch paths. No new external WPT score; once/passive and listener exception isolation remain open.
+
 ## S31 - Compound selector and typed DOM event dispatch -> native pixels (M4.27)
 
 Status: IMPLEMENTED bounded original DOM Selectors and Events slice.

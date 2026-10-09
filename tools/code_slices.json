@@ -336,6 +336,19 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S32",
+      "title": "Immediate event propagation stop through native DOM pixels",
+      "status": "M4.28a bounded stopImmediatePropagation in original JS",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_dom_click_path"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_custom_event_inner"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "event_immediate_stopped"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Immediate-stop control only; once/passive and listener exception isolation remain incomplete. External WPT baseline unchanged."
+    },
+    {
       "id": "S31",
       "title": "Compound DOM selector chains and typed Event dispatch to native repaint",
       "status": "M4.27 bounded original selectors and EventTarget with pinned WPT Events v5",
