@@ -1303,6 +1303,31 @@ counts must not be mislabeled as external conformance percentages.
   errors, safe general event dispatch, broader real WPT DOM
   coverage and a proper async testharness protocol.
 
+## M4.28b - Element listener once/passive options and isolated errors (2026-10-09)
+
+- DONE original Element.addEventListener(type, fn, options) and
+  removeEventListener capture matching accept the boolean or a dictionary
+  with capture; registration also supports once and passive.
+- DONE a once listener is removed before invocation, including nested
+  dispatchEvent and native click. Duplicate registration keeps its first
+  option values. Removal during dispatch prevents a queued callback.
+- DONE passive prevents cancelation via preventDefault() and legacy
+  returnValue=false while allowing a later nonpassive listener to cancel.
+- DONE isolated non-budget callback exceptions are recorded in a
+  bounded (32-entry) runtime diagnostic and visible via
+  Engine.active_event_listener_errors(); following listeners still run.
+  VM execution-limit errors remain fatal instead of being hidden.
+- TESTED five VM cases plus two native DOM/paint scenarios, including
+  dynamic element binding and delayed timer callbacks.
+- UNCHANGED pinned WPT DOM/Events v5: manually chosen 12 attempted/pass
+  and three explicit skips. This is not an overall WPT/DOM score.
+- LIMITS: scoped to Element listeners (not document/window lifecycle
+  listener options), no AbortSignal/signal, listener objects,
+  full DOMException taxonomy, default browser activation, or
+  official async WPT harness. Event diagnostic storage is bounded.
+- NEXT expand original WPT event fixtures and official harness behavior,
+  add broader event targets, option semantics and DOM APIs.
+
 ## M4.28a - Immediate event propagation stop (2026-10-09)
 
 - DONE Event.stopImmediatePropagation on native click events, custom Event() and legacy createEvent('Event').

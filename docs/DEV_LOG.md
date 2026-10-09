@@ -3144,3 +3144,19 @@ This file is append-only project history.
 - Custom Event reuse clears dispatch-specific immediate-stop state.
 - Added VM native click and real DOM-to-native-paint integration regressions.
 - Frozen original upstream WPT v5 is unchanged; once/passive options and exception isolation remain future work.
+
+## 2026-10-09 - M4.28b Element listener options and errors
+
+- Implemented Element add/removeEventListener capture options dictionaries.
+- Added once/passive metadata keyed by node/event/capture/function,
+  preserving first-registration options and remapping on native DOM binding.
+- Once listeners are removed before invocation, including nested dispatch;
+  passive preventDefault and returnValue=false are ignored.
+- Centralized native-click/custom-event listener delivery, including
+  removed-during-dispatch handling and preserved immediate-stop semantics.
+- Non-budget handler exceptions are isolated into a bounded per-page
+  diagnostic visible on Engine; execution limits remain fatal.
+- Added five VM and two end-to-end page/native paint regressions,
+  including timer callbacks after virtual-to-physical node binding.
+- Existing pinned original WPT DOM/Events v5 manifest remains frozen;
+  no general DOM/Events conformance percentage is inferred.

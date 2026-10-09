@@ -283,6 +283,12 @@ pub enum DomOperation {
     SetText(DomTextMutation),
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct DomListenerOptions {
+    once: bool,
+    passive: bool,
+}
+
 #[derive(Debug)]
 pub struct JsRuntime {
     heap: Vec<JsObject>,
@@ -323,6 +329,8 @@ pub struct JsRuntime {
     dom_click_capture_listeners: HashMap<usize, Vec<JsValue>>,
     dom_onclick: HashMap<usize, JsValue>,
     dom_typed_listeners: HashMap<(usize, String, bool), Vec<JsValue>>,
+    dom_listener_options: HashMap<(usize, String, bool, ObjectId), DomListenerOptions>,
+    event_listener_errors: Vec<String>,
     dom_dispatch_depth: usize,
     dom_programmatic_click_depth: usize,
     dom_document: Option<ObjectId>,
@@ -429,6 +437,8 @@ impl Default for JsRuntime {
             dom_click_capture_listeners: HashMap::new(),
             dom_onclick: HashMap::new(),
             dom_typed_listeners: HashMap::new(),
+            dom_listener_options: HashMap::new(),
+            event_listener_errors: Vec::new(),
             dom_dispatch_depth: 0,
             dom_programmatic_click_depth: 0,
             dom_document: None,
@@ -549,6 +559,8 @@ impl JsRuntime {
         self.dom_click_capture_listeners.clear();
         self.dom_onclick.clear();
         self.dom_typed_listeners.clear();
+        self.dom_listener_options.clear();
+        self.event_listener_errors.clear();
         self.dom_dispatch_depth = 0;
         self.dom_programmatic_click_depth = 0;
         self.lifecycle_listeners.clear();
@@ -1739,6 +1751,21 @@ impl JsRuntime {
                     .append(&mut handlers);
             }
         }
+        let option_keys = self
+            .dom_listener_options
+            .keys()
+            .filter(|(node, _, _, _)| *node == virtual_node)
+            .cloned()
+            .collect::<Vec<_>>();
+        for (node, event_type, capture, callback) in option_keys {
+            if let Some(options) =
+                self.dom_listener_options
+                    .remove(&(node, event_type.clone(), capture, callback))
+            {
+                self.dom_listener_options
+                    .insert((physical_node, event_type, capture, callback), options);
+            }
+        }
         if let Some(callback) = self.dom_onclick.remove(&virtual_node) {
             self.dom_onclick.insert(physical_node, callback);
         }
@@ -1832,86 +1859,25 @@ impl JsRuntime {
         )?;
         let mut steps = 0;
         let mut handled = false;
-
-        // Capture travels root -> parent of target.
         for &node in path.iter().take(64).skip(1).rev() {
-            let handlers = self
-                .dom_click_capture_listeners
-                .get(&node)
-                .cloned()
-                .unwrap_or_default();
-            if handlers.is_empty() {
-                continue;
-            }
-            handled = true;
-            let receiver = self.dom_element_object(node)?;
-            self.prepare_event_callback(event, receiver, 1)?;
-            for handler in handlers {
-                self.call_event_handler(handler, receiver, event, &mut steps)?;
-                if self.event_immediate_stopped(event)? {
-                    break;
-                }
-            }
+            handled |= self.deliver_element_listeners(event, node, "click", true, 1, &mut steps)?;
             if self.event_propagation_stopped(event)? {
                 self.finish_event_dispatch(event)?;
                 return Ok(handled);
             }
         }
-
-        // At target, capture listeners run before ordinary listeners.
-        let receiver = target_object;
-        let captures = self
-            .dom_click_capture_listeners
-            .get(&target)
-            .cloned()
-            .unwrap_or_default();
-        let mut ordinary = self
-            .dom_click_listeners
-            .get(&target)
-            .cloned()
-            .unwrap_or_default();
-        if let Some(handler) = self.dom_onclick.get(&target).cloned() {
-            ordinary.push(handler);
+        handled |= self.deliver_element_listeners(event, target, "click", true, 2, &mut steps)?;
+        if !self.event_immediate_stopped(event)? {
+            handled |=
+                self.deliver_element_listeners(event, target, "click", false, 2, &mut steps)?;
         }
-        if !captures.is_empty() || !ordinary.is_empty() {
-            handled = true;
-            self.prepare_event_callback(event, receiver, 2)?;
-            for handler in captures.into_iter().chain(ordinary) {
-                self.call_event_handler(handler, receiver, event, &mut steps)?;
-                if self.event_immediate_stopped(event)? {
+        if !self.event_propagation_stopped(event)? {
+            for &node in path.iter().take(64).skip(1) {
+                handled |=
+                    self.deliver_element_listeners(event, node, "click", false, 3, &mut steps)?;
+                if self.event_propagation_stopped(event)? {
                     break;
                 }
-            }
-        }
-        if self.event_propagation_stopped(event)? {
-            self.finish_event_dispatch(event)?;
-            return Ok(handled);
-        }
-
-        // Bubble travels parent -> root.
-        for &node in path.iter().take(64).skip(1) {
-            let mut handlers = self
-                .dom_click_listeners
-                .get(&node)
-                .cloned()
-                .unwrap_or_default();
-            if let Some(handler) = self.dom_onclick.get(&node).cloned() {
-                handlers.push(handler);
-            }
-            if handlers.is_empty() {
-                continue;
-            }
-            handled = true;
-            let receiver = self.dom_element_object(node)?;
-            self.prepare_event_callback(event, receiver, 3)?;
-            for handler in handlers {
-                self.call_event_handler(handler, receiver, event, &mut steps)?;
-                if self.event_immediate_stopped(event)? {
-                    break;
-                }
-            }
-            if self.event_propagation_stopped(event)? {
-                break;
             }
         }
         self.finish_event_dispatch(event)?;
@@ -1996,101 +1962,20 @@ impl JsRuntime {
         };
         let mut steps = 0usize;
         for &node in path.iter().take(64).skip(1).rev() {
-            let mut handlers = self
-                .dom_typed_listeners
-                .get(&(node, event_type.into(), true))
-                .cloned()
-                .unwrap_or_default();
-            if event_type == "click" {
-                handlers.extend(
-                    self.dom_click_capture_listeners
-                        .get(&node)
-                        .cloned()
-                        .unwrap_or_default(),
-                );
-            }
-            if !handlers.is_empty() {
-                let receiver = self.dom_element_object(node)?;
-                self.prepare_event_callback(event, receiver, 1)?;
-                for handler in handlers {
-                    self.call_event_handler(handler, receiver, event, &mut steps)?;
-                    if self.event_immediate_stopped(event)? {
-                        break;
-                    }
-                }
-            }
+            self.deliver_element_listeners(event, node, event_type, true, 1, &mut steps)?;
             if self.event_propagation_stopped(event)? {
                 return Ok(());
             }
         }
-        let receiver = self.dom_element_object(target)?;
-        let mut target_handlers = self
-            .dom_typed_listeners
-            .get(&(target, event_type.into(), true))
-            .cloned()
-            .unwrap_or_default();
-        if event_type == "click" {
-            target_handlers.extend(
-                self.dom_click_capture_listeners
-                    .get(&target)
-                    .cloned()
-                    .unwrap_or_default(),
-            );
-        }
-        target_handlers.extend(
-            self.dom_typed_listeners
-                .get(&(target, event_type.into(), false))
-                .cloned()
-                .unwrap_or_default(),
-        );
-        if event_type == "click" {
-            target_handlers.extend(
-                self.dom_click_listeners
-                    .get(&target)
-                    .cloned()
-                    .unwrap_or_default(),
-            );
-            if let Some(handler) = self.dom_onclick.get(&target).cloned() {
-                target_handlers.push(handler);
-            }
-        }
-        self.prepare_event_callback(event, receiver, 2)?;
-        for handler in target_handlers {
-            self.call_event_handler(handler, receiver, event, &mut steps)?;
-            if self.event_immediate_stopped(event)? {
-                break;
-            }
+        self.deliver_element_listeners(event, target, event_type, true, 2, &mut steps)?;
+        if !self.event_immediate_stopped(event)? {
+            self.deliver_element_listeners(event, target, event_type, false, 2, &mut steps)?;
         }
         if !bubbles || self.event_propagation_stopped(event)? {
             return Ok(());
         }
         for &node in path.iter().take(64).skip(1) {
-            let mut handlers = self
-                .dom_typed_listeners
-                .get(&(node, event_type.into(), false))
-                .cloned()
-                .unwrap_or_default();
-            if event_type == "click" {
-                handlers.extend(
-                    self.dom_click_listeners
-                        .get(&node)
-                        .cloned()
-                        .unwrap_or_default(),
-                );
-                if let Some(handler) = self.dom_onclick.get(&node).cloned() {
-                    handlers.push(handler);
-                }
-            }
-            if !handlers.is_empty() {
-                let receiver = self.dom_element_object(node)?;
-                self.prepare_event_callback(event, receiver, 3)?;
-                for handler in handlers {
-                    self.call_event_handler(handler, receiver, event, &mut steps)?;
-                    if self.event_immediate_stopped(event)? {
-                        break;
-                    }
-                }
-            }
+            self.deliver_element_listeners(event, node, event_type, false, 3, &mut steps)?;
             if self.event_propagation_stopped(event)? {
                 break;
             }
@@ -2828,6 +2713,138 @@ impl JsRuntime {
                 Err(JsError::exception(self.describe_thrown_value(&value)))
             }
         }
+    }
+
+    /// Callback exceptions are reported but do not abort EventTarget delivery.
+    /// Execution-budget failures remain fatal to protect the page worker.
+    fn call_isolated_event_handler(
+        &mut self,
+        handler: JsValue,
+        receiver: ObjectId,
+        event: ObjectId,
+        steps: &mut usize,
+    ) -> Result<(), JsError> {
+        match self.call_event_handler(handler, receiver, event, steps) {
+            Err(error) if error.kind != JsErrorKind::ExecutionLimit => {
+                if self.event_listener_errors.len() < 32 {
+                    self.event_listener_errors.push(error.to_string());
+                }
+                Ok(())
+            }
+            result => result,
+        }
+    }
+
+    /// Drain bounded listener diagnostics without exposing exceptions to the
+    /// script that initiated dispatchEvent().
+    pub fn take_event_listener_errors(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.event_listener_errors)
+    }
+
+    pub fn event_listener_errors(&self) -> &[String] {
+        &self.event_listener_errors
+    }
+
+    fn deliver_element_listeners(
+        &mut self,
+        event: ObjectId,
+        node: usize,
+        event_type: &str,
+        capture: bool,
+        phase: u8,
+        steps: &mut usize,
+    ) -> Result<bool, JsError> {
+        let handlers = if event_type == "click" {
+            if capture {
+                self.dom_click_capture_listeners.get(&node)
+            } else {
+                self.dom_click_listeners.get(&node)
+            }
+        } else {
+            self.dom_typed_listeners
+                .get(&(node, event_type.to_owned(), capture))
+        }
+        .cloned()
+        .unwrap_or_default();
+        let property_handler = if event_type == "click" && !capture {
+            self.dom_onclick.get(&node).cloned()
+        } else {
+            None
+        };
+        if handlers.is_empty() && property_handler.is_none() {
+            return Ok(false);
+        }
+        let receiver = self.dom_element_object(node)?;
+        self.prepare_event_callback(event, receiver, phase)?;
+        let mut delivered = false;
+        for callback in handlers {
+            let JsValue::Object(function) = callback else {
+                continue;
+            };
+            let active = if event_type == "click" {
+                if capture {
+                    self.dom_click_capture_listeners.get(&node)
+                } else {
+                    self.dom_click_listeners.get(&node)
+                }
+            } else {
+                self.dom_typed_listeners
+                    .get(&(node, event_type.to_owned(), capture))
+            }
+            .is_some_and(|registered| registered.contains(&callback));
+            if !active {
+                continue;
+            }
+            let key = (node, event_type.to_owned(), capture, function);
+            let options = self
+                .dom_listener_options
+                .get(&key)
+                .copied()
+                .unwrap_or_default();
+            if options.once {
+                // Remove before invoking: nested dispatch cannot fire this entry twice.
+                if event_type == "click" {
+                    let table = if capture {
+                        &mut self.dom_click_capture_listeners
+                    } else {
+                        &mut self.dom_click_listeners
+                    };
+                    if let Some(registered) = table.get_mut(&node) {
+                        registered.retain(|item| item != &callback);
+                    }
+                } else if let Some(registered) =
+                    self.dom_typed_listeners
+                        .get_mut(&(node, event_type.to_owned(), capture))
+                {
+                    registered.retain(|item| item != &callback);
+                }
+                self.dom_listener_options.remove(&key);
+            }
+            self.object_mut(event)?.properties.insert(
+                "__passiveListener".into(),
+                JsValue::Boolean(options.passive),
+            );
+            let result = self.call_isolated_event_handler(callback, receiver, event, steps);
+            self.object_mut(event)?
+                .properties
+                .insert("__passiveListener".into(), JsValue::Boolean(false));
+            result?;
+            delivered = true;
+            if self.event_immediate_stopped(event)? {
+                break;
+            }
+        }
+        // A property handler replaced or cleared during an earlier callback
+        // must not run from a stale dispatch snapshot.
+        if !capture
+            && !self.event_immediate_stopped(event)?
+            && let Some(handler) = property_handler
+            && self.dom_onclick.get(&node) == Some(&handler)
+        {
+            self.call_isolated_event_handler(handler, receiver, event, steps)?;
+            delivered = true;
+        }
+        Ok(delivered)
     }
 
     fn event_immediate_stopped(&self, event: ObjectId) -> Result<bool, JsError> {
@@ -3855,6 +3872,11 @@ impl JsRuntime {
                         .properties
                         .get("cancelable")
                         .is_some_and(JsValue::is_truthy)
+                        && !self
+                            .object(event)?
+                            .properties
+                            .get("__passiveListener")
+                            .is_some_and(JsValue::is_truthy)
                     {
                         self.object_mut(event)?
                             .properties
@@ -4871,13 +4893,32 @@ impl JsRuntime {
                 }
                 return Err(JsError::type_error("event listener must be callable"));
             }
-            let capture = matches!(arguments.get(2), Some(JsValue::Boolean(true)));
+            let raw_options = arguments.get(2).cloned().unwrap_or(JsValue::Undefined);
+            let capture = if let JsValue::Object(id) = raw_options {
+                self.get_object_property(id, "capture")?.is_truthy()
+            } else {
+                raw_options.is_truthy()
+            };
+            let options = if matches!(builtin, BuiltinFunction::DomAddEventListener) {
+                if let JsValue::Object(id) = raw_options {
+                    DomListenerOptions {
+                        once: self.get_object_property(id, "once")?.is_truthy(),
+                        passive: self.get_object_property(id, "passive")?.is_truthy(),
+                    }
+                } else {
+                    DomListenerOptions::default()
+                }
+            } else {
+                DomListenerOptions::default()
+            };
+            let option_key = (node, event_type.clone(), capture, function);
             if event_type != "click" {
                 let key = (node, event_type, capture);
                 if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
                     if let Some(listeners) = self.dom_typed_listeners.get_mut(&key) {
                         listeners.retain(|value| value != &JsValue::Object(function));
                     }
+                    self.dom_listener_options.remove(&option_key);
                     return Ok(CallOutcome::Value(JsValue::Undefined));
                 }
                 if self
@@ -4892,6 +4933,7 @@ impl JsRuntime {
                 let listeners = self.dom_typed_listeners.entry(key).or_default();
                 if !listeners.contains(&JsValue::Object(function)) {
                     listeners.push(JsValue::Object(function));
+                    self.dom_listener_options.insert(option_key, options);
                 }
                 return Ok(CallOutcome::Value(JsValue::Undefined));
             }
@@ -4904,6 +4946,7 @@ impl JsRuntime {
                 if let Some(listeners) = listeners {
                     listeners.retain(|listener| listener != &JsValue::Object(function));
                 }
+                self.dom_listener_options.remove(&option_key);
                 return Ok(CallOutcome::Value(JsValue::Undefined));
             }
             let total = self
@@ -4928,6 +4971,7 @@ impl JsRuntime {
             };
             if !listeners.contains(&JsValue::Object(function)) {
                 listeners.push(JsValue::Object(function));
+                self.dom_listener_options.insert(option_key, options);
             }
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
@@ -5625,6 +5669,11 @@ impl JsRuntime {
                     .object(*id)?
                     .properties
                     .get("cancelable")
+                    .is_some_and(JsValue::is_truthy)
+                && !self
+                    .object(*id)?
+                    .properties
+                    .get("__passiveListener")
                     .is_some_and(JsValue::is_truthy)
             {
                 self.object_mut(*id)?
@@ -6588,6 +6637,153 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn event_once_is_removed_before_nested_dispatch_and_dedup_keeps_first_options() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 7,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var node=document.getElementById('button');
+            var hits=0;
+            function once(e) {
+                hits=hits+1;
+                node.dispatchEvent(new Event('ping'));
+            }
+            node.addEventListener('ping', once, {once:true});
+            node.addEventListener('ping', once, {once:false});
+            var a=node.dispatchEvent(new Event('ping'));
+            var b=node.dispatchEvent(new Event('ping'));
+            var count=hits;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("count"), Some(&JsValue::Number(1.0)));
+        assert_eq!(vm.global("a"), Some(&JsValue::Boolean(true)));
+        assert_eq!(vm.global("b"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn passive_listener_cannot_cancel_with_prevent_default_or_return_value() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 8,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(r#"
+            var node=document.getElementById('button');
+            var seen='';
+            function passive(e) {
+                e.preventDefault();
+                e.returnValue=false;
+                seen=seen+(e.defaultPrevented?'WRONG':'P');
+            }
+            node.addEventListener('change',passive,{passive:true});
+            var first=new Event('change',{cancelable:true});
+            var accepted=node.dispatchEvent(first);
+            node.removeEventListener('change',passive,{capture:false});
+            node.addEventListener('change',function(e) {
+                e.preventDefault();
+                seen=seen+(e.defaultPrevented?'N':'WRONG');
+            });
+            var second=new Event('change',{cancelable:true});
+            var denied=node.dispatchEvent(second);
+            var outcome=seen+'|'+accepted+'|'+first.defaultPrevented+'|'+denied+'|'+second.defaultPrevented;
+        "#).unwrap();
+        assert_eq!(
+            vm.global("outcome"),
+            Some(&JsValue::String("PN|true|false|false|true".into()))
+        );
+    }
+
+    #[test]
+    fn listener_throw_isolated_and_later_listeners_run() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 9,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var node=document.getElementById('button');
+            var trace='';
+            node.addEventListener('save',function(){throw new Error('listener boom');});
+            node.addEventListener('save',function(){trace=trace+'ok';});
+            var event=new Event('save');
+            var accepted=node.dispatchEvent(event);
+            var done=trace+'|'+accepted+'|'+(event.currentTarget===null);
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("done"),
+            Some(&JsValue::String("ok|true|true".into()))
+        );
+        let errors = vm.take_event_listener_errors();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("listener boom"), "{errors:?}");
+        assert!(vm.event_listener_errors().is_empty());
+    }
+
+    #[test]
+    fn capture_options_removal_and_listener_removed_mid_dispatch() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 10,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(r#"
+            var node=document.getElementById('button');
+            var trace='';
+            function cap(e){trace=trace+'capture';}
+            function later(e){trace=trace+'wrong';}
+            node.addEventListener('note',cap,{capture:true});
+            node.addEventListener('note',function(e){trace=trace+'ok';node.removeEventListener('note',later);});
+            node.addEventListener('note',later);
+            node.removeEventListener('note',cap,{capture:true});
+            node.dispatchEvent(new Event('note'));
+        "#).unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("ok".into())));
+    }
+
+    #[test]
+    fn native_click_once_and_passive_options_apply_to_real_click_path() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 12,
+            id: "control".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var node=document.getElementById('control');
+            var hits=0;var canceled=false;
+            node.addEventListener('click',function(e) {
+                hits=hits+1;
+                e.preventDefault();
+                canceled=e.defaultPrevented;
+            }, {once:true, passive:true});
+        "#,
+        )
+        .unwrap();
+        assert!(vm.dispatch_dom_click(12).unwrap());
+        assert!(!vm.has_dom_click_listener(12));
+        assert!(!vm.dispatch_dom_click(12).unwrap());
+        assert_eq!(vm.global("hits"), Some(&JsValue::Number(1.0)));
+        assert_eq!(vm.global("canceled"), Some(&JsValue::Boolean(false)));
     }
 
     #[test]

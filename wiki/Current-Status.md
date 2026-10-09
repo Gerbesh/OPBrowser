@@ -234,6 +234,20 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.28b: once/passive listeners and isolated event errors
+
+Original Element.addEventListener accepts an options dictionary with
+capture, once and passive, and removeEventListener accepts capture
+matching. once callbacks are removed before nested dispatches; passive
+listeners cannot cancel using preventDefault or legacy returnValue.
+Normal callback exceptions are recorded in a bounded diagnostic
+accessible through Engine.active_event_listener_errors, without
+interrupting later listeners. Execution budgets still stop runaway
+JavaScript. Original JS -> DOM -> native paint integration tests cover
+timers and dynamically created nodes. The frozen original WPT DOM
+smoke v5 sample and its counts are unchanged. Document/window
+listener options and AbortSignal remain outside this milestone.
+
 ## M4.28a: stopImmediatePropagation
 
 Native clicks and custom/legacy Event objects support stopImmediatePropagation(), which skips remaining callbacks on the same target and halts further propagation. Custom events reset this flag before each new dispatch. VM and native DOM/paint tests pass. once/passive options and exception isolation remain incomplete; the frozen WPT DOM/Events v5 sample is unchanged.

@@ -2,6 +2,79 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m428b_once_passive_and_exception_isolation_update_native_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><button id='action'>CLICK</button><p id='result'>WAIT</p><script>",
+            "var action=document.getElementById('action');",
+            "var result=document.getElementById('result');",
+            "var onceHits=0;var events='';",
+            "function once(e){onceHits=onceHits+1;",
+            " action.dispatchEvent(new Event('ping'));}",
+            "action.addEventListener('ping',once,{once:true});",
+            "action.dispatchEvent(new Event('ping'));",
+            "action.dispatchEvent(new Event('ping'));",
+            "action.addEventListener('check',function(e){",
+            " e.preventDefault();e.returnValue=false;",
+            " events=events+(e.defaultPrevented?'BAD':'P');",
+            "},{passive:true});",
+            "action.addEventListener('check',function(){throw new Error('event crash')});",
+            "action.addEventListener('check',function(){events=events+'OK';});",
+            "var e=new Event('check',{cancelable:true});",
+            "var accepted=action.dispatchEvent(e);",
+            "result.textContent=onceHits===1&&accepted&&!e.defaultPrevented&&events==='POK'?",
+            " 'M428B-OPTIONS-PASS':'M428B-OPTIONS-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|command| matches!(
+        command, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("M428B-OPTIONS-PASS")
+    )));
+    let errors = engine.active_event_listener_errors().unwrap();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].contains("event crash"), "{errors:?}");
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m428b_once_listener_on_new_native_dom_node_survives_binding() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='parent'></main><p id='result'>WAIT</p><script>",
+            "var parent=document.getElementById('parent');",
+            "var item=document.createElement('button');",
+            "parent.appendChild(item);",
+            "var hits=0;",
+            "item.addEventListener('activate',function(){hits=hits+1;},{once:true});",
+            "setTimeout(function(){",
+            " item.dispatchEvent(new Event('activate'));",
+            " item.dispatchEvent(new Event('activate'));",
+            " document.getElementById('result').textContent=hits===1?",
+            " 'M428B-NODE-PASS':'M428B-NODE-FAIL';",
+            "},0);",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(!page.commands.iter().any(|command| matches!(
+        command, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("M428B-NODE-PASS")
+    )));
+    let after = engine.tick_timers(800, 600).expect("timer should repaint");
+    assert!(after.display_list.commands.iter().any(|command| matches!(
+        command, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("M428B-NODE-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m428_stop_immediate_event_reuse_and_native_repaint() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

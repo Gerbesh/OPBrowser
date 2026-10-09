@@ -336,6 +336,20 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S33",
+      "title": "Element event listener once/passive error isolation to native pixels",
+      "status": "M4.28b bounded original Element addEventListener options and diagnostics",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "DomListenerOptions"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_element_listeners"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "call_isolated_event_handler"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "active_event_listener_errors"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Element listener dictionaries only. No AbortSignal or document/window options, official async WPT harness or broad event conformance."
+    },
+    {
       "id": "S32",
       "title": "Immediate event propagation stop through native DOM pixels",
       "status": "M4.28a bounded stopImmediatePropagation in original JS",

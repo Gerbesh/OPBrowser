@@ -225,6 +225,18 @@ impl Engine {
         Some(self.active_document.as_ref()?.scripts)
     }
 
+    /// Bounded diagnostics for exceptions thrown by event listeners.
+    /// Listener exceptions do not count as top-level script failures.
+    pub fn active_event_listener_errors(&self) -> Option<&[String]> {
+        Some(
+            self.active_document
+                .as_ref()?
+                .runtime
+                .as_ref()?
+                .event_listener_errors(),
+        )
+    }
+
     pub fn active_styles(&self) -> Option<&StyleMap> {
         Some(&self.active_document.as_ref()?.style_collection.styles)
     }

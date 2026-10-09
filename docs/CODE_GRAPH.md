@@ -16,6 +16,19 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.28b: listener metadata, exception boundary and native paint
+
+op_js owns listener metadata keyed by DOM node/type/capture/function.
+The original VM reads once/passive/capture dictionaries and keeps its
+existing per-event callback maps. deliver_element_listeners merges
+native click and custom DOM Event delivery, removes once registrations
+before nested calls, suppresses passive cancelation, and isolates
+ordinary handler exceptions into bounded runtime diagnostics. Synthetic
+node IDs remap listener metadata to physical op_dom IDs after replay.
+op_engine exposes Engine.active_event_listener_errors and preserves
+DOM mutation -> layout -> op_paint rendering on successful handlers.
+No new dependencies or foreign JS engines were added.
+
 ## M4.28a: immediate-stop event control
 
 In op_js, EventStopImmediatePropagation marks the event's immediate-stop and path-stop flags; dispatch_dom_click_path and dispatch_custom_event_inner check after each callback. The custom event path resets its immediate-stop state for reuse. Engine script mutation replay through op_dom, layout and op_paint remains unchanged. VM and cross-crate native paint tests verify the flow. No new crate dependencies.

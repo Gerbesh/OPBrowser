@@ -48,6 +48,23 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.28b: Element listener options and handler errors
+
+Element.addEventListener and removeEventListener now recognize
+options.capture (or boolean capture). addEventListener supports
+once and passive and preserves the first options on duplicate
+registration. once registrations are removed before callback
+entry, preventing nested dispatch from invoking them twice.
+During a passive listener, Event.preventDefault() and legacy
+event.returnValue=false do not cancel the event. Other JS
+handler exceptions are isolated and recorded (max 32 entries),
+while execution-limit errors remain fatal. Native click, custom
+Event, timers and synthetic-to-physical DOM binding use these
+same options. Engine.active_event_listener_errors() exposes
+diagnostics without treating listener exceptions as whole-script
+failure. This is a bounded Element-only EventTarget slice,
+not complete browser event compatibility.
+
 ## M4.28a: stopImmediatePropagation
 
 Original JS native click, Event() and createEvent('Event') objects now expose stopImmediatePropagation(). Unlike stopPropagation(), it prevents later listeners on the current target as well as propagation to ancestors. Reused custom Events reset dispatch-specific stop state. VM and original DOM-to-pixel tests verify the behavior. once/passive listener options, exceptions across listeners and full DOM EventTarget conformance remain unfinished.

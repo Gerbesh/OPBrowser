@@ -16,6 +16,22 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S33 - Listener options and isolated event errors -> real pixels (M4.28b)
+
+Status: IMPLEMENTED bounded original Element EventTarget behavior.
+
+Original JavaScript Element.addEventListener parses capture/once/passive
+options into op_js DOM listener metadata. deliver_element_listeners
+removes once registrations before callback entry, suppresses passive
+preventDefault/returnValue cancelation, and reports non-budget thrown
+errors without blocking later DOM handlers. Dynamic element binding
+carries metadata from synthetic to native NodeId; timer callbacks
+can trigger subsequent dispatch. The unchanged op_engine DOM replay,
+op_dom mutations and op_paint display list carry the resulting text
+to native pixels. Five VM and two native integration tests cover this.
+Document/window listener options, AbortSignal, full WPT Events
+conformance and official asynchronous harness remain unsupported.
+
 ## S32 - stopImmediatePropagation -> native DOM pixels (M4.28a)
 
 Status: IMPLEMENTED partial original EventTarget semantics.

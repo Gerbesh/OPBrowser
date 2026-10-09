@@ -38,6 +38,15 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.28b adds Element.addEventListener options {capture, once, passive}
+and matching removal capture dictionaries. One-shot callbacks are
+removed before nested dispatch, passive callbacks cannot cancel
+events, and non-budget callback exceptions are recorded without
+silencing later listeners. The native Engine exposes bounded
+event-listener diagnostics; dynamic DOM binding/timer regressions
+verify native pixels. Browser-wide EventTarget, AbortSignal and
+official async WPT remain incomplete; pinned WPT counts are unchanged.
+
 M4.28a adds stopImmediatePropagation() on original native-click
 and custom/legacy Event objects, with correct same-target listener
 interruption and per-dispatch reset for reused custom events.
