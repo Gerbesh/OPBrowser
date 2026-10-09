@@ -3037,3 +3037,14 @@ This file is append-only project history.
   subtree lookup, dynamic click and independent DOM cycle checking.
 - JS Test262 runtime v1 remains 82/91 and v2 78/179 (110 skipped).
   No general DOM attributes or removal/insertion protocol yet.
+
+## 2026-10-09 - M4.21 real DOM removal, text and author recascade
+
+- Extended original VM to stage removeChild, insertBefore, attributes
+  and createTextNode. Real op_dom checks invalid references and cycles.
+- Preserved original node handles across subtree moves; nested IDs
+  now disappear and reappear on detach/reattach.
+- Made timer/click style changes recascade from the real document
+  while retaining previously loaded external CSS and color profiles.
+- Nine end-to-end DOM/native text paint checks; pinned Test262
+  runtime v1/v2 unchanged at 82/91 and 78/179 attempted.

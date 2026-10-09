@@ -1107,3 +1107,26 @@ counts must not be mislabeled as external conformance percentages.
 - NEXT M4.21: general DOM attributes, createTextNode/removeChild,
   sibling insertion and live node relationships; strengthen
   operation validation and style/incremental-layout correctness.
+
+## M4.21 - Text nodes, DOM removal/reinsert and live attributes (2026-10-09)
+
+- DONE real createTextNode with mutable textContent/nodeValue/data,
+  append/removal/reinsertion, native DOM representation and paint.
+- DONE removeChild/insertBefore with stable NodeIds, reference parent
+  verification and ancestor cycle protection. VM staging updates nested
+  ID visibility through detach/reattach in the same script.
+- DONE setAttribute/getAttribute/removeAttribute including id, class,
+  style and custom attributes. Parser-owned node metadata synchronizes
+  into VM; changes are replayed into the authoritative DOM.
+- DONE recascade after timer/click mutations: re-collect author CSS
+  and compute new styles while preserving loaded linked CSS and
+  downloaded color profile data. Nine new end-to-end native DOM
+  tests and independent op_dom validation checks pass.
+- VERIFIED Test262 Runtime v1 82/91 and v2 78/179 (110 SKIP),
+  unchanged. This is not a whole DOM or JS standards score.
+- LIMITATIONS: no general live parentNode/childNodes wrappers,
+  DOMTokenList/classList, CSSOM style object, replaceChild, HTML
+  insertion or MutationObserver; host replay may reject some complex
+  invalid changes asynchronously. Dynamic CSS/image fetches missing.
+- NEXT M4.22: live node relationships, richer attributes and style
+  object, correctness under reparenting and interactive smoke tests.

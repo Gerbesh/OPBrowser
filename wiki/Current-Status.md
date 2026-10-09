@@ -175,3 +175,11 @@ prevents parent/ancestor cycles. The v1/v2 Test262 runtime baseline
 is unchanged at 82/91 and 78/179 attempted (110 v2 SKIPs).
 General DOM removal, new Text nodes, attributes and style mutation
 are still missing.
+
+## M4.21: real DOM Text/removal/attributes
+
+The native VM now creates Text nodes, moves and removes real
+elements, changes attributes and recascades styles after callbacks.
+Nine end-to-end page tests pass, including same-script nested
+ID lookup on detach/reinsert. Test262 Runtime v1 82/91, v2
+78/179 attempted (110 skipped), unchanged and limited in scope.

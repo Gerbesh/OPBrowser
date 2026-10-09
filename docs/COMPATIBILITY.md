@@ -459,3 +459,14 @@ Runtime v1 remains 82/91 (90.11%), and Runtime v2 remains 78/179
 (43.58%) attempted plus 110 explicit SKIPs. DOM Web Platform
 conformance beyond these vertical cases is unmeasured; broad
 interactivity and full DOM interfaces remain incomplete.
+
+## M4.21 dynamic DOM and style updates
+
+Nine new native end-to-end tests check createTextNode, removeChild,
+insertBefore, id/class/style/data attributes, real text paint,
+descendant lookup after detachment, reparent and timer-driven
+CSS changes. Existing external CSS remains cached during recascade.
+The unchanged Test262 Runtime v1 and v2 scores remain 82/91 and
+78/179 (110 explicit skips). These DOM tests are narrow, not a
+full DOM WPT score. Many live Node, CSSOM and MutationObserver
+surfaces are absent.

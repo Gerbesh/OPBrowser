@@ -16,6 +16,17 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.21: reparenting and Text creation -> host DOM -> CSS -> pixels
+
+Original JS creates real Text nodes and stages removeChild,
+insertBefore, setAttribute and removeAttribute in a bounded
+DomOperation queue. It tracks existing parser-owned node attributes
+and parent relationships and updates nested ID lookup immediately.
+op_engine::scripts::apply_dom_operations validates and commits on
+op_dom::Document; the engine refreshes author style matching and
+computed styles using cached linked CSS/color profiles, then
+native layout and paint. Nine integration cases verify pixel changes.
+
 ## M4.20: DOM VM op queue -> real DOM nodes -> recomputed native pixels
 
 op_js::JsRuntime now owns bounded synthetic DOM node handles,

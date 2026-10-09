@@ -482,3 +482,13 @@ Mutations are queued in execution order to the page-owning engine,
 which creates real op_dom nodes, recalculates layout and paints them
 natively. Dynamic event handlers and timer changes work.
 This is bounded and partial, not a complete DOM specification.
+
+## M4.21: mutable Text nodes and real DOM tree reordering
+
+Native JavaScript supports createTextNode with editable data,
+nodeValue/textContent, removeChild/insertBefore and element
+attribute get/set/remove including class/id/style. Host replay
+modifies the authoritative DOM tree with reference and cycle
+checks. CSS rematching after timers/clicks preserves loaded
+external CSS and color profiles. Tests verify actual paint.
+Missing: full live Node relations, classList, CSSOM and observers.

@@ -55,6 +55,7 @@ enum ObjectKind {
     Array,
     Function,
     DomElement(usize),
+    DomText(usize),
     Headers,
 }
 
@@ -69,7 +70,13 @@ enum BuiltinFunction {
     ArrayPop,
     DomGetElementById,
     DomCreateElement,
+    DomCreateTextNode,
     DomAppendChild,
+    DomInsertBefore,
+    DomRemoveChild,
+    DomSetAttribute,
+    DomGetAttribute,
+    DomRemoveAttribute,
     DomAddEventListener,
     DomRemoveEventListener,
     EventStopPropagation,
@@ -202,9 +209,40 @@ pub struct DomTextMutation {
 /// and never treated as op_dom NodeIds until the host resolves them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DomOperation {
-    CreateElement { node: usize, tag: String },
-    AppendChild { parent: usize, child: usize },
-    SetId { node: usize, id: String },
+    CreateElement {
+        node: usize,
+        tag: String,
+    },
+    CreateText {
+        node: usize,
+        text: String,
+    },
+    AppendChild {
+        parent: usize,
+        child: usize,
+    },
+    InsertBefore {
+        parent: usize,
+        child: usize,
+        reference: Option<usize>,
+    },
+    RemoveChild {
+        parent: usize,
+        child: usize,
+    },
+    SetAttribute {
+        node: usize,
+        name: String,
+        value: String,
+    },
+    RemoveAttribute {
+        node: usize,
+        name: String,
+    },
+    SetId {
+        node: usize,
+        id: String,
+    },
     SetText(DomTextMutation),
 }
 
@@ -232,6 +270,7 @@ pub struct JsRuntime {
     dom_node_aliases: HashMap<usize, usize>,
     dom_pending_ids: HashMap<usize, String>,
     dom_pending_parents: HashMap<usize, usize>,
+    dom_attributes: HashMap<usize, HashMap<String, String>>,
     dom_attached: std::collections::HashSet<usize>,
     next_virtual_dom_node: usize,
     dom_click_listeners: HashMap<usize, Vec<JsValue>>,
@@ -325,6 +364,7 @@ impl Default for JsRuntime {
             dom_node_aliases: HashMap::new(),
             dom_pending_ids: HashMap::new(),
             dom_pending_parents: HashMap::new(),
+            dom_attributes: HashMap::new(),
             dom_attached: std::collections::HashSet::new(),
             next_virtual_dom_node: 1,
             dom_click_listeners: HashMap::new(),
@@ -423,6 +463,7 @@ impl JsRuntime {
         self.dom_node_aliases.clear();
         self.dom_pending_ids.clear();
         self.dom_pending_parents.clear();
+        self.dom_attributes.clear();
         self.dom_attached.clear();
         self.next_virtual_dom_node = 1;
         self.dom_click_listeners.clear();
@@ -455,6 +496,8 @@ impl JsRuntime {
         )?;
         let create =
             self.allocate_lifecycle_method("createElement", BuiltinFunction::DomCreateElement)?;
+        let create_text =
+            self.allocate_lifecycle_method("createTextNode", BuiltinFunction::DomCreateTextNode)?;
         let add_listener = self.allocate_lifecycle_method(
             "addEventListener",
             BuiltinFunction::LifecycleAddEventListener,
@@ -469,6 +512,7 @@ impl JsRuntime {
             HashMap::from([
                 ("getElementById".into(), JsValue::Object(function)),
                 ("createElement".into(), JsValue::Object(create)),
+                ("createTextNode".into(), JsValue::Object(create_text)),
                 ("body".into(), JsValue::Null),
                 ("addEventListener".into(), JsValue::Object(add_listener)),
                 (
@@ -1337,6 +1381,25 @@ impl JsRuntime {
             self.dom_attached.insert(element.node);
         }
     }
+    /// Synchronize real parsed-node attributes at parser script boundaries.
+    /// Detached/created attributes are kept by the VM across host commits.
+    pub fn sync_dom_attributes(&mut self, node: usize, attributes: Vec<(String, String)>) {
+        self.dom_attributes
+            .insert(node, attributes.into_iter().collect());
+    }
+
+    pub fn sync_dom_existing_node(
+        &mut self,
+        node: usize,
+        parent: Option<usize>,
+        attrs: Vec<(String, String)>,
+    ) {
+        self.dom_attached.insert(node);
+        if let Some(parent) = parent {
+            self.dom_pending_parents.insert(node, parent);
+        }
+        self.sync_dom_attributes(node, attrs);
+    }
     /// A host may associate a newly committed synthetic element with its
     /// physical NodeId. This preserves JS object identity across later reads.
     pub fn bind_dom_node(&mut self, virtual_node: usize, physical_node: usize) {
@@ -1519,6 +1582,38 @@ impl JsRuntime {
         Ok(handled)
     }
 
+    /// Make a previously detached subtree discoverable through getElementById
+    /// within the current script, without waiting for host operation replay.
+    fn attach_dom_subtree(&mut self, root: usize) {
+        let mut by_parent: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (&node, &parent) in &self.dom_pending_parents {
+            by_parent.entry(parent).or_default().push(node);
+        }
+        let mut visited = std::collections::HashSet::new();
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if !visited.insert(node) {
+                continue;
+            }
+            self.dom_attached.insert(node);
+            if let Some(id) = self.dom_pending_ids.get(&node).cloned().or_else(|| {
+                self.dom_attributes
+                    .get(&node)
+                    .and_then(|attrs| attrs.get("id"))
+                    .cloned()
+            }) && !id.is_empty()
+            {
+                self.dom_ids.insert(id, node);
+            }
+            if visited.len() >= 20_000 {
+                break;
+            }
+            if let Some(children) = by_parent.get(&node) {
+                stack.extend(children.iter().copied());
+            }
+        }
+    }
+
     fn dom_element_object(&mut self, node: usize) -> Result<ObjectId, JsError> {
         if let Some(&id) = self.dom_node_objects.get(&node) {
             return Ok(id);
@@ -1537,6 +1632,16 @@ impl JsRuntime {
         )?;
         let append =
             self.allocate_lifecycle_method("appendChild", BuiltinFunction::DomAppendChild)?;
+        let insert =
+            self.allocate_lifecycle_method("insertBefore", BuiltinFunction::DomInsertBefore)?;
+        let remove =
+            self.allocate_lifecycle_method("removeChild", BuiltinFunction::DomRemoveChild)?;
+        let set_attr =
+            self.allocate_lifecycle_method("setAttribute", BuiltinFunction::DomSetAttribute)?;
+        let get_attr =
+            self.allocate_lifecycle_method("getAttribute", BuiltinFunction::DomGetAttribute)?;
+        let remove_attr =
+            self.allocate_lifecycle_method("removeAttribute", BuiltinFunction::DomRemoveAttribute)?;
         let element = self.allocate_object(
             ObjectKind::DomElement(node),
             Some(self.object_prototype),
@@ -1552,6 +1657,11 @@ impl JsRuntime {
                     JsValue::Object(remove_listener),
                 ),
                 ("appendChild".into(), JsValue::Object(append)),
+                ("insertBefore".into(), JsValue::Object(insert)),
+                ("removeChild".into(), JsValue::Object(remove)),
+                ("setAttribute".into(), JsValue::Object(set_attr)),
+                ("getAttribute".into(), JsValue::Object(get_attr)),
+                ("removeAttribute".into(), JsValue::Object(remove_attr)),
             ]),
         )?;
         self.dom_node_objects.insert(node, element);
@@ -2709,6 +2819,225 @@ impl JsRuntime {
             let object = self.dom_element_object(virtual_node)?;
             return Ok(CallOutcome::Value(JsValue::Object(object)));
         }
+        if builtin == BuiltinFunction::DomCreateTextNode {
+            if !matches!(this_value,JsValue::Object(object) if Some(object)==self.dom_document) {
+                return Err(JsError::type_error(
+                    "createTextNode requires document receiver",
+                ));
+            }
+            let text = arguments
+                .first()
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            if text.len() > 64 * 1024
+                || self.next_virtual_dom_node > 256
+                || self.dom_operations.len() >= 256
+            {
+                return Err(JsError::execution_limit("createTextNode budget exceeded"));
+            }
+            let node = usize::MAX - self.next_virtual_dom_node;
+            self.next_virtual_dom_node += 1;
+            self.dom_text.insert(node, text.clone());
+            self.dom_operations.push(DomOperation::CreateText {
+                node,
+                text: text.clone(),
+            });
+            let object = self.allocate_object(
+                ObjectKind::DomText(node),
+                Some(self.object_prototype),
+                HashMap::from([
+                    ("textContent".into(), JsValue::String(text.clone())),
+                    ("nodeValue".into(), JsValue::String(text.clone())),
+                    ("data".into(), JsValue::String(text)),
+                    ("nodeType".into(), JsValue::Number(3.0)),
+                ]),
+            )?;
+            self.dom_node_objects.insert(node, object);
+            return Ok(CallOutcome::Value(JsValue::Object(object)));
+        }
+        if matches!(
+            builtin,
+            BuiltinFunction::DomSetAttribute
+                | BuiltinFunction::DomGetAttribute
+                | BuiltinFunction::DomRemoveAttribute
+        ) {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error(
+                    "attribute method requires element receiver",
+                ));
+            };
+            let ObjectKind::DomElement(node) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error(
+                    "attribute method requires element receiver",
+                ));
+            };
+            let Some(name_value) = arguments.first() else {
+                return Err(JsError::type_error("attribute name is missing"));
+            };
+            let name = name_value.to_js_string().to_ascii_lowercase();
+            if name.is_empty()
+                || name.len() > 128
+                || !name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b':')
+            {
+                return Err(JsError::type_error("invalid attribute name"));
+            }
+            if builtin == BuiltinFunction::DomGetAttribute {
+                return Ok(CallOutcome::Value(
+                    self.dom_attributes
+                        .get(&node)
+                        .and_then(|attrs| attrs.get(&name))
+                        .map(|text| JsValue::String(text.clone()))
+                        .unwrap_or(JsValue::Null),
+                ));
+            }
+            if self.dom_operations.len() >= 256 {
+                return Err(JsError::execution_limit(
+                    "DOM attribute mutation budget exceeded",
+                ));
+            }
+            if builtin == BuiltinFunction::DomRemoveAttribute {
+                self.dom_attributes.entry(node).or_default().remove(&name);
+                if name == "id" {
+                    self.dom_ids.retain(|_, value| *value != node);
+                    self.dom_pending_ids.remove(&node);
+                    self.object_mut(receiver)?
+                        .properties
+                        .insert("id".into(), JsValue::String(String::new()));
+                }
+                self.dom_operations
+                    .push(DomOperation::RemoveAttribute { node, name });
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
+            let value = arguments
+                .get(1)
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            if value.len() > 64 * 1024 {
+                return Err(JsError::execution_limit(
+                    "DOM attribute value length budget exceeded",
+                ));
+            }
+            if name == "id" {
+                self.dom_ids.retain(|_, old| *old != node);
+                self.dom_pending_ids.insert(node, value.clone());
+                if self.dom_attached.contains(&node) && !value.is_empty() {
+                    self.dom_ids.insert(value.clone(), node);
+                }
+                self.object_mut(receiver)?
+                    .properties
+                    .insert("id".into(), JsValue::String(value.clone()));
+            }
+            self.dom_attributes
+                .entry(node)
+                .or_default()
+                .insert(name.clone(), value.clone());
+            self.dom_operations
+                .push(DomOperation::SetAttribute { node, name, value });
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
+        if matches!(
+            builtin,
+            BuiltinFunction::DomInsertBefore | BuiltinFunction::DomRemoveChild
+        ) {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("DOM parent receiver required"));
+            };
+            let ObjectKind::DomElement(parent) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error("DOM parent receiver required"));
+            };
+            let Some(JsValue::Object(child_object)) = arguments.first() else {
+                return Err(JsError::type_error("DOM child argument required"));
+            };
+            let child = match self.object(*child_object)?.kind {
+                ObjectKind::DomElement(node) | ObjectKind::DomText(node) => node,
+                _ => return Err(JsError::type_error("DOM child argument must be a node")),
+            };
+            if builtin == BuiltinFunction::DomRemoveChild {
+                if self.dom_pending_parents.get(&child).copied() != Some(parent) {
+                    return Err(JsError::type_error(
+                        "removeChild target is not a direct child",
+                    ));
+                }
+                // Hide IDs of the detached node and every descendant.
+                let mut by_parent: HashMap<usize, Vec<usize>> = HashMap::new();
+                for (&node, &owner) in &self.dom_pending_parents {
+                    by_parent.entry(owner).or_default().push(node);
+                }
+                let mut detached = std::collections::HashSet::new();
+                let mut stack = vec![child];
+                while let Some(node) = stack.pop() {
+                    if !detached.insert(node) {
+                        continue;
+                    }
+                    if let Some(children) = by_parent.get(&node) {
+                        stack.extend(children.iter().copied());
+                    }
+                    if detached.len() > 20_000 {
+                        return Err(JsError::execution_limit("DOM subtree size exceeded"));
+                    }
+                }
+                if self.dom_operations.len() >= 256 {
+                    return Err(JsError::execution_limit("DOM operation budget exceeded"));
+                }
+                self.dom_pending_parents.remove(&child);
+                self.dom_attached.retain(|node| !detached.contains(node));
+                self.dom_ids.retain(|_, node| !detached.contains(node));
+                self.dom_operations
+                    .push(DomOperation::RemoveChild { parent, child });
+                return Ok(CallOutcome::Value(JsValue::Object(*child_object)));
+            }
+            let reference = match arguments.get(1) {
+                Some(JsValue::Object(ref_object)) => {
+                    let reference = match self.object(*ref_object)?.kind {
+                        ObjectKind::DomElement(node) | ObjectKind::DomText(node) => node,
+                        _ => return Err(JsError::type_error("invalid insertBefore reference")),
+                    };
+                    Some(reference)
+                }
+                Some(JsValue::Null) => None,
+                _ => {
+                    return Err(JsError::type_error(
+                        "insertBefore requires reference or null",
+                    ));
+                }
+            };
+            if reference.is_some_and(|reference| {
+                self.dom_pending_parents.get(&reference).copied() != Some(parent)
+            }) {
+                return Err(JsError::type_error("reference is not a direct child"));
+            }
+            if child == parent {
+                return Err(JsError::type_error("cannot insert element into itself"));
+            }
+            let mut cursor = Some(parent);
+            for _ in 0..=20_000 {
+                let Some(current) = cursor else {
+                    break;
+                };
+                if current == child {
+                    return Err(JsError::type_error("cyclic DOM insertion"));
+                }
+                cursor = self.dom_pending_parents.get(&current).copied();
+            }
+            if cursor.is_some() {
+                return Err(JsError::execution_limit("DOM ancestor depth exceeded"));
+            }
+            if self.dom_operations.len() >= 256 {
+                return Err(JsError::execution_limit("DOM operation budget exceeded"));
+            }
+            self.dom_pending_parents.insert(child, parent);
+            self.dom_operations.push(DomOperation::InsertBefore {
+                parent,
+                child,
+                reference,
+            });
+            if self.dom_attached.contains(&parent) {
+                self.attach_dom_subtree(child);
+            }
+            return Ok(CallOutcome::Value(JsValue::Object(*child_object)));
+        }
         if builtin == BuiltinFunction::DomAppendChild {
             let JsValue::Object(parent_id) = this_value else {
                 return Err(JsError::type_error("appendChild requires element receiver"));
@@ -2719,8 +3048,9 @@ impl JsRuntime {
             let Some(JsValue::Object(child_id)) = arguments.first() else {
                 return Err(JsError::type_error("appendChild requires a DOM element"));
             };
-            let ObjectKind::DomElement(child) = self.object(*child_id)?.kind else {
-                return Err(JsError::type_error("appendChild requires a DOM element"));
+            let child = match self.object(*child_id)?.kind {
+                ObjectKind::DomElement(node) | ObjectKind::DomText(node) => node,
+                _ => return Err(JsError::type_error("appendChild requires a DOM node")),
             };
             if parent == child {
                 return Err(JsError::type_error("cannot append element to itself"));
@@ -2746,29 +3076,8 @@ impl JsRuntime {
             self.dom_pending_parents.insert(child, parent);
             self.dom_operations
                 .push(DomOperation::AppendChild { parent, child });
-            // A detached subtree can have its IDs assigned before it is
-            // appended. Once an ancestor is attached, every reachable
-            // descendant becomes discoverable in the same script.
-            for _ in 0..=256 {
-                let newly_attached: Vec<_> = self
-                    .dom_pending_parents
-                    .iter()
-                    .filter_map(|(&node, &owner)| {
-                        (self.dom_attached.contains(&owner) && !self.dom_attached.contains(&node))
-                            .then_some(node)
-                    })
-                    .collect();
-                if newly_attached.is_empty() {
-                    break;
-                }
-                for node in newly_attached {
-                    self.dom_attached.insert(node);
-                    if let Some(id) = self.dom_pending_ids.get(&node)
-                        && !id.is_empty()
-                    {
-                        self.dom_ids.insert(id.clone(), node);
-                    }
-                }
+            if self.dom_attached.contains(&parent) {
+                self.attach_dom_subtree(child);
             }
             return Ok(CallOutcome::Value(JsValue::Object(*child_id)));
         }
@@ -2859,7 +3168,13 @@ impl JsRuntime {
             BuiltinFunction::SyntaxError => ("SyntaxError", self.syntax_error_prototype),
             BuiltinFunction::DomGetElementById
             | BuiltinFunction::DomCreateElement
+            | BuiltinFunction::DomCreateTextNode
             | BuiltinFunction::DomAppendChild
+            | BuiltinFunction::DomInsertBefore
+            | BuiltinFunction::DomRemoveChild
+            | BuiltinFunction::DomSetAttribute
+            | BuiltinFunction::DomGetAttribute
+            | BuiltinFunction::DomRemoveAttribute
             | BuiltinFunction::DomAddEventListener
             | BuiltinFunction::DomRemoveEventListener
             | BuiltinFunction::EventStopPropagation
@@ -3142,6 +3457,13 @@ impl JsRuntime {
                 {
                     return Ok(JsValue::Number(value.encode_utf16().count() as f64));
                 }
+                if matches!(key, "textContent" | "nodeValue" | "data")
+                    && let ObjectKind::DomText(node) = self.object(*id)?.kind
+                {
+                    return Ok(JsValue::String(
+                        self.dom_text.get(&node).cloned().unwrap_or_default(),
+                    ));
+                }
                 if key == "textContent"
                     && let ObjectKind::DomElement(node) = self.object(*id)?.kind
                 {
@@ -3208,6 +3530,10 @@ impl JsRuntime {
             }
             self.dom_ids.retain(|_, old| *old != node);
             self.dom_pending_ids.insert(node, id_string.clone());
+            self.dom_attributes
+                .entry(node)
+                .or_default()
+                .insert("id".into(), id_string.clone());
             if self.dom_attached.contains(&node) && !id_string.is_empty() {
                 self.dom_ids.insert(id_string.clone(), node);
             }
@@ -3228,6 +3554,36 @@ impl JsRuntime {
                 }
                 _ => return Err(JsError::type_error("onclick must be callable")),
             }
+        }
+        if (key == "textContent" || key == "nodeValue" || key == "data")
+            && let ObjectKind::DomText(node) = self.object(*id)?.kind
+        {
+            if self.dom_operations.len() >= 256 {
+                return Err(JsError::execution_limit(
+                    "DOM text mutation budget exceeded",
+                ));
+            }
+            let text = value.to_js_string();
+            if text.len() > 64 * 1024 {
+                return Err(JsError::execution_limit("DOM text length budget exceeded"));
+            }
+            self.dom_text.insert(node, text.clone());
+            let mutation = DomTextMutation {
+                node,
+                text_content: text.clone(),
+            };
+            self.dom_mutations.push(mutation.clone());
+            self.dom_operations.push(DomOperation::SetText(mutation));
+            self.object_mut(*id)?
+                .properties
+                .insert("textContent".into(), JsValue::String(text.clone()));
+            self.object_mut(*id)?
+                .properties
+                .insert("nodeValue".into(), JsValue::String(text.clone()));
+            self.object_mut(*id)?
+                .properties
+                .insert("data".into(), JsValue::String(text));
+            return Ok(());
         }
         if key == "textContent"
             && let ObjectKind::DomElement(node) = self.object(*id)?.kind

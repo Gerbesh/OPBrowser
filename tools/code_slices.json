@@ -336,6 +336,22 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S25",
+      "title": "DOM removal and attributes trigger style recascade and native paint",
+      "status": "M4.21 actual DOM and CSS update",
+      "steps": [
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "render_html"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "call_builtin"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "take_dom_operations"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "insert_before"},
+        {"path": "crates/op_css/src/lib.rs", "symbol": "collect_author_styles_with_linked"},
+        {"path": "crates/op_css/src/lib.rs", "symbol": "compute_styles"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Initial bounded DOM subset, not full WPT or CSSOM."
+    },
+    {
       "id": "S24",
       "title": "DOM element creation and attachment through original VM to native paint",
       "status": "M4.20 original VM pending DOM operations and authoritative tree",

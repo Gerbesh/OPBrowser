@@ -57,6 +57,8 @@ pub enum DocumentError {
     UnknownChild,
     SelfParenting,
     AncestorCycle,
+    InvalidReference,
+    NotAChild,
 }
 
 #[derive(Debug)]
@@ -142,6 +144,14 @@ impl Document {
         if parent == child {
             return Err(DocumentError::SelfParenting);
         }
+        if let Some(reference) = reference {
+            if self.nodes[reference.index()].parent != Some(parent) {
+                return Err(DocumentError::InvalidReference);
+            }
+            if reference == child {
+                return Ok(());
+            }
+        }
         // Never allow a descendant to acquire one of its ancestors,
         // including moves of detached subtrees. Check before detaching
         // the old parent so failures leave the document intact.
@@ -176,6 +186,25 @@ impl Document {
             Some(index) => self.nodes[parent.index()].children.insert(index, child),
             None => self.nodes[parent.index()].children.push(child),
         }
+        Ok(())
+    }
+
+    /// Detach a direct child without deleting its identity or descendants.
+    /// Invalid removals leave both nodes and their linkage unchanged.
+    pub fn remove_child(&mut self, parent: NodeId, child: NodeId) -> Result<(), DocumentError> {
+        if parent.index() >= self.nodes.len() {
+            return Err(DocumentError::UnknownParent);
+        }
+        if child.index() >= self.nodes.len() {
+            return Err(DocumentError::UnknownChild);
+        }
+        if self.nodes[child.index()].parent != Some(parent) {
+            return Err(DocumentError::NotAChild);
+        }
+        self.nodes[parent.index()]
+            .children
+            .retain(|&id| id != child);
+        self.nodes[child.index()].parent = None;
         Ok(())
     }
 
@@ -224,6 +253,22 @@ impl Document {
                 .expect("new text node and parent are valid");
         }
         true
+    }
+
+    pub fn set_text_node_content(&mut self, node: NodeId, text: &str) -> bool {
+        if text.len() > 64 * 1024 {
+            return false;
+        }
+        let Some(node) = self.nodes.get_mut(node.index()) else {
+            return false;
+        };
+        match &mut node.kind {
+            NodeKind::Text(value) => {
+                *value = text.to_owned();
+                true
+            }
+            _ => false,
+        }
     }
 
     pub fn document_type(&self, id: NodeId) -> Option<&DocumentTypeData> {
@@ -281,5 +326,34 @@ mod dynamic_mutation_tests {
         assert_eq!(document.node(parent).unwrap().parent, Some(document.root()));
         assert_eq!(document.children(parent), &[child]);
         assert_eq!(document.node(grandchild).unwrap().parent, Some(child));
+    }
+}
+
+#[cfg(test)]
+mod dynamic_remove_move_tests {
+    use super::*;
+    #[test]
+    fn remove_and_reinsert_keep_node_identity_and_protect_invalid_reference() {
+        let mut dom = Document::new();
+        let root = dom.create_element("main");
+        let first = dom.create_element("p");
+        let second = dom.create_element("b");
+        let foreign = dom.create_element("i");
+        dom.append_child(dom.root(), root).unwrap();
+        dom.append_child(root, first).unwrap();
+        dom.append_child(root, second).unwrap();
+        assert_eq!(
+            dom.insert_before(root, second, Some(foreign)),
+            Err(DocumentError::InvalidReference)
+        );
+        assert_eq!(dom.children(root), &[first, second]);
+        dom.insert_before(root, second, Some(first)).unwrap();
+        assert_eq!(dom.children(root), &[second, first]);
+        assert_eq!(dom.remove_child(root, first), Ok(()));
+        assert_eq!(dom.remove_child(root, first), Err(DocumentError::NotAChild));
+        assert_eq!(dom.node(first).unwrap().parent, None);
+        dom.append_child(root, first).unwrap();
+        assert_eq!(dom.children(root), &[second, first]);
+        assert_eq!(dom.node(first).unwrap().parent, Some(root));
     }
 }

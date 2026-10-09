@@ -16,6 +16,16 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S25 - DOM removal, reinsert, Text and attributes -> pixels (M4.21)
+
+Status: IMPLEMENTED bounded original VM through native DOM.
+Original-JS methods queue CreateText, InsertBefore, RemoveChild
+and attribute operations. The engine commits these to op_dom,
+recollects CSS (retaining linked sheets), recomputes styles,
+then paints the real modified tree. Nine integration tests
+cover subtree IDs, stable handles, timers and visible pixels.
+Broad DOM/CSSOM compliance remains incomplete.
+
 ## S24 - document.createElement -> appendChild -> native pixels (M4.20)
 
 Status: IMPLEMENTED bounded initial dynamic DOM slice.

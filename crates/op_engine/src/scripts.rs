@@ -153,6 +153,38 @@ fn find_body(document: &Document) -> Option<NodeId> {
     None
 }
 
+/// Refresh existing-node parentage/attributes before each script runs.
+/// A bounded traversal ensures removeChild and insertBefore validate
+/// real parser-built nodes as well as new nodes created in the VM.
+fn sync_dom_tree(document: &Document, runtime: &mut JsRuntime) {
+    let mut stack = vec![(document.root(), None)];
+    let mut count = 0usize;
+    while let Some((node, parent)) = stack.pop() {
+        count += 1;
+        if count > MAX_NODES {
+            break;
+        }
+        if let Some(element) = document.element(node) {
+            runtime.sync_dom_existing_node(
+                node.index(),
+                parent.map(|id: NodeId| id.index()),
+                element
+                    .attributes
+                    .iter()
+                    .map(|a| (a.name.clone(), a.value.clone()))
+                    .collect(),
+            );
+        }
+        stack.extend(
+            document
+                .children(node)
+                .iter()
+                .rev()
+                .map(|id| (*id, Some(node))),
+        );
+    }
+}
+
 /// Commit ordered JS mutations to the authoritative DOM tree. Synthetic
 /// handles are resolved through the page-owned VM, never exposed as raw
 /// op_dom NodeIds. This routine is shared by parser scripts, clicks and timers.
@@ -160,6 +192,12 @@ pub(crate) fn apply_dom_operations(document: &mut Document, runtime: &mut JsRunt
     let mut changed = 0;
     for op in runtime.take_dom_operations() {
         match op {
+            DomOperation::CreateText { node, text } => {
+                if document.len() < MAX_NODES {
+                    let real = document.create_text(text);
+                    runtime.bind_dom_node(node, real.index());
+                }
+            }
             DomOperation::CreateElement { node, tag } => {
                 if document.len() >= MAX_NODES {
                     continue;
@@ -168,12 +206,57 @@ pub(crate) fn apply_dom_operations(document: &mut Document, runtime: &mut JsRunt
                 runtime.bind_dom_node(node, actual.index());
                 // Detached creation by itself does not change visible layout.
             }
+            DomOperation::InsertBefore {
+                parent,
+                child,
+                reference,
+            } => {
+                let parent = document.node_id(runtime.resolve_dom_node(parent));
+                let child = document.node_id(runtime.resolve_dom_node(child));
+                let reference =
+                    reference.and_then(|node| document.node_id(runtime.resolve_dom_node(node)));
+                if let (Some(parent), Some(child)) = (parent, child)
+                    && document.element(parent).is_some()
+                    && document.insert_before(parent, child, reference).is_ok()
+                {
+                    changed += 1;
+                }
+            }
+            DomOperation::RemoveChild { parent, child } => {
+                let parent = document.node_id(runtime.resolve_dom_node(parent));
+                let child = document.node_id(runtime.resolve_dom_node(child));
+                if let (Some(parent), Some(child)) = (parent, child)
+                    && document.remove_child(parent, child).is_ok()
+                {
+                    changed += 1;
+                }
+            }
+            DomOperation::SetAttribute { node, name, value } => {
+                if let Some(node) = document.node_id(runtime.resolve_dom_node(node))
+                    && let Some(element) = document.element_mut(node)
+                {
+                    if let Some(existing) = element.attributes.iter_mut().find(|a| a.name == name) {
+                        existing.value = value;
+                    } else {
+                        element.attributes.push(Attribute { name, value });
+                    }
+                    changed += 1;
+                }
+            }
+            DomOperation::RemoveAttribute { node, name } => {
+                if let Some(node) = document.node_id(runtime.resolve_dom_node(node))
+                    && let Some(element) = document.element_mut(node)
+                {
+                    let old = element.attributes.len();
+                    element.attributes.retain(|a| a.name != name);
+                    changed += usize::from(element.attributes.len() != old);
+                }
+            }
             DomOperation::AppendChild { parent, child } => {
                 let parent = document.node_id(runtime.resolve_dom_node(parent));
                 let child = document.node_id(runtime.resolve_dom_node(child));
                 if let (Some(parent), Some(child)) = (parent, child)
                     && document.element(parent).is_some()
-                    && document.element(child).is_some()
                     && document.append_child(parent, child).is_ok()
                 {
                     changed += 1;
@@ -195,12 +278,16 @@ pub(crate) fn apply_dom_operations(document: &mut Document, runtime: &mut JsRunt
             }
             DomOperation::SetText(mutation) => {
                 if let Some(node) = document.node_id(runtime.resolve_dom_node(mutation.node))
-                    && document.set_text_content(node, &mutation.text_content)
+                    && (document.set_text_content(node, &mutation.text_content)
+                        || document.set_text_node_content(node, &mutation.text_content))
                 {
                     changed += 1;
                 }
             }
         }
+    }
+    if changed > 0 {
+        sync_dom_tree(document, runtime);
     }
     changed
 }
@@ -535,6 +622,7 @@ impl ParserScriptRunner<'_> {
             self.runtime = Some(runtime);
         }
         let runtime = self.runtime.as_mut().expect("runtime just installed");
+        sync_dom_tree(document, runtime);
         if let Some(body) = find_body(document)
             && runtime.set_dom_body_node(body.index()).is_err()
         {
@@ -590,6 +678,7 @@ pub(crate) fn execute_retained(
         report.failed = scripts.len();
         return (report, None);
     }
+    sync_dom_tree(document, &mut runtime);
     if let Some(body) = find_body(document) {
         let _ = runtime.set_dom_body_node(body.index());
     }

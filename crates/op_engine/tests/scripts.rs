@@ -2,6 +2,222 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m421_detach_reattach_subtree_restores_nested_id_same_script() {
+    let mut engine = Engine::new();
+    let page=engine.set_html_page(concat!(
+        "<main id='host'><section id='parent'><p id='grandchild'>BEFORE-REATTACH-421</p></section></main>",
+        "<script>",
+        "var host=document.getElementById('host');",
+        "var parent=document.getElementById('parent');",
+        "var grandchild=document.getElementById('grandchild');",
+        "host.removeChild(parent);",
+        "var hidden=document.getElementById('grandchild')===null;",
+        "host.appendChild(parent);",
+        "var restored=document.getElementById('grandchild')===grandchild;",
+        "grandchild.textContent=hidden && restored?'RESTORED-NESTED-421':'STILL-MISSING';",
+        "</script>"
+    ),800,600);
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("RESTORED-NESTED-421")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m421_subtree_removal_hides_descendant_ids_in_same_script() {
+    let mut engine = Engine::new();
+    let page=engine.set_html_page(concat!(
+        "<main id='root'><section id='middle'><p id='descendant'>CHILD-BEFORE-421</p></section></main>",
+        "<script>",
+        "var root=document.getElementById('root');",
+        "var middle=document.getElementById('middle');",
+        "var child=document.getElementById('descendant');",
+        "root.removeChild(middle);",
+        "if(document.getElementById('descendant')!==null) root.textContent='BAD-STILL-FOUND';",
+        "else root.textContent='GONE-SUBTREE-421';",
+        "</script>"
+    ),800,600);
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("BAD-STILL-FOUND")
+    )));
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("GONE-SUBTREE-421")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m421_timer_style_and_text_insert_reflows_authoritative_dom() {
+    let mut engine = Engine::new();
+    let initial = engine.set_html_page(
+        concat!(
+            "<main id='host'><p id='message'>BEFORE-TIMER-421</p></main>",
+            "<script>setTimeout(function(){",
+            "var message=document.getElementById('message');",
+            "message.setAttribute('style','display:none');",
+            "var text=document.createTextNode('TIMER-TEXT-421');",
+            "document.getElementById('host').appendChild(text);",
+            "},0);</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(initial.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("BEFORE-TIMER-421")
+    )));
+    let updated = engine
+        .tick_timers(800, 600)
+        .expect("timer should mutate tree and style");
+    assert!(!updated.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("BEFORE-TIMER-421")
+    )));
+    assert!(updated.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("TIMER-TEXT-421")
+    )));
+}
+
+#[test]
+fn m421_create_text_node_append_and_edit_repaints() {
+    let mut engine = Engine::new();
+    let page=engine.set_html_page(concat!(
+        "<main id='host'></main><script>",
+        "var text=document.createTextNode('REAL-TEXT-421');",
+        "var same=text.nodeType===3 && text.data==='REAL-TEXT-421' && text.nodeValue==='REAL-TEXT-421';",
+        "var parent=document.getElementById('host');",
+        "var returned=parent.appendChild(text);",
+        "text.data=same && returned===text ? 'EDITED-TEXT-421' : 'BROKEN-TEXT';",
+        "</script>"
+    ),800,600);
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("EDITED-TEXT-421")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m421_text_node_can_be_removed_and_reinserted() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'></main><script>",
+            "var p=document.getElementById('host');",
+            "var t=document.createTextNode('TEXT-MOVED-421');",
+            "p.appendChild(t);",
+            "var x=p.removeChild(t);",
+            "p.insertBefore(x,null);",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("TEXT-MOVED-421")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m421_remove_and_reinsert_existing_node_preserves_identity_and_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'><p id='first'>FIRST-421</p><p id='second'>SECOND-421</p></main>",
+            "<script>",
+            "var host=document.getElementById('host');",
+            "var first=document.getElementById('first');",
+            "var second=document.getElementById('second');",
+            "var returned=host.removeChild(first);",
+            "var detached=(returned===first && document.getElementById('first')===null);",
+            "var again=host.insertBefore(first, second);",
+            "if(detached && again===first && document.getElementById('first')===first) ",
+            " first.textContent='M421-REINSERTED';",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M421-REINSERTED")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m421_remove_node_really_removes_visible_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'><strong id='to-remove'>DISAPPEAR-421</strong><p>STAYS-421</p></main>",
+            "<script>",
+            "var parent=document.getElementById('host');",
+            "var remove=document.getElementById('to-remove');",
+            "parent.removeChild(remove);",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("DISAPPEAR-421")
+    )));
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("STAYS-421")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m421_attributes_update_real_styles_and_lookup() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'><p id='message' class='old'>HIDDEN-421</p><p>VISIBLE-421</p></main>",
+            "<script>",
+            "var node=document.getElementById('message');",
+            "var old=node.getAttribute('class');",
+            "node.setAttribute('class','new');",
+            "node.setAttribute('data-test','OK');",
+            "node.setAttribute('style','display:none');",
+            "var correct=old==='old' && node.getAttribute('class')==='new' ",
+            " && node.getAttribute('data-test')==='OK' && node.getAttribute('missing')===null;",
+            "node.removeAttribute('data-test');",
+            "var gone=node.getAttribute('data-test')===null;",
+            "if(!correct || !gone) node.removeAttribute('style');",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("HIDDEN-421")
+    )));
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("VISIBLE-421")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m421_invalid_reference_does_not_move_existing_child() {
+    let mut engine = Engine::new();
+    let page=engine.set_html_page(concat!(
+        "<div id='host'><p id='one'>ONE-421</p></div><div id='other'><p id='two'>TWO-421</p></div>",
+        "<script>",
+        "var a=document.getElementById('host');",
+        "var one=document.getElementById('one');",
+        "var two=document.getElementById('two');",
+        "var caught=false;",
+        "try{a.insertBefore(one,two)}catch(e){caught=true}",
+        "if(caught) one.textContent='INVALID-REF-SAFE-421';",
+        "</script>"
+    ),800,600);
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("INVALID-REF-SAFE-421")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m420_create_append_and_late_lookup_really_repaint_dom() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

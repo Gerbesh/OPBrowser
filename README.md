@@ -38,6 +38,12 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.21 adds genuine Text nodes, insertBefore/removeChild,
+setAttribute/getAttribute/removeAttribute, and live id/class/style changes.
+Nested detach/reattach retains JS identity and updates lookup. Author CSS
+is refreshed after timer/click mutations, keeping previously loaded linked
+stylesheets and color profiles. Nine new native paint tests cover the slice.
+
 M4.20 adds the first real dynamic DOM path: document.createElement(),
 Element.appendChild(), element.id, and element.textContent now mutate the
 authoritative DOM tree through page-owned bounded operations, with layout,

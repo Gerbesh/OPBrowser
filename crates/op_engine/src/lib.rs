@@ -122,11 +122,38 @@ struct PreparedDocument {
     style_collection: StyleCollection,
     computed_styles: ComputedStyleMap,
     stylesheet_addresses: std::collections::HashMap<op_dom::NodeId, String>,
+    linked_stylesheet_texts: std::collections::HashMap<op_dom::NodeId, String>,
+    color_profiles: std::collections::HashMap<String, Vec<u8>>,
     scripts: ScriptReport,
     runtime: Option<op_js::JsRuntime>,
 }
 
 impl PreparedDocument {
+    /// Rebuild author matching and inline styles against the mutated real
+    /// DOM, retaining originally loaded linked CSS and color profiles.
+    fn refresh_styles(&mut self) {
+        self.style_collection =
+            collect_author_styles_with_linked(&self.document, &self.linked_stylesheet_texts);
+        if !self.color_profiles.is_empty() {
+            let mut converted = std::collections::HashMap::new();
+            self.style_collection
+                .styles
+                .resolve_custom_profile_colors(|name, channels| {
+                    let key = (name.to_owned(), channels);
+                    if let Some(value) = converted.get(&key) {
+                        return *value;
+                    }
+                    let value = self
+                        .color_profiles
+                        .get(name)
+                        .and_then(|profile| op_image::convert_icc_rgb(profile, channels).ok());
+                    converted.insert(key, value);
+                    value
+                });
+        }
+        self.computed_styles = compute_styles(&self.document, &self.style_collection.styles);
+    }
+
     fn render(&self, width: i32, height: i32) -> RenderedPage {
         let layout = layout_document_with_backgrounds_and_resources(
             &self.document,
@@ -263,6 +290,8 @@ impl Engine {
             style_collection,
             computed_styles,
             stylesheet_addresses: std::collections::HashMap::new(),
+            linked_stylesheet_texts: std::collections::HashMap::new(),
+            color_profiles: std::collections::HashMap::new(),
             scripts: script_report,
             runtime,
         };
@@ -308,8 +337,7 @@ impl Engine {
         }
         prepared.scripts.mutations += changes;
         if changes > 0 {
-            prepared.computed_styles =
-                compute_styles(&prepared.document, &prepared.style_collection.styles);
+            prepared.refresh_styles();
         }
         Some(prepared.render(width, height))
     }
@@ -446,8 +474,7 @@ impl Engine {
             return None;
         }
         prepared.scripts.mutations += changes;
-        prepared.computed_styles =
-            compute_styles(&prepared.document, &prepared.style_collection.styles);
+        prepared.refresh_styles();
         Some(prepared.render(width, height))
     }
 
@@ -585,6 +612,8 @@ impl Engine {
             style_collection,
             computed_styles,
             stylesheet_addresses: linked_stylesheets.addresses,
+            linked_stylesheet_texts: linked_stylesheets.texts,
+            color_profiles: profiles,
             scripts: script_report,
             runtime,
         })
