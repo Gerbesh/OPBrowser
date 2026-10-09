@@ -115,6 +115,7 @@ enum BuiltinFunction {
     EventPreventDefault,
     LifecycleAddEventListener,
     LifecycleRemoveEventListener,
+    LifecycleDispatchEvent,
     SetTimeout,
     ClearTimeout,
     SetInterval,
@@ -335,6 +336,7 @@ pub struct JsRuntime {
     dom_programmatic_click_depth: usize,
     dom_document: Option<ObjectId>,
     lifecycle_listeners: HashMap<(ObjectId, String, bool), Vec<JsValue>>,
+    lifecycle_listener_options: HashMap<(ObjectId, String, bool, ObjectId), DomListenerOptions>,
     timers: Vec<PendingTimer>,
     next_timer_id: u32,
     microtasks: VecDeque<JsValue>,
@@ -443,6 +445,7 @@ impl Default for JsRuntime {
             dom_programmatic_click_depth: 0,
             dom_document: None,
             lifecycle_listeners: HashMap::new(),
+            lifecycle_listener_options: HashMap::new(),
             timers: Vec::new(),
             next_timer_id: 1,
             microtasks: VecDeque::new(),
@@ -564,6 +567,7 @@ impl JsRuntime {
         self.dom_dispatch_depth = 0;
         self.dom_programmatic_click_depth = 0;
         self.lifecycle_listeners.clear();
+        self.lifecycle_listener_options.clear();
         self.timers.clear();
         self.next_timer_id = 1;
         self.microtasks.clear();
@@ -619,6 +623,8 @@ impl JsRuntime {
             "removeEventListener",
             BuiltinFunction::LifecycleRemoveEventListener,
         )?;
+        let dispatch_listener = self
+            .allocate_lifecycle_method("dispatchEvent", BuiltinFunction::LifecycleDispatchEvent)?;
         let document = self.allocate_object(
             ObjectKind::Ordinary,
             Some(self.object_prototype),
@@ -630,6 +636,7 @@ impl JsRuntime {
                 ("createElement".into(), JsValue::Object(create)),
                 ("createTextNode".into(), JsValue::Object(create_text)),
                 ("createEvent".into(), JsValue::Object(create_event)),
+                ("dispatchEvent".into(), JsValue::Object(dispatch_listener)),
                 ("body".into(), JsValue::Null),
                 ("addEventListener".into(), JsValue::Object(add_listener)),
                 (
@@ -648,6 +655,9 @@ impl JsRuntime {
             "removeEventListener".into(),
             JsValue::Object(remove_listener),
         );
+        self.object_mut(self.global_object)?
+            .properties
+            .insert("dispatchEvent".into(), JsValue::Object(dispatch_listener));
         self.object_mut(self.global_object)?
             .properties
             .insert("onload".into(), JsValue::Null);
@@ -1573,6 +1583,99 @@ impl JsRuntime {
         Ok(())
     }
 
+    /// Deliver registered document/window listeners for one EventTarget phase.
+    /// Options and exception handling mirror Element EventTarget delivery.
+    fn deliver_lifecycle_listeners(
+        &mut self,
+        receiver: ObjectId,
+        event_type: &str,
+        event: ObjectId,
+        capture: bool,
+        phase: u8,
+        steps: &mut usize,
+    ) -> Result<(), JsError> {
+        let key = (receiver, event_type.to_owned(), capture);
+        let handlers = self
+            .lifecycle_listeners
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
+        self.prepare_event_callback(event, receiver, phase)?;
+        for handler in handlers {
+            let JsValue::Object(callback) = handler else {
+                continue;
+            };
+            if !self
+                .lifecycle_listeners
+                .get(&key)
+                .is_some_and(|live| live.contains(&handler))
+            {
+                continue;
+            }
+            let option_key = (receiver, event_type.to_owned(), capture, callback);
+            let options = self
+                .lifecycle_listener_options
+                .get(&option_key)
+                .copied()
+                .unwrap_or_default();
+            if options.once {
+                if let Some(live) = self.lifecycle_listeners.get_mut(&key) {
+                    live.retain(|item| item != &handler);
+                }
+                self.lifecycle_listener_options.remove(&option_key);
+            }
+            self.object_mut(event)?.properties.insert(
+                "__passiveListener".into(),
+                JsValue::Boolean(options.passive),
+            );
+            let result = self.call_isolated_event_handler(handler, receiver, event, steps);
+            self.object_mut(event)?
+                .properties
+                .insert("__passiveListener".into(), JsValue::Boolean(false));
+            result?;
+            if self.event_immediate_stopped(event)? {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn deliver_lifecycle_target(
+        &mut self,
+        receiver: ObjectId,
+        event_type: &str,
+        event: ObjectId,
+        steps: &mut usize,
+    ) -> Result<(), JsError> {
+        self.deliver_lifecycle_listeners(receiver, event_type, event, true, 2, steps)?;
+        if !self.event_immediate_stopped(event)? {
+            self.deliver_lifecycle_listeners(receiver, event_type, event, false, 2, steps)?;
+        }
+        if !self.event_immediate_stopped(event)? {
+            let property =
+                if Some(receiver) == self.dom_document && event_type == "readystatechange" {
+                    Some("onreadystatechange")
+                } else if receiver == self.global_object && event_type == "load" {
+                    Some("onload")
+                } else {
+                    None
+                };
+            if let Some(property) = property
+                && let Some(JsValue::Object(callback)) =
+                    self.object(receiver)?.properties.get(property)
+                && self.object(*callback)?.function.is_some()
+            {
+                self.call_isolated_event_handler(
+                    JsValue::Object(*callback),
+                    receiver,
+                    event,
+                    steps,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     /// Dispatch a bounded non-bubbling lifecycle event on document/window.
     pub fn dispatch_lifecycle_event(&mut self, name: &str) -> Result<(), JsError> {
         let Some(document) = self.dom_document else {
@@ -1583,46 +1686,134 @@ impl JsRuntime {
             "load" => self.global_object,
             _ => return Err(JsError::type_error("unknown lifecycle event")),
         };
+        let stop = self
+            .allocate_lifecycle_method("stopPropagation", BuiltinFunction::EventStopPropagation)?;
+        let immediate = self.allocate_lifecycle_method(
+            "stopImmediatePropagation",
+            BuiltinFunction::EventStopImmediatePropagation,
+        )?;
+        let prevent =
+            self.allocate_lifecycle_method("preventDefault", BuiltinFunction::EventPreventDefault)?;
         let event = self.allocate_object(
             ObjectKind::Ordinary,
             Some(self.object_prototype),
             HashMap::from([
                 ("type".into(), JsValue::String(name.into())),
+                // Historical lifecycle load target retained for compatibility.
                 ("target".into(), JsValue::Object(document)),
-                ("currentTarget".into(), JsValue::Object(receiver)),
-                ("eventPhase".into(), JsValue::Number(2.0)),
+                ("currentTarget".into(), JsValue::Null),
+                ("eventPhase".into(), JsValue::Number(0.0)),
                 ("bubbles".into(), JsValue::Boolean(false)),
                 ("cancelable".into(), JsValue::Boolean(false)),
                 ("defaultPrevented".into(), JsValue::Boolean(false)),
+                ("stopPropagation".into(), JsValue::Object(stop)),
+                (
+                    "stopImmediatePropagation".into(),
+                    JsValue::Object(immediate),
+                ),
+                ("preventDefault".into(), JsValue::Object(prevent)),
+                ("__stopPropagation".into(), JsValue::Boolean(false)),
+                ("__stopImmediatePropagation".into(), JsValue::Boolean(false)),
             ]),
         )?;
-        let mut handlers = Vec::new();
-        for capture in [true, false] {
-            if let Some(registered) =
-                self.lifecycle_listeners
-                    .get(&(receiver, name.into(), capture))
-            {
-                handlers.extend(registered.clone());
-            }
-        }
-        let property = match name {
-            "readystatechange" => Some("onreadystatechange"),
-            "load" => Some("onload"),
-            _ => None,
-        };
-        if let Some(property) = property
-            && let Some(callback) = self.object(receiver)?.properties.get(property)
-            && let JsValue::Object(id) = callback
-            && self.object(*id)?.function.is_some()
-        {
-            handlers.push(callback.clone());
-        }
         let mut steps = 0;
-        for callback in handlers {
-            self.call_event_handler(callback, receiver, event, &mut steps)?;
-        }
-        self.finish_event_dispatch(event)
+        let result = self.deliver_lifecycle_target(receiver, name, event, &mut steps);
+        self.finish_event_dispatch(event)?;
+        result
     }
+
+    /// Dispatch a user-created Event on document/window. A document Event
+    /// crosses window's capture and bubble listeners when appropriate.
+    fn dispatch_global_custom_event(
+        &mut self,
+        event: ObjectId,
+        receiver: ObjectId,
+    ) -> Result<bool, JsError> {
+        if self.dom_dispatch_depth >= 16 {
+            return Err(JsError::execution_limit(
+                "event dispatch recursion budget exceeded",
+            ));
+        }
+        if !self
+            .object(event)?
+            .properties
+            .get("__initialized")
+            .is_some_and(JsValue::is_truthy)
+        {
+            return Err(JsError::type_error("event is not initialized"));
+        }
+        if self
+            .object(event)?
+            .properties
+            .get("__dispatching")
+            .is_some_and(JsValue::is_truthy)
+        {
+            return Err(JsError::type_error("event is already being dispatched"));
+        }
+        let name = self
+            .object(event)?
+            .properties
+            .get("type")
+            .cloned()
+            .unwrap_or(JsValue::Undefined)
+            .to_js_string();
+        let bubbles = self
+            .object(event)?
+            .properties
+            .get("bubbles")
+            .is_some_and(JsValue::is_truthy);
+        {
+            let properties = &mut self.object_mut(event)?.properties;
+            properties.insert("target".into(), JsValue::Object(receiver));
+            properties.insert("__dispatching".into(), JsValue::Boolean(true));
+            properties.insert("__stopPropagation".into(), JsValue::Boolean(false));
+            properties.insert("__stopImmediatePropagation".into(), JsValue::Boolean(false));
+        }
+        self.dom_dispatch_depth += 1;
+        let mut steps = 0;
+        let result = (|| {
+            if Some(receiver) == self.dom_document {
+                self.deliver_lifecycle_listeners(
+                    self.global_object,
+                    &name,
+                    event,
+                    true,
+                    1,
+                    &mut steps,
+                )?;
+                if self.event_propagation_stopped(event)? {
+                    return Ok(());
+                }
+            }
+            self.deliver_lifecycle_target(receiver, &name, event, &mut steps)?;
+            if Some(receiver) == self.dom_document
+                && bubbles
+                && !self.event_propagation_stopped(event)?
+            {
+                self.deliver_lifecycle_listeners(
+                    self.global_object,
+                    &name,
+                    event,
+                    false,
+                    3,
+                    &mut steps,
+                )?;
+            }
+            Ok(())
+        })();
+        self.dom_dispatch_depth -= 1;
+        self.object_mut(event)?
+            .properties
+            .insert("__dispatching".into(), JsValue::Boolean(false));
+        self.finish_event_dispatch(event)?;
+        result?;
+        Ok(!self
+            .object(event)?
+            .properties
+            .get("defaultPrevented")
+            .is_some_and(JsValue::is_truthy))
+    }
+
     pub fn refresh_dom_snapshot(&mut self, elements: impl IntoIterator<Item = DomElementSnapshot>) {
         self.dom_ids.clear();
         for element in elements.into_iter().take(4096) {
@@ -3887,6 +4078,24 @@ impl JsRuntime {
             }
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
+        if builtin == BuiltinFunction::LifecycleDispatchEvent {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error(
+                    "dispatchEvent requires document or window",
+                ));
+            };
+            if Some(receiver) != self.dom_document && receiver != self.global_object {
+                return Err(JsError::type_error("unsupported event target"));
+            }
+            let Some(JsValue::Object(event)) = arguments.first() else {
+                return Err(JsError::type_error("dispatchEvent requires an Event"));
+            };
+            if self.object(*event)?.kind != ObjectKind::DomEvent {
+                return Err(JsError::type_error("dispatchEvent requires an Event"));
+            }
+            let uncanceled = self.dispatch_global_custom_event(*event, receiver)?;
+            return Ok(CallOutcome::Value(JsValue::Boolean(uncanceled)));
+        }
         if matches!(
             builtin,
             BuiltinFunction::LifecycleAddEventListener
@@ -3904,13 +4113,10 @@ impl JsRuntime {
                 .first()
                 .map(JsValue::to_js_string)
                 .unwrap_or_default();
-            let allowed = if Some(receiver) == self.dom_document {
-                matches!(event.as_str(), "readystatechange" | "DOMContentLoaded")
-            } else {
-                event == "load"
-            };
-            if !allowed {
-                return Ok(CallOutcome::Value(JsValue::Undefined));
+            if event.len() > 128 {
+                return Err(JsError::execution_limit(
+                    "lifecycle listener type budget exceeded",
+                ));
             }
             let remove = matches!(builtin, BuiltinFunction::LifecycleRemoveEventListener);
             let Some(JsValue::Object(callback)) = arguments.get(1) else {
@@ -3925,12 +4131,31 @@ impl JsRuntime {
                 }
                 return Err(JsError::type_error("lifecycle listener must be callable"));
             }
-            let capture = matches!(arguments.get(2), Some(JsValue::Boolean(true)));
+            let raw_options = arguments.get(2).cloned().unwrap_or(JsValue::Undefined);
+            let capture = if let JsValue::Object(id) = raw_options {
+                self.get_object_property(id, "capture")?.is_truthy()
+            } else {
+                raw_options.is_truthy()
+            };
+            let options = if !remove {
+                if let JsValue::Object(id) = raw_options {
+                    DomListenerOptions {
+                        once: self.get_object_property(id, "once")?.is_truthy(),
+                        passive: self.get_object_property(id, "passive")?.is_truthy(),
+                    }
+                } else {
+                    DomListenerOptions::default()
+                }
+            } else {
+                DomListenerOptions::default()
+            };
             let key = (receiver, event, capture);
+            let option_key = (receiver, key.1.clone(), capture, *callback);
             if remove {
                 if let Some(handlers) = self.lifecycle_listeners.get_mut(&key) {
                     handlers.retain(|existing| existing != &JsValue::Object(*callback));
                 }
+                self.lifecycle_listener_options.remove(&option_key);
             } else {
                 if self
                     .lifecycle_listeners
@@ -3946,6 +4171,7 @@ impl JsRuntime {
                 let handlers = self.lifecycle_listeners.entry(key).or_default();
                 if !handlers.contains(&JsValue::Object(*callback)) {
                     handlers.push(JsValue::Object(*callback));
+                    self.lifecycle_listener_options.insert(option_key, options);
                 }
             }
             return Ok(CallOutcome::Value(JsValue::Undefined));
@@ -5025,6 +5251,7 @@ impl JsRuntime {
             | BuiltinFunction::EventPreventDefault
             | BuiltinFunction::LifecycleAddEventListener
             | BuiltinFunction::LifecycleRemoveEventListener
+            | BuiltinFunction::LifecycleDispatchEvent
             | BuiltinFunction::SetTimeout
             | BuiltinFunction::ClearTimeout
             | BuiltinFunction::SetInterval
@@ -6637,6 +6864,157 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn m429_document_custom_event_crosses_window_capture_and_bubble() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "node".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            window.addEventListener('custom',function(e){
+                if(e.eventPhase===1&&e.target===document&&this===window)trace=trace+'C';
+            },{capture:true});
+            document.addEventListener('custom',function(e){
+                if(e.eventPhase===2&&e.currentTarget===document)trace=trace+'T';
+            },true);
+            document.addEventListener('custom',function(){trace=trace+'D'});
+            window.addEventListener('custom',function(e){
+                if(e.eventPhase===3&&e.currentTarget===window)trace=trace+'W';
+            });
+            var event=new Event('custom',{bubbles:true,cancelable:true});
+            var accepted=document.dispatchEvent(event);
+            var result=trace+'|'+accepted+'|'+event.eventPhase+'|'+(event.currentTarget===null);
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("result"),
+            Some(&JsValue::String("CTDW|true|0|true".into()))
+        );
+    }
+
+    #[test]
+    fn m429_lifecycle_once_capture_and_remove_options_before_parser_completion() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "node".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            function early(){trace=trace+'BAD'}
+            document.addEventListener('readystatechange',early,{capture:true});
+            document.removeEventListener('readystatechange',early,{capture:true});
+            function once(){trace=trace+'O'}
+            document.addEventListener('readystatechange',once,{once:true});
+            document.addEventListener('readystatechange',once,{once:false});
+            document.addEventListener('readystatechange',function(){trace=trace+'R';});
+            document.onreadystatechange=function(){trace=trace+'P'};
+        "#,
+        )
+        .unwrap();
+        vm.dispatch_lifecycle_event("readystatechange").unwrap();
+        vm.dispatch_lifecycle_event("readystatechange").unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("ORPRP".into())));
+    }
+
+    #[test]
+    fn m429_global_once_nested_and_passive_cancelation() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "node".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            window.addEventListener('beep',function(e){
+                trace=trace+'O';
+                window.dispatchEvent(new Event('beep'));
+            },{once:true});
+            window.addEventListener('beep',function(e){
+                e.preventDefault();e.returnValue=false;
+                trace=trace+(e.defaultPrevented?'WRONG':'P');
+            },{passive:true});
+            var a=window.dispatchEvent(new Event('beep',{cancelable:true}));
+            var b=window.dispatchEvent(new Event('beep'));
+            var result=trace+'|'+a+'|'+b;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("result"),
+            Some(&JsValue::String("OPPP|true|true".into()))
+        );
+    }
+
+    #[test]
+    fn m429_lifecycle_exceptions_and_immediate_stop_isolate_remaining_listeners() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "node".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            document.addEventListener('DOMContentLoaded',function(){
+                throw new Error('lifecycle failure');
+            });
+            document.addEventListener('DOMContentLoaded',function(e){
+                trace=trace+'A';
+                e.stopImmediatePropagation();
+            });
+            document.addEventListener('DOMContentLoaded',function(){
+                trace=trace+'WRONG';
+            });
+        "#,
+        )
+        .unwrap();
+        vm.dispatch_lifecycle_event("DOMContentLoaded").unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("A".into())));
+        let errors = vm.take_event_listener_errors();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("lifecycle failure"), "{errors:?}");
+    }
+
+    #[test]
+    fn m429_window_capture_stop_blocks_document_target_then_allows_event_reuse() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "node".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            function halt(e){trace=trace+'C';e.stopPropagation();}
+            window.addEventListener('alert',halt,true);
+            document.addEventListener('alert',function(){trace=trace+'D';});
+            var e=new Event('alert',{bubbles:true});
+            document.dispatchEvent(e);
+            window.removeEventListener('alert',halt,{capture:true});
+            document.dispatchEvent(e);
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("CD".into())));
     }
 
     #[test]

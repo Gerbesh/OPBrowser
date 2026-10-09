@@ -1,6 +1,6 @@
 # OPBrowser Code Graph
 
-Last updated: 2026-10-09
+Last updated: 2026-10-10
 
 This document is the maintained human-readable code/dependency graph. It is updated
 whenever crates, important types, or ownership boundaries change.
@@ -15,6 +15,22 @@ the generated graph describes **crate-level edges only**, not a call graph.
 See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
+
+## M4.29a: Document/Window EventTarget and lifecycle dispatch
+
+The original op_js now stores lifecycle_listener_options per
+(receiver ObjectId, event type, capture, callback ObjectId).
+deliver_lifecycle_listeners uses once removal before callback invocation,
+passive-state management and the existing call_isolated_event_handler
+exception boundary. deliver_lifecycle_target preserves target
+capture/normal ordering, property callbacks and immediate-stop checks.
+dispatch_lifecycle_event retains host-owned document.readyState and
+the existing document-targeted load event compatibility behavior.
+The new dispatch_global_custom_event routes document-targeted
+custom Events through window capture, document target and optional
+window bubble, with bounded recursion and event cleanup.
+op_engine still replays resulting DOM changes through op_dom,
+layout and op_paint to native pixels; no new crate dependencies.
 
 ## M4.28b: listener metadata, exception boundary and native paint
 

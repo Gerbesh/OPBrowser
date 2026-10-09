@@ -1,6 +1,6 @@
 # OPBrowser Code Slices
 
-Last updated: 2026-10-09
+Last updated: 2026-10-10
 
 A code slice is an end-to-end path through the architecture that produces one
 observable capability. This prevents isolated subsystems from becoming impressive
@@ -15,6 +15,24 @@ current. The same validator runs in CI. This is a **source-anchor
 feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
+
+## S34 - Document/window EventTarget and lifecycle callbacks to pixels (M4.29a)
+
+Status: IMPLEMENTED bounded document/window custom EventTarget and
+host lifecycle listener options in the original JS runtime.
+
+Original JavaScript registers window/document listeners with capture,
+once and passive dictionaries. Lifecycle event delivery removes once
+registrations before nested delivery, enforces stopImmediatePropagation,
+isolates ordinary callback exceptions and preserves property handlers.
+Document/window dispatchEvent additionally delivers user Events through
+window capture -> document target -> window bubble (when requested).
+The event-driven document text mutation travels through op_engine
+DOM replay, op_dom authoritative state, original layout, op_paint,
+and Win32 presentation. Five VM tests and two native paint checks
+exercise phase order, removals, event reuse and parser lifecycle.
+Element-originating events still do not reach window/document;
+AbortSignal, full WPT conformance and async harness are not implemented.
 
 ## S33 - Listener options and isolated event errors -> real pixels (M4.28b)
 

@@ -336,6 +336,21 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S34",
+      "title": "Document/window lifecycle and custom EventTarget through original native paint",
+      "status": "M4.29a original document/window listener options, dispatchEvent and error isolation",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_lifecycle_listeners"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_lifecycle_event"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_global_custom_event"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "call_isolated_event_handler"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "set_text_content"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Element event paths do not yet include document/window; no AbortSignal or official asynchronous WPT harness."
+    },
+    {
       "id": "S33",
       "title": "Element event listener once/passive error isolation to native pixels",
       "status": "M4.28b bounded original Element addEventListener options and diagnostics",

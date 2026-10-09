@@ -234,6 +234,21 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.29a: document/window EventTarget
+
+Document and window accept event listener option dictionaries with
+capture, once and passive. Original lifecycle readystatechange,
+DOMContentLoaded and load callbacks honor one-shot removal,
+immediate propagation stops and isolated callback exceptions.
+Both targets now expose dispatchEvent(new Event(...)) for custom
+events; document dispatch performs window capture, document target
+and optional window bubble. The original runtime retains bounded
+recursion, cleanup and cancellation behavior. VM and native
+DOM-paint integrations pass. Element-originating event paths do not
+yet include window/document; AbortSignal and official asynchronous
+WPT support remain pending. The frozen original WPT v5 numbers
+were not changed.
+
 ## M4.28b: once/passive listeners and isolated event errors
 
 Original Element.addEventListener accepts an options dictionary with

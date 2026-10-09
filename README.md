@@ -38,6 +38,15 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.29a extends original EventTarget to document/window with
+options {capture, once, passive}, once-before-callback removal,
+exception-isolating host lifecycle events, and synchronous
+document/window dispatchEvent. Custom document events run through
+window capture, document target and optional bubble; VM and
+native DOM-to-pixels tests cover the behavior. Element event paths
+do not yet reach document/window, AbortSignal is absent and
+the frozen pinned WPT baseline is unchanged.
+
 M4.28b adds Element.addEventListener options {capture, once, passive}
 and matching removal capture dictionaries. One-shot callbacks are
 removed before nested dispatch, passive callbacks cannot cancel

@@ -3160,3 +3160,22 @@ This file is append-only project history.
   including timer callbacks after virtual-to-physical node binding.
 - Existing pinned original WPT DOM/Events v5 manifest remains frozen;
   no general DOM/Events conformance percentage is inferred.
+
+## 2026-10-10 - M4.29a document/window EventTarget and lifecycle options
+
+- Added listener metadata for document/window keyed by receiver, name,
+  capture and callback identity; options dictionaries and boolean capture
+  work with registration/removal.
+- Host-driven readystatechange, DOMContentLoaded and load callbacks
+  now remove once handlers before invocation, respect
+  stopImmediatePropagation and isolate handler throws into bounded
+  diagnostics without dropping following callbacks.
+- Added document/window dispatchEvent(Event) for arbitrary bounded types.
+  Document events travel through window capture, document target and
+  window bubble, with stopPropagation, cancelation, event cleanup
+  and dispatch recursion protections. Window-targeted events use target
+  listeners. Existing host load event target semantics were retained.
+- Added five VM behavior tests and two native DOM/text-paint integrations;
+  old lifecycle tests remain green.
+- No new dependencies, no foreign JS/DOM engine, no redefinition of
+  frozen WPT DOM/Events v5 or broad compatibility claims.

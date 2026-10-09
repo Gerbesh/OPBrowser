@@ -2,6 +2,62 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m429_lifecycle_once_and_throw_reach_native_paint_without_aborting() {
+    let mut engine = Engine::new();
+    let page=engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var history='';",
+            "document.addEventListener('readystatechange',function(){history=history+'O';},{once:true});",
+            "document.addEventListener('readystatechange',function(){history=history+'R';});",
+            "document.addEventListener('DOMContentLoaded',function(){throw new Error('DOM event failure');});",
+            "document.addEventListener('DOMContentLoaded',function(){history=history+'D';});",
+            "window.addEventListener('load',function(){history=history+'L';},{once:true});",
+            "window.onload=function(){",
+            "document.getElementById('result').textContent=history==='ORDRL'?",
+            "'M429-LIFECYCLE-PASS':'M429-LIFECYCLE-FAIL';",
+            "};",
+            "</script></body>"
+        ),800,600
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M429-LIFECYCLE-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    let errors = engine.active_event_listener_errors().unwrap();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(errors[0].contains("DOM event failure"), "{errors:?}");
+}
+
+#[test]
+fn m429_document_window_custom_event_bubbles_through_native_dom() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var trace='';",
+            "window.addEventListener('ready-custom',function(e){",
+            "if(e.eventPhase===1)trace=trace+'C';},{capture:true});",
+            "document.addEventListener('ready-custom',function(e){",
+            "if(e.eventPhase===2)trace=trace+'T';});",
+            "window.addEventListener('ready-custom',function(e){",
+            "if(e.eventPhase===3)trace=trace+'B';});",
+            "var e=new Event('ready-custom',{bubbles:true});",
+            "var sent=document.dispatchEvent(e);",
+            "document.getElementById('result').textContent=sent&&trace==='CTB'?",
+            "'M429-GLOBAL-EVENT-PASS':'M429-GLOBAL-EVENT-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M429-GLOBAL-EVENT-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m428b_once_passive_and_exception_isolation_update_native_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

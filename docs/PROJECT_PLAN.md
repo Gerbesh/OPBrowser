@@ -1,6 +1,29 @@
 # OPBrowser Project Plan
 
-Last updated: 2026-10-09
+Last updated: 2026-10-10
+
+## M4.29a - Document/Window EventTarget and lifecycle listener options (2026-10-10)
+
+- DONE original document/window addEventListener/removeEventListener accept
+  boolean capture or options dictionaries (capture, once, passive).
+- DONE host readyState/DOMContentLoaded/window load callbacks share isolated
+  exception reporting, stopImmediatePropagation and once removal before call.
+  Legacy load event target remains document for compatibility with existing
+  page lifecycle tests.
+- DONE general document.dispatchEvent(Event) and window.dispatchEvent(Event)
+  for bounded custom event types, including document->window capture and
+  optional bubbling, cancelation return values, per-dispatch flag reset,
+  recursion guard, property handler integration, and microtask draining.
+- DONE five VM and two native text-paint regressions; existing lifecycle
+  assertions still pass.
+- LIMITS: Element-originated events do not yet extend their path to
+  document/window; addEventListener signal/AbortSignal is not implemented.
+  Listener objects, default browser actions, async WPT harness and complete
+  EventTarget algorithm remain future work. Original pinned WPT/Events v5
+  baseline is unchanged and not extrapolated to general conformance.
+- NEXT M4.29b: unify Element-to-document/window propagation and lifecycle
+  event paths, followed by AbortController/signal and a broader frozen
+  original-source WPT sample.
 
 ## North star
 

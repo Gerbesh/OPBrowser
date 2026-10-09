@@ -48,6 +48,28 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.29a: document/window custom events and lifecycle options
+
+Document and window now implement bounded addEventListener and
+removeEventListener options dictionaries (capture/once/passive),
+plus dispatchEvent for user-created Event objects. A
+document.dispatchEvent event uses window capture, document target
+and window bubbling (if bubbles=true), while dispatchEvent on window
+delivers to the window target alone. Handler ordering and eventPhase,
+currentTarget cleanup, cancelation and per-event dispatch guards
+are covered by original VM tests.
+
+Host-driven document readystatechange, DOMContentLoaded and
+window load callbacks also apply once removal before invocation,
+stopImmediatePropagation and error isolation. Ordinary handler errors
+are recorded in the bounded Engine.active_event_listener_errors
+diagnostic without aborting later listeners. Previous initial-load
+event.target behavior for window load is preserved for compatibility.
+
+Limitations: Element->document/window event paths, AbortSignal,
+listener-object callbacks, generic default actions and the full WPT
+async harness remain outside this original EventTarget slice.
+
 ## M4.28b: Element listener options and handler errors
 
 Element.addEventListener and removeEventListener now recognize
