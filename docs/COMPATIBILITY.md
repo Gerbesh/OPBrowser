@@ -560,3 +560,32 @@ Reproduce:
 The 10/10 result is a manually chosen smoke sample, NOT
 a representative full DOM WPT pass percentage. It cannot
 be compared directly with separate pinned Test262 runtime v1/v2.
+
+## M4.26 original DOM selectors, in operator, click and WPT DOM smoke v4
+
+The original JS engine now parses and executes a bounded relational
+in operator, including HasProperty over ordinary JS objects and
+live DOM attributes/accessors. The DOM host supports basic scoped
+querySelector (first match) and querySelectorAll (static NodeList)
+for selectors #id, .class, bare tags and *. Complex selectors
+are explicitly not supported. The event system supports
+programmatic element.click, dispatching capture/target/bubble
+handlers with finite recursion, not full activation defaults.
+
+Frozen manual compat/wpt-dom-smoke-v4.tsv appends original upstream
+Element-childElementCount.html, whose own assertions use the new
+in operator. At the same pinned original WPT revision, 14 manually
+selected source files: 11 attempted PASS, 0 FAIL, 3 explicit SKIP,
+12 executed synchronous test() callbacks. This is NOT an official,
+broad or representative WPT DOM conformance measurement.
+The synchronous shim, missing Web APIs and JS grammar exclude
+the vast majority of WPT DOM tests; do not extrapolate 11/11.
+
+Reproduce:
+  cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
+
+Original Test262 Runtime v1/v2 results remain independent from
+WPT DOM and need to be reported separately. Five new original
+VM -> real DOM -> CSS/layout/native pixel integration tests
+verify selector scope, static collection behavior, click bubbling
+and timer callbacks.

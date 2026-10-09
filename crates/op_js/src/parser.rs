@@ -194,6 +194,7 @@ pub enum BinaryOp {
     Greater,
     GreaterEqual,
     InstanceOf,
+    In,
 }
 
 pub fn parse_script(source: &str) -> Result<Program, JsError> {
@@ -822,6 +823,8 @@ impl Parser {
                 Some(BinaryOp::GreaterEqual)
             } else if self.take(&TokenKind::InstanceOf) {
                 Some(BinaryOp::InstanceOf)
+            } else if self.take(&TokenKind::In) {
+                Some(BinaryOp::In)
             } else {
                 None
             };

@@ -550,3 +550,20 @@ are explicitly unsupported/skipped. The synchronous adapter
 now keeps a sticky failure bit and verifies expected test calls,
 so later successes cannot mask earlier failures. Not the
 official WPT harness or representative DOM conformance.
+
+## M4.26: JS in, simple query selectors and programmatic click
+
+Original JS lexer/parser/VM implements bounded relational in,
+including ordinary and live DOM object property checks.
+Document/Element.querySelector and querySelectorAll currently
+support only #id/.class/tag/*; the latter returns a static
+indexed NodeList, unlike existing live collections.
+element.click dispatches existing native capture/target/
+bubbling listeners and updates real native page pixels,
+including from timers, with finite recursion. No full CSS
+selector grammar, generic dispatchEvent or default activation.
+
+The manually pinned original-source WPT DOM smoke v4 has
+14 selected files: 11 attempted and passed, 3 explicit SKIP,
+12 original synchronous test() callbacks. This is not an
+official WPT conformance result.

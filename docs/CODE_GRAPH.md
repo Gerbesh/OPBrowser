@@ -16,6 +16,27 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.26: JS in, scoped query selectors, programmatic click and WPT DOM v4
+
+op_js lexer and parser now recognize relational in. The original
+VM performs bounded HasProperty checks, including live DOM
+accessor names, and forwards querySelector/querySelectorAll
+requests through its authoritative staged parent/child/attribute
+tree. A new static query-result NodeList differs from retained
+live HTMLCollection/tag lists; saved handles survive binding
+virtual DOM IDs to physical native op_dom NodeIds.
+
+element.click calls the existing native DOM event propagation
+path (capture/target/bubble, bounded nested dispatch), then
+op_engine replays resulting DOM mutations and rebuilds
+CSS/layout/op_paint output. Five cross-crate tests verify
+real text pixels and mutation behavior.
+
+Pinned original-source WPT DOM smoke v4 adds a fixture using
+JS in, keeping the existing synchronous testharness shim and
+fail-sticky callback count. Fourteen files manually selected:
+11 executed/passing, 3 skips. Not broad WPT conformance.
+
 ## M4.25: live tag-name search plus hardened WPT multi-case runner
 
 Original op_js now implements Document/Element.getElementsByTagName,

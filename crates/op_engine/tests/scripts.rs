@@ -2,6 +2,176 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m426_programmatic_click_bubbles_and_repaints_native_dom() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='outer'><button id='action'>Action</button></main>",
+            "<p id='result'>WAIT</p><script>",
+            "var button=document.getElementById('action');",
+            "var outer=document.getElementById('outer');",
+            "var result=document.getElementById('result');",
+            "var count=0;",
+            "button.addEventListener('click',function(event){",
+            " count=count+1;",
+            " if(event.type==='click' && event.target===button && event.eventPhase===2)",
+            "   result.textContent='TARGET';",
+            "});",
+            "outer.addEventListener('click',function(event){",
+            " if(event.eventPhase===3 && event.target===button && count===1)",
+            "   result.textContent='M426-CLICK-PASS';",
+            "});",
+            "var returned=button.click();",
+            "if(returned!==undefined) result.textContent='M426-CLICK-WRONG-RETURN';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M426-CLICK-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m426_programmatic_click_from_timer_uses_existing_handlers() {
+    let mut engine = Engine::new();
+    let initial = engine.set_html_page(
+        concat!(
+            "<body><button id='action'>Action</button><p id='result'>WAIT</p>",
+            "<script>",
+            "var b=document.getElementById('action');",
+            "b.onclick=function(event){",
+            "document.getElementById('result').textContent=",
+            " event.target===b?'M426-TIMER-CLICK-PASS':'M426-TIMER-CLICK-FAIL';",
+            "};",
+            "setTimeout(function(){b.click();},0);",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(!initial.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M426-TIMER-CLICK-PASS")
+    )));
+    let after = engine
+        .tick_timers(800, 600)
+        .expect("timer dispatches click");
+    assert!(after.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M426-TIMER-CLICK-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m426_query_selector_static_results_and_scoped_live_lookup() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='host'><p id='one' class='item'>ONE</p></main>",
+            "<p id='outside' class='item'>OUTSIDE</p><p id='result'>WAIT</p>",
+            "<script>",
+            "var host=document.querySelector('#host');",
+            "var one=document.getElementById('one');",
+            "var first=host.querySelector('p')===one && host.querySelector('.item')===one && ",
+            " document.querySelector('#outside')===document.getElementById('outside');",
+            "var old=host.querySelectorAll('.item');",
+            "var created=document.createElement('p');",
+            "created.className='item';created.id='added';created.textContent='ADDED';",
+            "host.appendChild(created);",
+            "var newest=host.querySelectorAll('.item');",
+            "var snapshot=old.length===1 && old.item(0)===one && old[1]===undefined && ",
+            " newest.length===2 && newest[0]===one && newest.item(1)===created;",
+            "var scoped=host.querySelector('#outside')===null && ",
+            " document.querySelector('main')===host && ",
+            " host.querySelector('*')===one && host.querySelector('.absent')===null;",
+            "created.remove();",
+            "var retained=newest.length===2 && newest[1]===created && ",
+            " host.querySelectorAll('.item').length===1 && ",
+            " host.getElementsByTagName('p').length===1;",
+            "var rejected=false;",
+            "try{host.querySelector('main p')}catch(error){rejected=true}",
+            "document.getElementById('result').textContent=",
+            " first&&snapshot&&scoped&&retained&&rejected?",
+            " 'M426-QUERY-PASS':'M426-QUERY-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M426-QUERY-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m426_query_snapshot_survives_native_binding_and_timer() {
+    let mut engine = Engine::new();
+    let initial = engine.set_html_page(
+        concat!(
+            "<body><script>",
+            "var host=document.createElement('section');",
+            "var child=document.createElement('p');",
+            "child.className='notice';child.textContent='ORIGINAL';",
+            "host.appendChild(child);",
+            "var snapshot=host.querySelectorAll('.notice');",
+            "document.body.appendChild(host);",
+            "setTimeout(function(){",
+            "var preserved=snapshot.length===1 && snapshot[0]===child && ",
+            " host.querySelector('.notice')===child;",
+            "var second=document.createElement('p');",
+            "second.className='notice';host.appendChild(second);",
+            "var staticOld=snapshot.length===1 && ",
+            " host.querySelectorAll('.notice').length===2;",
+            "child.textContent=preserved&&staticOld?'M426-TIMER-PASS':'M426-TIMER-FAIL';",
+            "},0);",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(!initial.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M426-TIMER-PASS")
+    )));
+    let changed = engine
+        .tick_timers(800, 600)
+        .expect("timer changes query source");
+    assert!(changed.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M426-TIMER-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m426_in_operator_uses_native_dom_properties_and_validates_rhs() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='host'><b id='child'>B</b></main><p id='result'>WAIT</p>",
+            "<script>",
+            "var host=document.getElementById('host');",
+            "var obj={a:undefined,b:3};",
+            "var native='childElementCount' in host && 'children' in host && ",
+            " 'nodeName' in host && !('notARealProperty' in host);",
+            "var ordinary='a' in obj && 'b' in obj && !('missing' in obj);",
+            "var threw=false;",
+            "try{var nonsense='a' in null;}catch(error){threw=true}",
+            "document.getElementById('result').textContent=",
+            " native&&ordinary&&threw?'M426-IN-PASS':'M426-IN-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M426-IN-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m425_live_tag_collections_and_attributes_repaint_after_mutations() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

@@ -60,6 +60,7 @@ enum ObjectKind {
     DomNodeList(usize),
     DomHtmlCollection(usize),
     DomTagCollection,
+    DomQueryNodeList,
     DomStyle(usize),
     Headers,
 }
@@ -75,6 +76,8 @@ enum BuiltinFunction {
     ArrayPop,
     DomGetElementById,
     DomGetElementsByTagName,
+    DomQuerySelector,
+    DomQuerySelectorAll,
     DomHasAttribute,
     DomHasAttributes,
     DomCreateElement,
@@ -91,6 +94,7 @@ enum BuiltinFunction {
     DomNodeListItem,
     DomHtmlCollectionNamedItem,
     DomContains,
+    DomClick,
     DomStyleSetProperty,
     DomStyleGetPropertyValue,
     DomStyleRemoveProperty,
@@ -300,6 +304,7 @@ pub struct JsRuntime {
     dom_node_lists: HashMap<usize, ObjectId>,
     dom_html_collections: HashMap<usize, ObjectId>,
     dom_tag_collections: HashMap<ObjectId, (usize, String)>,
+    dom_query_lists: HashMap<ObjectId, Vec<usize>>,
     dom_styles: HashMap<usize, ObjectId>,
     dom_children: HashMap<usize, Vec<usize>>,
     dom_text_nodes: std::collections::HashSet<usize>,
@@ -309,6 +314,7 @@ pub struct JsRuntime {
     dom_click_listeners: HashMap<usize, Vec<JsValue>>,
     dom_click_capture_listeners: HashMap<usize, Vec<JsValue>>,
     dom_onclick: HashMap<usize, JsValue>,
+    dom_programmatic_click_depth: usize,
     dom_document: Option<ObjectId>,
     lifecycle_listeners: HashMap<(ObjectId, String, bool), Vec<JsValue>>,
     timers: Vec<PendingTimer>,
@@ -402,6 +408,7 @@ impl Default for JsRuntime {
             dom_node_lists: HashMap::new(),
             dom_html_collections: HashMap::new(),
             dom_tag_collections: HashMap::new(),
+            dom_query_lists: HashMap::new(),
             dom_styles: HashMap::new(),
             dom_children: HashMap::new(),
             dom_text_nodes: std::collections::HashSet::new(),
@@ -411,6 +418,7 @@ impl Default for JsRuntime {
             dom_click_listeners: HashMap::new(),
             dom_click_capture_listeners: HashMap::new(),
             dom_onclick: HashMap::new(),
+            dom_programmatic_click_depth: 0,
             dom_document: None,
             lifecycle_listeners: HashMap::new(),
             timers: Vec::new(),
@@ -509,6 +517,7 @@ impl JsRuntime {
         self.dom_node_lists.clear();
         self.dom_html_collections.clear();
         self.dom_tag_collections.clear();
+        self.dom_query_lists.clear();
         self.dom_styles.clear();
         self.dom_children.clear();
         self.dom_text_nodes.clear();
@@ -518,6 +527,7 @@ impl JsRuntime {
         self.dom_click_listeners.clear();
         self.dom_click_capture_listeners.clear();
         self.dom_onclick.clear();
+        self.dom_programmatic_click_depth = 0;
         self.lifecycle_listeners.clear();
         self.timers.clear();
         self.next_timer_id = 1;
@@ -550,6 +560,16 @@ impl JsRuntime {
         self.object_mut(get_by_tag)?
             .properties
             .insert("length".into(), JsValue::Number(1.0));
+        let query =
+            self.allocate_lifecycle_method("querySelector", BuiltinFunction::DomQuerySelector)?;
+        let query_all = self
+            .allocate_lifecycle_method("querySelectorAll", BuiltinFunction::DomQuerySelectorAll)?;
+        self.object_mut(query)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        self.object_mut(query_all)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
         let create =
             self.allocate_lifecycle_method("createElement", BuiltinFunction::DomCreateElement)?;
         let create_text =
@@ -568,6 +588,8 @@ impl JsRuntime {
             HashMap::from([
                 ("getElementById".into(), JsValue::Object(function)),
                 ("getElementsByTagName".into(), JsValue::Object(get_by_tag)),
+                ("querySelector".into(), JsValue::Object(query)),
+                ("querySelectorAll".into(), JsValue::Object(query_all)),
                 ("createElement".into(), JsValue::Object(create)),
                 ("createTextNode".into(), JsValue::Object(create_text)),
                 ("body".into(), JsValue::Null),
@@ -912,6 +934,128 @@ impl JsRuntime {
         Ok(JsValue::String(category.into()))
     }
 
+    /// Bounded HasProperty for the initial original JS in operator.
+    /// Includes original DOM live accessors not stored as own properties.
+    fn has_property(&self, start: ObjectId, key: &str) -> Result<bool, JsError> {
+        let mut current = Some(start);
+        let mut remaining = self.heap.len().saturating_add(1);
+        while let Some(id) = current {
+            if remaining == 0 {
+                return Err(JsError::type_error("cyclic prototype chain"));
+            }
+            remaining -= 1;
+            let obj = self.object(id)?;
+            match obj.kind {
+                ObjectKind::DomElement(_)
+                    if matches!(
+                        key,
+                        "childElementCount"
+                            | "firstElementChild"
+                            | "lastElementChild"
+                            | "previousElementSibling"
+                            | "nextElementSibling"
+                            | "children"
+                            | "parentNode"
+                            | "childNodes"
+                            | "firstChild"
+                            | "lastChild"
+                            | "nodeType"
+                            | "nodeName"
+                            | "tagName"
+                            | "isConnected"
+                            | "nodeValue"
+                            | "ownerDocument"
+                            | "className"
+                            | "classList"
+                            | "style"
+                            | "previousSibling"
+                            | "nextSibling"
+                    ) =>
+                {
+                    return Ok(true);
+                }
+                ObjectKind::DomText(_)
+                    if matches!(
+                        key,
+                        "parentNode"
+                            | "childNodes"
+                            | "firstChild"
+                            | "lastChild"
+                            | "nodeType"
+                            | "nodeName"
+                            | "isConnected"
+                            | "ownerDocument"
+                            | "previousSibling"
+                            | "nextSibling"
+                            | "length"
+                    ) =>
+                {
+                    return Ok(true);
+                }
+                ObjectKind::DomNodeList(parent) => {
+                    if key == "length" {
+                        return Ok(true);
+                    }
+                    if let Ok(index) = key.parse::<usize>()
+                        && self
+                            .dom_children
+                            .get(&parent)
+                            .is_some_and(|c| index < c.len())
+                    {
+                        return Ok(true);
+                    }
+                }
+                ObjectKind::DomHtmlCollection(parent) => {
+                    if key == "length" {
+                        return Ok(true);
+                    }
+                    if let Ok(index) = key.parse::<usize>()
+                        && index < self.html_collection_nodes(parent).len()
+                    {
+                        return Ok(true);
+                    }
+                    if self.html_collection_named(parent, key).is_some() {
+                        return Ok(true);
+                    }
+                }
+                ObjectKind::DomQueryNodeList => {
+                    if key == "length" {
+                        return Ok(true);
+                    }
+                    if let Ok(index) = key.parse::<usize>()
+                        && self
+                            .dom_query_lists
+                            .get(&id)
+                            .is_some_and(|nodes| index < nodes.len())
+                    {
+                        return Ok(true);
+                    }
+                }
+                ObjectKind::DomTagCollection => {
+                    if key == "length" {
+                        return Ok(true);
+                    }
+                    if let Some((root, tag)) = self.dom_tag_collections.get(&id)
+                        && let Ok(index) = key.parse::<usize>()
+                        && index < self.elements_by_tag(*root, tag).len()
+                    {
+                        return Ok(true);
+                    }
+                }
+                ObjectKind::DomClassList(_) if key == "length" || key == "value" => {
+                    return Ok(true);
+                }
+                ObjectKind::DomStyle(_) if key == "cssText" => return Ok(true),
+                _ => {}
+            }
+            if obj.properties.contains_key(key) {
+                return Ok(true);
+            }
+            current = obj.prototype;
+        }
+        Ok(false)
+    }
+
     fn binary_with_coercion(
         &mut self,
         op: BinaryOp,
@@ -920,6 +1064,16 @@ impl JsRuntime {
         steps: &mut usize,
         call_depth: usize,
     ) -> Result<CallOutcome, JsError> {
+        if op == BinaryOp::In {
+            let JsValue::Object(rhs) = right else {
+                return Err(JsError::type_error("right operand of in must be an object"));
+            };
+            // Full ToPropertyKey on user-defined object keys remains future work.
+            let key = left.to_js_string();
+            return self
+                .has_property(rhs, &key)
+                .map(|exists| CallOutcome::Value(JsValue::Boolean(exists)));
+        }
         if op == BinaryOp::InstanceOf {
             let JsValue::Object(function_id) = right else {
                 return Err(JsError::type_error(
@@ -951,9 +1105,10 @@ impl JsRuntime {
         let needs_left = matches!(left, JsValue::Object(_));
         let needs_right = matches!(right, JsValue::Object(_));
         let coerce = match op {
-            BinaryOp::StrictEqual | BinaryOp::StrictNotEqual | BinaryOp::InstanceOf => {
-                (false, false)
-            }
+            BinaryOp::StrictEqual
+            | BinaryOp::StrictNotEqual
+            | BinaryOp::InstanceOf
+            | BinaryOp::In => (false, false),
             BinaryOp::Equal | BinaryOp::NotEqual => {
                 // Objects compare by identity, but object-to-primitive
                 // conversion is required for loose equality vs scalars.
@@ -1490,6 +1645,13 @@ impl JsRuntime {
             self.dom_node_lists.insert(physical_node, list);
             self.heap[list.0].kind = ObjectKind::DomNodeList(physical_node);
         }
+        for nodes in self.dom_query_lists.values_mut() {
+            for node in nodes {
+                if *node == virtual_node {
+                    *node = physical_node;
+                }
+            }
+        }
         if let Some(collection) = self.dom_html_collections.remove(&virtual_node) {
             self.dom_html_collections.insert(physical_node, collection);
             self.heap[collection.0].kind = ObjectKind::DomHtmlCollection(physical_node);
@@ -2000,6 +2162,83 @@ impl JsRuntime {
         Ok(object)
     }
 
+    fn simple_selector_matches(&self, node: usize, selector: &str) -> bool {
+        let Some(tag) = self.dom_tags.get(&node) else {
+            return false;
+        };
+        if selector == "*" {
+            return true;
+        }
+        if let Some(id) = selector.strip_prefix('#') {
+            return self
+                .dom_attributes
+                .get(&node)
+                .and_then(|a| a.get("id"))
+                .is_some_and(|v| v == id);
+        }
+        if let Some(class) = selector.strip_prefix('.') {
+            return self
+                .dom_attributes
+                .get(&node)
+                .and_then(|a| a.get("class"))
+                .is_some_and(|v| v.split_ascii_whitespace().any(|part| part == class));
+        }
+        tag.eq_ignore_ascii_case(selector)
+    }
+
+    fn query_descendants(&self, root: usize, selector: &str) -> Result<Vec<usize>, JsError> {
+        if selector.len() > 128
+            || selector.is_empty()
+            || !selector.trim().is_ascii()
+            || !selector.bytes().all(|b| {
+                b.is_ascii_alphanumeric()
+                    || b == b'-'
+                    || b == b'_'
+                    || b == b'#'
+                    || b == b'.'
+                    || b == b'*'
+            })
+            || selector[1..].contains('#')
+            || selector[1..].contains('.')
+            || (selector.contains('*') && selector != "*")
+        {
+            return Err(JsError::type_error("unsupported complex CSS selector"));
+        }
+        let mut matches = Vec::new();
+        let mut stack = self.dom_children.get(&root).cloned().unwrap_or_default();
+        stack.reverse();
+        let mut visited = std::collections::HashSet::new();
+        while let Some(node) = stack.pop() {
+            if !visited.insert(node) || visited.len() > 20_000 {
+                break;
+            }
+            if self.simple_selector_matches(node, selector) {
+                matches.push(node);
+                if matches.len() >= 4096 {
+                    break;
+                }
+            }
+            if let Some(children) = self.dom_children.get(&node) {
+                stack.extend(children.iter().rev().copied());
+            }
+        }
+        Ok(matches)
+    }
+
+    fn static_node_list(&mut self, nodes: Vec<usize>) -> Result<ObjectId, JsError> {
+        let item = self.allocate_lifecycle_method("item", BuiltinFunction::DomNodeListItem)?;
+        self.object_mut(item)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        let list = self.allocate_object(
+            ObjectKind::DomQueryNodeList,
+            Some(self.object_prototype),
+            HashMap::from([("item".into(), JsValue::Object(item))]),
+        )?;
+        self.dom_query_lists.insert(list, nodes);
+        Ok(list)
+    }
+
     fn dom_node_list_object(&mut self, node: usize) -> Result<ObjectId, JsError> {
         if let Some(&existing) = self.dom_node_lists.get(&node) {
             return Ok(existing);
@@ -2114,6 +2353,10 @@ impl JsRuntime {
             self.allocate_lifecycle_method("replaceChild", BuiltinFunction::DomReplaceChild)?;
         let remove_self =
             self.allocate_lifecycle_method("remove", BuiltinFunction::DomRemoveSelf)?;
+        let click = self.allocate_lifecycle_method("click", BuiltinFunction::DomClick)?;
+        self.object_mut(click)?
+            .properties
+            .insert("length".into(), JsValue::Number(0.0));
         let contains = self.allocate_lifecycle_method("contains", BuiltinFunction::DomContains)?;
         self.object_mut(contains)?
             .properties
@@ -2139,6 +2382,16 @@ impl JsRuntime {
         self.object_mut(by_tag)?
             .properties
             .insert("length".into(), JsValue::Number(1.0));
+        let query =
+            self.allocate_lifecycle_method("querySelector", BuiltinFunction::DomQuerySelector)?;
+        let query_all = self
+            .allocate_lifecycle_method("querySelectorAll", BuiltinFunction::DomQuerySelectorAll)?;
+        self.object_mut(query)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        self.object_mut(query_all)?
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
         let remove_attr =
             self.allocate_lifecycle_method("removeAttribute", BuiltinFunction::DomRemoveAttribute)?;
         let element = self.allocate_object(
@@ -2161,11 +2414,14 @@ impl JsRuntime {
                 ("replaceChild".into(), JsValue::Object(replace)),
                 ("remove".into(), JsValue::Object(remove_self)),
                 ("contains".into(), JsValue::Object(contains)),
+                ("click".into(), JsValue::Object(click)),
                 ("setAttribute".into(), JsValue::Object(set_attr)),
                 ("getAttribute".into(), JsValue::Object(get_attr)),
                 ("hasAttribute".into(), JsValue::Object(has_attr)),
                 ("hasAttributes".into(), JsValue::Object(has_attrs)),
                 ("getElementsByTagName".into(), JsValue::Object(by_tag)),
+                ("querySelector".into(), JsValue::Object(query)),
+                ("querySelectorAll".into(), JsValue::Object(query_all)),
                 ("removeAttribute".into(), JsValue::Object(remove_attr)),
             ]),
         )?;
@@ -3407,6 +3663,33 @@ impl JsRuntime {
             self.set_dom_style_property(node, &name, Some(value))?;
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
+        if builtin == BuiltinFunction::DomClick {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("click requires an element"));
+            };
+            let ObjectKind::DomElement(node) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error("click requires an element"));
+            };
+            if self.dom_programmatic_click_depth >= 8 {
+                return Err(JsError::execution_limit(
+                    "nested programmatic click budget exceeded",
+                ));
+            }
+            let mut path = Vec::new();
+            let mut cursor = Some(node);
+            while let Some(current) = cursor {
+                if path.len() >= 256 {
+                    return Err(JsError::execution_limit("DOM click path too deep"));
+                }
+                path.push(current);
+                cursor = self.dom_pending_parents.get(&current).copied();
+            }
+            self.dom_programmatic_click_depth += 1;
+            let dispatched = self.dispatch_dom_click_path(&path);
+            self.dom_programmatic_click_depth -= 1;
+            dispatched?;
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
         if builtin == BuiltinFunction::DomContains {
             let JsValue::Object(receiver) = this_value else {
                 return Err(JsError::type_error("contains requires DOM node receiver"));
@@ -3457,6 +3740,23 @@ impl JsRuntime {
                 return Err(JsError::type_error("item requires NodeList"));
             };
             let kind = self.object(receiver)?.kind;
+            if kind == ObjectKind::DomQueryNodeList {
+                let index = arguments.first().unwrap_or(&JsValue::Undefined).to_number();
+                let found = if index.is_finite() && index >= 0.0 && index.fract() == 0.0 {
+                    self.dom_query_lists
+                        .get(&receiver)
+                        .and_then(|nodes| nodes.get(index as usize))
+                        .copied()
+                } else {
+                    None
+                };
+                return match found {
+                    Some(node) => self
+                        .dom_any_node_object(node)
+                        .map(|id| CallOutcome::Value(JsValue::Object(id))),
+                    None => Ok(CallOutcome::Value(JsValue::Null)),
+                };
+            }
             let parent = match kind {
                 ObjectKind::DomNodeList(parent) | ObjectKind::DomHtmlCollection(parent) => parent,
                 ObjectKind::DomTagCollection => {
@@ -3643,6 +3943,34 @@ impl JsRuntime {
                 self.detach_dom_subtree(old_child)?;
             }
             return Ok(CallOutcome::Value(JsValue::Object(old_object)));
+        }
+        if matches!(
+            builtin,
+            BuiltinFunction::DomQuerySelector | BuiltinFunction::DomQuerySelectorAll
+        ) {
+            let root = match this_value {
+                JsValue::Object(id) if Some(id) == self.dom_document => 0,
+                JsValue::Object(id) => match self.object(id)?.kind {
+                    ObjectKind::DomElement(node) => node,
+                    _ => return Err(JsError::type_error("selector requires Document or Element")),
+                },
+                _ => return Err(JsError::type_error("selector requires DOM receiver")),
+            };
+            let selector = arguments
+                .first()
+                .unwrap_or(&JsValue::Undefined)
+                .to_js_string();
+            let nodes = self.query_descendants(root, &selector)?;
+            if builtin == BuiltinFunction::DomQuerySelector {
+                return match nodes.first().copied() {
+                    Some(node) => self
+                        .dom_any_node_object(node)
+                        .map(|id| CallOutcome::Value(JsValue::Object(id))),
+                    None => Ok(CallOutcome::Value(JsValue::Null)),
+                };
+            }
+            let list = self.static_node_list(nodes)?;
+            return Ok(CallOutcome::Value(JsValue::Object(list)));
         }
         if builtin == BuiltinFunction::DomGetElementsByTagName {
             let root = match this_value {
@@ -3987,6 +4315,8 @@ impl JsRuntime {
             BuiltinFunction::SyntaxError => ("SyntaxError", self.syntax_error_prototype),
             BuiltinFunction::DomGetElementById
             | BuiltinFunction::DomGetElementsByTagName
+            | BuiltinFunction::DomQuerySelector
+            | BuiltinFunction::DomQuerySelectorAll
             | BuiltinFunction::DomHasAttribute
             | BuiltinFunction::DomHasAttributes
             | BuiltinFunction::DomCreateElement
@@ -4003,6 +4333,7 @@ impl JsRuntime {
             | BuiltinFunction::DomNodeListItem
             | BuiltinFunction::DomHtmlCollectionNamedItem
             | BuiltinFunction::DomContains
+            | BuiltinFunction::DomClick
             | BuiltinFunction::DomStyleSetProperty
             | BuiltinFunction::DomStyleGetPropertyValue
             | BuiltinFunction::DomStyleRemoveProperty
@@ -4538,6 +4869,18 @@ impl JsRuntime {
                             return self.dom_any_node_object(child).map(JsValue::Object);
                         }
                     }
+                    ObjectKind::DomQueryNodeList => {
+                        let nodes = self.dom_query_lists.get(id);
+                        if key == "length" {
+                            return Ok(JsValue::Number(nodes.map_or(0, Vec::len) as f64));
+                        }
+                        if let Ok(index) = key.parse::<usize>() {
+                            return match nodes.and_then(|nodes| nodes.get(index)).copied() {
+                                Some(node) => self.dom_any_node_object(node).map(JsValue::Object),
+                                None => Ok(JsValue::Undefined),
+                            };
+                        }
+                    }
                     ObjectKind::DomTagCollection => {
                         let (root, tag) = self
                             .dom_tag_collections
@@ -5068,6 +5411,7 @@ fn apply_binary(op: BinaryOp, left: JsValue, right: JsValue) -> JsValue {
         BinaryOp::Greater => JsValue::Boolean(compare(&left, &right, |a, b| a > b)),
         BinaryOp::GreaterEqual => JsValue::Boolean(compare(&left, &right, |a, b| a >= b)),
         BinaryOp::InstanceOf => unreachable!("instanceof requires VM heap access"),
+        BinaryOp::In => unreachable!("in requires VM has_property semantics"),
     }
 }
 

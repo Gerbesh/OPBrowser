@@ -16,6 +16,20 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S30 - relational in and DOM selector/click -> native pixels (M4.26)
+
+Status: IMPLEMENTED bounded selector and event-dispatch slice.
+A JS page uses original relational in, document.querySelector,
+element.querySelectorAll and element.click to inspect/mutate the
+staged DOM. The original VM holds a static query snapshot,
+dispatches click through its native event path, then op_engine
+commits DOM ops to op_dom; CSS/layout/op_paint produce changed
+pixels. Five new real native rendering integration tests include
+timer-driven changes and static collection identity. One new
+pinned WPT DOM fixture (using in) passes without modifying its
+upstream assertions. Only 11 manually selected WPT files are
+attempted; no broad standards claim.
+
 ## S29 - live tag lookup and pinned multi-test WPT DOM (M4.25)
 
 Status: IMPLEMENTED bounded original VM/DOM/native paint slice.

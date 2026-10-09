@@ -336,6 +336,21 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S30",
+      "title": "JS in and scoped DOM selectors with programmatic click to native repaint",
+      "status": "M4.26 original VM selectors and event dispatch with WPT DOM v4",
+      "steps": [
+        {"path": "crates/op_js/src/parser.rs", "symbol": "comparison"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "binary_with_coercion"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "query_descendants"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_dom_click_path"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_dom/src/lib.rs", "symbol": "append_child"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Partial in, simple selectors, static query lists, bounded click only. 11 pinned manually chosen WPT files pass; 3 SKIP. Not full WPT."
+    },
+    {
       "id": "S29",
       "title": "Live DOM tag search and pinned multi-test WPT DOM smoke to native pixels",
       "status": "M4.25 bounded tag collection and fail-sticky testharness shim",

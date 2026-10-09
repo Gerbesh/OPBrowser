@@ -223,3 +223,13 @@ smoke v3 attempts/passes ten original pinned HTML fixtures,
 eleven test() callbacks in total, with three explicit skips.
 Failure status cannot be erased by later tests. Broader WPT
 conformance and async harness are still incomplete.
+
+## M4.26: scoped selectors, native programmatic clicks and WPT v4
+
+Original JS now supports a bounded in operator, simple DOM
+querySelector/querySelectorAll with static result lists, and
+element.click routed through native capture/target/bubble event
+handlers. Five new native rendering integrations pass, including
+deferred mutations and saved object identity. Pinned manually
+selected original DOM WPT smoke v4: 11/11 attempted files PASS,
+3 SKIP; a narrow sample, not overall WPT conformance.

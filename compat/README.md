@@ -140,3 +140,10 @@ pinned original-source WPT DOM fixtures: 10 attempted/pass,
 The multi-test adapter retains failures, checks expected counts
 and does not rewrite original assertions. This is not the
 official WPT harness or DOM conformance.
+
+M4.26 adds compat/wpt-dom-smoke-v4.tsv: 14 manually chosen
+pinned original-source WPT DOM files, 11 attempted/PASS with
+12 synchronous test() callbacks, 3 explicit SKIP. The new
+Element-childElementCount fixture exercises relational JS in
+and live DOM properties without changing upstream assertions.
+This is not the official WPT testharness or a general DOM score.

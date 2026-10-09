@@ -10,7 +10,7 @@ const WPT_REVISION: &str = "97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d";
 const PASS: &str = "OPBROWSER_WPT_DOM_PASS";
 const FAIL: &str = "OPBROWSER_WPT_DOM_FAIL";
 const NOT_RUN: &str = "OPBROWSER_WPT_DOM_NOT_RUN";
-const MANIFEST: &str = include_str!("../../../../compat/wpt-dom-smoke-v3.tsv");
+const MANIFEST: &str = include_str!("../../../../compat/wpt-dom-smoke-v4.tsv");
 
 fn git(repo: &Path, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
@@ -184,10 +184,10 @@ fn run() -> Result<(), String> {
             _ => return Err(format!("unknown WPT manifest disposition for {fixture}")),
         }
     }
-    if selected != 13 || attempted != 10 || skipped != 3 {
-        return Err("frozen WPT DOM v3 manifest shape changed".into());
+    if selected != 14 || attempted != 11 || skipped != 3 {
+        return Err("frozen WPT DOM v4 manifest shape changed".into());
     }
-    println!("WPT DOM smoke v3: multi-test synchronous shim, unchanged pinned fixture assertions");
+    println!("WPT DOM smoke v4: multi-test synchronous shim, unchanged pinned fixture assertions");
     println!("upstream_revision_verified=true");
     println!(
         "selected={selected} attempted={attempted} passed={passed} failed={failed} skipped={skipped}"

@@ -1264,3 +1264,41 @@ counts must not be mislabeled as external conformance percentages.
   official WPT harness, async tests or general Web API completeness.
 - NEXT M4.26: additional pinned WPT DOM fixtures, document/element
   lookup semantics, asynchronous test harness and browser events.
+
+## M4.26 - Relational in, simple DOM selectors, programmatic clicks, WPT smoke v4 (2026-10-09)
+
+- DONE original JS lexer/relational parser/VM operator in, bounded
+  prototype-chain HasProperty and live DOM accessors. Right-hand
+  primitives throw TypeError. Object-key ToPropertyKey coercion
+  and full ECMAScript property semantics remain incomplete.
+- DONE native original-JS Document/Element.querySelector and
+  querySelectorAll, with bounded simple selectors: #id, .class,
+  HTML tag names and wildcard *. Queries respect descendant-only
+  element scope and authoritative tree order; unsupported compound/
+  combinator/pseudo selectors currently raise an explicit error.
+  querySelectorAll returns a static NodeList (indexed access,
+  item and length), distinct from live tag/children collections.
+  Synthetic-to-physical DOM binding preserves saved NodeList refs.
+- DONE bounded programmatic element.click() with existing
+  capture/target/bubbling click handlers and event object, including
+  timer-invoked dispatch; nesting capped at 8. No full default
+  activation behavior, keyboard/focus, navigation or generic
+  dispatchEvent in this slice.
+- DONE manually pinned WPT DOM smoke v4: 14 selected original-source
+  fixtures at the same upstream revision, 11 attempted and passed,
+  3 explicitly unsupported/skipped, 12 test() callbacks total.
+  Added unmodified original Element-childElementCount.html testing
+  the JS in operator. Existing WPT v1/v2/v3 manifests stay frozen.
+  Shim remains synchronous and is NOT official WPT harness.
+- DONE five new script-to-DOM-to-native-paint integration tests
+  for in, selector scope, static query snapshot, deferred callback
+  node identity and programmatic bubbling/timed clicks.
+- CHECKED full Rust workspace, strict Clippy, Win32 smoke, fixed
+  WPT v4 and independent pinned Test262 v1/v2 samples.
+- LIMITS: partial selector grammar and typed errors, no complete
+  CSS Selectors API, custom selector pseudo-classes, ShadowRoot,
+  default click actions or async WPT harness. A small manually
+  selected WPT fixture set is not an overall DOM conformance rate.
+- NEXT M4.27: selector combinators/attribute syntax and standards
+  errors, safe general event dispatch, broader real WPT DOM
+  coverage and a proper async testharness protocol.

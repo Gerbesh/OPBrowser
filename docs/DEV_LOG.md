@@ -3101,3 +3101,19 @@ This file is append-only project history.
 - Two native paint tests cover live tag collections and DOM mutations
   through parser scripts and timer callback.
 - WPT smoke v3 is not a representative DOM/WPT conformance rate.
+
+## 2026-10-09 - M4.26 JS in operator, scoped selectors, programmatic click
+
+- Implemented bounded original-VM binary in, including native
+  live DOM properties and prototype-chain presence checks.
+- Added Document/Element.querySelector and querySelectorAll
+  for a deliberately limited simple CSS selector grammar.
+  Query snapshot NodeList is not live and survives VM-to-native
+  DOM identity remapping and timer callbacks.
+- Added element.click using existing original capture/target/bubble
+  dispatch and a nested click budget of 8. No default navigation.
+- Extended pinned original WPT DOM smoke v4 with one upstream
+  Element-childElementCount fixture using JS in: 11 files pass,
+  3 explicit skips across 14 manually selected files.
+- Added five end-to-end native paint regression tests and retained
+  all prior workspace and WPT DOM checks.

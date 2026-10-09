@@ -38,6 +38,22 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.26 broadens the original JavaScript parser/runtime with an initial bounded
+relational 'in' operator and original DOM with limited querySelector
+and querySelectorAll (simple #id, .class, tag or * selectors).
+querySelectorAll returns a static NodeList, unlike live
+getElementsByTagName. Programmatic element.click() dispatches through the
+existing capture/target/bubbling click handlers, with bounded nested
+dispatch; default browser activation/navigation is not yet implemented.
+Five new native DOM/page rendering tests cover these surfaces and timers.
+
+Pinned WPT DOM smoke v4 includes 14 manually selected files:
+11 original upstream cases attempted and passed, 3 explicit SKIPs.
+The executable files contain 12 original synchronous test() callbacks.
+The WPT adapter remains deliberately narrow and this is NOT
+representative DOM standards compatibility. The earlier 289-case
+Test262 runtime selection is separate.
+
 M4.25 extends the **manually selected** original-source WPT DOM smoke
 to v3: 13 selected upstream files, 10 attempted/passed, 3 explicit SKIP.
 The 10 attempted files contain 11 synchronous test() callbacks,
