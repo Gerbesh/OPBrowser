@@ -447,3 +447,15 @@ Changes are native String.prototype.charAt, bounded Array.push/pop and
 SyntaxError inheritance for JSON.parse. This is not overall JavaScript
 or website compatibility. UTF-16 lone-surrogate string construction and
 generic array-like methods are still incomplete.
+
+## M4.20 DOM vertical slice; Test262 score unaffected
+
+M4.20 adds native author-script node creation and attachment through
+the authoritative op_dom tree, not a new ECMAScript builtin score.
+Cross-layer tests cover real paint after createElement/appendChild,
+document.body timing, nested detached node discovery, timer updates,
+click listeners, and ancestor-cycle rejection. Existing Test262
+Runtime v1 remains 82/91 (90.11%), and Runtime v2 remains 78/179
+(43.58%) attempted plus 110 explicit SKIPs. DOM Web Platform
+conformance beyond these vertical cases is unmeasured; broad
+interactivity and full DOM interfaces remain incomplete.

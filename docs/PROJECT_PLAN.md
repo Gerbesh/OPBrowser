@@ -1071,3 +1071,39 @@ counts must not be mislabeled as external conformance percentages.
   surrogates, no live DOM createElement/appendChild mutation pipeline.
 - NEXT M4.20: actual DOM tree mutations with persistent node identity,
   authoritative DOM model, layout recalculation and native repaint.
+
+## M4.20 - Actual bounded DOM insertion through native repaint (2026-10-09)
+
+- DONE document.createElement(tag), Element.appendChild(child), live
+  element.id and textContent setters. Detached nodes are allocated
+  as bounded VM handles and emitted as ordered native DomOperation
+  commands (Create, Append, SetId, SetText) to the authoritative
+  op_dom Document, not merely placeholder JS objects.
+- DONE persistent element object identity across repeated
+  document.getElementById calls, parser script boundaries, and
+  dynamic attachment of detached nested child nodes; document.body
+  is exposed when body exists in the tree-builder, otherwise null.
+- DONE DOM host operation replay for parser-blocking, async/defer,
+  retained click and timer callbacks. Style/layout/native paint
+  refresh when the real tree changes; dynamic element click
+  listeners remap synthetic handles to actual NodeId.
+- DONE ancestor-cycle prevention at DOM layer, with staging
+  safeguards for newly created nested nodes, finite mutation and
+  depth/node allocation budgets and conservative tag validation.
+- DONE native integration tests: create/append/lookup, detached
+  nested subtree, timer-delivered textContent mutation, dynamic
+  registered click listener and real repainted pixels, plus DOM
+  ancestor-cycle protection tests.
+- VERIFIED pinned Test262 runtime v1 82/91 and runtime v2
+  78/179 attempted (with 110 explicit SKIP): no unrelated JS
+  conformance regression. Neither metric claims overall support.
+- LIMITATION no general removeChild/insertBefore, createTextNode,
+  class/style/setAttribute/getAttribute, general Node interface,
+  DOM mutation observer or style recalculation during a running
+  script. Host rejects illegal pre-existing-node cycle moves, but
+  asynchronous host replay cannot synchronously throw for every
+  invalid move in this first slice. Full DOM event and reflow
+  behavior remains partial.
+- NEXT M4.21: general DOM attributes, createTextNode/removeChild,
+  sibling insertion and live node relationships; strengthen
+  operation validation and style/incremental-layout correctness.

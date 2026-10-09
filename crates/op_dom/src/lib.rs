@@ -56,6 +56,7 @@ pub enum DocumentError {
     UnknownParent,
     UnknownChild,
     SelfParenting,
+    AncestorCycle,
 }
 
 #[derive(Debug)]
@@ -140,6 +141,21 @@ impl Document {
         }
         if parent == child {
             return Err(DocumentError::SelfParenting);
+        }
+        // Never allow a descendant to acquire one of its ancestors,
+        // including moves of detached subtrees. Check before detaching
+        // the old parent so failures leave the document intact.
+        let mut cursor = Some(parent);
+        let mut remaining = self.nodes.len();
+        while let Some(current) = cursor {
+            if current == child {
+                return Err(DocumentError::AncestorCycle);
+            }
+            if remaining == 0 {
+                return Err(DocumentError::AncestorCycle);
+            }
+            remaining -= 1;
+            cursor = self.nodes[current.index()].parent;
         }
 
         if let Some(old_parent) = self.nodes[child.index()].parent {
@@ -239,5 +255,31 @@ impl Document {
 impl Default for Document {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod dynamic_mutation_tests {
+    use super::*;
+    #[test]
+    fn reject_ancestor_cycles_without_damaging_existing_subtree() {
+        let mut document = Document::new();
+        let parent = document.create_element("div");
+        let child = document.create_element("p");
+        let grandchild = document.create_element("span");
+        document.append_child(document.root(), parent).unwrap();
+        document.append_child(parent, child).unwrap();
+        document.append_child(child, grandchild).unwrap();
+        assert_eq!(
+            document.append_child(grandchild, parent),
+            Err(DocumentError::AncestorCycle)
+        );
+        assert_eq!(
+            document.append_child(child, child),
+            Err(DocumentError::SelfParenting)
+        );
+        assert_eq!(document.node(parent).unwrap().parent, Some(document.root()));
+        assert_eq!(document.children(parent), &[child]);
+        assert_eq!(document.node(grandchild).unwrap().parent, Some(child));
     }
 }

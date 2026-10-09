@@ -2,6 +2,122 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m420_create_append_and_late_lookup_really_repaint_dom() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<div id='host'>START</div>",
+            "<script>",
+            "var parent=document.getElementById('host');",
+            "var child=document.createElement('p');",
+            "child.id='inserted';",
+            "child.textContent='DYNAMIC-VISIBLE';",
+            "var absent=document.getElementById('inserted')===null;",
+            "var added=parent.appendChild(child);",
+            "var same=added===child && document.getElementById('inserted')===child;",
+            "var stable=parent===document.getElementById('host');",
+            "</script>",
+            "<script>",
+            "if (absent && same && stable && document.getElementById('inserted')===child) ",
+            "  child.textContent='M420-RENDERED';",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M420-RENDERED")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    assert!(engine.active_script_report().unwrap().mutations >= 3);
+    let page = engine.reflow(360, 500).unwrap();
+    assert!(page.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M420-RENDERED")
+    )));
+}
+
+#[test]
+fn m420_head_script_timer_gets_body_after_tree_builder_finishes() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<script>",
+            "var initiallyAbsent=document.body===null;",
+            "setTimeout(function(){",
+            " var node=document.createElement('p');",
+            " node.textContent='HEAD-BODY-M420';",
+            " if(initiallyAbsent) document.body.appendChild(node);",
+            "},0);",
+            "</script><body><p>BASE</p>"
+        ),
+        800,
+        600,
+    );
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("HEAD-BODY-M420")
+    )));
+    let updated = engine
+        .tick_timers(800, 600)
+        .expect("head timer must append after body exists");
+    assert!(updated.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("HEAD-BODY-M420")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m420_dynamic_dom_timer_mutations_are_persistent_and_visible() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<section id='host'></section><script>",
+            "var dynamic=document.createElement('b');",
+            "dynamic.id='late';",
+            "document.getElementById('host').appendChild(dynamic);",
+            "setTimeout(function(){ dynamic.textContent='M420-TIMER'; },0);",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M420-TIMER")
+    )));
+    let updated = engine
+        .tick_timers(800, 600)
+        .expect("timer mutates real DOM");
+    assert!(updated.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M420-TIMER")
+    )));
+}
+
+#[test]
+fn m420_detached_nodes_can_be_nested_then_appended() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='target'></main><script>",
+            "var parent=document.createElement('section');",
+            "var child=document.createElement('em');",
+            "child.id='nested-child';",
+            "child.textContent='NESTED-420';",
+            "parent.appendChild(child);",
+            "var wasDetached=document.getElementById('nested-child')===null;",
+            "document.getElementById('target').appendChild(parent);",
+            "var isAttached=document.getElementById('nested-child')===child;",
+            "if(!wasDetached || !isAttached) child.textContent='BROKEN-DOM';",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("NESTED-420")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m419_string_and_array_methods_reach_native_repaint() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

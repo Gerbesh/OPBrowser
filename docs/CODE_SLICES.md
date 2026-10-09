@@ -16,6 +16,22 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S24 - document.createElement -> appendChild -> native pixels (M4.20)
+
+Status: IMPLEMENTED bounded initial dynamic DOM slice.
+Inline page JS or a timer/click callback creates a detached native
+DOM handle, assigns id/textContent and calls appendChild; the
+original JS runtime enqueues DomOperation in execution order.
+op_engine::scripts::apply_dom_operations binds synthetic to real
+NodeIds, updates the op_dom authoritative tree and preserves JS
+object identity. Full style computation, layout and native paint
+then see the newly appended node. Event listener aliases also work
+on the committed nodes. An integration test verifies a real click
+updates the new element on screen.
+
+Limitations: no broad DOM attributes, DOM removal/insertion,
+MutationObserver or complete synchronous DOM error semantics.
+
 ## S23 - Native String/Array methods -> DOM text -> pixels (M4.19)
 
 Status: IMPLEMENTED in original JS VM and engine paint path.

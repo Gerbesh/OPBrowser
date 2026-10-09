@@ -163,3 +163,15 @@ errors have proper SyntaxError inheritance. Locked Test262 Runtime v2
 rose from 65/179 to 78/179 (43.58%) with 110 unchanged SKIPs and
 101 FAIL. Narrow Runtime v1 remains 82/91. Full modern JS support and
 real dynamic DOM node insertion are still unfinished.
+
+## M4.20: genuine dynamic DOM nodes and click-driven repaint
+
+OPBrowser can now create an element in its own JS VM with
+document.createElement, assign id/textContent, append it to a real
+document.body/element and paint the result. Repeated lookups
+preserve JS object identity; dynamically added click listeners and
+timer mutations work after host replay. The authoritative op_dom
+prevents parent/ancestor cycles. The v1/v2 Test262 runtime baseline
+is unchanged at 82/91 and 78/179 attempted (110 v2 SKIPs).
+General DOM removal, new Text nodes, attributes and style mutation
+are still missing.

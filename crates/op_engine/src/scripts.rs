@@ -1,8 +1,8 @@
 //! First page-scripting vertical slice: bounded, inline classic scripts and
 //! detached DOM text mutations through OPBrowser's own JavaScript VM.
 //! This is intentionally not a complete HTML script-processing model.
-use op_dom::{Document, NodeId, NodeKind};
-use op_js::{DomElementSnapshot, JsRuntime};
+use op_dom::{Attribute, Document, NodeId, NodeKind};
+use op_js::{DomElementSnapshot, DomOperation, JsRuntime};
 use op_net::{NetworkContext, resolve_script_source};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -134,6 +134,77 @@ fn snapshot_and_scripts(
     (elements, scripts, skipped)
 }
 
+fn find_body(document: &Document) -> Option<NodeId> {
+    let mut stack = vec![document.root()];
+    let mut count = 0usize;
+    while let Some(node) = stack.pop() {
+        count += 1;
+        if count > MAX_NODES {
+            return None;
+        }
+        if document
+            .element(node)
+            .is_some_and(|element| element.tag_name == "body")
+        {
+            return Some(node);
+        }
+        stack.extend(document.children(node).iter().rev().copied());
+    }
+    None
+}
+
+/// Commit ordered JS mutations to the authoritative DOM tree. Synthetic
+/// handles are resolved through the page-owned VM, never exposed as raw
+/// op_dom NodeIds. This routine is shared by parser scripts, clicks and timers.
+pub(crate) fn apply_dom_operations(document: &mut Document, runtime: &mut JsRuntime) -> usize {
+    let mut changed = 0;
+    for op in runtime.take_dom_operations() {
+        match op {
+            DomOperation::CreateElement { node, tag } => {
+                if document.len() >= MAX_NODES {
+                    continue;
+                }
+                let actual = document.create_element(tag);
+                runtime.bind_dom_node(node, actual.index());
+                // Detached creation by itself does not change visible layout.
+            }
+            DomOperation::AppendChild { parent, child } => {
+                let parent = document.node_id(runtime.resolve_dom_node(parent));
+                let child = document.node_id(runtime.resolve_dom_node(child));
+                if let (Some(parent), Some(child)) = (parent, child)
+                    && document.element(parent).is_some()
+                    && document.element(child).is_some()
+                    && document.append_child(parent, child).is_ok()
+                {
+                    changed += 1;
+                }
+            }
+            DomOperation::SetId { node, id } => {
+                if let Some(node) = document.node_id(runtime.resolve_dom_node(node))
+                    && let Some(element) = document.element_mut(node)
+                {
+                    element.attributes.retain(|a| a.name != "id");
+                    if !id.is_empty() {
+                        element.attributes.push(Attribute {
+                            name: "id".into(),
+                            value: id,
+                        });
+                    }
+                    changed += 1;
+                }
+            }
+            DomOperation::SetText(mutation) => {
+                if let Some(node) = document.node_id(runtime.resolve_dom_node(mutation.node))
+                    && document.set_text_content(node, &mutation.text_content)
+                {
+                    changed += 1;
+                }
+            }
+        }
+    }
+    changed
+}
+
 /// Execute blocking scripts at tree-builder pauses. External async/defer
 /// scripts fetch on bounded scoped workers; completions are handled at
 /// subsequent parser script boundaries or after DOM construction.
@@ -225,6 +296,9 @@ pub(crate) fn parse_and_execute(
         if let Some(runtime) = runner.runtime.as_mut() {
             let (elements, _, _) = snapshot_and_scripts(&document);
             runtime.refresh_dom_snapshot(elements);
+            if let Some(body) = find_body(&document) {
+                let _ = runtime.set_dom_body_node(body.index());
+            }
         }
         document
     });
@@ -274,6 +348,11 @@ impl ParserScriptRunner<'_> {
         if let Some(runtime) = self.runtime.as_mut() {
             let (elements, _, _) = snapshot_and_scripts(document);
             runtime.refresh_dom_snapshot(elements);
+            if let Some(body) = find_body(document)
+                && runtime.set_dom_body_node(body.index()).is_err()
+            {
+                self.report.failed += 1;
+            }
             if runtime.set_document_ready_state(state).is_err() {
                 self.report.failed += 1;
             }
@@ -294,13 +373,7 @@ impl ParserScriptRunner<'_> {
         let Some(runtime) = self.runtime.as_mut() else {
             return;
         };
-        for mutation in runtime.take_dom_mutations() {
-            if let Some(node) = document.node_id(mutation.node)
-                && document.set_text_content(node, &mutation.text_content)
-            {
-                self.report.mutations += 1;
-            }
-        }
+        self.report.mutations += apply_dom_operations(document, runtime);
     }
     fn execute(&mut self, document: &mut Document, script: NodeId) -> Option<ScriptFetch> {
         let element = document.element(script)?;
@@ -462,6 +535,12 @@ impl ParserScriptRunner<'_> {
             self.runtime = Some(runtime);
         }
         let runtime = self.runtime.as_mut().expect("runtime just installed");
+        if let Some(body) = find_body(document)
+            && runtime.set_dom_body_node(body.index()).is_err()
+        {
+            self.report.failed += 1;
+            return;
+        }
         if runtime.set_document_ready_state(self.ready_state).is_err() {
             self.report.failed += 1;
             return;
@@ -511,6 +590,9 @@ pub(crate) fn execute_retained(
         report.failed = scripts.len();
         return (report, None);
     }
+    if let Some(body) = find_body(document) {
+        let _ = runtime.set_dom_body_node(body.index());
+    }
     let started = Instant::now();
     let mut requests = 0usize;
     let mut remaining_bytes = TOTAL_EXTERNAL_SCRIPT_BUDGET;
@@ -558,13 +640,7 @@ pub(crate) fn execute_retained(
         }
         // Apply completed mutations even when a later statement throws.
         // All DOM changes affect the retained tree before CSS/layout.
-        for change in runtime.take_dom_mutations() {
-            if let Some(node) = document.node_id(change.node)
-                && document.set_text_content(node, &change.text_content)
-            {
-                report.mutations += 1;
-            }
-        }
+        report.mutations += apply_dom_operations(document, &mut runtime);
     }
     (report, Some(runtime))
 }
@@ -593,14 +669,7 @@ pub(crate) fn dispatch_click(
         return (false, 0);
     }
     let handled = runtime.dispatch_dom_click_path(&path).unwrap_or(false);
-    let mut changed = 0;
-    for mutation in runtime.take_dom_mutations() {
-        if let Some(node) = document.node_id(mutation.node)
-            && document.set_text_content(node, &mutation.text_content)
-        {
-            changed += 1;
-        }
-    }
+    let changed = apply_dom_operations(document, runtime);
     (handled, changed)
 }
 

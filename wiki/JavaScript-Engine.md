@@ -470,3 +470,15 @@ verifies visible DOM text changes through these methods.
 Pinned Runtime v2: 78/179 (43.58%) PASS, 101 FAIL, 110 SKIP;
 narrow Runtime v1 unchanged at 82/91. Dynamic DOM insertion, generic
 array-like methods and lone UTF-16 surrogates remain incomplete.
+
+## M4.20: real DOM creation and insertion
+
+The original VM now supports document.createElement(tag),
+element.appendChild(element), id and textContent on detached and
+attached elements. DOM objects preserve identity across lookup,
+parser boundaries and click dispatch. document.body is available
+after the HTML tree-builder instantiates it (otherwise null).
+Mutations are queued in execution order to the page-owning engine,
+which creates real op_dom nodes, recalculates layout and paints them
+natively. Dynamic event handlers and timer changes work.
+This is bounded and partial, not a complete DOM specification.

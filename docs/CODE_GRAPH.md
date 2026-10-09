@@ -16,6 +16,25 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.20: DOM VM op queue -> real DOM nodes -> recomputed native pixels
+
+op_js::JsRuntime now owns bounded synthetic DOM node handles,
+persistent JS object identity, detached parent relationships and
+ordered DomOperation records. document.createElement constructs a
+detached node; appendChild, id and textContent produce real host
+operations with synthetic-to-physical node binding. document.body is
+exposed when the HTML tree-builder has instantiated it.
+
+op_engine::scripts::apply_dom_operations is the sole host replay
+function: it allocates op_dom::Document nodes, updates attributes and
+text, appends/reparents attached nodes and tracks actual mutations.
+Parser script runner, retained click dispatch and Engine::tick_timers
+all call the same ordered operation replay. Engine recomputes styles,
+layout and native display list after changes. op_dom::Document
+refuses ancestor cycles before changing parentage.
+Integration tests verify dynamic identity, nested DOM, timer, click,
+pixel output and cycle safety. General DOM methods remain absent.
+
 ## M4.19: native String/Array methods -> JS script -> DOM repaint
 
 JsRuntime::install_standard_primitives owns Array.push/pop and the

@@ -441,15 +441,7 @@ impl Engine {
         let fired = runtime.run_due_timers(16);
         prepared.scripts.failed += fired.failed + network_failed;
         let mut changes = 0;
-        for mutation in runtime.take_dom_mutations() {
-            if let Some(node) = prepared.document.node_id(mutation.node)
-                && prepared
-                    .document
-                    .set_text_content(node, &mutation.text_content)
-            {
-                changes += 1;
-            }
-        }
+        changes += scripts::apply_dom_operations(&mut prepared.document, runtime);
         if changes == 0 {
             return None;
         }
@@ -656,6 +648,58 @@ mod tests {
         assert!(contains_text(&after.display_list, "Delayed"));
         assert!(!contains_text(&after.display_list, "Idle"));
         assert_eq!(engine.active_script_report().unwrap().mutations, 1);
+    }
+
+    #[test]
+    fn m420_dynamic_inserted_element_click_listener_repaints() {
+        let mut engine = Engine::new();
+        let page = engine.set_html_page(
+            concat!(
+                "<body><script>",
+                "var button=document.createElement('p');",
+                "button.id='dynamic-press';",
+                "button.textContent='PRESS-M420';",
+                "button.addEventListener('click',function(){",
+                " button.textContent='CLICK-M420';",
+                "});",
+                "document.body.appendChild(button);",
+                "</script>"
+            ),
+            800,
+            600,
+        );
+        assert!(page.commands.iter().any(|cmd| matches!(
+            cmd,op_paint::PaintCommand::Text{text,..} if text.contains("PRESS-M420")
+        )));
+        let active = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_backgrounds_and_resources(
+            &active.document,
+            800,
+            600,
+            (&active.images.elements, &active.images.backgrounds),
+            &active.images.generated,
+            &active.computed_styles,
+            &mut text::Measurer::new(),
+        );
+        let region = layout
+            .click_regions
+            .iter()
+            .find(|region| {
+                active.document.element(region.node).is_some_and(|element| {
+                    element
+                        .attributes
+                        .iter()
+                        .any(|attr| attr.name == "id" && attr.value == "dynamic-press")
+                })
+            })
+            .expect("dynamic node has real layout click bounds");
+        let (x, y) = (region.x + 2, region.y + 2);
+        let repainted = engine
+            .click_at(x, y, 800, 600)
+            .expect("dynamic listener causes repaint");
+        assert!(repainted.display_list.commands.iter().any(|cmd| matches!(
+            cmd,op_paint::PaintCommand::Text{text,..} if text.contains("CLICK-M420")
+        )));
     }
 
     #[test]

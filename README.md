@@ -38,6 +38,15 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.20 adds the first real dynamic DOM path: document.createElement(),
+Element.appendChild(), element.id, and element.textContent now mutate the
+authoritative DOM tree through page-owned bounded operations, with layout,
+computed style and native paint after script/timer/click execution.
+document.body is available when the HTML tree-builder creates it; dynamic
+JS element identity survives getElementById and event dispatch. This is
+not yet a full DOM API: removeChild/insertBefore/createTextNode, general
+attributes and style mutation are still missing.
+
 Status: early engine development. OPBrowser opens external HTTP/HTTPS HTML pages,
 local files and HTML data URLs from a native address bar or command-line argument.
 Its own tokenizer, tree builder, DOM, text layout and display list render the page

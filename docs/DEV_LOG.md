@@ -3019,3 +3019,21 @@ This file is append-only project history.
 - Test262 runtime v2 fixed sample improves 65/179 to 78/179 (43.58%)
   with the same 110 skips; v1 remains at 82/91.
 - Dynamic DOM node insertion deferred until it can alter real trees.
+
+## 2026-10-09 - M4.20 dynamic DOM through the authoritative tree
+
+- Wired original-JS document.createElement, appendChild, id and
+  textContent via ordered host DomOperation replay into real
+  op_dom nodes. Synthetic VM handles are bounded and bound to
+  physical NodeIds when committed.
+- Page snapshots retain JS object identity across lookups and
+  script boundaries. Detached nested insertion, document.body
+  timing and click handler rebinding now work.
+- The engine applies queued operations after inline script execution,
+  clicks and timer callbacks and recalculates computed styles/layout
+  before native repaint.
+- Protected DOM reparent against ancestor cycles. Added integration
+  tests for real paint, delayed timer changes, nested detached
+  subtree lookup, dynamic click and independent DOM cycle checking.
+- JS Test262 runtime v1 remains 82/91 and v2 78/179 (110 skipped).
+  No general DOM attributes or removal/insertion protocol yet.
