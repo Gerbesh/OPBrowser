@@ -234,6 +234,25 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.30b-d: DOMException, AbortSignal.any/timeout, fetch abort
+
+OPBrowser now has original VM DOMException objects with readable
+AbortError/TimeoutError reasons, legacy codes and toString().
+AbortSignal.timeout (bounded to 60 seconds) runs through the
+page-owned scheduler. AbortSignal.any composes up to 64 array-like
+inputs and propagates the first abort reason through dependent
+signals, cleaning up listener registrations.
+
+The self-hosted Request and Promise-based fetch support RequestInit
+signal. Aborting rejects the Promise with the same reason, deletes
+queued work and discards late HTTP completions. A WinHTTP worker
+already running is not forcibly interrupted and may continue until
+completion. Five signal/exception VM tests, five fetch VM tests,
+three cross-feature VM tests and one real delayed HTTP/DOM paint
+integration pass. Existing WPT/Test262 baselines were not rerun.
+Missing: complete iterable support, non-GET/CORS/streaming fetch,
+physically interrupted network I/O and broad standards conformance.
+
 ## M4.30a: AbortController/AbortSignal and signal listener options
 
 Original JavaScript now supports new AbortController(), the persistent

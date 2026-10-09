@@ -16,6 +16,33 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.30b-d: DOMException -> AbortSignal composition -> fetch completion
+
+op_js::JsRuntime::new_dom_exception creates branded original
+DOMException objects on their dedicated prototype (name/message,
+legacy code and toString). AbortController default reasons and
+AbortSignal.timeout deadlines use AbortError and TimeoutError.
+
+JsRuntime's PendingAbortDeadline records a signal ObjectId and
+Instant; next_timer_wait and run_due_timers integrate deadlines
+with existing original TimerReport and microtask checkpoints.
+abort_followers tracks the directed AbortSignal.any cascade,
+bounded by source/input and follower counts. abort_signal marks
+state before delivering the event, clears deadline state, removes
+EventTarget registrations, revokes queued request callbacks and
+propagates reason identity to dependent signals.
+
+The self-hosted crates/op_js/src/async_fetch.js Request/Fetch facade
+stores Request.signal and passes a native ObjectId to opFetchText.
+The original runtime's text_request_signals associates fetch task
+IDs with signals, while the existing network manager
+op_engine::Engine::dispatch_text_requests still owns same-origin
+worker requests. Upon abort the Promise rejects from the signal's
+abort event and outstanding callbacks/queued requests are removed;
+in-flight WinHTTP calls may still finish but late results are ignored
+by complete_text_response_request. No crate/foreign JS dependency
+was added and the rest of the DOM -> paint path is unchanged.
+
 ## M4.30a: bounded original AbortController/AbortSignal flow
 
 op_js owns new ObjectKind::AbortController and AbortSignal and

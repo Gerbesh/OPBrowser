@@ -48,6 +48,36 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.30b-d: DOMException, composed/timeout signals, fetch cancellation
+
+The original JS VM constructs branded DOMException instances with
+name/message, supported legacy numeric code mappings, toString and
+ordinary assignment protection. The default reason for
+AbortController.abort() and AbortSignal.abort() is an AbortError
+DOMException; AbortSignal.timeout() emits a TimeoutError DOMException.
+
+AbortSignal.timeout schedules a bounded deadline via
+JsRuntime.next_timer_wait/run_due_timers and never launches its
+own OS thread. AbortSignal.any accepts bounded array-like values,
+tracks dependent signals using abort_followers and preserves the
+abort reason for nested composition and listener cancellation.
+The VM enforces 64 input signals and 60s timeout limits.
+
+The original self-hosted Request class retains the signal when
+created/copied. fetch passes it to the native opFetchText command,
+which validates AbortSignal identity and binds each pending text
+callback to the signal. When aborted, the signal listener rejects
+the Promise with signal.reason; pending/queued native completions
+are discarded, including late HTTP replies. The underlying WinHTTP
+request may still complete on an already-started worker thread,
+so the implementation is best described as **observable fetch
+cancellation**, not physical cancellation of blocking network I/O.
+
+This remains an intentionally limited same-origin GET-only,
+buffered-response fetch; no streams, non-GET bodies, CORS or
+complete WHATWG Fetch processing. Original-source WPT scores
+have not been recomputed.
+
 ## M4.30a: original AbortController and AbortSignal
 
 The page VM allocates native AbortController and AbortSignal object

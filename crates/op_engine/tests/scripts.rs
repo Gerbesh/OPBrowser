@@ -2,6 +2,83 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m430c_abort_pending_http_fetch_ignores_real_delayed_completion() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        for step in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let size = stream.read(&mut request).unwrap();
+            let header = String::from_utf8_lossy(&request[..size]);
+            let body = if step == 0 {
+                assert!(header.starts_with("GET /index.html "));
+                concat!(
+                    "<html><body><p id='out'>BEFORE</p><script>",
+                    "var controller=new AbortController();",
+                    "fetch('/slow.txt',{signal:controller.signal})",
+                    ".then(function(response){return response.text();})",
+                    ".then(function(text){document.getElementById('out').textContent='BAD-'+text;})",
+                    ".catch(function(reason){",
+                    "document.getElementById('out').textContent='ABORTED-'+reason.name;});",
+                    "setTimeout(function(){controller.abort();},0);",
+                    "</script></body></html>"
+                )
+            } else {
+                assert!(header.starts_with("GET /slow.txt "));
+                std::thread::sleep(std::time::Duration::from_millis(130));
+                "TOO-LATE-NETWORK-DATA"
+            };
+            let mime = if step == 0 { "text/html" } else { "text/plain" };
+            write!(stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: {mime}; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            ).unwrap();
+            stream.flush().unwrap();
+        }
+    });
+    let mut engine = Engine::new();
+    let first = engine
+        .navigate(&format!("{origin}/index.html"), 800, 600)
+        .unwrap();
+    assert!(first.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("BEFORE")
+    )));
+    let mut aborted = false;
+    for _ in 0..80 {
+        if let Some(page) = engine.tick_timers(800, 600)
+            && page.display_list.commands.iter().any(|cmd| {
+                matches!(
+                    cmd,op_paint::PaintCommand::Text{text,..} if text.contains("ABORTED-AbortError")
+                )
+            })
+        {
+            aborted = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        aborted,
+        "abort must reject pending network Promise before HTTP returns"
+    );
+    server.join().unwrap();
+    for _ in 0..8 {
+        let _ = engine.tick_timers(800, 600);
+    }
+    let after = engine.reflow(800, 600).unwrap();
+    assert!(after.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("ABORTED-AbortError")
+    )));
+    assert!(!after.display_list.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("BAD-TOO-LATE")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m430_abort_signal_cancels_element_and_global_listeners_before_native_repaint() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

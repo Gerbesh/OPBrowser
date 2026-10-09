@@ -10,6 +10,7 @@ function Request(input, init) {
     var mode = "same-origin";
     var credentials = "omit";
     var redirect = "follow";
+    var signal = null;
     if (input._opRequest === true) {
         url = input.url;
         method = input.method;
@@ -17,6 +18,7 @@ function Request(input, init) {
         mode = input.mode;
         credentials = input.credentials;
         redirect = input.redirect;
+        signal = input.signal;
     }
     if (init !== undefined && init !== null) {
         if (init.method !== undefined) method = init.method;
@@ -24,7 +26,8 @@ function Request(input, init) {
         if (init.mode !== undefined) mode = init.mode;
         if (init.credentials !== undefined) credentials = init.credentials;
         if (init.redirect !== undefined) redirect = init.redirect;
-        if (init.body !== undefined || init.signal !== undefined ||
+        if (init.signal !== undefined) signal = init.signal;
+        if (init.body !== undefined ||
             init.cache !== undefined || init.referrer !== undefined ||
             init.referrerPolicy !== undefined || init.integrity !== undefined ||
             init.keepalive !== undefined) {
@@ -45,6 +48,7 @@ function Request(input, init) {
     this.mode = mode;
     this.credentials = credentials;
     this.redirect = redirect;
+    this.signal = signal;
 }
 
 function Response(body, metadata) {
@@ -72,13 +76,41 @@ Response.prototype.json = function() {
 
 function fetch(input, init) {
     return new Promise(function(resolve, reject) {
+        var signal = null;
+        var onAbort = null;
         try {
             var request = new Request(input, init);
+            signal = request.signal;
+            var pending = true;
+            onAbort = function() {
+                if (!pending) return;
+                pending = false;
+                reject(signal.reason);
+            };
+            if (signal !== null) {
+                if (signal.aborted) {
+                    // Native validation still runs, but it never queues a
+                    // request for a pre-aborted signal.
+                    opFetchText(request.url, function(){}, true,
+                        request.headers, request.redirect === "error", signal);
+                    reject(signal.reason);
+                    return;
+                }
+                signal.addEventListener("abort", onAbort, {once:true});
+            }
             opFetchText(request.url, function(text, error, metadata) {
+                if (!pending) return;
+                pending = false;
+                if (signal !== null) signal.removeEventListener("abort", onAbort);
                 if (error !== null) reject(new TypeError(error));
                 else resolve(new Response(text, metadata));
-            }, true, request.headers, request.redirect === "error");
+            }, true, request.headers, request.redirect === "error", signal);
         } catch (error) {
+            if (signal !== null && onAbort !== null &&
+                typeof signal.removeEventListener === "function") {
+                try { signal.removeEventListener("abort", onAbort); }
+                catch (ignored) {}
+            }
             reject(error);
         }
     });

@@ -2,6 +2,40 @@
 
 Last updated: 2026-10-10
 
+## M4.30d - DOMException, composable signals and abort-aware fetch (2026-10-10)
+
+- DONE original VM DOMException constructor and branded instances with
+  name/message/legacy numeric code, toString() and guarded data fields.
+  Default AbortController.abort()/AbortSignal.abort() reasons are native
+  DOMException AbortError objects (name AbortError, code 20), while
+  TimeoutError uses code 23. Custom JS reason identity is preserved.
+- DONE AbortSignal.timeout(ms) scheduling in the page-owned event loop:
+  bounded 0..60000 ms, no additional OS threads. next_timer_wait() and
+  run_due_timers() include signal deadlines; timer abort event handlers
+  can update the original DOM and drain microtasks.
+- DONE AbortSignal.any(signalArray) for bounded array-like inputs (max
+  64), first-aborted source reason, cascaded follower abort events and
+  immediate removal of listeners registered with composed signals.
+  This is not yet a general iterable protocol implementation.
+- DONE Request(input,init) carries and clones signal; fetch(url/init)
+  uses the signal for Promise rejection with the actual reason.
+  opFetchText validates native AbortSignal identity, suppresses
+  pre-aborted jobs, tracks outstanding signal-bound callbacks and
+  removes queued work/late completions synchronously upon abort.
+  A blocking WinHTTP request already executing MAY finish in its
+  worker thread; its JavaScript completion is discarded, but this
+  does not actively cancel the underlying HTTP operation.
+- VERIFIED thirteen new VM tests (5 signal/DOMException, 5 fetch
+  cancellation, 3 polish/cross-feature) and one real delayed HTTP
+  integration alongside existing native fetch and browser tests.
+- LIMITS: full DOMException WebIDL constructor descriptors, arbitrary
+  signal deadlines, AbortSignal.any generic iterables, fetch streaming,
+  credentials/CORS/non-GET and physical cancellation of running WinHTTP
+  are unsupported. Existing frozen WPT/Test262 scores are unchanged.
+- NEXT M4.31: stable EventTarget listener registration identities,
+  dispatch-time remove/readd conformance and more independently sourced
+  WPT Events fixtures, then improve active network cancellation.
+
 ## M4.30a - AbortController and signal-driven listener cancellation (2026-10-10)
 
 - DONE original AbortController constructor with persistent signal identity;

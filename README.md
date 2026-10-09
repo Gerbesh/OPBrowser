@@ -38,6 +38,15 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.30b-d adds original DOMException objects with legacy codes,
+AbortError/TimeoutError default reasons, AbortSignal.timeout (0-60s),
+AbortSignal.any (bounded array-like inputs), and Request/fetch signal
+support. Aborted fetch Promises reject with signal.reason; queued
+requests are canceled and late HTTP completions ignored even if a
+blocking WinHTTP worker has already started. Running WinHTTP I/O
+is NOT physically interrupted. Tests include real delayed HTTP
+and DOM repaint. WPT conformance numbers have not changed.
+
 M4.30a adds original AbortController and AbortSignal objects, native
 abort(reason), signal state/onabort, AbortSignal.abort(reason) and
 throwIfAborted(), and {signal} listener cancellation for Element,

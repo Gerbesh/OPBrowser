@@ -336,6 +336,36 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S38",
+      "title": "AbortSignal cancels Promise fetch queues and late network callbacks to original paint",
+      "status": "M4.30c-d original native-signal fetch rejection and late network suppression",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "abort_signal"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "take_text_requests"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "dispatch_text_requests"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "complete_text_response_request"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "tick_timers"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Buffered same-origin GET; JS callbacks canceled and late completions dropped but blocking WinHTTP work may finish; no streaming, CORS or non-GET."
+    },
+    {
+      "id": "S37",
+      "title": "DOMException AbortSignal timeout/any composition via page-owned task loop",
+      "status": "M4.30b-d original DOMException, bounded timeout scheduler and signal followers",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "new_dom_exception"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "new_abort_signal"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "abort_signal"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "next_timer_wait"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "run_due_timers"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "tick_timers"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "deliver_lifecycle_listeners"}
+      ],
+      "limitation": "No generic iterable AbortSignal.any, timeout >60 seconds, or broad WebIDL DOMException conformance."
+    },
+    {
       "id": "S36",
       "title": "AbortController signal listener cancellation through original DOM and native paint",
       "status": "M4.30a bounded native AbortController/AbortSignal and listener options.signal",

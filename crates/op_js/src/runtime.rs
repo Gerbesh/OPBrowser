@@ -64,6 +64,7 @@ enum ObjectKind {
     DomEvent,
     AbortController,
     AbortSignal,
+    DomException,
     DomStyle(usize),
     Headers,
 }
@@ -123,6 +124,10 @@ enum BuiltinFunction {
     AbortSignalConstructor,
     AbortSignalAbortStatic,
     AbortSignalThrowIfAborted,
+    AbortSignalTimeoutStatic,
+    AbortSignalAnyStatic,
+    DomExceptionConstructor,
+    DomExceptionToString,
     SetTimeout,
     ClearTimeout,
     SetInterval,
@@ -206,6 +211,12 @@ struct PendingTimer {
     callback: JsValue,
     arguments: Vec<JsValue>,
     interval: Option<Duration>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingAbortDeadline {
+    signal: ObjectId,
+    due: Instant,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -346,12 +357,15 @@ pub struct JsRuntime {
     dom_document: Option<ObjectId>,
     lifecycle_listeners: HashMap<(ObjectId, String, bool), Vec<JsValue>>,
     lifecycle_listener_options: HashMap<(ObjectId, String, bool, ObjectId), DomListenerOptions>,
+    abort_deadlines: Vec<PendingAbortDeadline>,
+    abort_followers: HashMap<ObjectId, Vec<ObjectId>>,
     timers: Vec<PendingTimer>,
     next_timer_id: u32,
     microtasks: VecDeque<JsValue>,
     microtasks_scheduled: u32,
     text_requests: VecDeque<TextRequest>,
     text_callbacks: HashMap<u32, JsValue>,
+    text_request_signals: HashMap<u32, ObjectId>,
     header_values: HashMap<ObjectId, HashMap<String, String>>,
     boxed_values: HashMap<ObjectId, JsValue>,
     next_text_request_id: u32,
@@ -456,12 +470,15 @@ impl Default for JsRuntime {
             dom_document: None,
             lifecycle_listeners: HashMap::new(),
             lifecycle_listener_options: HashMap::new(),
+            abort_deadlines: Vec::new(),
+            abort_followers: HashMap::new(),
             timers: Vec::new(),
             next_timer_id: 1,
             microtasks: VecDeque::new(),
             microtasks_scheduled: 0,
             text_requests: VecDeque::new(),
             text_callbacks: HashMap::new(),
+            text_request_signals: HashMap::new(),
             header_values: HashMap::new(),
             boxed_values: HashMap::new(),
             next_text_request_id: 1,
@@ -524,17 +541,49 @@ impl Default for JsRuntime {
         let static_abort = runtime
             .allocate_lifecycle_method("abort", BuiltinFunction::AbortSignalAbortStatic)
             .expect("AbortSignal.abort function fits VM initial budget");
+        let static_timeout = runtime
+            .allocate_lifecycle_method("timeout", BuiltinFunction::AbortSignalTimeoutStatic)
+            .expect("AbortSignal.timeout function fits VM initial budget");
+        let static_any = runtime
+            .allocate_lifecycle_method("any", BuiltinFunction::AbortSignalAnyStatic)
+            .expect("AbortSignal.any function fits VM initial budget");
         runtime
             .object_mut(signal_ctor)
             .expect("AbortSignal function is valid")
             .properties
-            .insert("abort".into(), JsValue::Object(static_abort));
+            .extend([
+                ("abort".into(), JsValue::Object(static_abort)),
+                ("timeout".into(), JsValue::Object(static_timeout)),
+                ("any".into(), JsValue::Object(static_any)),
+            ]);
         runtime.install_global_binding(
             "AbortSignal",
             JsValue::Object(signal_ctor),
             false,
             VariableKind::Const,
         );
+        let dom_exception_to_string = runtime
+            .allocate_lifecycle_method("toString", BuiltinFunction::DomExceptionToString)
+            .expect("DOMException.toString function fits VM initial budget");
+        let dom_exception_proto = runtime
+            .allocate_object(
+                ObjectKind::Ordinary,
+                Some(error_prototype),
+                HashMap::from([
+                    ("name".into(), JsValue::String("Error".into())),
+                    ("message".into(), JsValue::String(String::new())),
+                    ("code".into(), JsValue::Number(0.0)),
+                    ("toString".into(), JsValue::Object(dom_exception_to_string)),
+                ]),
+            )
+            .expect("DOMException prototype fits VM initial budget");
+        runtime
+            .install_error_constructor(
+                "DOMException",
+                BuiltinFunction::DomExceptionConstructor,
+                dom_exception_proto,
+            )
+            .expect("DOMException constructor fits VM initial budget");
         runtime
             .install_standard_primitives()
             .expect("standard primitive builtins must fit initial VM budgets");
@@ -608,12 +657,15 @@ impl JsRuntime {
         self.dom_programmatic_click_depth = 0;
         self.lifecycle_listeners.clear();
         self.lifecycle_listener_options.clear();
+        self.abort_deadlines.clear();
+        self.abort_followers.clear();
         self.timers.clear();
         self.next_timer_id = 1;
         self.microtasks.clear();
         self.microtasks_scheduled = 0;
         self.text_requests.clear();
         self.text_callbacks.clear();
+        self.text_request_signals.clear();
         self.header_values.clear();
         self.next_text_request_id = 1;
         for element in elements.into_iter().take(4096) {
@@ -773,6 +825,7 @@ impl JsRuntime {
         id: u32,
         result: Result<TextResponse, String>,
     ) -> bool {
+        self.text_request_signals.remove(&id);
         let Some(callback) = self.text_callbacks.remove(&id) else {
             return false;
         };
@@ -1524,6 +1577,11 @@ impl JsRuntime {
         self.timers
             .iter()
             .map(|timer| timer.due.saturating_duration_since(Instant::now()))
+            .chain(
+                self.abort_deadlines
+                    .iter()
+                    .map(|deadline| deadline.due.saturating_duration_since(Instant::now())),
+            )
             .min()
     }
 
@@ -1534,6 +1592,24 @@ impl JsRuntime {
         report.failed += self.drain_microtasks();
         for _ in 0..max_callbacks.min(16) {
             let now = Instant::now();
+            if let Some((index, _)) = self
+                .abort_deadlines
+                .iter()
+                .enumerate()
+                .filter(|(_, deadline)| deadline.due <= now)
+                .min_by_key(|(_, deadline)| deadline.due)
+            {
+                let deadline = self.abort_deadlines.swap_remove(index);
+                report.fired += 1;
+                let outcome = self
+                    .new_dom_exception("The operation was aborted due to timeout", "TimeoutError")
+                    .and_then(|id| self.abort_signal(deadline.signal, JsValue::Object(id)));
+                if outcome.is_err() {
+                    report.failed += 1;
+                }
+                report.failed += self.drain_microtasks();
+                continue;
+            }
             let Some((index, _)) = self
                 .timers
                 .iter()
@@ -1623,6 +1699,52 @@ impl JsRuntime {
         Ok(())
     }
 
+    fn new_dom_exception(&mut self, message: &str, name: &str) -> Result<ObjectId, JsError> {
+        let JsValue::Object(constructor) =
+            self.get_property(&JsValue::Object(self.global_object), "DOMException")?
+        else {
+            return Err(JsError::type_error("DOMException constructor unavailable"));
+        };
+        let prototype = match self.get_object_property(constructor, "prototype")? {
+            JsValue::Object(id) => id,
+            _ => self.error_prototype,
+        };
+        let code = match name {
+            "IndexSizeError" => 1.0,
+            "HierarchyRequestError" => 3.0,
+            "WrongDocumentError" => 4.0,
+            "InvalidCharacterError" => 5.0,
+            "NoModificationAllowedError" => 7.0,
+            "NotFoundError" => 8.0,
+            "NotSupportedError" => 9.0,
+            "InUseAttributeError" => 10.0,
+            "InvalidStateError" => 11.0,
+            "SyntaxError" => 12.0,
+            "InvalidModificationError" => 13.0,
+            "NamespaceError" => 14.0,
+            "InvalidAccessError" => 15.0,
+            "TypeMismatchError" => 17.0,
+            "SecurityError" => 18.0,
+            "NetworkError" => 19.0,
+            "AbortError" => 20.0,
+            "URLMismatchError" => 21.0,
+            "QuotaExceededError" => 22.0,
+            "TimeoutError" => 23.0,
+            "InvalidNodeTypeError" => 24.0,
+            "DataCloneError" => 25.0,
+            _ => 0.0,
+        };
+        self.allocate_object(
+            ObjectKind::DomException,
+            Some(prototype),
+            HashMap::from([
+                ("message".into(), JsValue::String(message.to_owned())),
+                ("name".into(), JsValue::String(name.to_owned())),
+                ("code".into(), JsValue::Number(code)),
+            ]),
+        )
+    }
+
     fn new_abort_signal(&mut self) -> Result<ObjectId, JsError> {
         let add = self.allocate_lifecycle_method(
             "addEventListener",
@@ -1706,6 +1828,52 @@ impl JsRuntime {
                 callbacks.retain(|value| *value != JsValue::Object(callback));
             }
         }
+    }
+
+    /// Abort one signal and its AbortSignal.any descendants before subsequent
+    /// callbacks can run. Each child is allocated later than its sources, so
+    /// follower edges cannot create a cycle.
+    fn abort_signal(&mut self, signal: ObjectId, reason: JsValue) -> Result<(), JsError> {
+        let mut work = vec![signal];
+        let mut processed = 0usize;
+        while let Some(current) = work.pop() {
+            processed += 1;
+            if processed > 256 {
+                return Err(JsError::execution_limit("abort cascade budget exceeded"));
+            }
+            if self
+                .object(current)?
+                .properties
+                .get("aborted")
+                .is_some_and(JsValue::is_truthy)
+            {
+                continue;
+            }
+            self.object_mut(current)?
+                .properties
+                .insert("aborted".into(), JsValue::Boolean(true));
+            self.object_mut(current)?
+                .properties
+                .insert("reason".into(), reason.clone());
+            self.abort_deadlines
+                .retain(|deadline| deadline.signal != current);
+            self.remove_aborted_signal_listeners(current);
+            let ids = self
+                .text_request_signals
+                .iter()
+                .filter_map(|(id, source)| (*source == current).then_some(*id))
+                .collect::<Vec<_>>();
+            for id in ids {
+                self.text_request_signals.remove(&id);
+                self.text_callbacks.remove(&id);
+                self.text_requests.retain(|request| request.id != id);
+            }
+            if let Some(followers) = self.abort_followers.remove(&current) {
+                work.extend(followers);
+            }
+            self.dispatch_abort_signal_event(current)?;
+        }
+        Ok(())
     }
 
     fn dispatch_abort_signal_event(&mut self, signal: ObjectId) -> Result<(), JsError> {
@@ -4172,11 +4340,6 @@ impl JsRuntime {
             if self.object(*callback)?.function.is_none() {
                 return Err(JsError::type_error("opFetchText callback must be callable"));
             }
-            if self.text_callbacks.len() >= MAX_PENDING_TEXT_REQUESTS
-                || self.next_text_request_id > MAX_TOTAL_TEXT_REQUESTS
-            {
-                return Err(JsError::execution_limit("network task budget exceeded"));
-            }
             let include_http_errors = matches!(arguments.get(2), Some(JsValue::Boolean(true)));
             let request_headers = if let Some(value) = arguments.get(3) {
                 self.allowed_request_headers(value)?
@@ -4184,9 +4347,34 @@ impl JsRuntime {
                 Vec::new()
             };
             let reject_redirect = matches!(arguments.get(4), Some(JsValue::Boolean(true)));
+            let signal = match arguments.get(5) {
+                None | Some(JsValue::Undefined | JsValue::Null) => None,
+                Some(JsValue::Object(id)) if self.object(*id)?.kind == ObjectKind::AbortSignal => {
+                    Some(*id)
+                }
+                _ => return Err(JsError::type_error("fetch signal must be AbortSignal")),
+            };
+            if signal.is_some_and(|id| {
+                self.object(id).ok().is_some_and(|object| {
+                    object
+                        .properties
+                        .get("aborted")
+                        .is_some_and(JsValue::is_truthy)
+                })
+            }) {
+                return Ok(CallOutcome::Value(JsValue::Number(0.0)));
+            }
+            if self.text_callbacks.len() >= MAX_PENDING_TEXT_REQUESTS
+                || self.next_text_request_id > MAX_TOTAL_TEXT_REQUESTS
+            {
+                return Err(JsError::execution_limit("network task budget exceeded"));
+            }
             let id = self.next_text_request_id;
             self.next_text_request_id += 1;
             self.text_callbacks.insert(id, JsValue::Object(*callback));
+            if let Some(signal) = signal {
+                self.text_request_signals.insert(id, signal);
+            }
             self.text_requests.push_back(TextRequest {
                 id,
                 url,
@@ -4354,15 +4542,52 @@ impl JsRuntime {
             }
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
+        if builtin == BuiltinFunction::DomExceptionToString {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error(
+                    "DOMException.toString receiver invalid",
+                ));
+            };
+            if self.object(receiver)?.kind != ObjectKind::DomException {
+                return Err(JsError::type_error(
+                    "DOMException.toString receiver invalid",
+                ));
+            }
+            let name = self.get_object_property(receiver, "name")?.to_js_string();
+            let message = self
+                .get_object_property(receiver, "message")?
+                .to_js_string();
+            let string = if name.is_empty() {
+                message
+            } else if message.is_empty() {
+                name
+            } else {
+                format!("{name}: {message}")
+            };
+            return Ok(CallOutcome::Value(JsValue::String(string)));
+        }
+        if builtin == BuiltinFunction::DomExceptionConstructor {
+            let message = arguments
+                .first()
+                .map(JsValue::to_js_string)
+                .unwrap_or_default();
+            let name = arguments
+                .get(1)
+                .map(JsValue::to_js_string)
+                .unwrap_or_else(|| "Error".into());
+            let exception = self.new_dom_exception(&message, &name)?;
+            return Ok(CallOutcome::Value(JsValue::Object(exception)));
+        }
         if builtin == BuiltinFunction::AbortSignalConstructor {
             return Err(JsError::type_error("Illegal constructor: AbortSignal"));
         }
         if builtin == BuiltinFunction::AbortSignalAbortStatic {
             let signal = self.new_abort_signal()?;
-            let reason = arguments
-                .first()
-                .cloned()
-                .unwrap_or(JsValue::String("AbortError".into()));
+            let reason = if let Some(reason) = arguments.first() {
+                reason.clone()
+            } else {
+                JsValue::Object(self.new_dom_exception("This operation was aborted", "AbortError")?)
+            };
             self.object_mut(signal)?
                 .properties
                 .insert("aborted".into(), JsValue::Boolean(true));
@@ -4370,6 +4595,92 @@ impl JsRuntime {
                 .properties
                 .insert("reason".into(), reason);
             return Ok(CallOutcome::Value(JsValue::Object(signal)));
+        }
+        if builtin == BuiltinFunction::AbortSignalTimeoutStatic {
+            let duration = arguments
+                .first()
+                .map(JsValue::to_number)
+                .unwrap_or(f64::NAN);
+            if !duration.is_finite()
+                || duration < 0.0
+                || duration.fract() != 0.0
+                || duration > MAX_TIMER_DELAY_MS as f64
+            {
+                return Err(JsError::type_error(
+                    "AbortSignal.timeout requires an integer 0..60000 milliseconds",
+                ));
+            }
+            if self.abort_deadlines.len() >= 64 {
+                return Err(JsError::execution_limit("abort timeout budget exceeded"));
+            }
+            let signal = self.new_abort_signal()?;
+            self.abort_deadlines.push(PendingAbortDeadline {
+                signal,
+                due: Instant::now() + Duration::from_millis(duration as u64),
+            });
+            return Ok(CallOutcome::Value(JsValue::Object(signal)));
+        }
+        if builtin == BuiltinFunction::AbortSignalAnyStatic {
+            let Some(JsValue::Object(source)) = arguments.first() else {
+                return Err(JsError::type_error(
+                    "AbortSignal.any requires an array-like list of AbortSignal objects",
+                ));
+            };
+            let length = self.get_object_property(*source, "length")?.to_number();
+            if !length.is_finite() || length < 0.0 || length.fract() != 0.0 || length > 64.0 {
+                return Err(JsError::type_error(
+                    "AbortSignal.any list length must be 0..64",
+                ));
+            }
+            let mut sources = Vec::new();
+            for index in 0..length as usize {
+                let JsValue::Object(signal) =
+                    self.get_object_property(*source, &index.to_string())?
+                else {
+                    return Err(JsError::type_error(
+                        "AbortSignal.any entries must be AbortSignal",
+                    ));
+                };
+                if self.object(signal)?.kind != ObjectKind::AbortSignal {
+                    return Err(JsError::type_error(
+                        "AbortSignal.any entries must be AbortSignal",
+                    ));
+                }
+                if !sources.contains(&signal) {
+                    sources.push(signal);
+                }
+            }
+            if self.abort_followers.values().map(Vec::len).sum::<usize>() + sources.len() > 256 {
+                return Err(JsError::execution_limit(
+                    "AbortSignal.any follower budget exceeded",
+                ));
+            }
+            let composite = self.new_abort_signal()?;
+            let aborted = sources.iter().find(|&&source| {
+                self.object(source).ok().is_some_and(|object| {
+                    object
+                        .properties
+                        .get("aborted")
+                        .is_some_and(JsValue::is_truthy)
+                })
+            });
+            if let Some(source) = aborted {
+                let reason = self.get_object_property(*source, "reason")?;
+                self.object_mut(composite)?
+                    .properties
+                    .insert("aborted".into(), JsValue::Boolean(true));
+                self.object_mut(composite)?
+                    .properties
+                    .insert("reason".into(), reason);
+            } else {
+                for source in sources {
+                    self.abort_followers
+                        .entry(source)
+                        .or_default()
+                        .push(composite);
+                }
+            }
+            return Ok(CallOutcome::Value(JsValue::Object(composite)));
         }
         if builtin == BuiltinFunction::AbortSignalThrowIfAborted {
             let JsValue::Object(signal) = this_value else {
@@ -4425,18 +4736,12 @@ impl JsRuntime {
             {
                 return Ok(CallOutcome::Value(JsValue::Undefined));
             }
-            let reason = arguments
-                .first()
-                .cloned()
-                .unwrap_or(JsValue::String("AbortError".into()));
-            self.object_mut(signal)?
-                .properties
-                .insert("aborted".into(), JsValue::Boolean(true));
-            self.object_mut(signal)?
-                .properties
-                .insert("reason".into(), reason);
-            self.remove_aborted_signal_listeners(signal);
-            self.dispatch_abort_signal_event(signal)?;
+            let reason = if let Some(reason) = arguments.first() {
+                reason.clone()
+            } else {
+                JsValue::Object(self.new_dom_exception("This operation was aborted", "AbortError")?)
+            };
+            self.abort_signal(signal, reason)?;
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
         if builtin == BuiltinFunction::LifecycleDispatchEvent {
@@ -5632,6 +5937,10 @@ impl JsRuntime {
             | BuiltinFunction::AbortSignalConstructor
             | BuiltinFunction::AbortSignalAbortStatic
             | BuiltinFunction::AbortSignalThrowIfAborted
+            | BuiltinFunction::AbortSignalTimeoutStatic
+            | BuiltinFunction::AbortSignalAnyStatic
+            | BuiltinFunction::DomExceptionConstructor
+            | BuiltinFunction::DomExceptionToString
             | BuiltinFunction::SetTimeout
             | BuiltinFunction::ClearTimeout
             | BuiltinFunction::SetInterval
@@ -6290,6 +6599,11 @@ impl JsRuntime {
             return Ok(());
         }
         if key == "readyState" && self.dom_document == Some(*id) {
+            return Ok(());
+        }
+        if self.object(*id)?.kind == ObjectKind::DomException
+            && matches!(key, "message" | "name" | "code")
+        {
             return Ok(());
         }
         if self.object(*id)?.kind == ObjectKind::AbortSignal && matches!(key, "aborted" | "reason")
@@ -7251,6 +7565,330 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn m430d_dom_exception_to_string_legacy_code_and_readonly_fields() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var a=new DOMException('not here','NotFoundError');
+            var b=new DOMException('','SecurityError');
+            var c=new DOMException('plain','UnknownError');
+            var result=a.toString()==='NotFoundError: not here'&&a.code===8&&
+                b.code===18&&b.toString()==='SecurityError'&&
+                c.code===0&&c.toString()==='UnknownError: plain';
+            a.name='fake';a.message='fake';a.code=99;
+            result=result&&a.name==='NotFoundError'&&a.message==='not here'&&a.code===8;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m430d_successful_fetch_with_signal_resolves_and_later_abort_cannot_change_result() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var controller=new AbortController();
+            var state='pending';
+            fetch('data.txt',{signal:controller.signal})
+              .then(function(response){return response.text();})
+              .then(function(body){state=body;})
+              .catch(function(){state='BAD';});
+        "#,
+        )
+        .unwrap();
+        let tasks = vm.take_text_requests();
+        assert_eq!(tasks.len(), 1);
+        assert!(!vm.complete_text_request(tasks[0].id, Ok("RESPONSE-DONE".into())));
+        assert_eq!(
+            vm.global("state"),
+            Some(&JsValue::String("RESPONSE-DONE".into()))
+        );
+        vm.eval_script("controller.abort();").unwrap();
+        assert_eq!(
+            vm.global("state"),
+            Some(&JsValue::String("RESPONSE-DONE".into()))
+        );
+    }
+
+    #[test]
+    fn m430d_abort_signal_any_timeout_drives_fetch_rejection() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var c=new AbortController();
+            var composite=AbortSignal.any([c.signal,AbortSignal.timeout(0)]);
+            var state='pending';
+            fetch('file.txt',{signal:composite}).catch(function(error){
+                state=error.name==='TimeoutError'?'TIMEOUT':'BAD';
+            });
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.take_text_requests().len(), 1);
+        assert_eq!(vm.run_due_timers(16).failed, 0);
+        assert_eq!(vm.global("state"), Some(&JsValue::String("TIMEOUT".into())));
+    }
+
+    #[test]
+    fn m430c_fetch_signal_aborts_pending_promise_and_ignores_late_completion() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var c=new AbortController();
+            var outcome='pending';
+            fetch('message.txt',{signal:c.signal}).then(
+                function(){outcome='BAD resolved';},
+                function(reason){outcome=reason==='stop'?'aborted':'BAD reason';}
+            );
+        "#,
+        )
+        .unwrap();
+        let requests = vm.take_text_requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            vm.global("outcome"),
+            Some(&JsValue::String("pending".into()))
+        );
+        vm.eval_script("c.abort('stop');").unwrap();
+        assert_eq!(
+            vm.global("outcome"),
+            Some(&JsValue::String("aborted".into()))
+        );
+        assert!(!vm.complete_text_request(requests[0].id, Ok("late".into())));
+        assert_eq!(
+            vm.global("outcome"),
+            Some(&JsValue::String("aborted".into()))
+        );
+    }
+
+    #[test]
+    fn m430c_fetch_preaborted_signal_rejects_without_queueing_request() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(r#"
+            var c=new AbortController();
+            c.abort(new DOMException('cancelled','AbortError'));
+            var state='pending';
+            fetch('message.txt',{signal:c.signal}).then(
+                function(){state='BAD resolved';},
+                function(reason){state=reason===c.signal.reason&&reason.code===20?'ok':'BAD reason';}
+            );
+        "#).unwrap();
+        assert_eq!(vm.global("state"), Some(&JsValue::String("ok".into())));
+        assert!(vm.take_text_requests().is_empty());
+        assert!(!vm.has_text_requests());
+    }
+
+    #[test]
+    fn m430c_fetch_abort_before_native_dispatch_removes_queued_request() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var c=new AbortController();
+            var state='pending';
+            var input=new Request('message.txt',{signal:c.signal});
+            var cloned=new Request(input);
+            fetch(cloned).catch(function(reason){
+                state=reason==='queued'?'removed':'BAD reason';
+            });
+            c.abort('queued');
+            var same=cloned.signal===c.signal;
+        "#,
+        )
+        .unwrap();
+        assert!(vm.take_text_requests().is_empty());
+        assert_eq!(vm.global("state"), Some(&JsValue::String("removed".into())));
+        assert_eq!(vm.global("same"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m430c_fetch_timeout_signal_rejects_with_timeout_error() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var signal=AbortSignal.timeout(0);
+            var state='pending';
+            fetch('message.txt',{signal:signal}).catch(function(reason){
+                state=reason.name==='TimeoutError'&&reason.code===23?'timeout':'BAD';
+            });
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.take_text_requests().len(), 1);
+        assert_eq!(vm.run_due_timers(16).failed, 0);
+        assert_eq!(vm.global("state"), Some(&JsValue::String("timeout".into())));
+    }
+
+    #[test]
+    fn m430c_invalid_fetch_signal_rejects_without_queueing() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var state='pending';
+            fetch('message.txt',{signal:{aborted:false,
+                addEventListener:function(){},removeEventListener:function(){}}})
+            .catch(function(reason){state=reason.name==='TypeError'?'rejected':'BAD';});
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("state"),
+            Some(&JsValue::String("rejected".into()))
+        );
+        assert!(vm.take_text_requests().is_empty());
+    }
+
+    #[test]
+    fn m430b_dom_exception_abort_error_instanceof_and_custom_reason() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "x".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var x=new DOMException('No access','AbortError');
+            var c=new AbortController();
+            c.abort();
+            var reason=c.signal.reason;
+            var staticReason=AbortSignal.abort().reason;
+            var caught=false;
+            try {c.signal.throwIfAborted();} catch(error){caught=error===reason;}
+            var result=x.name==='AbortError'&&x.message==='No access'&&x.code===20&&
+              x instanceof DOMException&&reason instanceof DOMException&&
+              reason.name==='AbortError'&&reason.code===20&&
+              staticReason instanceof DOMException&&caught;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m430b_timeout_aborts_during_host_tick_and_runs_abort_handler_once() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "x".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var signal=AbortSignal.timeout(0);
+            var trace='';
+            signal.addEventListener('abort',function(e){
+                if(signal.aborted&&e.target===signal&&signal.reason.name==='TimeoutError')
+                   trace=trace+'T';
+            });
+            var before=!signal.aborted;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("before"), Some(&JsValue::Boolean(true)));
+        assert_eq!(vm.next_timer_wait(), Some(Duration::ZERO));
+        let tick = vm.run_due_timers(16);
+        assert_eq!(tick.failed, 0);
+        assert_eq!(tick.fired, 1);
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("T".into())));
+        vm.eval_script("var result=signal.aborted&&signal.reason.code===23;")
+            .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+        assert_eq!(vm.next_timer_wait(), None);
+    }
+
+    #[test]
+    fn m430b_signal_any_first_aborted_wins_and_cascades() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "x".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var a=new AbortController();
+            var b=new AbortController();
+            var combined=AbortSignal.any([a.signal,b.signal]);
+            var nested=AbortSignal.any([combined]);
+            var trace='';
+            combined.addEventListener('abort',function(){trace=trace+'C';});
+            nested.addEventListener('abort',function(){trace=trace+'N';});
+            var started=!combined.aborted&&!nested.aborted;
+            b.abort('second');
+            a.abort('first');
+            var pre=AbortSignal.any([a.signal,b.signal]);
+            var empty=AbortSignal.any([]);
+            var result=started&&combined.aborted&&nested.aborted&&
+                combined.reason==='second'&&nested.reason==='second'&&
+                pre.aborted&&pre.reason==='first'&&!empty.aborted&&trace==='CN';
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m430b_signal_any_releases_bound_listener_before_dispatch() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "x".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var a=new AbortController();
+            var b=new AbortController();
+            var combined=AbortSignal.any([a.signal,b.signal]);
+            var trace='';
+            document.addEventListener('pulse',function(){trace=trace+'BAD';},
+                {signal:combined});
+            a.abort('stop');
+            document.dispatchEvent(new Event('pulse'));
+            var result=trace===''&&combined.aborted&&combined.reason==='stop';
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m430b_timeout_and_any_reject_invalid_inputs() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "x".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var errors=0;
+            try {AbortSignal.timeout(-1);} catch(e){errors=errors+1;}
+            try {AbortSignal.timeout(1.5);} catch(e){errors=errors+1;}
+            try {AbortSignal.any([{}]);} catch(e){errors=errors+1;}
+            try {AbortSignal.any('bad');} catch(e){errors=errors+1;}
+            var result=errors===4;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
     }
 
     #[test]

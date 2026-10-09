@@ -3219,3 +3219,28 @@ This file is append-only project history.
   general upstream WPT conformance remain future milestones.
 - No external JS engine, new dependency or changed frozen upstream
   WPT/DOM/Event sample/score.
+
+## 2026-10-10 - M4.30b-d DOMException, AbortSignal composition and fetch abort
+
+- Created native DOMException constructor/instance kind, name/message,
+  supported legacy numeric error codes, toString and ordinary property
+  assignment protection. AbortError/TimeoutError reasons are now proper
+  objects instead of string placeholders.
+- Added AbortSignal.timeout via page-owned PendingAbortDeadline queue
+  integrated into next_timer_wait and run_due_timers; deadline 0..60000ms.
+- Implemented AbortSignal.any on bounded array-like lists with dependent
+  signal graph, nested cascades, first pre-aborted source reason and
+  listener cleanup before abort events. Generic iterable inputs remain
+  future work.
+- Extended self-hosted Request/Fetch with signal inheritance and native
+  opFetchText validation. Signal-based fetch abort rejects Promise
+  with original JS reason, removes queued requests and in-flight
+  callback registrations, and drops late network completions.
+- Confirmed actual WinHTTP worker already executing can finish in the
+  background: no claim of physical network I/O cancellation.
+- Added 13 original VM tests and a native delayed-HTTP integration
+  proving abort rejection occurs before server completion and that
+  late response cannot overwrite rendered text. Existing fetch tests
+  and strict Clippy stayed green.
+- Preserved same-origin GET-only fetch policy, budget caps, original
+  parser/DOM/paint stack, and all frozen WPT/Test262 metrics.

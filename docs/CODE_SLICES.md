@@ -16,6 +16,40 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S38 - Abort-driven Request/fetch Promise rejection to native paint (M4.30c-d)
+
+Status: IMPLEMENTED bounded original page fetch cancellation.
+
+The self-hosted Request(input,init) propagates signal into fetch and
+opFetchText (owned op_js builtin). The runtime stores a signal per
+pending request ID in text_request_signals; abort_signal removes
+pending callbacks and queued network jobs. The AbortSignal event
+listener rejects the self-hosted Promise with signal.reason and
+microtasks update the original DOM. op_engine::Engine::tick_timers
+continues polling network threads; late results are ignored by
+JsRuntime::complete_text_response_request and cannot resurrect
+settled promises or overwrite native pixels. Five original VM tests
+and one real delayed HTTP integration verify queued and in-flight
+results, with additional cross-feature regressions. Actual blocking
+WinHTTP execution is not interrupted after it starts; the fetch API
+remains a buffered GET/same-origin subset.
+
+## S37 - DOMException, AbortSignal deadlines and signal composition (M4.30b-d)
+
+Status: IMPLEMENTED bounded native original abort/Web API primitives.
+
+JsRuntime::new_dom_exception provides catchable AbortError and
+TimeoutError objects with name, message, code and toString.
+AbortSignal.timeout adds PendingAbortDeadline entries to the
+page-owned event loop, woken by next_timer_wait. run_due_timers
+invokes abort_signal when due; AbortSignal.any records original
+abort_followers to compose signals while preserving reason identity.
+Native event listeners are removed before onabort delivery, and
+Promise reactions run at checkpoints. VM tests cover reasons,
+timeouts, array-like validation, cascades and listener cancellation.
+No full iterable protocol, DOM WebIDL conformance or arbitrary time
+horizon beyond the 60s VM budget.
+
 ## S36 - Abort signal -> listener cancellation -> original native paint (M4.30a)
 
 Status: IMPLEMENTED bounded original AbortController/AbortSignal APIs.
