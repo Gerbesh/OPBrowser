@@ -16,6 +16,20 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S27 - live Node state and pinned upstream WPT -> native pixels (M4.23)
+
+Status: IMPLEMENTED narrow WPT smoke plus original DOM changes.
+
+The WPT pinned test source is loaded via git show by
+op_engine::wpt_dom_probe, executing a fixed upstream
+Node-childNodes-cache fixture through the original JS interpreter
+and native DOM and paint. The harness adapter supports exactly
+one synchronous fixture; three other selected WPT cases are
+explicitly skipped. Runtime Node properties, classList and
+style declaration parsing remain separately covered by three
+native page integration tests. Do not extrapolate broad WPT
+compatibility from this slice.
+
 ## S26 - live NodeList / classList / style -> original DOM repaint (M4.22)
 
 Status: IMPLEMENTED bounded dynamic DOM/CSSOM bridge.

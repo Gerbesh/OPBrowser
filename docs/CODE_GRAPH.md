@@ -16,6 +16,23 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.23: Node connectivity and original WPT source to native pixels
+
+op_js::JsRuntime derives Node siblings, isConnected,
+ownerDocument, nodeName/tagName and Element.contains from the
+bounded live parent/children model synchronized by op_engine.
+classList mutations are validated before any write and support
+multiple tokens. The original style declaration scanner keeps
+semicolon-containing CSS values intact inside quotes/parentheses.
+
+A new op_engine wpt_dom_probe reads an original file from a
+pinned external WPT Git revision; replaces only harness imports
+with minimal synchronous assert_equals/test support, executes
+unchanged assertions in the original JS VM and checks the
+native display-list result. A separate frozen manifest lists
+explicitly unsupported DOM fixtures. No broad WPT pass rate
+is asserted. See docs/COMPATIBILITY.md for limitations.
+
 ## M4.22: live JS NodeList/DOMTokenList/style to physical tree and pixels
 
 The original JS runtime builds stable per-node live childNodes,

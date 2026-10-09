@@ -1,0 +1,8 @@
+# OPBrowser pinned WPT DOM smoke v1; scope is four manually selected DOM regressions.
+# Pinned revision: 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d
+# This is NOT a representative or full WPT DOM sample.
+# path<TAB>status<TAB>reason
+dom/nodes/Node-childNodes-cache.html	attempt	Single synchronous test(function) with basic assert_equals adapter
+dom/nodes/Node-childNodes-cache-2.html	skip	Requires Array.from and arrow-function support
+dom/nodes/Node-contains.html	skip	Requires eval, array iteration and common.js fixtures
+dom/nodes/Node-isConnected.html	skip	Requires iframe/contentDocument and the full WPT harness

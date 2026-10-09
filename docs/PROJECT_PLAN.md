@@ -1170,3 +1170,39 @@ counts must not be mislabeled as external conformance percentages.
 - NEXT M4.23: broaden live Node/Element properties, robust
   CSSStyleDeclaration parsing and classList behavior, WPT-based
   dynamic DOM subset and interactive page compatibility smoke tests.
+
+## M4.23 - Node sibling/connections and first pinned WPT DOM smoke (2026-10-09)
+
+- DONE live Node.previousSibling/nextSibling and isConnected
+  computed from authoritative staged parent/child linkage, with
+  bounded ancestor traversals. Added Element.contains (identity,
+  descendants and null handling) and nodeName/tagName,
+  ownerDocument, element nodeValue=null and Text.length
+  measured in UTF-16 code units.
+- DONE DOMTokenList.add/remove with zero or multiple tokens,
+  validation of all arguments before mutation to prevent partial
+  writes, and de-duplication during insertion. Existing contains
+  and toggle remain live against original class attributes.
+- DONE bounded CSS declaration scanner for element.style methods:
+  quoted strings, escapes and parentheses protect embedded
+  semicolons; declarations still use the project's partial CSS
+  engine and are not a complete CSSOM token parser.
+- DONE first *actual upstream WPT DOM source* execution path:
+  op_engine/src/bin/wpt_dom_probe.rs verifies pinned upstream WPT
+  SHA 97fe10c5..., reads original Node-childNodes-cache.html with
+  git show, swaps external WPT testharness references for a minimal
+  synchronous assert_equals/test adapter (assertions unchanged)
+  and checks native text repaint as the verdict.
+- FROZEN compat/wpt-dom-smoke-v1.tsv: four manually selected WPT
+  fixture paths, 1 attempted/passed; 3 explicitly not attempted
+  with reasons (Array.from/arrow, eval/common.js and iframes).
+  This is neither a broad/random DOM WPT benchmark nor a full
+  WPT harness score; the adapter supports only one fixed fixture.
+- DONE three original cross-crate native DOM rendering regressions
+  for siblings/connectivity, variadic classList rollback and CSS
+  function/quote parsing. Fixed old Test262 runtime v1/v2 scores
+  separately from the DOM smoke metric.
+- NEXT M4.24: support more real WPT testharness assertions/fixtures,
+  broaden DOM collection/Document interfaces and event pipeline,
+  then independently track attempted/passed/skipped WPT DOM tests.
+  Avoid presenting 1/1 selected-pass as overall browser readiness.

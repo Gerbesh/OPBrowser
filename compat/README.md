@@ -116,3 +116,14 @@ version instead of silently redefining v1.
 M4.19 on unchanged Test262 Runtime v2: 78/179 (43.58%) attempted
 PASS, 101 FAIL and 110 explicit SKIP, up from 65/179; v1 82/91
 unchanged. No fixture manifest was modified.
+
+## DOM WPT smoke v1 (M4.23)
+
+compat/wpt-dom-smoke-v1.tsv explicitly lists four manually chosen
+DOM WPT cases: one executable original upstream source and three
+unsupported skips. This is NOT full WPT DOM conformance.
+Run cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
+after checking out the revision in compat/upstream.env. The runner
+pins the commit, reads original source, uses a narrow sync
+testharness adapter and validates a native render verdict. Do
+not interpret 1 attempted/1 pass as overall DOM or browser score.

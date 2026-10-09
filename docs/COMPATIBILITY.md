@@ -490,3 +490,28 @@ Pinned ECMAScript subsets remain independent and unchanged:
 Test262 Runtime v1 82/91 (90.11%), Runtime v2 78/179
 (43.58%) attempted with 110 explicit skips. No overall
 website readiness score can be inferred.
+
+## WPT DOM smoke v1 (M4.23), not an official WPT run
+
+For the first time OPBrowser executes the **unmodified assertions
+of an original upstream WPT DOM file**. The fixed local WPT revision
+is 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d, checked at
+runtime by op_engine/src/bin/wpt_dom_probe.rs. It takes the exact
+upstream text of dom/nodes/Node-childNodes-cache.html using git
+show and swaps only external testharness references for the
+limited synchronous test()/assert_equals() adapter. The native
+engine then runs the fixture and reports its visible outcome.
+
+The manual, frozen compat/wpt-dom-smoke-v1.tsv contains four
+selected fixture paths: 1 attempted/pass, 0 failed, 3 explicitly
+skipped due to unsupported syntax/harness/iframe requirements.
+**This is a manually scoped smoke test, not a representative WPT
+sample. No DOM conformance percentage is inferred.** It does
+not use the full official WPT runner or cover other assertions.
+
+To reproduce:
+  cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
+Use a checkout at the pinned WPT revision. A wrong revision fails
+rather than silently comparing different fixtures. Test262 Runtime
+v1 (82/91) and v2 (78/179 attempted, 110 SKIP) are independent
+JS samples and must not be merged with the DOM smoke count.

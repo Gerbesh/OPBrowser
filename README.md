@@ -38,6 +38,17 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.23 adds Node.previousSibling/nextSibling/isConnected/contains,
+nodeName/tagName/ownerDocument and Text.length, plus atomic
+multi-token DOMTokenList mutations and semicolon-aware CSS style
+declarations (quoted strings and balanced function parentheses).
+The browser now runs its first **original pinned upstream WPT DOM
+source fixture**, using a deliberately limited synchronous harness
+adapter: 1 attempted PASS, 3 explicitly SKIP (4 manually selected
+fixtures). This is **not** an official WPT score or a representative
+DOM conformance result. The old Test262 Runtime v1/v2 baselines
+remain separate and unchanged.
+
 M4.22 adds live parentNode, firstChild/lastChild and stable childNodes
 collections (length/index/item), replaceChild/remove, classList token
 operations and a bounded live style object (display/cssText,

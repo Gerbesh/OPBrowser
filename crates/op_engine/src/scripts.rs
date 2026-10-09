@@ -180,6 +180,9 @@ fn sync_dom_tree(document: &Document, runtime: &mut JsRuntime) {
             );
         }
         if let Some(element) = document.element(node) {
+            runtime.sync_dom_tag(node.index(), element.tag_name.clone());
+        }
+        if let Some(element) = document.element(node) {
             runtime.sync_dom_existing_node(
                 node.index(),
                 parent.map(|id: NodeId| id.index()),

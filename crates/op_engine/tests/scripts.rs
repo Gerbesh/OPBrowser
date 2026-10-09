@@ -2,6 +2,107 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m423_classlist_variadic_mutations_are_atomic() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'><p id='target' class='original'>CLASS-423</p></main>",
+            "<script>",
+            "var el=document.getElementById('target');",
+            "var tokens=el.classList;",
+            "tokens.add('new','another','new');",
+            "var added=tokens.length===3 && tokens.contains('new') && tokens.contains('another');",
+            "var threw=false;",
+            "try { tokens.add('valid','invalid token'); } catch(error) { threw=true; }",
+            "var atomic=tokens.length===3 && !tokens.contains('valid');",
+            "tokens.remove('original','another');",
+            "var removed=tokens.length===1 && tokens[0]==='new' && el.className==='new';",
+            "tokens.remove();tokens.add();",
+            "el.textContent=(added&&threw&&atomic&&removed&&tokens.length===1)?",
+            " 'VARIADIC-PASSED-423':'VARIADIC-FAILED-423';",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("VARIADIC-PASSED-423")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m423_css_scanner_preserves_semicolon_in_quotes_and_function() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<main id='host'><p id='target'>CSS-423</p></main>",
+            "<script>",
+            "var el=document.getElementById('target');",
+            "el.style.cssText='background-image: url(\"data:image/svg+xml;a:b\"); display: block';",
+            "var before=el.style.getPropertyValue('background-image')===",
+            " 'url(\"data:image/svg+xml;a:b\")' && el.style.display==='block';",
+            "el.style.setProperty('display','none');",
+            "var after=el.style.getPropertyValue('background-image')===",
+            " 'url(\"data:image/svg+xml;a:b\")' && el.style.display==='none';",
+            "if(!before || !after) el.style.display='block';",
+            "</script>"
+        ),
+        800,
+        600,
+    );
+    assert!(!page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("CSS-423")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m423_live_siblings_node_identity_connectivity_and_contains() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><main id='host'><b id='a'>A</b><i id='b'>B</i><em id='c'>C</em></main>",
+            "<script>",
+            "var host=document.getElementById('host');",
+            "var a=document.getElementById('a');",
+            "var b=document.getElementById('b');",
+            "var c=document.getElementById('c');",
+            "var original=a.nodeName==='B' && a.tagName==='B' && ",
+            " a.nodeType===1 && a.nodeValue===null && a.previousSibling===null && ",
+            " a.nextSibling===b && b.previousSibling===a && b.nextSibling===c && ",
+            " c.nextSibling===null && c.previousSibling===b && ",
+            " a.ownerDocument===document && host.contains(a) && ",
+            " host.contains(host) && !a.contains(host) && !a.contains(null) && ",
+            " a.isConnected && host.isConnected;",
+            "var saved=b;",
+            "host.removeChild(b);",
+            "var detached=!b.isConnected && b.previousSibling===null && b.nextSibling===null && ",
+            " a.nextSibling===c && c.previousSibling===a && !host.contains(b);",
+            "host.appendChild(b);",
+            "var attached=b===saved && b.isConnected && c.nextSibling===b && ",
+            " b.previousSibling===c && b.nextSibling===null;",
+            "var text=document.createTextNode('TEXT');",
+            "host.appendChild(text);",
+            "var textProps=text.nodeName==='#text' && text.nodeType===3 && ",
+            " text.length===4 && text.ownerDocument===document && ",
+            " text.previousSibling===b && host.contains(text);",
+            "var result=document.createElement('p');",
+            "result.textContent=(original && detached && attached && textProps)?",
+            " 'M423-SIBLINGS-OK':'M423-SIBLINGS-FAIL';",
+            "host.appendChild(result);",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M423-SIBLINGS-OK")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m422_classlist_remove_and_camelcase_style_reflect_attributes() {
     let mut engine = Engine::new();
     let page=engine.set_html_page(concat!(

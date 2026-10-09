@@ -511,3 +511,18 @@ original DOM, author style recascade and native pixels.
 Nine new end-to-end checks pass, but many DOM/CSSOM/Web API
 semantics are incomplete. Pinned Test262 v1/v2 JS runtime
 scores remain unchanged at 82/91 and 78/179 attempted.
+
+## M4.23: Node metadata, multi-token classList and real WPT fixture
+
+Added live previousSibling/nextSibling/isConnected, ownerDocument,
+nodeName/tagName, Text.length and Element.contains, plus atomic
+variadic classList.add/remove and safer CSS declaration splitting
+inside quoted/function values. New integration tests verify
+native repaint.
+
+The browser can now execute original WPT Node-childNodes-cache.html
+from the exact pinned upstream commit using a narrow synchronous
+test/assert_equals adapter. The WPT DOM smoke v1 manifest contains
+four manually selected files: one attempted/pass and three
+unsupported skips. This is not an official or representative WPT
+DOM score. Broader harness, iframe, JS and DOM APIs remain missing.

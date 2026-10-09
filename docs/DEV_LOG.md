@@ -3061,3 +3061,19 @@ This file is append-only project history.
   retained DOM, childNodes, classList and style objects.
 - Nine new native-pixel integration tests pass, old M4.21 tests
   retained; Test262 Runtime v1/v2 unchanged.
+
+## 2026-10-09 - M4.23 original pinned WPT DOM smoke
+
+- Added original JS Node sibling/connectivity/tag-name/ownerDocument
+  properties, Element.contains, and Text.length.
+- Expanded classList.add/remove to atomic variadic token handling.
+  Hardened live style declaration parsing for quoted semicolons,
+  escaped characters and nested function syntax.
+- New native integration tests verify real DOM repaint.
+- First upstream WPT DOM source test verified against exact pinned
+  WPT revision: Node-childNodes-cache.html passes with a minimal
+  synchronous testharness adapter (not official WPT harness).
+  Four manifest entries: 1 attempted/pass, 3 explicit unsupported
+  skips; no full dynamic DOM WPT conformance claim.
+- Full Rust workspace, pinned JS runtime metrics and Win32 smoke
+  remain separate from these new DOM capabilities.

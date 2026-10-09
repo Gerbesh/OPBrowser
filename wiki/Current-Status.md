@@ -193,3 +193,15 @@ and remove can reorder/retire real nodes. Nine new
 script-to-native-pixels scenarios are covered, including
 timer callbacks and synthetic-to-physical node identity.
 Full DOM/CSSOM/WPT compatibility is still unmeasured and partial.
+
+## M4.23: first pinned upstream WPT DOM smoke
+
+Live Node sibling/connectivity properties and Element.contains
+work in the original JS/DOM pipeline. classList supports atomic
+multi-token add/remove; style parsing protects quoted semicolons
+and balanced functions. Three new native DOM rendering tests pass.
+
+A limited adapter executes unchanged assertions from the pinned
+upstream WPT Node-childNodes-cache.html fixture: one attempted/pass,
+three manually chosen fixtures explicitly unsupported/skipped.
+No representative DOM WPT conformance percentage exists yet.
