@@ -116,6 +116,7 @@ enum BuiltinFunction {
     EventStopPropagation,
     EventStopImmediatePropagation,
     EventPreventDefault,
+    EventComposedPath,
     LifecycleAddEventListener,
     LifecycleRemoveEventListener,
     LifecycleDispatchEvent,
@@ -355,6 +356,7 @@ pub struct JsRuntime {
     dom_listener_options: HashMap<(usize, String, bool, ObjectId), DomListenerOptions>,
     next_listener_registration_id: u64,
     event_listener_errors: Vec<String>,
+    event_paths: HashMap<ObjectId, Vec<ObjectId>>,
     dom_dispatch_depth: usize,
     dom_programmatic_click_depth: usize,
     dom_document: Option<ObjectId>,
@@ -471,6 +473,7 @@ impl Default for JsRuntime {
             dom_listener_options: HashMap::new(),
             next_listener_registration_id: 1,
             event_listener_errors: Vec::new(),
+            event_paths: HashMap::new(),
             dom_dispatch_depth: 0,
             dom_programmatic_click_depth: 0,
             dom_document: None,
@@ -662,6 +665,7 @@ impl JsRuntime {
         self.dom_listener_options.clear();
         self.next_listener_registration_id = 1;
         self.event_listener_errors.clear();
+        self.event_paths.clear();
         self.dom_dispatch_depth = 0;
         self.dom_programmatic_click_depth = 0;
         self.lifecycle_listeners.clear();
@@ -2114,6 +2118,7 @@ impl JsRuntime {
                 ("__stopImmediatePropagation".into(), JsValue::Boolean(false)),
             ]),
         )?;
+        self.install_global_event_path(event, receiver)?;
         let mut steps = 0;
         let result = self.deliver_lifecycle_target(receiver, name, event, &mut steps);
         self.finish_event_dispatch(event)?;
@@ -2167,6 +2172,7 @@ impl JsRuntime {
             properties.insert("__stopPropagation".into(), JsValue::Boolean(false));
             properties.insert("__stopImmediatePropagation".into(), JsValue::Boolean(false));
         }
+        self.install_global_event_path(event, receiver)?;
         self.dom_dispatch_depth += 1;
         let mut steps = 0;
         let result = (|| {
@@ -2541,6 +2547,7 @@ impl JsRuntime {
                 ("__stopImmediatePropagation".into(), JsValue::Boolean(false)),
             ]),
         )?;
+        self.install_element_event_path(event, path)?;
         let mut steps = 0;
         let mut handled = true;
         let connected = self.path_reaches_document(path);
@@ -2629,6 +2636,7 @@ impl JsRuntime {
         self.object_mut(event)?
             .properties
             .insert("__stopImmediatePropagation".into(), JsValue::Boolean(false));
+        self.install_element_event_path(event, path)?;
         self.dom_dispatch_depth += 1;
         let result = self.dispatch_custom_event_inner(event, path, &event_type, bubbles);
         self.dom_dispatch_depth -= 1;
@@ -3583,6 +3591,54 @@ impl JsRuntime {
         Ok(delivered)
     }
 
+    fn ensure_event_composed_path_method(&mut self, event: ObjectId) -> Result<(), JsError> {
+        if !self.object(event)?.properties.contains_key("composedPath") {
+            let method =
+                self.allocate_lifecycle_method("composedPath", BuiltinFunction::EventComposedPath)?;
+            self.object_mut(event)?
+                .properties
+                .insert("composedPath".into(), JsValue::Object(method));
+        }
+        Ok(())
+    }
+
+    /// Capture the original EventTarget route while dispatch is active.
+    /// The public composedPath() method must not expose this route after
+    /// dispatch returns, nor fabricate a path for an undispatched event.
+    fn install_element_event_path(
+        &mut self,
+        event: ObjectId,
+        path: &[usize],
+    ) -> Result<(), JsError> {
+        self.ensure_event_composed_path_method(event)?;
+        let mut targets = Vec::new();
+        for &node in path.iter().take(64) {
+            targets.push(self.dom_any_node_object(node)?);
+        }
+        if self.path_reaches_document(path) {
+            if let Some(document) = self.dom_document {
+                targets.push(document);
+            }
+            targets.push(self.global_object);
+        }
+        self.event_paths.insert(event, targets);
+        Ok(())
+    }
+
+    fn install_global_event_path(
+        &mut self,
+        event: ObjectId,
+        receiver: ObjectId,
+    ) -> Result<(), JsError> {
+        self.ensure_event_composed_path_method(event)?;
+        let mut path = vec![receiver];
+        if Some(receiver) == self.dom_document {
+            path.push(self.global_object);
+        }
+        self.event_paths.insert(event, path);
+        Ok(())
+    }
+
     fn event_immediate_stopped(&self, event: ObjectId) -> Result<bool, JsError> {
         Ok(self
             .object(event)?
@@ -3599,6 +3655,7 @@ impl JsRuntime {
     }
 
     fn finish_event_dispatch(&mut self, event: ObjectId) -> Result<(), JsError> {
+        self.event_paths.remove(&event);
         self.object_mut(event)?
             .properties
             .insert("currentTarget".into(), JsValue::Null);
@@ -4600,6 +4657,32 @@ impl JsRuntime {
             });
             return Ok(CallOutcome::Value(JsValue::Number(f64::from(id))));
         }
+        if builtin == BuiltinFunction::EventComposedPath {
+            let JsValue::Object(event) = this_value else {
+                return Err(JsError::type_error(
+                    "composedPath requires an Event receiver",
+                ));
+            };
+            let valid_event = self.object(event)?.kind == ObjectKind::DomEvent
+                || self
+                    .object(event)?
+                    .properties
+                    .contains_key("__stopPropagation");
+            if !valid_event {
+                return Err(JsError::type_error(
+                    "composedPath requires an Event receiver",
+                ));
+            }
+            let entries = self.event_paths.get(&event).cloned().unwrap_or_default();
+            let mut properties = HashMap::new();
+            for (index, target) in entries.iter().enumerate() {
+                properties.insert(index.to_string(), JsValue::Object(*target));
+            }
+            properties.insert("length".into(), JsValue::Number(entries.len() as f64));
+            let list =
+                self.allocate_object(ObjectKind::Array, Some(self.array_prototype), properties)?;
+            return Ok(CallOutcome::Value(JsValue::Object(list)));
+        }
         if matches!(
             builtin,
             BuiltinFunction::EventStopPropagation
@@ -5138,6 +5221,7 @@ impl JsRuntime {
                     ("__stopImmediatePropagation".into(), JsValue::Boolean(false)),
                 ]),
             )?;
+            self.ensure_event_composed_path_method(event)?;
             return Ok(CallOutcome::Value(JsValue::Object(event)));
         }
         if builtin == BuiltinFunction::DomInitEvent {
@@ -5232,6 +5316,7 @@ impl JsRuntime {
                     ("__stopImmediatePropagation".into(), JsValue::Boolean(false)),
                 ]),
             )?;
+            self.ensure_event_composed_path_method(event)?;
             return Ok(CallOutcome::Value(JsValue::Object(event)));
         }
         if builtin == BuiltinFunction::DomDispatchEvent {
@@ -6042,6 +6127,7 @@ impl JsRuntime {
             | BuiltinFunction::EventStopPropagation
             | BuiltinFunction::EventStopImmediatePropagation
             | BuiltinFunction::EventPreventDefault
+            | BuiltinFunction::EventComposedPath
             | BuiltinFunction::LifecycleAddEventListener
             | BuiltinFunction::LifecycleRemoveEventListener
             | BuiltinFunction::LifecycleDispatchEvent
@@ -6326,6 +6412,27 @@ impl JsRuntime {
         match target {
             JsValue::Object(id) => {
                 let kind = self.object(*id)?.kind;
+                let event_like = kind == ObjectKind::DomEvent
+                    || self
+                        .object(*id)?
+                        .properties
+                        .contains_key("__stopPropagation");
+                if event_like && key == "cancelBubble" {
+                    return Ok(JsValue::Boolean(
+                        self.object(*id)?
+                            .properties
+                            .get("__stopPropagation")
+                            .is_some_and(JsValue::is_truthy),
+                    ));
+                }
+                if event_like && key == "returnValue" {
+                    let prevented = self
+                        .object(*id)?
+                        .properties
+                        .get("defaultPrevented")
+                        .is_some_and(JsValue::is_truthy);
+                    return Ok(JsValue::Boolean(!prevented));
+                }
                 match kind {
                     ObjectKind::DomEvent if key == "returnValue" => {
                         let prevented = self
@@ -6692,7 +6799,20 @@ impl JsRuntime {
             };
         };
 
-        if key == "returnValue" && self.object(*id)?.kind == ObjectKind::DomEvent {
+        let event_like = self.object(*id)?.kind == ObjectKind::DomEvent
+            || self
+                .object(*id)?
+                .properties
+                .contains_key("__stopPropagation");
+        if key == "cancelBubble" && event_like {
+            if value.is_truthy() {
+                self.object_mut(*id)?
+                    .properties
+                    .insert("__stopPropagation".into(), JsValue::Boolean(true));
+            }
+            return Ok(());
+        }
+        if key == "returnValue" && event_like {
             if !value.is_truthy()
                 && self
                     .object(*id)?
@@ -7707,6 +7827,197 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn m432_element_composed_path_is_visible_only_during_dispatch() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "outer".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "inner".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "div".into());
+        vm.sync_dom_tag(2, "button".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.sync_dom_existing_node(2, Some(1), vec![]);
+        vm.eval_script(
+            r#"
+            var outer=document.getElementById('outer');
+            var inner=document.getElementById('inner');
+            var e=new Event('ping',{bubbles:true});
+            var before=e.composedPath().length;
+            var observed='';
+            window.addEventListener('ping',function(e){
+                var p=e.composedPath();
+                if(p.length===4&&p[0]===inner&&p[1]===outer&&
+                  p[2]===document&&p[3]===window)observed=observed+'C';
+            },true);
+            inner.addEventListener('ping',function(e){
+                var p=e.composedPath();
+                if(p.length===4&&p[0]===inner&&e.eventPhase===2)observed=observed+'T';
+            });
+            inner.dispatchEvent(e);
+            var after=e.composedPath().length;
+            var result=before===0&&after===0&&observed==='CT';
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m432_document_window_and_abort_signal_have_distinct_event_paths() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            document.addEventListener('ping',function(e){
+                var p=e.composedPath();
+                if(p.length===2&&p[0]===document&&p[1]===window)trace=trace+'D';
+            });
+            window.addEventListener('pong',function(e){
+                var p=e.composedPath();
+                if(p.length===1&&p[0]===window)trace=trace+'W';
+            });
+            var c=new AbortController();
+            c.signal.addEventListener('abort',function(e){
+                var p=e.composedPath();
+                if(p.length===1&&p[0]===c.signal)trace=trace+'A';
+            });
+            document.dispatchEvent(new Event('ping'));
+            window.dispatchEvent(new Event('pong'));
+            c.abort();
+            var result=trace==='DWA';
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m432_cancel_bubble_true_stops_ancestors_but_not_same_target_listeners() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "outer".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "inner".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "div".into());
+        vm.sync_dom_tag(2, "button".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.sync_dom_existing_node(2, Some(1), vec![]);
+        vm.eval_script(
+            r#"
+            var outer=document.getElementById('outer');
+            var inner=document.getElementById('inner');
+            var trace='';
+            inner.addEventListener('ping',function(e){
+                e.cancelBubble=true;
+                e.cancelBubble=false;
+                trace=trace+(e.cancelBubble?'A':'BAD');
+            });
+            inner.addEventListener('ping',function(e){
+                trace=trace+(e.cancelBubble?'B':'BAD');
+            });
+            outer.addEventListener('ping',function(){trace=trace+'WRONG';});
+            document.addEventListener('ping',function(){trace=trace+'WRONG';});
+            var e=new Event('ping',{bubbles:true,cancelable:true});
+            inner.dispatchEvent(e);
+            var after=e.cancelBubble;
+            var result=trace==='AB'&&after;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m432_legacy_create_event_composed_path_resets_between_dispatches() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "x".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "button".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.eval_script(
+            r#"
+            var e=document.createEvent('Event');
+            var before=e.composedPath().length;
+            e.initEvent('pulse',true,true);
+            var hits=0;
+            document.getElementById('x').addEventListener('pulse',function(event){
+                if(event.composedPath().length===3)hits=hits+1;
+            });
+            document.getElementById('x').dispatchEvent(e);
+            var afterFirst=e.composedPath().length;
+            document.getElementById('x').dispatchEvent(e);
+            var result=before===0&&afterFirst===0&&hits===2&&e.composedPath().length===0;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m432_native_click_composed_path_exposes_original_connected_ancestors() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "outer".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "inner".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "div".into());
+        vm.sync_dom_tag(2, "button".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.sync_dom_existing_node(2, Some(1), vec![]);
+        vm.eval_script(
+            r#"
+            var trace='';
+            document.getElementById('inner').addEventListener('click',function(e){
+                var p=e.composedPath();
+                if(p.length===4&&p[0].id==='inner'&&p[1].id==='outer'
+                    &&p[2]===document&&p[3]===window)trace=trace+'C';
+                e.cancelBubble=true;
+            });
+            document.addEventListener('click',function(){trace=trace+'BAD';});
+        "#,
+        )
+        .unwrap();
+        assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("C".into())));
     }
 
     #[test]

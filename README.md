@@ -38,6 +38,14 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.32a exposes original Event.composedPath() on constructed,
+legacy and host-driven events: paths exist only while dispatch
+runs, include actual connected ancestors/document/window and
+return [] outside dispatch. Legacy cancelBubble reflects the
+propagation-stop flag; returnValue cancellation also works on
+native click events. Five VM and two native paint regressions pass.
+Shadow DOM retargeting and full WPT Events conformance are pending.
+
 M4.31 adds stable listener registration identities to original
 Element/Document/Window/AbortSignal EventTargets, so removing and
 re-adding one function during dispatch cannot invoke a stale

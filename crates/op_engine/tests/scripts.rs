@@ -2,6 +2,77 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m432_native_paint_reflects_composed_event_path_and_cancel_bubble() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><div id='outer'><button id='inner'>RUN</button></div>",
+            "<p id='out'>WAIT</p><script>",
+            "var trace='';",
+            "var inner=document.getElementById('inner');",
+            "var outer=document.getElementById('outer');",
+            "window.addEventListener('pulse',function(e){",
+            "var path=e.composedPath();",
+            "if(path.length>=4&&path[path.length-1]===window)trace=trace+'W';},true);",
+            "inner.addEventListener('pulse',function(e){",
+            "var path=e.composedPath();",
+            "if(path.length>=4&&path[0]===inner&&path[1]===outer&&",
+            "path[path.length-2]===document)trace=trace+'T';",
+            "e.cancelBubble=true;",
+            "});",
+            "document.addEventListener('pulse',function(){trace=trace+'BAD';});",
+            "var e=new Event('pulse',{bubbles:true});",
+            "inner.dispatchEvent(e);",
+            "document.getElementById('out').textContent=",
+            "trace==='WT'&&e.composedPath().length===0&&e.cancelBubble?",
+            "'M432-PATH-PASS':'M432-PATH-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M432-PATH-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m432_document_window_and_abort_composed_paths_repaint_text() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='out'>WAIT</p><script>",
+            "var trace='';",
+            "document.addEventListener('custom',function(e){",
+            "var path=e.composedPath();",
+            "if(path.length===2&&path[0]===document&&path[1]===window)",
+            "trace=trace+'D';});",
+            "document.dispatchEvent(new Event('custom'));",
+            "var controller=new AbortController();",
+            "controller.signal.onabort=function(e){",
+            "var path=e.composedPath();",
+            "if(path.length===1&&path[0]===controller.signal)trace=trace+'A';",
+            "};",
+            "controller.abort();",
+            "window.addEventListener('load',function(e){",
+            "var path=e.composedPath();",
+            "if(path.length===1&&path[0]===window)trace=trace+'L';",
+            "document.getElementById('out').textContent=trace==='DAL'?",
+            "'M432-GLOBAL-PASS':'M432-GLOBAL-FAIL';",
+            "});",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M432-GLOBAL-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m431c_window_onload_property_orders_before_later_listener_on_native_page() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

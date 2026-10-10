@@ -2,6 +2,34 @@
 
 Last updated: 2026-10-10
 
+## M4.32a - Event.composedPath and legacy propagation alias (2026-10-10)
+
+- DONE added Event.composedPath() to original new Event(), legacy
+  document.createEvent(), native click, parser lifecycle and AbortSignal
+  abort events. Runtime-owned event_paths snapshots reflect the actual
+  target-first Element ancestry, followed by Document and Window only
+  for connected nodes. Document events include Window; window and
+  AbortSignal events have one target.
+- DONE event paths are accessible only while the event dispatches;
+  outside dispatch and after cleanup composedPath() returns an empty
+  Array rather than exposing stale targets.
+- DONE legacy Event.cancelBubble getter/setter reflects the internal
+  stopPropagation flag. Setting true prevents later ancestors, setting
+  false cannot undo a stop, while remaining handlers on the current
+  target are still allowed. Legacy returnValue also applies to native
+  click event objects, not just constructed Event instances.
+- VERIFIED five original VM tests and two complete original HTML ->
+  JavaScript -> DOM -> native paint integrations, including connected
+  ancestor ordering, reusing a legacy event, signal/document/window
+  events and normal HTML body/html nodes in the path.
+- LIMITS: no composed Shadow DOM boundaries/retargeting, immutable
+  WebIDL Event descriptors, complete Event constructor options,
+  full event listener object interface or general WPT Events
+  conformance. Frozen original WPT counts unchanged.
+- NEXT M4.32b: more accurate native-versus-programmatic isTrusted,
+  composed event options, propagation retargeting for more node kinds,
+  and independently pinned upstream Events WPT smoke expansion.
+
 ## M4.31 - Stable EventTarget registrations and property handler order (2026-10-10)
 
 - DONE assigned monotonically advancing registration IDs to each original

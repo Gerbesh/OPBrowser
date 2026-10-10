@@ -16,6 +16,26 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.32a: active event paths and legacy stopPropagation alias
+
+Original JsRuntime stores per-event ObjectId -> Vec<ObjectId>
+event_paths only for active dispatch, rather than retaining stale
+paths after return. install_element_event_path resolves the owned
+Element ancestry and includes Document/Window for connected nodes;
+install_global_event_path records paths for document, window and
+AbortSignal. ensure_event_composed_path_method puts the owned
+EventComposedPath builtin on new, legacy and host-created events.
+finish_event_dispatch clears the active path before microtask
+checkpoints and resets currentTarget/eventPhase. The method returns
+a new JS Array snapshot during dispatch and [] afterward.
+
+Event.cancelBubble is computed from the same internal stopPropagation
+flag used by original dispatch_custom_event_inner and
+dispatch_dom_click_path. The setter can set the stop flag but not
+clear a prior stop. Legacy returnValue also reaches native click's
+event shape. DOM-driven callbacks continue updating op_dom through
+op_engine and native op_paint without any new crate dependencies.
+
 ## M4.31: stable EventTarget listener IDs and property-slot chronology
 
 The owned op_js::JsRuntime now numbers registrations through

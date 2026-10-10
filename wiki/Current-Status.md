@@ -234,6 +234,24 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.32a: Event.composedPath and cancelBubble
+
+Original new Event(), document.createEvent() and native host events
+now expose Event.composedPath(): an Array of the target-first
+propagation route while dispatching and an empty Array outside
+dispatch. Connected Element paths include all real HTML ancestors,
+document and window. Document/window/AbortSignal targets get their
+own bounded paths. Per-event state is cleared after dispatch
+before queued microtasks execute.
+
+Legacy event.cancelBubble now reads/writes the original propagation
+stop state; false cannot undo a previously set stop. Native click
+events also honor the legacy returnValue cancellation alias.
+Five VM and two original page-to-pixel tests pass. Shadow DOM
+retargeting, composed options across encapsulation, complete
+Event WebIDL and broad WPT Events conformance remain unsupported.
+The frozen upstream WPT baseline is unchanged.
+
 ## M4.31: stable EventTarget listener identity and handler ordering
 
 Original Element, document, window and AbortSignal listeners now

@@ -3265,3 +3265,24 @@ This file is append-only project history.
   timer and lifecycle/abort deliveries.
 - No foreign JS engine, crate dependencies or manipulation of frozen
   WPT/Test262 scores; complete EventTarget remains future work.
+
+## 2026-10-10 - M4.32a Event.composedPath and cancelBubble
+
+- Added EventComposedPath builtin, event_paths active-dispatch
+  registry and per-event method availability for new Event, legacy
+  createEvent and host-created native click/lifecycle/abort objects.
+- Built target-first paths for real Element ancestry, Document/Window
+  and AbortSignal. Detached Element paths stay local. Event path
+  storage is cleared with currentTarget/eventPhase after dispatch,
+  so composedPath() returns [] before/after rather than stale paths.
+- Added cancelBubble read/write alias using the same original
+  stopPropagation state. Setting false cannot undo a prior stop,
+  and stopPropagation still allows remaining same-target callbacks.
+- Extended returnValue cancellation behavior to original native
+  click event objects rather than only constructed Event objects.
+- Added five original VM regressions and two real HTML/JS/native-paint
+  integrations covering global, signal, native click, legacy event
+  reuse and connected html/body ancestor paths.
+- Preserved bounded original implementation, no Shadow DOM
+  composed retargeting, no third-party engine or new dependency;
+  frozen upstream WPT metrics remain unchanged.

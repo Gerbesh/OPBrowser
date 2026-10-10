@@ -16,6 +16,25 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S41 - Active Event.composedPath and cancelBubble -> native paint (M4.32a)
+
+Status: IMPLEMENTED bounded original event path visibility.
+
+JsRuntime::install_element_event_path or install_global_event_path
+collects the dispatch's target-first ObjectId path, including
+document/window only when connected or relevant. Native and
+constructed Event objects expose composedPath(), which constructs
+a new VM Array during dispatch and returns [] before/afterward.
+JsRuntime::finish_event_dispatch cleans active path state and
+currentTarget/eventPhase before microtask delivery. cancelBubble
+sets or reads the same original propagation-stop state, so it
+stops ancestor callbacks without skipping subsequent callbacks
+on the current target. Resulting JS DOM mutations still replay
+through op_engine/op_dom to original native paint. Five VM and
+two integration tests verify legacy/new/custom/global/native-click
+paths and body/html ancestry. No Shadow DOM composed retargeting
+or broad WPT EventTarget conformance.
+
 ## S40 - Chronological onclick and lifecycle property handlers -> pixels (M4.31)
 
 Status: IMPLEMENTED bounded original target-phase handler ordering.

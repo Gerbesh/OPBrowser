@@ -48,6 +48,24 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.32a: event path lifetime and legacy cancelBubble
+
+The owned Event objects (constructed, legacy and host-driven) support
+composedPath(). During a dispatch the runtime retains an ObjectId
+path for Element capture/target/bubble, including real connected
+ancestors and document/window, or a global-target path for document,
+window and AbortSignal. The method builds an original JS Array; after
+dispatch the path is deleted and composedPath() returns [].
+Stop propagation and immediate-stop semantics remain unchanged.
+
+The legacy cancelBubble getter/setter reads the actual stop flag;
+setting true stops subsequent ancestor delivery but false does not
+undo a stop. The native click event also uses the existing
+returnValue=false cancellation handling. VM and native text-paint
+tests exercise these paths, including real HTML/body ancestry.
+This is not an implementation of Shadow DOM composed paths,
+retargeting or all WHATWG Event WebIDL descriptors.
+
 ## M4.31: registration identity and ordered EventTarget delivery
 
 Every original VM Element, Document, Window or AbortSignal callback
