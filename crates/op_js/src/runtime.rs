@@ -62,6 +62,7 @@ enum ObjectKind {
     DomTagCollection,
     DomQueryNodeList,
     DomEvent,
+    EventTarget,
     AbortController,
     AbortSignal,
     DomException,
@@ -120,6 +121,7 @@ enum BuiltinFunction {
     LifecycleAddEventListener,
     LifecycleRemoveEventListener,
     LifecycleDispatchEvent,
+    EventTargetConstructor,
     AbortControllerConstructor,
     AbortControllerAbort,
     AbortSignalConstructor,
@@ -317,6 +319,7 @@ pub struct JsRuntime {
     environments: Vec<Environment>,
     global_env: EnvironmentId,
     object_prototype: ObjectId,
+    event_target_prototype: ObjectId,
     array_prototype: ObjectId,
     error_prototype: ObjectId,
     type_error_prototype: ObjectId,
@@ -386,6 +389,7 @@ impl Default for JsRuntime {
         let reference_error_prototype = ObjectId(4);
         let global_object = ObjectId(5);
         let syntax_error_prototype = ObjectId(6);
+        let event_target_prototype = ObjectId(7);
 
         let ordinary = |prototype, properties| JsObject {
             properties,
@@ -420,6 +424,7 @@ impl Default for JsRuntime {
                     ("message".into(), JsValue::String(String::new())),
                 ]),
             ),
+            ordinary(Some(object_prototype), HashMap::new()),
         ];
 
         let global_env = EnvironmentId(0);
@@ -434,6 +439,7 @@ impl Default for JsRuntime {
             environments,
             global_env,
             object_prototype,
+            event_target_prototype,
             array_prototype,
             error_prototype,
             type_error_prototype,
@@ -516,6 +522,60 @@ impl Default for JsRuntime {
         runtime.install_global_binding(
             "Event",
             JsValue::Object(event_ctor),
+            false,
+            VariableKind::Const,
+        );
+        // A single owned EventTarget prototype is shared by custom targets,
+        // window/document, Elements and AbortSignal. The original VM still
+        // owns dispatch and callback metadata; no browser engine is embedded.
+        let target_constructor = runtime
+            .allocate_lifecycle_method("EventTarget", BuiltinFunction::EventTargetConstructor)
+            .expect("EventTarget constructor fits VM initial budget");
+        let target_add = runtime
+            .allocate_lifecycle_method(
+                "addEventListener",
+                BuiltinFunction::LifecycleAddEventListener,
+            )
+            .expect("EventTarget.addEventListener fits VM initial budget");
+        let target_remove = runtime
+            .allocate_lifecycle_method(
+                "removeEventListener",
+                BuiltinFunction::LifecycleRemoveEventListener,
+            )
+            .expect("EventTarget.removeEventListener fits VM initial budget");
+        let target_dispatch = runtime
+            .allocate_lifecycle_method("dispatchEvent", BuiltinFunction::LifecycleDispatchEvent)
+            .expect("EventTarget.dispatchEvent fits VM initial budget");
+        runtime
+            .object_mut(target_dispatch)
+            .expect("EventTarget.dispatchEvent function is valid")
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        runtime
+            .object_mut(target_constructor)
+            .expect("EventTarget constructor is valid")
+            .properties
+            .extend([
+                ("prototype".into(), JsValue::Object(event_target_prototype)),
+                ("length".into(), JsValue::Number(0.0)),
+            ]);
+        runtime
+            .object_mut(event_target_prototype)
+            .expect("EventTarget prototype is valid")
+            .properties
+            .extend([
+                ("constructor".into(), JsValue::Object(target_constructor)),
+                ("addEventListener".into(), JsValue::Object(target_add)),
+                ("removeEventListener".into(), JsValue::Object(target_remove)),
+                ("dispatchEvent".into(), JsValue::Object(target_dispatch)),
+            ]);
+        runtime
+            .object_mut(global_object)
+            .expect("global Window object is valid")
+            .prototype = Some(event_target_prototype);
+        runtime.install_global_binding(
+            "EventTarget",
+            JsValue::Object(target_constructor),
             false,
             VariableKind::Const,
         );
@@ -733,7 +793,7 @@ impl JsRuntime {
             .allocate_lifecycle_method("dispatchEvent", BuiltinFunction::LifecycleDispatchEvent)?;
         let document = self.allocate_object(
             ObjectKind::Ordinary,
-            Some(self.object_prototype),
+            Some(self.event_target_prototype),
             HashMap::from([
                 ("getElementById".into(), JsValue::Object(function)),
                 ("getElementsByTagName".into(), JsValue::Object(get_by_tag)),
@@ -1776,7 +1836,7 @@ impl JsRuntime {
         )?;
         self.allocate_object(
             ObjectKind::AbortSignal,
-            Some(self.object_prototype),
+            Some(self.event_target_prototype),
             HashMap::from([
                 ("aborted".into(), JsValue::Boolean(false)),
                 ("reason".into(), JsValue::Undefined),
@@ -1938,6 +1998,15 @@ impl JsRuntime {
 
     /// Deliver registered document/window listeners for one EventTarget phase.
     /// Options and exception handling mirror Element EventTarget delivery.
+    fn is_global_event_target(&self, receiver: ObjectId) -> Result<bool, JsError> {
+        Ok(Some(receiver) == self.dom_document
+            || receiver == self.global_object
+            || matches!(
+                self.object(receiver)?.kind,
+                ObjectKind::AbortSignal | ObjectKind::EventTarget
+            ))
+    }
+
     fn lifecycle_handler_property(
         &self,
         receiver: ObjectId,
@@ -2053,7 +2122,7 @@ impl JsRuntime {
                 "__passiveListener".into(),
                 JsValue::Boolean(options.passive),
             );
-            let result = self.call_isolated_event_handler(handler, receiver, event, steps);
+            let result = self.call_isolated_registered_listener(handler, receiver, event, steps);
             self.object_mut(event)?
                 .properties
                 .insert("__passiveListener".into(), JsValue::Boolean(false));
@@ -3370,7 +3439,7 @@ impl JsRuntime {
             self.allocate_lifecycle_method("removeAttribute", BuiltinFunction::DomRemoveAttribute)?;
         let element = self.allocate_object(
             ObjectKind::DomElement(node),
-            Some(self.object_prototype),
+            Some(self.event_target_prototype),
             HashMap::from([
                 ("id".into(), JsValue::String(id)),
                 (
@@ -3459,6 +3528,36 @@ impl JsRuntime {
                 Ok(())
             }
             result => result,
+        }
+    }
+
+    /// The EventListener WebIDL callback can be a function or an object
+    /// with a handleEvent method. Resolve handleEvent at delivery time,
+    /// and call it with the listener object as 'this', not currentTarget.
+    fn call_isolated_registered_listener(
+        &mut self,
+        listener: JsValue,
+        target: ObjectId,
+        event: ObjectId,
+        steps: &mut usize,
+    ) -> Result<(), JsError> {
+        let JsValue::Object(callback) = listener else {
+            return Ok(());
+        };
+        if self.object(callback)?.function.is_some() {
+            return self.call_isolated_event_handler(listener, target, event, steps);
+        }
+        let handler = self.get_object_property(callback, "handleEvent")?;
+        if let JsValue::Object(function) = handler
+            && self.object(function)?.function.is_some()
+        {
+            self.call_isolated_event_handler(handler, callback, event, steps)
+        } else {
+            if self.event_listener_errors.len() < 32 {
+                self.event_listener_errors
+                    .push("TypeError: EventListener.handleEvent must be callable".into());
+            }
+            Ok(())
         }
     }
 
@@ -3592,7 +3691,7 @@ impl JsRuntime {
                 "__passiveListener".into(),
                 JsValue::Boolean(options.passive),
             );
-            let result = self.call_isolated_event_handler(callback, receiver, event, steps);
+            let result = self.call_isolated_registered_listener(callback, receiver, event, steps);
             self.object_mut(event)?
                 .properties
                 .insert("__passiveListener".into(), JsValue::Boolean(false));
@@ -4898,6 +4997,19 @@ impl JsRuntime {
             }
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
+        if builtin == BuiltinFunction::EventTargetConstructor {
+            // The original VM passes a fresh receiver to 'new', while
+            // unbound function calls receive the global window object.
+            if this_value == JsValue::Object(self.global_object) {
+                return Err(JsError::type_error("EventTarget constructor requires new"));
+            }
+            let instance = self.allocate_object(
+                ObjectKind::EventTarget,
+                Some(self.event_target_prototype),
+                HashMap::new(),
+            )?;
+            return Ok(CallOutcome::Value(JsValue::Object(instance)));
+        }
         if builtin == BuiltinFunction::AbortControllerConstructor {
             let signal = self.new_abort_signal()?;
             let abort =
@@ -4946,10 +5058,7 @@ impl JsRuntime {
             let JsValue::Object(receiver) = this_value else {
                 return Err(JsError::type_error("dispatchEvent requires an EventTarget"));
             };
-            if Some(receiver) != self.dom_document
-                && receiver != self.global_object
-                && self.object(receiver)?.kind != ObjectKind::AbortSignal
-            {
+            if !self.is_global_event_target(receiver)? {
                 return Err(JsError::type_error("unsupported event target"));
             }
             let Some(JsValue::Object(event)) = arguments.first() else {
@@ -4967,14 +5076,9 @@ impl JsRuntime {
                 | BuiltinFunction::LifecycleRemoveEventListener
         ) {
             let JsValue::Object(receiver) = this_value else {
-                return Err(JsError::type_error(
-                    "event target must be document, window or AbortSignal",
-                ));
+                return Err(JsError::type_error("event target must be an EventTarget"));
             };
-            if Some(receiver) != self.dom_document
-                && receiver != self.global_object
-                && self.object(receiver)?.kind != ObjectKind::AbortSignal
-            {
+            if !self.is_global_event_target(receiver)? {
                 return Err(JsError::type_error("unsupported event target"));
             }
             let event = arguments
@@ -4987,18 +5091,18 @@ impl JsRuntime {
                 ));
             }
             let remove = matches!(builtin, BuiltinFunction::LifecycleRemoveEventListener);
-            let Some(JsValue::Object(callback)) = arguments.get(1) else {
-                if remove {
+            let callback = match arguments.get(1) {
+                Some(JsValue::Object(callback)) => *callback,
+                None | Some(JsValue::Null | JsValue::Undefined) => {
                     return Ok(CallOutcome::Value(JsValue::Undefined));
                 }
-                return Err(JsError::type_error("lifecycle listener must be callable"));
+                _ if remove => return Ok(CallOutcome::Value(JsValue::Undefined)),
+                _ => {
+                    return Err(JsError::type_error(
+                        "event listener callback must be a function, object or null",
+                    ));
+                }
             };
-            if self.object(*callback)?.function.is_none() {
-                if remove {
-                    return Ok(CallOutcome::Value(JsValue::Undefined));
-                }
-                return Err(JsError::type_error("lifecycle listener must be callable"));
-            }
             let raw_options = arguments.get(2).cloned().unwrap_or(JsValue::Undefined);
             let capture = if let JsValue::Object(id) = raw_options {
                 self.get_object_property(id, "capture")?.is_truthy()
@@ -5037,10 +5141,10 @@ impl JsRuntime {
                 self.version_listener_options(options)
             };
             let key = (receiver, event, capture);
-            let option_key = (receiver, key.1.clone(), capture, *callback);
+            let option_key = (receiver, key.1.clone(), capture, callback);
             if remove {
                 if let Some(handlers) = self.lifecycle_listeners.get_mut(&key) {
-                    handlers.retain(|existing| existing != &JsValue::Object(*callback));
+                    handlers.retain(|existing| existing != &JsValue::Object(callback));
                 }
                 self.lifecycle_listener_options.remove(&option_key);
             } else {
@@ -5056,8 +5160,8 @@ impl JsRuntime {
                     ));
                 }
                 let handlers = self.lifecycle_listeners.entry(key).or_default();
-                if !handlers.contains(&JsValue::Object(*callback)) {
-                    handlers.push(JsValue::Object(*callback));
+                if !handlers.contains(&JsValue::Object(callback)) {
+                    handlers.push(JsValue::Object(callback));
                     self.lifecycle_listener_options.insert(option_key, options);
                 }
             }
@@ -5981,24 +6085,20 @@ impl JsRuntime {
                 return Err(JsError::execution_limit("listener type budget exceeded"));
             }
 
-            let Some(callback) = arguments.get(1).cloned() else {
-                if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
+            let function = match arguments.get(1) {
+                Some(JsValue::Object(callback)) => *callback,
+                None | Some(JsValue::Null | JsValue::Undefined) => {
                     return Ok(CallOutcome::Value(JsValue::Undefined));
                 }
-                return Err(JsError::type_error("event listener callback is missing"));
+                _ if matches!(builtin, BuiltinFunction::DomRemoveEventListener) => {
+                    return Ok(CallOutcome::Value(JsValue::Undefined));
+                }
+                _ => {
+                    return Err(JsError::type_error(
+                        "event listener callback must be a function, object or null",
+                    ));
+                }
             };
-            let JsValue::Object(function) = callback else {
-                if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
-                    return Ok(CallOutcome::Value(JsValue::Undefined));
-                }
-                return Err(JsError::type_error("event listener must be callable"));
-            };
-            if self.object(function)?.function.is_none() {
-                if matches!(builtin, BuiltinFunction::DomRemoveEventListener) {
-                    return Ok(CallOutcome::Value(JsValue::Undefined));
-                }
-                return Err(JsError::type_error("event listener must be callable"));
-            }
             let raw_options = arguments.get(2).cloned().unwrap_or(JsValue::Undefined);
             let capture = if let JsValue::Object(id) = raw_options {
                 self.get_object_property(id, "capture")?.is_truthy()
@@ -6152,6 +6252,7 @@ impl JsRuntime {
             | BuiltinFunction::LifecycleAddEventListener
             | BuiltinFunction::LifecycleRemoveEventListener
             | BuiltinFunction::LifecycleDispatchEvent
+            | BuiltinFunction::EventTargetConstructor
             | BuiltinFunction::AbortControllerConstructor
             | BuiltinFunction::AbortControllerAbort
             | BuiltinFunction::AbortSignalConstructor
@@ -7864,6 +7965,260 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn m433b_object_handle_event_uses_object_receiver_and_late_binding() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var t=new EventTarget();
+            var obj={count:0,handleEvent:function(e){
+                if(this===obj&&e.currentTarget===t)this.count=this.count+1;
+            }};
+            t.addEventListener('ping',obj);
+            t.dispatchEvent(new Event('ping'));
+            obj.handleEvent=function(){this.count=this.count+10;};
+            t.dispatchEvent(new Event('ping'));
+            t.removeEventListener('ping',obj);
+            t.dispatchEvent(new Event('ping'));
+            var result=obj.count===11;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m433b_object_listeners_preserve_once_signal_and_duplicate_identity() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var t=new EventTarget();
+            var c=new AbortController();
+            var a={count:0,handleEvent:function(){this.count=this.count+1;}};
+            var b={count:0,handleEvent:function(){this.count=this.count+1;}};
+            t.addEventListener('ping',a,{once:true});
+            t.addEventListener('ping',a);
+            t.addEventListener('ping',b,{signal:c.signal});
+            t.dispatchEvent(new Event('ping'));
+            c.abort();
+            t.dispatchEvent(new Event('ping'));
+            var result=a.count===1&&b.count===1;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m433b_element_and_global_object_listener_receivers() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            var node=document.getElementById('button');
+            var e={handleEvent:function(ev){
+                if(this===e&&ev.currentTarget===node)trace=trace+'E';
+            }};
+            var d={handleEvent:function(ev){
+                if(this===d&&ev.currentTarget===document)trace=trace+'D';
+            }};
+            node.addEventListener('ping',e);
+            document.addEventListener('pong',d);
+            node.dispatchEvent(new Event('ping'));
+            document.dispatchEvent(new Event('pong'));
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("ED".into())));
+    }
+
+    #[test]
+    fn m433b_null_listeners_are_noops_on_element_and_custom_target() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var node=document.getElementById('button');
+            var target=new EventTarget();
+            node.addEventListener('ping',null);
+            node.addEventListener('ping');
+            node.removeEventListener('ping',null);
+            target.addEventListener('pong',null);
+            target.addEventListener('pong');
+            target.removeEventListener('pong',null);
+            var result=node.dispatchEvent(new Event('ping'))&&
+                target.dispatchEvent(new Event('pong'));
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m433b_bad_object_handler_error_does_not_skip_following_listener() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var t=new EventTarget();
+            var trace='';
+            var bad={handleEvent:1};
+            t.addEventListener('ping',bad);
+            t.addEventListener('ping',function(){trace=trace+'GOOD';});
+            t.dispatchEvent(new Event('ping'));
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("GOOD".into())));
+        assert_eq!(vm.take_event_listener_errors().len(), 1);
+    }
+
+    #[test]
+    fn m433_event_target_constructor_and_common_inheritance() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var target=new EventTarget();
+            var signal=new AbortController().signal;
+            var button=document.getElementById('button');
+            var newRequired=false;
+            try { EventTarget(); } catch(e){ newRequired=true; }
+            var result=typeof EventTarget==='function'&&
+                target instanceof EventTarget&&
+                target.constructor===EventTarget&&
+                target.addEventListener===EventTarget.prototype.addEventListener&&
+                signal instanceof EventTarget&&
+                document instanceof EventTarget&&
+                window instanceof EventTarget&&
+                button instanceof EventTarget&&newRequired;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m433_standalone_target_orders_capture_before_bubble_and_has_one_point_path() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var t=new EventTarget();
+            var trace='';
+            var e=new Event('ping',{bubbles:true,cancelable:true});
+            var first=t.addEventListener('ping',function(e){
+                var path=e.composedPath();
+                if(e.target===t&&e.currentTarget===t&&
+                   e.eventPhase===2&&path.length===1&&path[0]===t)trace=trace+'C';
+            },true);
+            t.addEventListener('ping',function(e){
+                trace=trace+'B';
+            });
+            var result1=t.dispatchEvent(e);
+            var result=trace==='CB'&&result1&&e.composedPath().length===0&&
+                e.currentTarget===null&&e.eventPhase===0;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m433_custom_event_target_listener_options_abort_signal_and_cancelation() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var t=new EventTarget();
+            var c=new AbortController();
+            var trace='';
+            t.addEventListener('ping',function(e){
+                e.preventDefault();
+                trace=trace+(e.defaultPrevented?'BAD':'P');
+            },{passive:true});
+            t.addEventListener('ping',function(){trace=trace+'O';},{once:true});
+            t.addEventListener('ping',function(){trace=trace+'S';},{signal:c.signal});
+            t.addEventListener('ping',function(e){e.preventDefault();},{signal:c.signal});
+            var before=t.dispatchEvent(new Event('ping',{cancelable:true}));
+            c.abort('cancel');
+            var after=t.dispatchEvent(new Event('ping',{cancelable:true}));
+            var result=trace==='POSP'&&!before&&after;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m433_standalone_event_target_remove_readd_callback_and_exception_isolation() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var target=new EventTarget();
+            var trace='';
+            var changed=false;
+            function late(){trace=trace+'L';}
+            target.addEventListener('ping',function(){
+                trace=trace+'A';
+                if(!changed){
+                    changed=true;
+                    target.removeEventListener('ping',late);
+                    target.addEventListener('ping',late);
+                    throw new Error('isolated');
+                }
+            });
+            target.addEventListener('ping',late);
+            target.dispatchEvent(new Event('ping'));
+            target.dispatchEvent(new Event('ping'));
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("AAL".into())));
+        assert_eq!(vm.take_event_listener_errors().len(), 1);
+    }
+
+    #[test]
+    fn m433_standalone_event_target_preserves_receiver_and_cancelation_return_value() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var target=new EventTarget();
+            var seen='';
+            target.addEventListener('cancel',function(e){
+                if(this===target)seen=seen+'T';
+                e.preventDefault();
+                seen=seen+(e.defaultPrevented?'Y':'BAD');
+            });
+            var event=new Event('cancel',{cancelable:true});
+            var accepted=target.dispatchEvent(event);
+            var result=seen==='TY'&&!accepted&&event.defaultPrevented;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
     }
 
     #[test]

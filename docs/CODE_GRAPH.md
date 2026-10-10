@@ -16,6 +16,29 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.33a-b: standalone EventTarget and handleEvent object listeners
+
+JsRuntime::default creates a dedicated EventTarget prototype with
+shared addEventListener/removeEventListener/dispatchEvent methods,
+a globally installed constructor, and original ObjectKind::EventTarget
+instances allocated only through new. This prototype is also inherited
+by the original global Window, Document, DOM Elements and AbortSignal,
+which retain their existing native-specific own method dispatch.
+
+is_global_event_target recognizes standalone targets alongside the
+existing document/window/signal receivers; dispatch_global_custom_event
+builds one-object paths for standalone emitters. Original
+lifecycle_listeners and lifecycle_listener_options remain the single
+owned listener registry with stable registration IDs, once/passive,
+AbortSignal removal and callback error isolation.
+
+call_isolated_registered_listener dispatches either original callable
+functions (receiver=currentTarget) or objects with dynamic handleEvent
+(receiver=listener object). Both lifecycle and Element delivery use
+that function; identity/dedup is the object itself. Null/undefined
+listeners do not add records. Native repaint stays routed through
+op_engine -> op_dom/op_layout -> op_paint, without external engines.
+
 ## M4.32b: native hit-test trust and original Event fields
 
 Original JsRuntime::dispatch_dom_click_path calls the common

@@ -3306,3 +3306,23 @@ This file is append-only project history.
   including Engine.click_at with real HTML layout hit region.
 - No third-party engine, new crate, full WebIDL semantics or new
   pinned upstream WPT/Test262 compatibility measurements.
+
+## 2026-10-10 - M4.33a-b original EventTarget and EventListener.handleEvent
+
+- Created owned EventTarget constructor, dedicated original prototype
+  and ObjectKind::EventTarget objects, with common inherited methods
+  on Window, Document, Element and AbortSignal; plain EventTarget()
+  without new is rejected.
+- Extended lifecycle dispatch/registration to independent EventTarget
+  instances. Existing registration IDs, synchronous ordering, event
+  path lifetime, once/passive/AbortSignal and prevention semantics
+  are reused rather than duplicated.
+- Added support for callback objects with dynamically resolved
+  handleEvent and listener object receiver, including dedup/removal
+  by identity, once and signal cancellation. Null/undefined callbacks
+  are harmless no-ops. Noncallable methods produce a bounded diagnostic
+  rather than aborting unrelated listeners.
+- Verified ten original VM tests and two native paint integrations
+  for standalone emitters and listener objects on actual Elements.
+- Preserved existing browser-owned JavaScript/DOM/rendering pipeline,
+  no new dependencies or manipulated external WPT/Test262 scores.

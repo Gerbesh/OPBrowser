@@ -38,6 +38,16 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.33a-b introduces original new EventTarget() with a shared
+EventTarget.prototype for native host targets and standalone JS
+emitters, synchronous dispatch, capture-before-bubble, once/passive/
+AbortSignal support, and cancellation results. Event listeners can
+be functions or objects with handleEvent(event), with correct
+listener-object receiver and identity, dynamic method replacement,
+and null/undefined no-op callbacks. Ten VM and two native-paint
+tests cover the new behavior. Full WebIDL/EventTarget and broad
+upstream WPT conformance remain future work.
+
 M4.32b differentiates actual layout-hit-tested native clicks
 (isTrusted=true) from programmatic Element.click() (false) using
 one owned event dispatch pipeline. new Event(type,{composed})

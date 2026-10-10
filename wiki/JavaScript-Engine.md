@@ -48,6 +48,25 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.33a-b: original EventTarget and object callbacks
+
+OPBrowser now allocates new EventTarget() instances through the
+original Rust VM, with a shared EventTarget.prototype and inherited
+dispatch/add/remove methods. Existing Window, Document, Element
+and AbortSignal host objects also inherit from EventTarget.
+Dispatch uses existing Event path, listener ID, passive/once/
+AbortSignal and exception-isolation primitives. A standalone
+event emitter's active composedPath has one member, its target.
+
+EventListener callback objects with handleEvent are supported:
+the method is resolved at callback time and executed with the
+listener object as this. Dedup, removal and AbortSignal cleanup use
+listener object identity. Function callbacks still receive
+currentTarget as this. Null/undefined callbacks are accepted as
+no-ops, and bad handleEvent methods yield bounded diagnostics.
+Original JS and native repaint regressions cover these cases.
+This is a bounded EventTarget subset, not full DOM WebIDL or WPT.
+
 ## M4.32b: native isTrusted and EventInit.composed
 
 The original page engine dispatches actual hit-tested clicks via

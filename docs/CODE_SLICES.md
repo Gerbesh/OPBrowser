@@ -16,6 +16,22 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S43 - Standalone EventTarget and object listeners to native paint (M4.33)
+
+Status: IMPLEMENTED bounded original EventTarget construction and delivery.
+
+new EventTarget() creates an original VM EventTarget object inheriting
+a shared prototype. addEventListener records function or object
+listeners with once/passive/AbortSignal metadata and unique registration
+IDs. dispatchEvent builds one-element composedPath(), calls capture
+then bubble handlers synchronously, and reports cancellation.
+call_isolated_registered_listener evaluates object.handleEvent at
+delivery and binds this to the listener object; errors remain isolated.
+The same mechanism serves Element/Document/Window/AbortSignal listeners.
+JS handler mutations replay through op_engine and original native paint.
+Ten VM tests plus two original native-page integrations verify this
+flow. No complete WebIDL descriptors or broad WPT Events score claimed.
+
 ## S42 - Native click trust vs programmatic click to original pixels (M4.32b)
 
 Status: IMPLEMENTED bounded original Event trust/initialization slice.

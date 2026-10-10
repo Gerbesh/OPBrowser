@@ -234,6 +234,26 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.33a-b: EventTarget objects and EventListener.handleEvent
+
+new EventTarget() now creates an original JS event emitter with
+addEventListener/removeEventListener/dispatchEvent and correct
+EventTarget.prototype ancestry; window/document/Elements/
+AbortSignal also inherit from that prototype. Standalone targets
+dispatch synchronously on a one-element path, with capture and
+bubble listeners, cancellation and existing once/passive/signal
+options. No external JS engine or browser runtime is embedded.
+
+Listeners can be functions or objects with handleEvent(event).
+An object listener sees its own object as this; handleEvent is
+looked up when called, so replacement works without re-registering.
+Object identity is used for remove/dedup; null/undefined callbacks
+are no-ops. Bad handleEvent methods are reported without preventing
+other callbacks. Ten VM and two native paint integrations pass.
+EventTarget WebIDL/prototype descriptors, complete callback
+coercion, Event subclasses and broad original WPT Events
+conformance remain incomplete. Upstream WPT scores unchanged.
+
 ## M4.32b: trusted native clicks and Event.composed flags
 
 Original native hit-tested clicks now produce events with

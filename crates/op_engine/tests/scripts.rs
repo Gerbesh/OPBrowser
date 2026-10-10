@@ -2,6 +2,62 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m433_original_eventtarget_dispatch_updates_native_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='out'>WAIT</p><script>",
+            "var emitter=new EventTarget();",
+            "var trace='';",
+            "var once={handleEvent:function(e){",
+            "if(this===once&&e.target===emitter&&e.currentTarget===emitter",
+            "&&e.composedPath().length===1)trace=trace+'O';}};",
+            "emitter.addEventListener('refresh',once,{once:true});",
+            "emitter.addEventListener('refresh',function(){trace=trace+'L';});",
+            "emitter.dispatchEvent(new Event('refresh'));",
+            "emitter.dispatchEvent(new Event('refresh'));",
+            "document.getElementById('out').textContent=trace==='OLL'?",
+            "'M433-TARGET-PASS':'M433-TARGET-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M433-TARGET-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m433_event_listener_object_on_native_element_respects_abort_signal() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><button id='button'>GO</button><p id='out'>WAIT</p><script>",
+            "var button=document.getElementById('button');",
+            "var controller=new AbortController();",
+            "var handler={n:0,handleEvent:function(e){",
+            "if(this===handler&&e.currentTarget===button)this.n=this.n+1;}};",
+            "button.addEventListener('pulse',null);",
+            "button.addEventListener('pulse',handler,{signal:controller.signal});",
+            "button.dispatchEvent(new Event('pulse'));",
+            "controller.abort();",
+            "button.dispatchEvent(new Event('pulse'));",
+            "document.getElementById('out').textContent=handler.n===1?",
+            "'M433-OBJECT-PASS':'M433-OBJECT-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M433-OBJECT-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m432b_event_composed_dictionary_and_readonly_properties_reach_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

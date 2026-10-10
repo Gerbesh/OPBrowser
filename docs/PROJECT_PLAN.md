@@ -2,6 +2,35 @@
 
 Last updated: 2026-10-10
 
+## M4.33a-b - Original EventTarget and EventListener objects (2026-10-10)
+
+- DONE original new EventTarget() via owned VM constructor,
+  ObjectKind::EventTarget and EventTarget.prototype shared methods:
+  addEventListener/removeEventListener/dispatchEvent. Plain invocation
+  without new rejects. EventTarget instances are independent emitters
+  with one-node composedPath(), synchronous delivery, capture-before-
+  bubble ordering at target, preventDefault and dispatch return value.
+- DONE common EventTarget prototype ancestry for window, document,
+  existing Elements and AbortSignal. instanceof EventTarget checks
+  the original prototype chain, not a fabricated brand string.
+- DONE EventListener callback may be a JS function or a JS object with
+  handleEvent(event); resolve handleEvent at delivery, call with the
+  listener object as this, preserve its identity for dedup/removal.
+  Null/undefined omitted listeners are harmless no-ops.
+- DONE listener objects share previous once/passive/signal, removal,
+  registration identity and exception isolation on both global and
+  Element targets. A non-callable handleEvent produces a bounded
+  listener diagnostic and does not skip later valid listeners.
+- VERIFIED ten new original VM tests and two native HTML/JS/paint
+  integrations. Full workspace suite and Windows browser smoke run.
+- LIMITS: no complete WebIDL EventTarget prototype descriptors,
+  fully standard EventListener callback coercion, Shadow DOM, Event
+  subclasses, trusted default activation or broad WPT Events score.
+  Frozen original WPT/Test262 baseline remains unchanged.
+- NEXT M4.34: increase pinned independent WPT Events fixtures and
+  address event constructor/prototype descriptor semantics, then
+  compare measured outcomes rather than guessing browser readiness.
+
 ## M4.32b - Trusted native clicks and Event initialization flags (2026-10-10)
 
 - DONE separated the original host hit-tested click entrypoint from
