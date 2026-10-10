@@ -79,6 +79,7 @@ enum BuiltinFunction {
     StringCharAt,
     ArrayPush,
     ArrayPop,
+    FunctionCall,
     DomGetElementById,
     DomGetElementsByTagName,
     DomQuerySelector,
@@ -319,6 +320,7 @@ pub struct JsRuntime {
     environments: Vec<Environment>,
     global_env: EnvironmentId,
     object_prototype: ObjectId,
+    function_prototype: ObjectId,
     event_target_prototype: ObjectId,
     array_prototype: ObjectId,
     error_prototype: ObjectId,
@@ -390,6 +392,7 @@ impl Default for JsRuntime {
         let global_object = ObjectId(5);
         let syntax_error_prototype = ObjectId(6);
         let event_target_prototype = ObjectId(7);
+        let function_prototype = ObjectId(8);
 
         let ordinary = |prototype, properties| JsObject {
             properties,
@@ -425,6 +428,7 @@ impl Default for JsRuntime {
                 ]),
             ),
             ordinary(Some(object_prototype), HashMap::new()),
+            ordinary(Some(object_prototype), HashMap::new()),
         ];
 
         let global_env = EnvironmentId(0);
@@ -439,6 +443,7 @@ impl Default for JsRuntime {
             environments,
             global_env,
             object_prototype,
+            function_prototype,
             event_target_prototype,
             array_prototype,
             error_prototype,
@@ -528,6 +533,14 @@ impl Default for JsRuntime {
         // A single owned EventTarget prototype is shared by custom targets,
         // window/document, Elements and AbortSignal. The original VM still
         // owns dispatch and callback metadata; no browser engine is embedded.
+        let function_call = runtime
+            .allocate_lifecycle_method("call", BuiltinFunction::FunctionCall)
+            .expect("Function.prototype.call fits VM initial budget");
+        runtime
+            .object_mut(function_prototype)
+            .expect("original Function prototype exists")
+            .properties
+            .insert("call".into(), JsValue::Object(function_call));
         let target_constructor = runtime
             .allocate_lifecycle_method("EventTarget", BuiltinFunction::EventTargetConstructor)
             .expect("EventTarget constructor fits VM initial budget");
@@ -3775,6 +3788,12 @@ impl JsRuntime {
         self.object_mut(event)?
             .properties
             .insert("eventPhase".into(), JsValue::Number(0.0));
+        self.object_mut(event)?
+            .properties
+            .insert("__stopPropagation".into(), JsValue::Boolean(false));
+        self.object_mut(event)?
+            .properties
+            .insert("__stopImmediatePropagation".into(), JsValue::Boolean(false));
         // DOM event callbacks constitute one task. Flush queued microtasks
         // after all listeners have run, not between capture and bubble.
         let _ = self.drain_microtasks();
@@ -4210,6 +4229,21 @@ impl JsRuntime {
             .ok_or_else(|| JsError::type_error("value is not callable"))?;
 
         match function.implementation {
+            FunctionImplementation::Builtin(BuiltinFunction::FunctionCall) => {
+                let receiver = arguments.first().cloned().unwrap_or(JsValue::Undefined);
+                let receiver = if matches!(receiver, JsValue::Null | JsValue::Undefined) {
+                    JsValue::Object(self.global_object)
+                } else {
+                    receiver
+                };
+                self.call_value(
+                    this_value,
+                    receiver,
+                    arguments.into_iter().skip(1).collect(),
+                    steps,
+                    call_depth + 1,
+                )
+            }
             FunctionImplementation::Builtin(builtin) => {
                 self.call_builtin(builtin, this_value, arguments)
             }
@@ -5372,6 +5406,8 @@ impl JsRuntime {
             properties.insert("bubbles".into(), JsValue::Boolean(bubbles));
             properties.insert("cancelable".into(), JsValue::Boolean(cancelable));
             properties.insert("defaultPrevented".into(), JsValue::Boolean(false));
+            properties.insert("__stopPropagation".into(), JsValue::Boolean(false));
+            properties.insert("__stopImmediatePropagation".into(), JsValue::Boolean(false));
             properties.insert("__initialized".into(), JsValue::Boolean(true));
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
@@ -6251,6 +6287,7 @@ impl JsRuntime {
             | BuiltinFunction::EventComposedPath
             | BuiltinFunction::LifecycleAddEventListener
             | BuiltinFunction::LifecycleRemoveEventListener
+            | BuiltinFunction::FunctionCall
             | BuiltinFunction::LifecycleDispatchEvent
             | BuiltinFunction::EventTargetConstructor
             | BuiltinFunction::AbortControllerConstructor
@@ -6539,6 +6576,14 @@ impl JsRuntime {
                         .object(*id)?
                         .properties
                         .contains_key("__stopPropagation");
+                if event_like && key == "srcElement" {
+                    return Ok(self
+                        .object(*id)?
+                        .properties
+                        .get("target")
+                        .cloned()
+                        .unwrap_or(JsValue::Null));
+                }
                 if event_like && key == "cancelBubble" {
                     return Ok(JsValue::Boolean(
                         self.object(*id)?
@@ -6931,6 +6976,7 @@ impl JsRuntime {
                 key,
                 "type"
                     | "target"
+                    | "srcElement"
                     | "currentTarget"
                     | "eventPhase"
                     | "bubbles"
@@ -7370,7 +7416,11 @@ impl JsRuntime {
         let id = ObjectId(self.heap.len());
         self.heap.push(JsObject {
             properties,
-            prototype,
+            prototype: if kind == ObjectKind::Function {
+                Some(self.function_prototype)
+            } else {
+                prototype
+            },
             kind,
             function,
         });
@@ -7968,6 +8018,56 @@ mod tests {
     }
 
     #[test]
+    fn m434_function_prototype_call_binds_this_and_forwards_arguments() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            function sum(a,b){return this.base+a+b;}
+            var obj={base:20};
+            var x=sum.call(obj,3,4);
+            function globalThis(){return this===window;}
+            var global=globalThis.call(null)&&globalThis.call(undefined);
+            var invalid=false;
+            try {sum.call.call({});} catch(e){invalid=true;}
+            var result=x===27&&global&&invalid;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m434_legacy_event_src_element_and_reset_stop_flags() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "target".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var target=document.getElementById('target');
+            var event=document.createEvent('Event');
+            event.stopPropagation();
+            event.initEvent('pulse',true,true);
+            var initialized=!event.cancelBubble;
+            target.addEventListener('pulse',function(e) {
+                e.cancelBubble=true;
+                e.srcElement=window;
+            });
+            target.dispatchEvent(event);
+            var reset=!event.cancelBubble&&event.target===target&&event.srcElement===target;
+            target.dispatchEvent(event);
+            var result=initialized&&reset&&!event.cancelBubble;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
     fn m433b_object_handle_event_uses_object_receiver_and_late_binding() {
         let mut vm = JsRuntime::new();
         vm.install_dom_snapshot([]).unwrap();
@@ -8433,7 +8533,7 @@ mod tests {
             var e=new Event('ping',{bubbles:true,cancelable:true});
             inner.dispatchEvent(e);
             var after=e.cancelBubble;
-            var result=trace==='AB'&&after;
+            var result=trace==='AB'&&!after;
         "#,
         )
         .unwrap();

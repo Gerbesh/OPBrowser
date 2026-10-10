@@ -148,6 +148,8 @@ Element-childElementCount fixture exercises relational JS in
 and live DOM properties without changing upstream assertions.
 This is not the official WPT testharness or a general DOM score.
 
+M4.34 adds frozen v6 (15/15 attempted PASS, 3 SKIP, 31 source callbacks) and v7 (16/16 PASS, 3 SKIP, 39 callbacks) at upstream SHA 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d. Unmodified source assertions test defaultPrevented, returnValue, post-dispatch srcElement and cancelBubble. v1-v5 remain unchanged. Reproduce: cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt. Narrow synchronous smoke, not full WPT.
+
 M4.27: compat/wpt-dom-smoke-v5.tsv lists 15 manually selected
 pinned original WPT DOM/Events HTML files, 12 executed/pass,
 3 explicit skips, 14 original synchronous test() callbacks.

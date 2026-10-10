@@ -234,6 +234,12 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.34: measured original WPT Events progress
+
+Verified upstream commit 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d. Old v5 still passes 12/12 attempted, 3 SKIP. New frozen v7 selects 19 original HTML fixtures: **16 attempted PASS, 0 FAIL, 3 SKIP**, 39 untouched synchronous WPT callbacks. The four added upstream Events sources cover defaultPrevented, returnValue, post-dispatch srcElement and cancelBubble.
+
+Original VM fixes: Function.prototype.call, Event.srcElement and propagation flag resets. The narrow WPT shim supports test context/step_func and sticky first failures. Not the official WPT harness or a global compliance score.
+
 ## M4.33a-b: EventTarget objects and EventListener.handleEvent
 
 new EventTarget() now creates an original JS event emitter with

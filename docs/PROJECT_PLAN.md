@@ -2,6 +2,15 @@
 
 Last updated: 2026-10-10
 
+## M4.34 - Pinned original WPT DOM/Events v7 (2026-10-11)
+
+- Verified real WPT checkout at SHA 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d. Unmodified old v5: 12/12 attempted PASS, 3 SKIP.
+- Frozen v6: 15/15 attempted PASS, 3 SKIP, 31 original callbacks. Frozen v7: 16/16 attempted PASS, 0 FAIL, 3 SKIP, 39 original callbacks; original assertion text unchanged.
+- Added upstream Event-defaultPrevented, Event-returnValue, Event-defaultPrevented-after-dispatch and Event-cancelBubble HTML tests.
+- Added WPT synchronous test context/step_func and sticky first-failure diagnostics. Implemented original Function.prototype.call, Event.srcElement, initEvent and post-dispatch reset of stop flags.
+- Two VM regressions and two probe tests. No third-party engines or new dependencies.
+- LIMITS: manually selected synchronous WPT smoke, not full harness or representative conformance. Test262 unchanged. NEXT: independently expand original Events fixtures.
+
 ## M4.33a-b - Original EventTarget and EventListener objects (2026-10-10)
 
 - DONE original new EventTarget() via owned VM constructor,

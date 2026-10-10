@@ -10,7 +10,7 @@ const WPT_REVISION: &str = "97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d";
 const PASS: &str = "OPBROWSER_WPT_DOM_PASS";
 const FAIL: &str = "OPBROWSER_WPT_DOM_FAIL";
 const NOT_RUN: &str = "OPBROWSER_WPT_DOM_NOT_RUN";
-const MANIFEST: &str = include_str!("../../../../compat/wpt-dom-smoke-v5.tsv");
+const MANIFEST: &str = include_str!("../../../../compat/wpt-dom-smoke-v7.tsv");
 
 fn git(repo: &Path, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
@@ -30,7 +30,8 @@ fn git(repo: &Path, args: &[&str]) -> Result<String, String> {
 /// Any unfamiliar fixture shape fails closed rather than "passing" by
 /// silently ignoring its scripts.
 fn instrument(original: &str, expected_tests: usize) -> Result<String, String> {
-    if original.matches("test(function()").count() != expected_tests {
+    let test_calls = original.matches("test(function").count();
+    if test_calls != expected_tests {
         return Err(format!(
             "WPT fixture test() count changed; expected {expected_tests}"
         ));
@@ -60,9 +61,12 @@ fn instrument(original: &str, expected_tests: usize) -> Result<String, String> {
         "<script>",
         "var __opb_wpt_count=0;",
         "var __opb_wpt_failed=false;",
+        "var step_func=function(fn){return fn;};",
+        "var __opb_wpt_error='';",
         "function assert_equals(actual,expected){",
         "if(!Object.is(actual,expected))throw new Error('WPT assert_equals');",
         "}",
+        "function assert_unreached(){throw new Error('WPT assert_unreached');}",
         "function assert_true(actual){",
         "if(!actual)throw new Error('WPT assert_true');",
         "}",
@@ -71,9 +75,15 @@ fn instrument(original: &str, expected_tests: usize) -> Result<String, String> {
         "}",
         "function test(callback){",
         "__opb_wpt_count=__opb_wpt_count+1;",
-        "try{callback();}catch(error){__opb_wpt_failed=true;}",
+        "var __opb_wpt_test={step_func:function(fn){return fn;}};",
+        "try{callback.call(__opb_wpt_test,__opb_wpt_test);}",
+        "catch(error){if(!__opb_wpt_failed){__opb_wpt_error=",
+        "'test#'+__opb_wpt_count+':'+((error&&error.message)?error.message:String(error));}",
+        "__opb_wpt_failed=true;}",
         "document.getElementById('opb-wpt-status').textContent=",
         "(__opb_wpt_failed?'OPBROWSER_WPT_DOM_FAIL_':'OPBROWSER_WPT_DOM_PASS_')+__opb_wpt_count;",
+        "if(__opb_wpt_failed){document.getElementById('opb-wpt-status').textContent=",
+        "'OPBROWSER_WPT_DOM_FAIL_'+__opb_wpt_count+' '+__opb_wpt_error;}",
         "}",
         "</script>"
     );
@@ -184,11 +194,11 @@ fn run() -> Result<(), String> {
             _ => return Err(format!("unknown WPT manifest disposition for {fixture}")),
         }
     }
-    if selected != 15 || attempted != 12 || skipped != 3 {
-        return Err("frozen WPT DOM v5 manifest shape changed".into());
+    if selected != 19 || attempted != 16 || skipped != 3 {
+        return Err("frozen WPT DOM v7 manifest shape changed".into());
     }
     println!(
-        "WPT DOM/events smoke v5: multi-test synchronous shim, unchanged pinned fixture assertions"
+        "WPT DOM/events smoke v7: multi-test synchronous shim, unchanged pinned fixture assertions"
     );
     println!("upstream_revision_verified=true");
     println!(
@@ -212,6 +222,49 @@ mod harness_tests {
              <script>test(function(){{assert_equals(1,{first});}});\
              test(function(){{assert_equals(1,1);}});</script></body>"
         )
+    }
+
+    #[test]
+    fn harness_supports_original_test_context_and_step_func_without_rewriting_assertions() {
+        let source = concat!(
+            "<body><script src=\"/resources/testharness.js\"></script>",
+            "<script src=\"/resources/testharnessreport.js\"></script>",
+            "<script>test(function(t) {",
+            "var invoked=false;",
+            "function run(){invoked=true;}",
+            "t.step_func(run)();",
+            "this.step_func(run)();",
+            "assert_true(invoked);",
+            "}, 'original test context');</script></body>"
+        );
+        let html = instrument(source, 1).unwrap();
+        let mut engine = Engine::new();
+        let display = engine.set_html_page(&html, 800, 600);
+        assert!(display.commands.iter().any(|cmd| matches!(
+            cmd,PaintCommand::Text{text,..} if text.contains("OPBROWSER_WPT_DOM_PASS_1")
+        )));
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    }
+
+    #[test]
+    fn step_func_failure_is_sticky_and_identifies_first_failing_callback() {
+        let source = concat!(
+            "<body><script src=\"/resources/testharness.js\"></script>",
+            "<script src=\"/resources/testharnessreport.js\"></script>",
+            "<script>test(function(t) {",
+            "t.step_func(function(){assert_false(true);})();",
+            "}, 'first fails');",
+            "test(function(){assert_true(true);}, 'later succeeds');",
+            "</script></body>"
+        );
+        let html = instrument(source, 2).unwrap();
+        let mut engine = Engine::new();
+        let display = engine.set_html_page(&html, 800, 600);
+        assert!(display.commands.iter().any(|cmd| matches!(
+            cmd,PaintCommand::Text{text,..}
+                if text.contains("OPBROWSER_WPT_DOM_FAIL_2 test#1:")
+        )));
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
     }
 
     #[test]

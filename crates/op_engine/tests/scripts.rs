@@ -109,7 +109,7 @@ fn m432_native_paint_reflects_composed_event_path_and_cancel_bubble() {
             "var e=new Event('pulse',{bubbles:true});",
             "inner.dispatchEvent(e);",
             "document.getElementById('out').textContent=",
-            "trace==='WT'&&e.composedPath().length===0&&e.cancelBubble?",
+            "trace==='WT'&&e.composedPath().length===0&&!e.cancelBubble?",
             "'M432-PATH-PASS':'M432-PATH-FAIL';",
             "</script></body>"
         ),

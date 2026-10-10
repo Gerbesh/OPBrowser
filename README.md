@@ -38,6 +38,8 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.34 expands original pinned WPT DOM/Events smoke to 16/16 attempted HTML files PASS, 3 SKIP, 39 unmodified synchronous callbacks. The VM now has Function.prototype.call, Event.srcElement, and correct cancelBubble reset by initEvent and after dispatch. Narrow WPT shim forwards test context and records first failures. Reproduce: cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt. This is not broad official WPT conformance.
+
 M4.33a-b introduces original new EventTarget() with a shared
 EventTarget.prototype for native host targets and standalone JS
 emitters, synchronous dispatch, capture-before-bubble, once/passive/

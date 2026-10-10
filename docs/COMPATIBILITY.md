@@ -623,6 +623,8 @@ sources and a sticky error result.
 Reproduce:
   cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
 
+M4.34, measured on actual original pinned WPT checkout: v6 has 15 attempted PASS, 3 SKIP, 31 callbacks; v7 has 16 attempted PASS, 0 FAIL, 3 SKIP, 39 callbacks. Four added original Events fixtures cover defaultPrevented, returnValue, post-dispatch Event.srcElement and cancelBubble propagation/reset. Immutable v1-v5 manifests and original upstream assertions remain unchanged. New VM fixes include Function.prototype.call, srcElement and propagation-stop cleanup. The synchronous shim is not the full WPT harness.
+
 These are manually selected smoke tests, NOT representative
 WPT DOM/Events conformance. The separately pinned Test262
 runtime v1/v2 baselines must not be averaged with them.

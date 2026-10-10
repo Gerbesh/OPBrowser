@@ -336,6 +336,22 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S44",
+      "title": "Real pinned WPT Events source through original Function.call and native render verdict",
+      "status": "M4.34 original v7 16/16 selected attempted PASS, 3 explicit SKIP",
+      "steps": [
+        {"path": "crates/op_engine/src/bin/wpt_dom_probe.rs", "symbol": "instrument"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "FunctionCall"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "call_value"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "DomInitEvent"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "finish_event_dispatch"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "get_property"},
+        {"path": "crates/op_engine/src/bin/wpt_dom_probe.rs", "symbol": "run"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "PaintCommand"}
+      ],
+      "limitation": "Manually selected synchronous WPT smoke only; 19 pinned files, 16 attempted, 3 explicit SKIP; not full conformance."
+    },
+    {
       "id": "S43",
       "title": "Original EventTarget constructor and handleEvent listeners to native paint",
       "status": "M4.33a-b standalone EventTarget, shared prototype and callback object delivery",

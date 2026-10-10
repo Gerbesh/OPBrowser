@@ -3326,3 +3326,12 @@ This file is append-only project history.
   for standalone emitters and listener objects on actual Elements.
 - Preserved existing browser-owned JavaScript/DOM/rendering pipeline,
   no new dependencies or manipulated external WPT/Test262 scores.
+
+## 2026-10-11 - M4.34 verified pinned WPT DOM/Events v7
+
+- Reproduced old v5 original-source baseline 12/12 attempted PASS, 3 SKIP on real pinned SHA 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d.
+- Added immutable v6 (15/15 PASS, 3 SKIP, 31 callbacks) and v7 (16/16 PASS, 0 FAIL, 3 SKIP, 39 callbacks), keeping older manifests and source assertions intact.
+- Added four original Events fixtures: defaultPrevented, returnValue, defaultPrevented-after-dispatch, cancelBubble.
+- WPT harness shim now supports sync test context/step_func, assert_unreached, sticky first-failure index and exact file test counts; added two shim tests.
+- Original VM supports Function.prototype.call, Event.srcElement and correct initEvent/post-dispatch stop flag resets. Added two VM tests and updated prior incorrect expectations.
+- No third-party JS engine or new crates; sample is not official full WPT conformance.

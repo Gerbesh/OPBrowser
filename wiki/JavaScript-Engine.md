@@ -48,6 +48,10 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.34: WPT-guided Function.call and Event cleanup
+
+Original function objects now inherit a shared Function prototype with Function.prototype.call. call_value binds the supplied this and forwards arguments, enabling genuine upstream WPT test contexts. Event.srcElement aliases target. initEvent clears propagation-stop flags, and dispatch completion clears them while preserving defaultPrevented and target. The v7 original WPT selection passed 16/16 attempted files, with 3 SKIP (39 original callbacks) at verified pinned SHA. It is not broad WPT compliance.
+
 ## M4.33a-b: original EventTarget and object callbacks
 
 OPBrowser now allocates new EventTarget() instances through the
