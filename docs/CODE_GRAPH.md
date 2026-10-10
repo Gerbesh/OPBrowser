@@ -16,6 +16,25 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.32b: native hit-test trust and original Event fields
+
+Original JsRuntime::dispatch_dom_click_path calls the common
+dispatch_dom_click_path_with_trust(path,true) for op_engine native
+hit-tested clicks. The JavaScript Element.click builtin calls it
+with false, preserving one capture/target/bubble implementation and
+distinguishing isTrusted without bypassing JavaScript delivery.
+Host-generated clicks are composed in the original light DOM path;
+new Event() now parses EventInit.composed. Host lifecycle and abort
+events explicitly advertise isTrusted=true/composed=false.
+
+JsRuntime::set_property ignores ordinary assignment to readonly
+Event data fields (type, target, currentTarget, eventPhase,
+bubbles, cancelable, composed, defaultPrevented, isTrusted).
+The original runtime still changes trusted host event properties
+internally; no DOM engine replacement, crate dependency or UI/layout
+ownership transfer. End-to-end tests use op_engine::Engine::click_at
+and original op_paint output.
+
 ## M4.32a: active event paths and legacy stopPropagation alias
 
 Original JsRuntime stores per-event ObjectId -> Vec<ObjectId>

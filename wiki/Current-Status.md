@@ -234,6 +234,24 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.32b: trusted native clicks and Event.composed flags
+
+Original native hit-tested clicks now produce events with
+isTrusted=true, while programmatic Element.click() produces
+isTrusted=false on the same original capture/target/bubble code
+path. Both clicks are composed in the existing light DOM.
+new Event(type,{composed:true}) retains that flag, with false by
+default. Host document/window lifecycle and AbortSignal abort
+events expose trusted host state and composed=false; legacy/new
+scripted Event objects remain untrusted.
+
+Original JS assignment can no longer forge the common read-only
+event type/target/phase/trust/cancelation flags. Four VM and two
+native integrations pass, including a click from Engine's actual
+hit-tested layout region. No Shadow DOM, complete default
+activation, full WebIDL descriptors or broad WPT conformance.
+Pinned original WPT/Test262 scores are unchanged.
+
 ## M4.32a: Event.composedPath and cancelBubble
 
 Original new Event(), document.createEvent() and native host events

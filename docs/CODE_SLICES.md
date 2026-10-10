@@ -16,6 +16,22 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S42 - Native click trust vs programmatic click to original pixels (M4.32b)
+
+Status: IMPLEMENTED bounded original Event trust/initialization slice.
+
+op_engine::Engine::click_at invokes original page hit testing and
+then JsRuntime::dispatch_dom_click_path, which passes trusted=true
+into dispatch_dom_click_path_with_trust. The JavaScript Element.click
+builtin calls the same path with trusted=false. Both retain the
+owned capture-target-bubble sequence, Event.composedPath and DOM
+mutation replay to native op_paint. Constructed Event(type, init)
+parses composed; host lifecycle/abort events mark their own
+trusted/composed state. Ordinary JS writes to readonly Event flags
+are ignored. Four VM and two native integrations cover the visible
+difference between user and programmatic clicks. No Shadow DOM
+retargeting, complete WebIDL/trusted activation or broad WPT claim.
+
 ## S41 - Active Event.composedPath and cancelBubble -> native paint (M4.32a)
 
 Status: IMPLEMENTED bounded original event path visibility.

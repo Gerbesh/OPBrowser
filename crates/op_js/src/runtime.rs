@@ -1921,6 +1921,7 @@ impl JsRuntime {
                 ("cancelable".into(), JsValue::Boolean(false)),
                 ("defaultPrevented".into(), JsValue::Boolean(false)),
                 ("isTrusted".into(), JsValue::Boolean(true)),
+                ("composed".into(), JsValue::Boolean(false)),
                 ("stopPropagation".into(), JsValue::Object(stop)),
                 (
                     "stopImmediatePropagation".into(),
@@ -2107,6 +2108,8 @@ impl JsRuntime {
                 ("eventPhase".into(), JsValue::Number(0.0)),
                 ("bubbles".into(), JsValue::Boolean(false)),
                 ("cancelable".into(), JsValue::Boolean(false)),
+                ("composed".into(), JsValue::Boolean(false)),
+                ("isTrusted".into(), JsValue::Boolean(true)),
                 ("defaultPrevented".into(), JsValue::Boolean(false)),
                 ("stopPropagation".into(), JsValue::Object(stop)),
                 (
@@ -2488,9 +2491,18 @@ impl JsRuntime {
                     }))
     }
 
-    /// Deliver a click through capture, target, then bubbling phases.
-    /// The supplied path is target-first and bounded by the page engine.
+    /// Deliver a trusted click from the native hit-tested page engine.
+    /// Programmatic Element.click() uses the same original dispatch path,
+    /// but is marked untrusted by the internal entrypoint.
     pub fn dispatch_dom_click_path(&mut self, path: &[usize]) -> Result<bool, JsError> {
+        self.dispatch_dom_click_path_with_trust(path, true)
+    }
+
+    fn dispatch_dom_click_path_with_trust(
+        &mut self,
+        path: &[usize],
+        trusted: bool,
+    ) -> Result<bool, JsError> {
         if path.is_empty() || !self.has_dom_click_path_listener(path) {
             return Ok(false);
         }
@@ -2535,6 +2547,8 @@ impl JsRuntime {
                 ("currentTarget".into(), JsValue::Null),
                 ("bubbles".into(), JsValue::Boolean(true)),
                 ("cancelable".into(), JsValue::Boolean(true)),
+                ("composed".into(), JsValue::Boolean(true)),
+                ("isTrusted".into(), JsValue::Boolean(trusted)),
                 ("defaultPrevented".into(), JsValue::Boolean(false)),
                 ("eventPhase".into(), JsValue::Number(0.0)),
                 ("stopPropagation".into(), JsValue::Object(stop)),
@@ -5205,6 +5219,7 @@ impl JsRuntime {
                     ("currentTarget".into(), JsValue::Null),
                     ("bubbles".into(), JsValue::Boolean(false)),
                     ("cancelable".into(), JsValue::Boolean(false)),
+                    ("composed".into(), JsValue::Boolean(false)),
                     ("defaultPrevented".into(), JsValue::Boolean(false)),
                     ("isTrusted".into(), JsValue::Boolean(false)),
                     ("eventPhase".into(), JsValue::Number(0.0)),
@@ -5277,6 +5292,11 @@ impl JsRuntime {
             } else {
                 false
             };
+            let composed = if let JsValue::Object(id) = options {
+                self.get_object_property(id, "composed")?.is_truthy()
+            } else {
+                false
+            };
             let stop = self.allocate_lifecycle_method(
                 "stopPropagation",
                 BuiltinFunction::EventStopPropagation,
@@ -5302,6 +5322,7 @@ impl JsRuntime {
                     ("currentTarget".into(), JsValue::Null),
                     ("bubbles".into(), JsValue::Boolean(bubbles)),
                     ("cancelable".into(), JsValue::Boolean(cancelable)),
+                    ("composed".into(), JsValue::Boolean(composed)),
                     ("defaultPrevented".into(), JsValue::Boolean(false)),
                     ("isTrusted".into(), JsValue::Boolean(false)),
                     ("eventPhase".into(), JsValue::Number(0.0)),
@@ -5350,7 +5371,7 @@ impl JsRuntime {
             }
             let path = self.element_event_path(node)?;
             self.dom_programmatic_click_depth += 1;
-            let dispatched = self.dispatch_dom_click_path(&path);
+            let dispatched = self.dispatch_dom_click_path_with_trust(&path, false);
             self.dom_programmatic_click_depth -= 1;
             dispatched?;
             return Ok(CallOutcome::Value(JsValue::Undefined));
@@ -6804,6 +6825,22 @@ impl JsRuntime {
                 .object(*id)?
                 .properties
                 .contains_key("__stopPropagation");
+        if event_like
+            && matches!(
+                key,
+                "type"
+                    | "target"
+                    | "currentTarget"
+                    | "eventPhase"
+                    | "bubbles"
+                    | "cancelable"
+                    | "composed"
+                    | "defaultPrevented"
+                    | "isTrusted"
+            )
+        {
+            return Ok(());
+        }
         if key == "cancelBubble" && event_like {
             if value.is_truthy() {
                 self.object_mut(*id)?
@@ -7827,6 +7864,103 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn m432b_event_constructor_composed_and_readonly_fields() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var e=new Event('ping',{bubbles:true,cancelable:true,composed:true});
+            var initial=e.type==='ping'&&e.bubbles&&e.cancelable&&e.composed&&
+                e.isTrusted===false&&e.defaultPrevented===false;
+            e.type='forged';
+            e.target=window;
+            e.currentTarget=window;
+            e.eventPhase=9;
+            e.bubbles=false;
+            e.cancelable=false;
+            e.composed=false;
+            e.isTrusted=true;
+            e.defaultPrevented=true;
+            var protectedFields=initial&&e.type==='ping'&&e.target===null&&
+                e.currentTarget===null&&e.eventPhase===0&&e.bubbles&&
+                e.cancelable&&e.composed&&!e.isTrusted&&!e.defaultPrevented;
+            var defaultEvent=new Event('plain');
+            var defaultFlags=!defaultEvent.bubbles&&!defaultEvent.cancelable
+                &&!defaultEvent.composed&&!defaultEvent.isTrusted;
+            var result=protectedFields&&defaultFlags;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m432b_element_click_is_untrusted_native_host_click_is_trusted() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            document.getElementById('button').addEventListener('click',function(e){
+                trace=trace+(e.isTrusted?'T':'U')+(e.composed?'C':'BAD');
+                e.isTrusted=false;
+            });
+            document.getElementById('button').click();
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("UC".into())));
+        assert!(vm.dispatch_dom_click_path(&[1]).unwrap());
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("UCTC".into())));
+    }
+
+    #[test]
+    fn m432b_host_lifecycle_and_abort_events_are_trusted() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            document.addEventListener('readystatechange',function(e){
+                if(e.isTrusted===true&&e.composed===false)trace=trace+'D';
+                e.isTrusted=false;
+                if(e.isTrusted===true)trace=trace+'P';
+            });
+            var controller=new AbortController();
+            controller.signal.addEventListener('abort',function(e){
+                if(e.isTrusted===true&&e.composed===false)trace=trace+'A';
+            });
+        "#,
+        )
+        .unwrap();
+        vm.dispatch_lifecycle_event("readystatechange").unwrap();
+        vm.eval_script("controller.abort();").unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("DPA".into())));
+    }
+
+    #[test]
+    fn m432b_legacy_create_event_keeps_untrusted_uncomposed_defaults() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var legacy=document.createEvent('Event');
+            var initial=legacy.isTrusted===false&&legacy.composed===false;
+            legacy.initEvent('legacy',true,true);
+            var result=initial&&!legacy.isTrusted&&!legacy.composed&&
+                legacy.bubbles&&legacy.cancelable&&legacy.type==='legacy';
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
     }
 
     #[test]

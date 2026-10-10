@@ -336,6 +336,22 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S42",
+      "title": "Trusted original layout-hit-tested click versus programmatic Element.click through native pixels",
+      "status": "M4.32b original click trust marker and EventInit.composed/readonly flags",
+      "steps": [
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "click_at"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_dom_click_path_with_trust"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "DomEventConstructor"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_lifecycle_event"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_abort_signal_event"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "set_property"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "apply_dom_operations"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"}
+      ],
+      "limitation": "Light-DOM events only; no Shadow DOM retargeting, trusted default activation, WebIDL property descriptors or broad WPT Events conformance."
+    },
+    {
       "id": "S41",
       "title": "Event composedPath and cancelBubble during original DOM dispatch through native paint",
       "status": "M4.32a active event path snapshots, cleanup and legacy propagation alias",

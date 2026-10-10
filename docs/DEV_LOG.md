@@ -3286,3 +3286,23 @@ This file is append-only project history.
 - Preserved bounded original implementation, no Shadow DOM
   composed retargeting, no third-party engine or new dependency;
   frozen upstream WPT metrics remain unchanged.
+
+## 2026-10-10 - M4.32b trusted native clicks and EventInit.composed
+
+- Routed actual op_engine hit-tested clicks through
+  JsRuntime::dispatch_dom_click_path_with_trust(path,true);
+  original Element.click() uses the same pipeline with false.
+  Native and programmatic clicks now expose distinct isTrusted
+  without changing the owned capture/target/bubble algorithm.
+- Exposed composed=true for both click paths, parsed the new
+  EventInit.composed dictionary value and retained false defaults
+  for legacy/scripted Events when absent.
+- Marked lifecycle and AbortSignal abort as host-trusted,
+  non-composed events. Original JS Event() remains untrusted.
+- Ignored ordinary JS assignments to readonly event
+  type/target/currentTarget/eventPhase/bubbles/cancelable/composed/
+  defaultPrevented/isTrusted fields to prevent simple trust spoofing.
+- Added four original VM regressions and two native integrations,
+  including Engine.click_at with real HTML layout hit region.
+- No third-party engine, new crate, full WebIDL semantics or new
+  pinned upstream WPT/Test262 compatibility measurements.

@@ -787,6 +787,55 @@ mod tests {
     }
 
     #[test]
+    fn m432b_real_hit_test_click_is_trusted_but_programmatic_click_is_not() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            concat!(
+                "<body><button id='press' style='display:block;width:220px;",
+                "height:70px;background:#ddd'>CLICK</button>",
+                "<p id='result'>WAIT</p><script>",
+                "var press=document.getElementById('press');",
+                "var seen='';",
+                "press.addEventListener('click',function(e){",
+                "seen=seen+(e.isTrusted?'T':'U');",
+                "document.getElementById('result').textContent='M432B-'+seen;",
+                "});",
+                "press.click();",
+                "</script></body>"
+            ),
+            800,
+            600,
+        );
+        let active = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_backgrounds_and_resources(
+            &active.document,
+            800,
+            600,
+            (&active.images.elements, &active.images.backgrounds),
+            &active.images.generated,
+            &active.computed_styles,
+            &mut text::Measurer::new(),
+        );
+        let region = layout
+            .click_regions
+            .iter()
+            .find(|region| {
+                active.document.element(region.node).is_some_and(|element| {
+                    element
+                        .attributes
+                        .iter()
+                        .any(|attr| attr.name == "id" && attr.value == "press")
+                })
+            })
+            .expect("real clickable button region");
+        let page = engine
+            .click_at(region.x + 3, region.y + 3, 800, 600)
+            .expect("trusted hit-tested native click updates DOM");
+        assert!(contains_text(&page.display_list, "M432B-UT"));
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    }
+
+    #[test]
     fn m429b_native_click_triggers_global_only_listeners_and_repaints() {
         let mut engine = Engine::new();
         engine.set_html_page(

@@ -2,6 +2,35 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m432b_event_composed_dictionary_and_readonly_properties_reach_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><button id='target'>GO</button><p id='out'>WAIT</p><script>",
+            "var button=document.getElementById('target');",
+            "var event=new Event('verify',{composed:true,bubbles:true,cancelable:true});",
+            "var observed=false;",
+            "button.addEventListener('verify',function(e){",
+            "e.isTrusted=true;e.composed=false;e.bubbles=false;",
+            "e.defaultPrevented=true;e.target=window;",
+            "observed=e.composed&&!e.isTrusted&&e.bubbles&&",
+            "!e.defaultPrevented&&e.target===button;",
+            "});",
+            "button.dispatchEvent(event);",
+            "document.getElementById('out').textContent=observed?",
+            "'M432B-FLAGS-PASS':'M432B-FLAGS-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..} if text.contains("M432B-FLAGS-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m432_native_paint_reflects_composed_event_path_and_cancel_bubble() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

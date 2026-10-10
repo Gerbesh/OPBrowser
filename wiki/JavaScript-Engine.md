@@ -48,6 +48,25 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.32b: native isTrusted and EventInit.composed
+
+The original page engine dispatches actual hit-tested clicks via
+dispatch_dom_click_path_with_trust(...,true), while the script
+Element.click() builtin passes false. JavaScript listeners observe
+the distinction through event.isTrusted, without changing the
+capture-target-bubble route or original op_dom/op_paint replay.
+Native click events carry composed=true. new Event() parses the
+EventInit.composed dictionary member alongside bubbles/cancelable;
+legacy Events default to composed=false. Browser-origin lifecycle
+and abort events are marked trusted and non-composed, while
+script-created events remain untrusted.
+
+The current original VM treats common Event fields as read-only
+under ordinary non-strict property assignments, so scripts cannot
+forge target, phase, isTrusted or defaultPrevented via assignment.
+This is not full WebIDL property descriptor behavior, trusted
+default activation or Shadow DOM composition.
+
 ## M4.32a: event path lifetime and legacy cancelBubble
 
 The owned Event objects (constructed, legacy and host-driven) support

@@ -38,6 +38,15 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+M4.32b differentiates actual layout-hit-tested native clicks
+(isTrusted=true) from programmatic Element.click() (false) using
+one owned event dispatch pipeline. new Event(type,{composed})
+retains its light-DOM composition flag, host lifecycle/abort
+events carry original trusted state, and common readonly event
+flags cannot be overwritten by ordinary JS assignment. Four
+VM and two native integrations pass; full WebIDL/Shadow DOM and
+official broad WPT Events conformance remain future work.
+
 M4.32a exposes original Event.composedPath() on constructed,
 legacy and host-driven events: paths exist only while dispatch
 runs, include actual connected ancestors/document/window and

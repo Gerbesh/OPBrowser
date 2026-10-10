@@ -2,6 +2,33 @@
 
 Last updated: 2026-10-10
 
+## M4.32b - Trusted native clicks and Event initialization flags (2026-10-10)
+
+- DONE separated the original host hit-tested click entrypoint from
+  programmatic Element.click() through dispatch_dom_click_path_with_trust.
+  Native user clicks set isTrusted=true; programmatic .click() sets
+  isTrusted=false, without duplicating the capture/target/bubble route.
+  Both click types advertise composed=true in the light DOM model.
+- DONE new Event(type,{composed}) parses and exposes the composed boolean
+  alongside existing bubbles/cancelable; default false. Legacy
+  document.createEvent retains false composed/isTrusted flags.
+- DONE host-driven lifecycle and AbortSignal abort events expose
+  isTrusted=true and composed=false. Normal new Event()/legacy
+  user-dispatched Events remain isTrusted=false.
+- DONE original Event IDL-like fields type, target, currentTarget,
+  eventPhase, bubbles, cancelable, composed, defaultPrevented and
+  isTrusted ignore ordinary JS assignment in non-strict execution,
+  rather than allowing scripts to forge those values.
+- VERIFIED four new JS VM regressions and two native engine integrations,
+  including a real hit-tested click after programmatic click and
+  EventInit.composed/readonly fields updating original paint.
+- LIMITS: this is a bounded original light-DOM behavior. Browser trusted
+  default actions, Shadow DOM composed boundaries/retargeting, full
+  WebIDL property descriptors and general WPT Events conformance are
+  not implemented. Existing pinned WPT/Test262 counts remain unchanged.
+- NEXT evaluate full Event/MouseEvent prototypes and upstream pinned
+  Events WPT harness against real original test fixtures.
+
 ## M4.32a - Event.composedPath and legacy propagation alias (2026-10-10)
 
 - DONE added Event.composedPath() to original new Event(), legacy
