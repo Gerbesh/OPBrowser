@@ -47,6 +47,16 @@ engine at idle checkpoints. VM and host integration tests pass.
 slots, no memory plateau claim. Native interpreter frame roots,
 generation-safe reclamation and long-session collection are next.
 
+**R2b flexible row spacing and growth:** the original CSS cascade
+recognizes justify-content (start/end/center/between/around/evenly)
+and bounded nonnegative flex-grow factors. Each flex line computes
+its available space; grown elements are re-laid out at the new
+width, including internal text and decorations. Native GDI pixel
+regressions verify widths, offsets, and transparent gaps.
+Try examples/css/flex-distribution.html. This is deliberately
+row-only: flex-shrink, flex-basis, shorthand flex, align-items,
+flex-direction, full min-content and real-site fidelity remain open.
+
 **R2a bounded Flexbox rows and gaps:** original CSS computed styles
 now carry flex-wrap:wrap and length-based gap into the row formatter.
 Intrinsic-width flex items wrap across rows with distinct column

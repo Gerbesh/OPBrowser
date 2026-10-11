@@ -336,6 +336,19 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S54",
+      "title": "Original CSS flex-grow and justify-content to GDI pixel coordinates",
+      "status": "R2b positive weighted flex growth and six main-axis justification values",
+      "steps": [
+        {"path": "crates/op_css/src/computed.rs", "symbol": "parse_flex_grow"},
+        {"path": "crates/op_css/src/computed.rs", "symbol": "parse_justify_content"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "flex_row_atomic"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "render_display_list_to_bgra"}
+      ],
+      "limitation": "Positive growth and row-direction alignment only; no shrink/basis/shorthand/vertical alignment/direction/order/full min-content."
+    },
+    {
       "id": "S53",
       "title": "Computed flex-wrap and gap to original multi-row GDI pixels",
       "status": "R2a bounded row-direction flex-wrap and non-negative CSS gap shorthand",

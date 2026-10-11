@@ -500,6 +500,125 @@ mod overflow_tests {
     }
 
     #[test]
+    fn r2b_growth_is_independent_for_each_wrapped_flex_line() {
+        let engine = Engine::new();
+        let page = engine.render_html(
+            "<body style='margin:0'><div style='display:flex;flex-wrap:wrap;width:180px;gap:6px 10px'>\
+             <div style='width:80px;height:30px;flex-grow:1;background:#f00000'></div>\
+             <div style='width:80px;height:30px;flex-grow:1;background:#00f000'></div>\
+             <div style='width:80px;height:30px;flex-grow:1;background:#0000f0'></div>\
+             </div></body>",
+            400, 180,
+        );
+        let colored = |r: u8, g: u8, b: u8| {
+            page.commands
+                .iter()
+                .find_map(|command| {
+                    let op_paint::PaintCommand::FillRect {
+                        x, y, width, color, ..
+                    } = command
+                    else {
+                        return None;
+                    };
+                    (color.r == r && color.g == g && color.b == b).then_some((*x, *y, *width))
+                })
+                .unwrap()
+        };
+        let red = colored(240, 0, 0);
+        let green = colored(0, 240, 0);
+        let blue = colored(0, 0, 240);
+        assert_eq!(red.2, 85);
+        assert_eq!(green.2, 85);
+        assert_eq!(green.0 - red.0, 95);
+        assert_eq!(green.1, red.1);
+        assert_eq!(blue.2, 180);
+        assert_eq!(blue.0, red.0);
+        assert_eq!(blue.1 - red.1, 36);
+        let pixels = op_platform_win::render_display_list_to_bgra(&page, 400, 180).unwrap();
+        assert_eq!(rgb_at(&pixels, 400, blue.0 + 175, blue.1 + 10), (0, 0, 240));
+    }
+
+    #[test]
+    fn r2b_justify_and_flex_grow_render_real_native_pixels() {
+        let engine = Engine::new();
+        let page = engine.render_html(
+            "<body style='margin:0'><div style='display:flex;width:300px;gap:12px'>\
+             <div style='width:60px;height:35px;flex-grow:1;background:#f00000'>Red</div>\
+             <div style='width:60px;height:35px;flex-grow:2;background:#0000f0'>Blue</div>\
+             </div></body>",
+            400,
+            180,
+        );
+        let rectangle = |r: u8, g: u8, b: u8| {
+            page.commands
+                .iter()
+                .find_map(|cmd| {
+                    let op_paint::PaintCommand::FillRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        color,
+                    } = cmd
+                    else {
+                        return None;
+                    };
+                    (color.r == r && color.g == g && color.b == b)
+                        .then_some((*x, *y, *width, *height))
+                })
+                .expect("grown flex item must paint")
+        };
+        let red = rectangle(240, 0, 0);
+        let blue = rectangle(0, 0, 240);
+        assert_eq!(red.2, 116, "60 base + 1/3 of 168 free px");
+        assert_eq!(blue.2, 172, "60 base + 2/3 of 168 free px");
+        assert_eq!(blue.0 - red.0, 128, "grown width plus 12px gap");
+        let pixels = op_platform_win::render_display_list_to_bgra(&page, 400, 180).unwrap();
+        assert_eq!(rgb_at(&pixels, 400, red.0 + 110, red.1 + 20), (240, 0, 0));
+        assert_eq!(rgb_at(&pixels, 400, blue.0 + 160, blue.1 + 20), (0, 0, 240));
+        assert_eq!(
+            rgb_at(&pixels, 400, red.0 + 120, red.1 + 20),
+            (255, 255, 255)
+        );
+    }
+
+    #[test]
+    fn r2b_justify_content_centers_and_distributes_per_line() {
+        let engine = Engine::new();
+        let mut origin = None;
+        for (alignment, first_x, second_x) in [
+            ("flex-start", 0, 70),
+            ("center", 85, 155),
+            ("flex-end", 170, 240),
+            ("space-between", 0, 240),
+            ("space-around", 42, 197),
+            ("space-evenly", 56, 183),
+        ] {
+            let html = format!(
+                "<body style='margin:0'><div style='display:flex;width:300px;gap:10px;justify-content:{alignment}'>\
+                <div style='width:60px;height:20px;background:#f00000'></div>\
+                <div style='width:60px;height:20px;background:#0000f0'></div>\
+                </div></body>"
+            );
+            let page = engine.render_html(&html, 400, 120);
+            let pos = |r: u8, b: u8| {
+                page.commands
+                    .iter()
+                    .find_map(|cmd| {
+                        let op_paint::PaintCommand::FillRect { x, color, .. } = cmd else {
+                            return None;
+                        };
+                        (color.r == r && color.b == b).then_some(*x)
+                    })
+                    .unwrap()
+            };
+            let base = *origin.get_or_insert(pos(240, 0));
+            assert_eq!(pos(240, 0) - base, first_x, "{alignment} first item");
+            assert_eq!(pos(0, 240) - base, second_x, "{alignment} second item");
+        }
+    }
+
+    #[test]
     fn r2a_wrapped_flex_cards_paint_separate_gdi_rows() {
         let engine = Engine::new();
         let page = engine.render_html(

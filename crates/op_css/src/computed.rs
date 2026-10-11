@@ -40,6 +40,16 @@ pub enum FlexWrap {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JustifyContent {
+    Start,
+    End,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Position {
     Static,
     Relative,
@@ -399,6 +409,9 @@ pub struct ComputedStyle {
     pub flex_wrap: FlexWrap,
     /// Flex row/column gaps in CSS pixels; stored as horizontal/vertical spacing.
     pub flex_gap: BorderSpacing,
+    pub justify_content: JustifyContent,
+    /// Positive unitless flex growth factor for this element as a flex item.
+    pub flex_grow: f32,
     pub position: Position,
     /// `auto` is None; integer stacking levels are only effective on positioned boxes.
     pub z_index: Option<i32>,
@@ -525,6 +538,8 @@ impl ComputedStyle {
             display: Display::Inline,
             flex_wrap: FlexWrap::NoWrap,
             flex_gap: BorderSpacing::ZERO,
+            justify_content: JustifyContent::Start,
+            flex_grow: 0.0,
             position: Position::Static,
             z_index: None,
             float_side: FloatSide::None,
@@ -1568,6 +1583,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             display: initial.display,
             flex_wrap: initial.flex_wrap,
             flex_gap: initial.flex_gap,
+            justify_content: initial.justify_content,
+            flex_grow: initial.flex_grow,
             position: initial.position,
             z_index: initial.z_index,
             float_side: initial.float_side,
@@ -1776,6 +1793,18 @@ fn apply_author_declarations(
             parent_style.map(|parent| parent.flex_gap),
             BorderSpacing::ZERO,
         );
+    }
+    if let Some((_, value)) = winning_value(declarations, "justify-content", parse_justify_content)
+    {
+        style.justify_content = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.justify_content),
+            JustifyContent::Start,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "flex-grow", parse_flex_grow) {
+        style.flex_grow =
+            resolve_non_inherited(value, parent_style.map(|parent| parent.flex_grow), 0.0);
     }
     if let Some((_, value)) = winning_value(declarations, "position", parse_position) {
         style.position = resolve_non_inherited(
@@ -2286,6 +2315,32 @@ fn parse_flex_wrap(tokens: &[TokenKind]) -> Option<Specified<FlexWrap>> {
         "unset" => Some(Specified::Unset),
         _ => None,
     }
+}
+
+fn parse_justify_content(tokens: &[TokenKind]) -> Option<Specified<JustifyContent>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "flex-start" | "start" | "left" | "normal" => Some(Specified::Value(JustifyContent::Start)),
+        "flex-end" | "end" | "right" => Some(Specified::Value(JustifyContent::End)),
+        "center" => Some(Specified::Value(JustifyContent::Center)),
+        "space-between" => Some(Specified::Value(JustifyContent::SpaceBetween)),
+        "space-around" => Some(Specified::Value(JustifyContent::SpaceAround)),
+        "space-evenly" => Some(Specified::Value(JustifyContent::SpaceEvenly)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_flex_grow(tokens: &[TokenKind]) -> Option<Specified<f32>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| 0.0));
+    }
+    let TokenKind::Number(value) = single_significant_token(tokens)? else {
+        return None;
+    };
+    let factor = parse_number(value)?;
+    (factor.is_finite() && (0.0..=4096.0).contains(&factor)).then_some(Specified::Value(factor))
 }
 
 /// CSS gap shorthand: first length is row gap, optional second is column gap.
@@ -4365,6 +4420,33 @@ mod tests {
         }
 
         find(document, document.root(), id).expect("expected id")
+    }
+
+    #[test]
+    fn r2b_flex_properties_are_noninherited_and_validate_values() {
+        let document = parse_document(
+            "<div id='host' style='display:flex;justify-content:space-around;flex-grow:2'>\
+             <span id='plain'>A</span>\
+             <span id='inherited' style='justify-content:inherit;flex-grow:inherit'>B</span>\
+             <span id='bad' style='justify-content:invalid;flex-grow:-1'>C</span>\
+             <span id='reset' style='justify-content:initial;flex-grow:unset'>D</span>\
+             </div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let style = |id| *computed.style_for(find_by_id(&document, id)).unwrap();
+        assert_eq!(style("host").justify_content, JustifyContent::SpaceAround);
+        assert_eq!(style("host").flex_grow, 2.0);
+        assert_eq!(style("plain").justify_content, JustifyContent::Start);
+        assert_eq!(style("plain").flex_grow, 0.0);
+        assert_eq!(
+            style("inherited").justify_content,
+            JustifyContent::SpaceAround
+        );
+        assert_eq!(style("inherited").flex_grow, 2.0);
+        assert_eq!(style("bad").justify_content, JustifyContent::Start);
+        assert_eq!(style("bad").flex_grow, 0.0);
+        assert_eq!(style("reset").justify_content, JustifyContent::Start);
+        assert_eq!(style("reset").flex_grow, 0.0);
     }
 
     #[test]

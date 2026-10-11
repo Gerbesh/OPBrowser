@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OPBrowser R2b - original Flexbox spacing and growth</title>
+<style>
+body { margin: 12px; background: #ebf0f5; color: #283746; font-family: Arial; }
+h1 { font-size: 25px; }
+h2 { font-size: 18px; }
+section { background: white; padding: 16px; margin-bottom: 18px; }
+.row { display: flex; width: 550px; height: 52px; gap: 12px; margin-bottom: 12px; background: #d9e3eb; }
+.item { height: 40px; width: 75px; background: #85b4dc; border: 1px solid #31618d; }
+.blue { background: #97c4f0; }
+.green { background: #94d2a8; }
+.orange { background: #f4d29a; }
+.center { justify-content: center; }
+.between { justify-content: space-between; }
+.around { justify-content: space-around; }
+.evenly { justify-content: space-evenly; }
+.growing { display: flex; width: 550px; gap: 12px; background: #d9e3eb; }
+.growing .item { width: 70px; height: 58px; }
+.one { flex-grow: 1; }
+.two { flex-grow: 2; }
+.three { flex-grow: 3; }
+</style>
+</head>
+<body>
+<h1>OPBrowser R2b: free-space distribution</h1>
+<p>Everything below is laid out and painted by the original OPBrowser CSS and GDI pipeline.</p>
+<section>
+<h2>justify-content: center</h2>
+<div class="row center"><div class="item blue">One</div><div class="item green">Two</div><div class="item orange">Three</div></div>
+<h2>justify-content: space-between</h2>
+<div class="row between"><div class="item blue">One</div><div class="item green">Two</div><div class="item orange">Three</div></div>
+<h2>justify-content: space-around</h2>
+<div class="row around"><div class="item blue">One</div><div class="item green">Two</div><div class="item orange">Three</div></div>
+<h2>justify-content: space-evenly</h2>
+<div class="row evenly"><div class="item blue">One</div><div class="item green">Two</div><div class="item orange">Three</div></div>
+</section>
+<section>
+<h2>flex-grow: proportional widths</h2>
+<div class="growing"><div class="item blue one">1x</div><div class="item green two">2x</div><div class="item orange three">3x</div></div>
+<p>Limitations: row-direction only; no flex-shrink, flex-basis, shorthand flex, align-items, column layout or CSS Grid.</p>
+</section>
+</body>
+</html>

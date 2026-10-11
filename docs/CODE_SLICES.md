@@ -16,6 +16,21 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S54 - Computed justify and proportional grow to native pixels (R2b)
+
+IMPLEMENTED. op_css::computed::parse_justify_content and
+parse_flex_grow resolve noninherited CSS values. Original
+op_layout::flow::flex_row_atomic computes flex lines, distributes
+positive space according to grow weights, and reflows the actual
+element with the new width. Remaining free space is allocated
+according to start/end/center/between/around/evenly justification.
+Display list and Win32 GDI use unchanged original paint path;
+native pixel and CSS cascade tests verify placement and sizing.
+Fixture: examples/css/flex-distribution.html.
+
+No flex shrink, basis, shorthand, direction, align-items/order,
+layout constraints or full modern web parity yet.
+
 ## S53 - Computed wrap/gap to rendered multi-line flex cards (R2a)
 
 IMPLEMENTED in the original CSS/layout/paint pipeline:

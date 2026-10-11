@@ -711,3 +711,16 @@ The immutable upstream revision 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d
 and both pinned manifests are unchanged. R2b must add proper
 logical margins and margin-trim (and flexible sizing) instead of
 weakening supported gap to restore an accidental test pass.
+
+## 2026-10-11 - R2b frozen visual regressions
+
+After adding bounded positive flex-grow and main-axis justify-content,
+the unchanged upstream WPT Static v1 selection reports 194/200 PASS,
+6 FAIL (three CSS Color, three modern flex margin-trim mismatches),
+zero render errors. WPT Positioning v1 remains 54/100 PASS,
+46 FAIL, zero render errors. These are the exact R2a scores;
+the new layout behavior adds no additional mismatch in these suites.
+Standalone CSS and native GDI pixel tests cover the added flex subset,
+not comprehensive WPT Flexbox or production website readiness.
+
+

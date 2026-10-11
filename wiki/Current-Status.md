@@ -234,6 +234,22 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## R2b: proportional flex growth and justify-content
+
+The original OPBrowser row Flexbox now distributes extra space
+among children with nonnegative flex-grow factors. Unlike merely
+stretching a colored rectangle, child text/paint is laid out again
+at the assigned width. CSS justify-content supports flex-start,
+flex-end, center, space-between, space-around and space-evenly.
+The layout keeps independent calculations for each wrap line.
+CSS cascade and genuine Win32 GDI RGB tests pass.
+
+Open examples/css/flex-distribution.html for a manual demonstration.
+This is not full Flexbox: flex-shrink, flex-basis/shorthand,
+flex-direction, vertical align-items, ordering and precise
+intrinsic constraints are incomplete. Frozen WPT remains 194/200
+Static and 54/100 Positioning, not proof of website compatibility.
+
 ## R2a: multi-line Flexbox rows and gaps
 
 The original CSS engine now recognizes flex-wrap:wrap, nowrap and

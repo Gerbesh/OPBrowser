@@ -16,6 +16,27 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## R2b: proportional flex growth and distributed row positions
+
+op_css::ComputedStyle::justify_content and flex_grow enter through
+the original noninherited CSS cascade (unsupported or invalid values
+are rejected). op_layout::flow::FlexItem retains the source NodeId,
+style and link so a row item can be measured at its natural width,
+grouped into a flex line, and then reflowed at a proportional assigned
+width instead of merely stretching a pre-painted rectangle.
+
+After growth, justify-content allocates the unused line width to
+leading/trailing space or between/around/evenly slots. Each line is
+handled independently; default flex-start retains original placement.
+Render lists and native GDI pixels contain the final item widths and
+text positions. Tests cover CSS keywords, proportional widths,
+all supported justify modes and true native RGB sample pixels.
+
+LIMITS: positive grow only, row direction only; no negative shrink,
+basis, shorthand flex, flex-direction, cross-axis alignment, item
+order or full min-content/bidi behavior. WPT Static and Positioning
+frozen sets remain 194/200 and 54/100; no broad Flexbox compliance.
+
 ## R2a: computed flex-wrap and gap to multi-line native pixels
 
 The original op_css::ComputedStyle parses flex-wrap:wrap and the gap

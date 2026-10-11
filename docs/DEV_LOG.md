@@ -3417,3 +3417,13 @@ This file is append-only project history.
 - Added layout regressions for narrow/wide containers, nowrap behavior, horizontal/vertical gaps and following block position. Added a native Win32 GDI bitmap regression showing three colored flex cards on correctly separated rows and a reusable manual fixture examples/css/flex-wrap-cards.html.
 - This is only a bounded first visual slice, NOT CSS Flexbox conformance: grow/shrink, direction, justify-content, align-items, ordering, intrinsic min-content, Grid and real-site comparison remain open. Full JS GC is also missing.
 - Independent unmodified WPT Static v1 decreased from 197/200 to 194/200 (zero render errors): three modern flex margin-trim tests were accidental passes while gap was ignored in their references. WPT Positioning stays 54/100. Do not exclude the three failures; implement logical margins/margin-trim in a later CSS slice.
+
+## 2026-10-11 - R2b positive flex-grow and main-axis justify-content
+
+- Added noninherited computed CSS parsing for bounded flex-grow and six justify-content positions, including global keyword resolution. Unrecognized negative factors are rejected.
+- Reworked the row formatter to retain each original element's node, style and hyperlink while forming flex lines; growth distributes positive spare width by weight, then recomputes the entire element paint/text at the new width. Justification distributes the residual space per line without changing default start placement.
+- Added original native GDI bitmap tests that verify two grown backgrounds reach exactly 116px and 172px, their painted RGB pixels, and all supported center/end/between/around/evenly positions. CSS computed tests confirm noninheritance, inherit/reset and invalid inputs.
+- Added examples/css/flex-distribution.html, updated Code Graph, Code Slices and Wiki. Known limitations: positive growth only; no flex-shrink/basis/shorthand, cross-axis alignment, direction, order, full min/max constraints or CSS Grid. No JS GC has been implemented.
+- Unchanged pinned WPT Static v1 stays 194/200 with six known failures; Positioning v1 stays 54/100 with 46 known failures and zero render errors. No test manifest was altered.
+
+

@@ -6,9 +6,9 @@ use super::*;
 use op_css::{
     BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide, Clear,
     ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Direction, Display,
-    FlexWrap, FloatSide, FontStyle as CssFontStyle, InsetEdges, LengthPercentage, MarginEdges,
-    MarginValue, Overflow, PaddingEdges, Position, PseudoElement, TableLayout, TextAlign,
-    TextTransform, VerticalAlign, Visibility, WhiteSpace,
+    FlexWrap, FloatSide, FontStyle as CssFontStyle, InsetEdges, JustifyContent, LengthPercentage,
+    MarginEdges, MarginValue, Overflow, PaddingEdges, Position, PseudoElement, TableLayout,
+    TextAlign, TextTransform, VerticalAlign, Visibility, WhiteSpace,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -332,6 +332,8 @@ struct Style {
     inline: InlineStyle,
     flex_wrap: FlexWrap,
     flex_gap: BorderSpacing,
+    justify_content: JustifyContent,
+    flex_grow: f32,
     inline_ancestor_dx: i32,
     inline_ancestor_dy: i32,
     direction: Direction,
@@ -360,6 +362,16 @@ struct Style {
     table_layout: TableLayout,
     caption_side: CaptionSide,
     overflow: Overflow,
+}
+
+/// An atomic flex item retains its element source so growth can reflow
+/// its text and decoration at the assigned width, not merely stretch ink.
+struct FlexItem<'a> {
+    atomic: InlineAtomic,
+    node: Option<NodeId>,
+    style: Style,
+    href: Option<&'a str>,
+    grow: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -1758,29 +1770,131 @@ impl<'a> Context<'a, '_> {
             image_boxes: Vec::new(),
             order: Vec::new(),
         };
-        let mut x = 0i32;
-        let mut y = 0i32;
-        let mut line_height = 0i32;
         let limit = containing_width.max(1);
         let row_gap = style.flex_gap.vertical_px.round().clamp(0.0, 4096.0) as i32;
         let column_gap = style.flex_gap.horizontal_px.round().clamp(0.0, 4096.0) as i32;
+        let mut lines: Vec<Vec<FlexItem<'a>>> = Vec::new();
+        let mut current: Vec<FlexItem<'a>> = Vec::new();
+        let mut current_width = 0i32;
+        // Break flex lines using hypothetical item widths before growth.
         for child in children_out {
-            let width = child.width.max(0);
-            let needed = x.saturating_add(column_gap).saturating_add(width);
-            if style.flex_wrap == FlexWrap::Wrap && x > 0 && needed > limit {
-                y = y.saturating_add(line_height).saturating_add(row_gap);
-                x = 0;
-                line_height = 0;
-            } else if x > 0 {
-                x = x.saturating_add(column_gap);
+            let width = child.atomic.width.max(0);
+            let next = current_width
+                .saturating_add(if current.is_empty() { 0 } else { column_gap })
+                .saturating_add(width);
+            if style.flex_wrap == FlexWrap::Wrap && !current.is_empty() && next > limit {
+                lines.push(std::mem::take(&mut current));
+                current_width = 0;
             }
-            line_height = line_height.max(child.height);
-            append_atomic(&mut row, child, x, y);
-            x = x.saturating_add(width);
-            row.width = row.width.max(x);
+            if !current.is_empty() {
+                current_width = current_width.saturating_add(column_gap);
+            }
+            current_width = current_width.saturating_add(width);
+            current.push(child);
         }
-        row.height = y.saturating_add(line_height);
-        row.baseline = row.height;
+        if !current.is_empty() {
+            lines.push(current);
+        }
+
+        let mut y = 0i32;
+        for (line_index, mut line) in lines.into_iter().enumerate() {
+            if line_index > 0 {
+                y = y.saturating_add(row_gap);
+            }
+            let count = line.len();
+            let gap_total = column_gap.saturating_mul(count.saturating_sub(1) as i32);
+            let occupied = line
+                .iter()
+                .map(|item| item.atomic.width.max(0))
+                .fold(gap_total, i32::saturating_add);
+            let free = limit.saturating_sub(occupied).max(0);
+            let total_grow: f64 = line.iter().map(|item| f64::from(item.grow)).sum();
+            if free > 0 && total_grow > 0.0 {
+                let mut granted = 0i32;
+                let last = line
+                    .iter()
+                    .rposition(|item| item.grow > 0.0 && item.node.is_some());
+                for (i, item) in line.iter_mut().enumerate() {
+                    let Some(node) = item.node else { continue };
+                    if item.grow <= 0.0 {
+                        continue;
+                    }
+                    let extra = if Some(i) == last {
+                        free.saturating_sub(granted)
+                    } else {
+                        ((f64::from(free) * f64::from(item.grow) / total_grow).floor() as i32)
+                            .clamp(0, free.saturating_sub(granted))
+                    };
+                    granted = granted.saturating_add(extra);
+                    if extra > 0 {
+                        // Re-layout children at their assigned width, not just
+                        // their background rectangles; text must also reflow.
+                        let mut zero = item.style;
+                        zero.width = Some(LengthPercentage::Px(0.0));
+                        let metrics = resolve_block_horizontal(zero, limit);
+                        // border_width has a 1px minimum even without borders.
+                        // Count only real decoration widths, not that safety floor.
+                        let extras = metrics
+                            .padding
+                            .left
+                            .saturating_add(metrics.padding.right)
+                            .saturating_add(metrics.border.left.width)
+                            .saturating_add(metrics.border.right.width);
+                        let content = item
+                            .atomic
+                            .width
+                            .saturating_add(extra)
+                            .saturating_sub(metrics.margin_left)
+                            .saturating_sub(metrics.margin_right)
+                            .saturating_sub(extras)
+                            .clamp(0, 100_000);
+                        let specified = if item.style.box_sizing == BoxSizing::BorderBox {
+                            content.saturating_add(extras)
+                        } else {
+                            content
+                        };
+                        let mut grown = item.style;
+                        grown.width = Some(LengthPercentage::Px(specified as f32));
+                        item.atomic = self.flex_element_atomic(node, item.href, grown, limit);
+                    }
+                }
+            }
+            let used = line
+                .iter()
+                .map(|item| item.atomic.width.max(0))
+                .fold(gap_total, i32::saturating_add);
+            let remaining = limit.saturating_sub(used).max(0);
+            let mut x = 0i32;
+            let mut line_height = 0i32;
+            for (i, child) in line.into_iter().enumerate() {
+                if i > 0 {
+                    x = x.saturating_add(column_gap);
+                }
+                let offset = match style.justify_content {
+                    JustifyContent::Start => 0,
+                    JustifyContent::End => remaining,
+                    JustifyContent::Center => remaining / 2,
+                    JustifyContent::SpaceBetween if count > 1 => {
+                        (i64::from(remaining) * i as i64 / (count - 1) as i64) as i32
+                    }
+                    JustifyContent::SpaceAround => {
+                        (i64::from(remaining) * (2 * i + 1) as i64 / (2 * count) as i64) as i32
+                    }
+                    JustifyContent::SpaceEvenly => {
+                        (i64::from(remaining) * (i + 1) as i64 / (count + 1) as i64) as i32
+                    }
+                    _ => 0,
+                };
+                let width = child.atomic.width.max(0);
+                line_height = line_height.max(child.atomic.height);
+                append_atomic(&mut row, child.atomic, x.saturating_add(offset), y);
+                x = x.saturating_add(width);
+                row.width = row.width.max(x.saturating_add(offset));
+            }
+            y = y.saturating_add(line_height);
+        }
+        row.height = y;
+        row.baseline = y;
         row
     }
 
@@ -1791,7 +1905,7 @@ impl<'a> Context<'a, '_> {
         inherited: Style,
         containing_width: i32,
         pending: &mut Vec<Item<'a>>,
-        output: &mut Vec<InlineAtomic>,
+        output: &mut Vec<FlexItem<'a>>,
     ) {
         for id in nodes {
             let Some(node) = self.document.node(*id) else {
@@ -1828,12 +1942,15 @@ impl<'a> Context<'a, '_> {
                         );
                     } else {
                         self.flush_anonymous_flex_item(pending, inherited, output);
-                        output.push(self.flex_element_atomic(
-                            *id,
-                            current_href,
-                            current,
-                            containing_width,
-                        ));
+                        let atomic =
+                            self.flex_element_atomic(*id, current_href, current, containing_width);
+                        output.push(FlexItem {
+                            atomic,
+                            node: Some(*id),
+                            style: current,
+                            href: current_href,
+                            grow: current.flex_grow,
+                        });
                     }
                 }
                 NodeKind::Document => {
@@ -1856,7 +1973,7 @@ impl<'a> Context<'a, '_> {
         &mut self,
         items: &mut Vec<Item<'a>>,
         style: Style,
-        output: &mut Vec<InlineAtomic>,
+        output: &mut Vec<FlexItem<'a>>,
     ) {
         if items.is_empty() {
             return;
@@ -1898,14 +2015,20 @@ impl<'a> Context<'a, '_> {
             .unwrap_or(0)
             .max(0);
         let height = lines.bottom().max(0);
-        output.push(InlineAtomic {
-            width,
-            height,
-            baseline: height,
-            decorations: lines.decorations,
-            text_boxes: lines.text_boxes,
-            image_boxes: lines.image_boxes,
-            order: lines.order,
+        output.push(FlexItem {
+            atomic: InlineAtomic {
+                width,
+                height,
+                baseline: height,
+                decorations: lines.decorations,
+                text_boxes: lines.text_boxes,
+                image_boxes: lines.image_boxes,
+                order: lines.order,
+            },
+            node: None,
+            style,
+            href: None,
+            grow: 0.0,
         });
     }
 
@@ -5804,6 +5927,8 @@ fn computed_style(style: ComputedStyle) -> Style {
     Style {
         flex_wrap: style.flex_wrap,
         flex_gap: style.flex_gap,
+        justify_content: style.justify_content,
+        flex_grow: style.flex_grow,
         inline: InlineStyle {
             font_size,
             line_height: used_line_height(style.line_height, font_size),
@@ -5966,6 +6091,8 @@ fn default_style() -> Style {
     Style {
         flex_wrap: FlexWrap::NoWrap,
         flex_gap: BorderSpacing::ZERO,
+        justify_content: JustifyContent::Start,
+        flex_grow: 0.0,
         inline: InlineStyle {
             font_size: 18,
             line_height: 24,
@@ -6033,6 +6160,8 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
     Style {
         flex_wrap: FlexWrap::NoWrap,
         flex_gap: BorderSpacing::ZERO,
+        justify_content: JustifyContent::Start,
+        flex_grow: 0.0,
         inline: fallback_inline_style(tag, inherited.inline),
         inline_ancestor_dx: inherited.inline_ancestor_dx,
         inline_ancestor_dy: inherited.inline_ancestor_dy,
