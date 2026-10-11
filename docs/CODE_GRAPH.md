@@ -16,6 +16,34 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## R1.1: JS scrollTop and nested Win32 wheel into original pixels
+
+The page-owning original JsRuntime stores per-element scrollTop
+requests (bounded by node count). For documents without JavaScript,
+PreparedDocument holds native scroll offsets independently. A shared
+layout_document_with_scrolling accepts the current scroll map:
+flow::Context computes content scroll ranges from natural vs
+specified height, translates descendant decoration/text/image
+outputs, click hit rectangles, nested clip scopes and nested
+container bounds while retaining the original block flow height.
+Auto/scroll boxes now clip through R1.0's original display-list/GDI
+pipeline; hidden boxes permit programmatic but not wheel scrolling.
+
+op_engine::Engine::scroll_at selects the innermost scrollable
+box that can move and repaints, so wheel input chains to a parent
+at the inner boundary or falls back to document scrolling. Win32
+NavigationEvent::Scroll routes screen-to-document wheel positions
+through the existing renderer worker; the UI retains document
+scroll if no nested element accepted the wheel. Engine::tick_timers
+repaints scrollTop-only JS mutations even when text/DOM remains
+unchanged. Native GDI bitmap tests and original hit-target tests
+cover this cross-crate path.
+
+This is bounded vertical scrolling. Visible scrollbars, overflow
+axis longhands, full JS max-range clamping and advanced positioned
+fragment behavior are not implemented. Native page-scrolling
+coordinates still use the existing window SCROLL_Y.
+
 ## R1.0: CSS overflow -> native GDI clipping and hit testing
 
 Original op_css::Overflow is a noninherited computed property.

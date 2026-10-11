@@ -221,6 +221,17 @@ pub struct LayoutClips {
     pub images: Vec<Option<ClipRect>>,
 }
 
+/// Layout-coordinate bounds and available vertical scroll range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollContainer {
+    pub node: NodeId,
+    pub rect: ClipRect,
+    pub scroll_top: i32,
+    pub max_scroll_top: i32,
+    /// Hidden overflow permits script scrolling but not wheel input.
+    pub wheel_scrollable: bool,
+}
+
 /// Hit rectangles for the initial click-event block target subset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClickRegion {
@@ -241,6 +252,7 @@ pub struct LayoutTree {
     pub order: Vec<LayoutItem>,
     pub paint_groups: Vec<PaintGroup>,
     pub clips: LayoutClips,
+    pub scroll_containers: Vec<ScrollContainer>,
     pub click_regions: Vec<ClickRegion>,
 }
 
@@ -361,13 +373,34 @@ pub fn layout_document_with_backgrounds_and_resources(
     computed_styles: &ComputedStyleMap,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
+    layout_document_with_scrolling(
+        document,
+        viewport_width,
+        viewport_height,
+        images_and_backgrounds,
+        generated_images,
+        (computed_styles, &std::collections::HashMap::new()),
+        measurer,
+    )
+}
+
+/// Layout with page-owned per-element vertical scroll offsets.
+pub fn layout_document_with_scrolling(
+    document: &Document,
+    viewport_width: i32,
+    viewport_height: i32,
+    images_and_backgrounds: (&ImageResources, &ImageResources),
+    generated_images: &GeneratedImageResources,
+    styles_and_scroll: (&ComputedStyleMap, &std::collections::HashMap<usize, i32>),
+    measurer: &mut dyn TextMeasurer,
+) -> LayoutTree {
     flow::layout(
         document,
         viewport_width,
         viewport_height,
         images_and_backgrounds,
         generated_images,
-        computed_styles,
+        styles_and_scroll,
         measurer,
     )
 }

@@ -623,6 +623,15 @@ sources and a sticky error result.
 Reproduce:
   cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
 
+R1.1 rendering baseline (11 October 2026), unchanged pinned
+manifest/revision: WPT Static v1 **197/200 exact** (3 historic
+failures); WPT Positioning v1 **54/100 exact** (46 fails), from
+53/100 previously. Both have zero render errors. Native
+project-owned tests cover JS scrollTop pixel changes, correct
+post-scroll hit testing, nested wheel chaining and timer-only
+scroll repaint. No representative WPT overflow scroll corpus
+exists yet; this is not a general CSS readiness score.
+
 R1.0 rendering baseline (11 October 2026): both pinned, immutable
 WPT Static v1 and WPT Positioning v1 were rerun through the same
 native Windows pixel comparator. Static exact **197/200**, three

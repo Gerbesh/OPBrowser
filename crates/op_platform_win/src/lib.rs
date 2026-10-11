@@ -48,6 +48,7 @@ pub enum NavigationEvent {
     Navigate(String),
     FollowLink(String),
     Click { x: i32, y: i32 },
+    Scroll { x: i32, y: i32, delta_y: i32 },
     Back,
     Forward,
     Reload,
@@ -245,6 +246,12 @@ impl NativeBrowserWindow {
         }
     }
 
+    /// Existing document scroll fallback for wheel input which no nested
+    /// original CSS overflow container accepted.
+    pub fn scroll_document_by(&self, delta_y: i32) {
+        scroll_document_delta(self.hwnd, delta_y);
+    }
+
     pub fn present(&self, address: &str, display_list: DisplayList) {
         self.set_address(address);
         set_display_list(display_list);
@@ -395,6 +402,31 @@ impl NativeBrowserWindow {
                         })
                 }
             }
+            WM_MOUSEWHEEL if message.hwnd == self.hwnd => {
+                let mut point = POINT {
+                    x: (message.lParam as u16 as i16) as i32,
+                    y: ((message.lParam >> 16) as u16 as i16) as i32,
+                };
+                unsafe {
+                    ScreenToClient(self.hwnd, &mut point);
+                }
+                let mut client: RECT = unsafe { zeroed() };
+                unsafe {
+                    GetClientRect(self.hwnd, &mut client);
+                }
+                let delta = ((message.wParam >> 16) as u16 as i16) as i32;
+                let delta_y = -(delta / 120) * 72;
+                (delta_y != 0
+                    && point.x >= 0
+                    && point.x < client.right
+                    && point.y >= TOOLBAR_HEIGHT
+                    && point.y < client.bottom)
+                    .then_some(NavigationEvent::Scroll {
+                        x: point.x,
+                        y: point.y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst),
+                        delta_y,
+                    })
+            }
             WM_KEYDOWN
                 if message.wParam == VK_RETURN as usize
                     && message.hwnd == unsafe { GetDlgItem(self.hwnd, ADDRESS) } =>
@@ -419,6 +451,18 @@ impl NativeBrowserWindow {
                 Some(NavigationEvent::Resize)
             }
             _ => None,
+        }
+    }
+}
+
+fn scroll_document_delta(hwnd: HWND, delta_y: i32) {
+    let limit = max_scroll(hwnd);
+    let old = SCROLL_Y.load(Ordering::SeqCst);
+    let next = old.saturating_add(delta_y).clamp(0, limit);
+    if next != old {
+        SCROLL_Y.store(next, Ordering::SeqCst);
+        unsafe {
+            InvalidateRect(hwnd, null(), 1);
         }
     }
 }
@@ -551,15 +595,7 @@ unsafe extern "system" fn window_proc(
         }
         WM_MOUSEWHEEL => {
             let delta = ((wparam >> 16) as u16 as i16) as i32;
-            let max_scroll = max_scroll(hwnd);
-            let old = SCROLL_Y.load(Ordering::SeqCst);
-            SCROLL_Y.store(
-                (old - delta / 120 * 72).clamp(0, max_scroll),
-                Ordering::SeqCst,
-            );
-            unsafe {
-                InvalidateRect(hwnd, null(), 1);
-            }
+            scroll_document_delta(hwnd, -(delta / 120) * 72);
             0
         }
         WM_PAINT => {

@@ -367,9 +367,9 @@ pub enum Overflow {
 
 impl Overflow {
     pub fn clips(self) -> bool {
-        // Scroll and auto must not hide content until real scroll offsets,
-        // scrollbars and input routing land. R1.0 only implements hidden/clip.
-        matches!(self, Self::Hidden | Self::Clip)
+        // R1.1 supplies layout-owned scroll offsets. A scrollable box
+        // clips even when no scrollbars are painted yet.
+        self != Self::Visible
     }
 }
 

@@ -12,7 +12,7 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 
 | Priority | Workstream | Current reality | Next deliverable and exit gate |
 | --- | --- | --- | --- |
-| **P0-A** | **Usable rendering and scrolling** | **R1.0 DONE:** CSS `overflow:hidden/clip` clips normal block descendants in original layout/paint/GDI and hidden hit regions, including nested bounds. `scroll`/`auto` and axis longhands have no functional scrolling yet. | **R1.1 NEXT:** per-element scroll offsets and `scrollTop`, nested wheel input, paint/hit-test translations, scrollbar ranges, and original WPT overflow fixtures. |
+| **P0-A** | **Usable rendering and scrolling** | **R1.0–R1.1 DONE (bounded):** CSS hidden/clip and auto/scroll clipping, vertical `scrollTop`, page-owned scroll offsets even without JS, nested Win32 wheel-to-container routing, boundary fallback, native pixel/hit-test alignment. | **R1.2 NEXT:** exact `scrollTop` range reporting, visible scrollbars, horizontal overflow-x/y, positioned/inline clipping, independent overflow WPT corpus and real-page visual/input smoke. |
 | **P0-B** | **Memory safety / original VM GC** | JS heap and environment arena retain all allocations until runtime destruction, both with 100,000-slot budgets. M4.35 exposes allocation counters; **no GC yet**. | G1: explicit traced roots and non-moving reachability verification. G2: reclaimed slots with safe handles, cycles/closures/DOM/timer/Promise references. G3: bounded automatic GC safepoints and long-session stress. See [GC_IMPLEMENTATION.md](GC_IMPLEMENTATION.md). |
 | **P1-C** | **Flexbox with multiple lines** | A bounded single-line row formatter exists. | R2: flex-wrap, lines, gap, order, cross-axis layout, min-content constraints. Test resize and 2D pixel positions against frozen fixtures. |
 | **P1-D** | **CSS Grid foundation** | Table grid track sizing exists; it is **not** CSS Grid Layout. | R3: explicit/auto tracks, fraction units, item placement and basic gap, then implicit tracks and minmax. Screenshot+geometry tests. |
@@ -35,7 +35,7 @@ P0-A and P0-B are **both mandatory**; a renderer that cannot scroll or that exha
 | Suite | Latest recorded measurement | What it does **not** prove |
 | --- | --- | --- |
 | Pinned WPT Static v1 | 197/200 exact; 198/200 with source-authored fuzzy rules | Only 200 selected reftests; not broad CSS or visual web readiness |
-| Pinned WPT Positioning v1 | 53/100 exact | Substantial positioned-layout gaps remain |
+| Pinned WPT Positioning v1 | 54/100 exact (R1.1) | Substantial positioned-layout gaps remain |
 | Pinned Test262 Parser v1 | 523/1,983 attempted | Parser subset, not whole ECMAScript |
 | Pinned Test262 Runtime v2 | 78/179 attempted; 110 explicitly SKIP | Handpicked language/runtime families, not overall JS compatibility |
 | Pinned WPT DOM/Events v8 (M4.35) | 21/21 attempted files PASS, 0 FAIL, 3 SKIP; 24 selected | Manually selected synchronous files, not the official full WPT harness |
@@ -44,8 +44,8 @@ P0-A and P0-B are **both mandatory**; a renderer that cannot scroll or that exha
 
 ## Immediate implementation sequence
 
-- Close M4.35 regression fixes and freeze the old WPT sample as a test guardrail; **stop growing Events API for its own sake**.
-- R1.0 measure scroll/clipping capabilities with reproducing HTML pages and current WPT overflow cases; R1.1 build scrollable box boundaries/clip stacks; R1.2 native wheel/hit testing; R1.3 programmatic scroll APIs.
+- R1.0–R1.1 DONE: block clipping and vertical JS/native scrolling with original GDI pixel and hit-target checks; retain pinned WPT baselines.
+- R1.2 NEXT: visible scrollbars, horizontal axes, scrollTop max-range reporting, complex positioned/inline clipping, independent WPT overflow cases and real-page corpus.
 - G1.0 enumerate all heap roots and record mark-only reachability statistics without freeing; G1.1 add generation-safe stable handles / free list; G2 collect both objects and captured environments; G3 automatic bounded collections with performance baselines.
 - Only then expand flex-wrap, CSS Grid and form fidelity in visible, testable increments.
 

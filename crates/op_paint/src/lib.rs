@@ -450,6 +450,7 @@ mod tests {
             ],
             paint_groups: vec![],
             clips: op_layout::LayoutClips::default(),
+            scroll_containers: vec![],
             click_regions: vec![],
         };
         let result = build_display_list(&layout, 60);
@@ -511,6 +512,7 @@ mod tests {
             ],
             paint_groups: vec![],
             clips: op_layout::LayoutClips::default(),
+            scroll_containers: vec![],
             click_regions: vec![],
         };
         let ordered_x: Vec<_> = build_display_list(&layout, 20)
@@ -582,6 +584,7 @@ mod tests {
             order: vec![],
             paint_groups: vec![],
             clips: op_layout::LayoutClips::default(),
+            scroll_containers: vec![],
             click_regions: vec![],
         };
         let commands = build_display_list(&layout, 90).commands;
@@ -695,6 +698,7 @@ mod tests {
             order: vec![],
             paint_groups: vec![],
             clips: op_layout::LayoutClips::default(),
+            scroll_containers: vec![],
             click_regions: vec![],
         };
 
@@ -806,6 +810,7 @@ mod tests {
             order: vec![LayoutItem::Text(0)],
             paint_groups: vec![],
             clips: op_layout::LayoutClips::default(),
+            scroll_containers: vec![],
             click_regions: vec![],
         };
 
@@ -851,6 +856,7 @@ mod tests {
             order: vec![LayoutItem::Text(0)],
             paint_groups: vec![],
             clips: op_layout::LayoutClips::default(),
+            scroll_containers: vec![],
             click_regions: vec![],
         };
 

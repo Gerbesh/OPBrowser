@@ -16,6 +16,27 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S48 - Nested Win32 wheel and JS scrollTop through layout and paint (R1.1)
+
+IMPLEMENTED bounded vertical scrolling. Original JsRuntime
+provides scrollTop and scroll-dirty signaling when scripts exist;
+PreparedDocument retains offsets when they do not. op_layout
+computes scrollable ranges, translates child ink/hits and nested
+clips without altering normal flow height, and op_paint preserves
+per-leaf clip identities through native GDI. op_engine::scroll_at
+routes wheel to the innermost movable container, chains at edges,
+and falls back to document scroll when none applies.
+op_platform_win emits wheel coordinates via NavigationEvent::Scroll
+and keeps the original page-scroll path. Timer callbacks that only
+modify scrollTop now trigger native repaint. Regression tests check
+GDI pixels, correct post-scroll click targets, timer reflow,
+nested wheel chaining and pages without JavaScript.
+
+Remaining: visible scrollbars, overflow-x/y, horizontal scroll,
+full max-range JS property synchronization and independent
+upstream WPT overflow selection. Static v1 remains 197/200;
+Positioning v1 improved from 53/100 to 54/100.
+
 ## S47 - CSS overflow clipping through native pixels/hit tests (R1.0)
 
 Implemented: op_css cascades `overflow:hidden/clip` into layout.

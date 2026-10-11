@@ -74,6 +74,7 @@ struct LoadResult {
     reload: bool,
     viewport: (i32, i32),
     reflow: bool,
+    fallback_scroll: Option<i32>,
 }
 
 fn main() {
@@ -148,6 +149,7 @@ fn main() {
                                 reload: history.current().is_some(),
                                 viewport: last_viewport,
                                 reflow: true,
+                                fallback_scroll: None,
                             })
                             .is_err()
                         {
@@ -165,8 +167,11 @@ fn main() {
             last_viewport = (width, height);
             let reflow = matches!(
                 event,
-                NavigationEvent::Resize | NavigationEvent::Click { .. }
+                NavigationEvent::Resize
+                    | NavigationEvent::Click { .. }
+                    | NavigationEvent::Scroll { .. }
             );
+            let mut fallback_scroll = None;
             let page = match event {
                 NavigationEvent::Navigate(source) => {
                     engine.navigate(&source, width, height).map(Some)
@@ -179,6 +184,13 @@ fn main() {
                 NavigationEvent::Reload => engine.reload(width, height),
                 NavigationEvent::Resize => Ok(engine.reflow(width, height)),
                 NavigationEvent::Click { x, y } => Ok(engine.click_at(x, y, width, height)),
+                NavigationEvent::Scroll { x, y, delta_y } => {
+                    let page = engine.scroll_at(x, y, delta_y, width, height);
+                    if page.is_none() {
+                        fallback_scroll = Some(delta_y);
+                    }
+                    Ok(page)
+                }
                 NavigationEvent::Poll => continue,
             }
             .map_err(|error| error.to_string());
@@ -191,6 +203,7 @@ fn main() {
                     reload: history.current().is_some(),
                     viewport: (width, height),
                     reflow,
+                    fallback_scroll,
                 })
                 .is_err()
             {
@@ -292,7 +305,12 @@ fn main() {
                                 }
                             }
                         }
-                        Ok(None) => window.set_status(last_error.as_deref().unwrap_or("Ready")),
+                        Ok(None) => {
+                            if let Some(delta) = result.fallback_scroll {
+                                window.scroll_document_by(delta);
+                            }
+                            window.set_status(last_error.as_deref().unwrap_or("Ready"));
+                        },
                         Err(error) => {
                             eprintln!("OPBrowser document load failed: {error}");
                             last_error = Some(format!("Load failed: {error}"));
@@ -354,7 +372,11 @@ fn main() {
             if event == NavigationEvent::Resize && (width, height) == presented_viewport {
                 return;
             }
-            let reflow = matches!(event, NavigationEvent::Resize | NavigationEvent::Click { .. });
+            let reflow = matches!(
+                event,
+                NavigationEvent::Resize | NavigationEvent::Click { .. }
+                    | NavigationEvent::Scroll { .. }
+            );
             if commands
                 .send(LoadCommand {
                     event,
@@ -390,6 +412,49 @@ mod overflow_tests {
     fn rgb_at(pixels: &[u8], width: i32, x: i32, y: i32) -> (u8, u8, u8) {
         let index = ((y * width + x) * 4) as usize;
         (pixels[index + 2], pixels[index + 1], pixels[index])
+    }
+
+    #[test]
+    fn r11_scroll_top_moves_native_pixels_inside_overflow_auto() {
+        let mut engine = Engine::new();
+        let without = engine.set_html_page(
+            "<body><div id='scroll' style='width:140px;height:40px;overflow:auto'>\
+             <div style='width:140px;height:40px;background:#ff0000'></div>\
+             <div style='width:140px;height:40px;background:#0000ff'></div>\
+             </div><script>document.getElementById('scroll').scrollTop=40;</script></body>",
+            500,
+            320,
+        );
+        let rect = without
+            .commands
+            .iter()
+            .find_map(|cmd| {
+                let op_paint::PaintCommand::Clipped { rect, command } = cmd else {
+                    return None;
+                };
+                let op_paint::PaintCommand::FillRect { color, .. } = command.as_ref() else {
+                    return None;
+                };
+                (color.b == 255 && color.r == 0).then_some(*rect)
+            })
+            .expect("blue content is clipped to original scroll padding box");
+        let pixel = op_platform_win::render_display_list_to_bgra(&without, 500, 320).unwrap();
+        assert_eq!(rgb_at(&pixel, 500, rect.x + 8, rect.y + 8), (0, 0, 255));
+        assert_eq!(
+            rgb_at(&pixel, 500, rect.x + 8, rect.y + rect.height + 8),
+            (255, 255, 255)
+        );
+
+        let unscrolled = engine.render_html(
+            "<body><div style='width:140px;height:40px;overflow:auto'>\
+             <div style='width:140px;height:40px;background:#ff0000'></div>\
+             <div style='width:140px;height:40px;background:#0000ff'></div>\
+             </div></body>",
+            500,
+            320,
+        );
+        let original = op_platform_win::render_display_list_to_bgra(&unscrolled, 500, 320).unwrap();
+        assert_eq!(rgb_at(&original, 500, rect.x + 8, rect.y + 8), (255, 0, 0));
     }
 
     #[test]

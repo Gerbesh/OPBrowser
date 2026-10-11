@@ -358,6 +358,8 @@ pub struct JsRuntime {
     dom_tag_collections: HashMap<ObjectId, (usize, String)>,
     dom_query_lists: HashMap<ObjectId, Vec<usize>>,
     dom_styles: HashMap<usize, ObjectId>,
+    dom_scroll_tops: HashMap<usize, i32>,
+    scroll_dirty: bool,
     dom_children: HashMap<usize, Vec<usize>>,
     dom_text_nodes: std::collections::HashSet<usize>,
     dom_tags: HashMap<usize, String>,
@@ -481,6 +483,8 @@ impl Default for JsRuntime {
             dom_tag_collections: HashMap::new(),
             dom_query_lists: HashMap::new(),
             dom_styles: HashMap::new(),
+            dom_scroll_tops: HashMap::new(),
+            scroll_dirty: false,
             dom_children: HashMap::new(),
             dom_text_nodes: std::collections::HashSet::new(),
             dom_tags: HashMap::new(),
@@ -2344,6 +2348,32 @@ impl JsRuntime {
 
     /// Real HTML parser root, not an Element. Only paths reaching this node
     /// should propagate further to document and window.
+    /// Page-owned CSS scroll positions, in layout pixels. These are
+    /// requests: layout clamps them to each element's actual scroll range.
+    pub fn dom_scroll_offsets(&self) -> &HashMap<usize, i32> {
+        &self.dom_scroll_tops
+    }
+
+    pub fn set_dom_scroll_top(&mut self, node: usize, top: i32) -> bool {
+        let value = top.max(0);
+        if self.dom_scroll_tops.get(&node).copied().unwrap_or(0) == value {
+            return false;
+        }
+        if value == 0 {
+            self.dom_scroll_tops.remove(&node);
+        } else if self.dom_scroll_tops.len() < 4096 || self.dom_scroll_tops.contains_key(&node) {
+            self.dom_scroll_tops.insert(node, value);
+        } else {
+            return false;
+        }
+        self.scroll_dirty = true;
+        true
+    }
+
+    pub fn take_scroll_dirty(&mut self) -> bool {
+        std::mem::take(&mut self.scroll_dirty)
+    }
+
     pub fn set_dom_document_root(&mut self, node: usize) {
         self.dom_document_root = Some(node);
     }
@@ -2410,6 +2440,9 @@ impl JsRuntime {
     /// physical NodeId. This preserves JS object identity across later reads.
     pub fn bind_dom_node(&mut self, virtual_node: usize, physical_node: usize) {
         self.dom_node_aliases.insert(virtual_node, physical_node);
+        if let Some(top) = self.dom_scroll_tops.remove(&virtual_node) {
+            self.dom_scroll_tops.insert(physical_node, top);
+        }
         if let Some(&object) = self.dom_node_objects.get(&virtual_node) {
             self.dom_node_objects.insert(physical_node, object);
             self.heap[object.0].kind = match self.heap[object.0].kind {
@@ -6655,6 +6688,11 @@ impl JsRuntime {
                         return Ok(JsValue::Boolean(!prevented));
                     }
                     ObjectKind::DomElement(node) | ObjectKind::DomText(node) => {
+                        if key == "scrollTop" && matches!(kind, ObjectKind::DomElement(_)) {
+                            return Ok(JsValue::Number(
+                                self.dom_scroll_tops.get(&node).copied().unwrap_or(0) as f64,
+                            ));
+                        }
                         if key == "nodeName" {
                             let name = if matches!(kind, ObjectKind::DomText(_)) {
                                 "#text".to_owned()
@@ -7058,6 +7096,18 @@ impl JsRuntime {
                     .properties
                     .insert("defaultPrevented".into(), JsValue::Boolean(true));
             }
+            return Ok(());
+        }
+        if key == "scrollTop"
+            && let ObjectKind::DomElement(node) = self.object(*id)?.kind
+        {
+            let value = value.to_number();
+            let top = if value.is_finite() {
+                value.round().clamp(0.0, i32::MAX as f64) as i32
+            } else {
+                0
+            };
+            self.set_dom_scroll_top(node, top);
             return Ok(());
         }
         if key == "readyState" && self.dom_document == Some(*id) {

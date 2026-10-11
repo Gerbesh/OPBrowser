@@ -38,6 +38,21 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+**R1.1 bounded native vertical scrolling delivered:** CSS
+`overflow:auto/scroll` now clips and moves descendant content
+via original page-owned layout scroll offsets. JavaScript
+`element.scrollTop` updates pixels and click positions; timer-only
+scroll changes repaint. Native Win32 mouse wheel routes to nested
+containers, chaining to the parent or original document-scroll
+fallback at boundaries, including HTML pages without any VM.
+GDI pixels, nested wheels and mouse hit targets are regression-tested.
+Pinned WPT Static v1 remains 197/200; Positioning v1 is
+**54/100** versus 53/100 previously.
+
+This is a bounded vertical-only slice: no visible scrollbars,
+horizontal overflow-x/y, complete JS scrollTop range semantics or
+advanced positioning. The JS garbage collector is **still missing**.
+
 **R1.0 rendering delivered:** CSS `overflow:hidden/clip` now
 clips normal-flow descendants through original CSS/layout/paint
 into real GDI pixels, including nested padding-box intersections,
@@ -46,9 +61,8 @@ tests, one native click regression and one computed-style cascade
 test prove this behavior. Existing pinned WPT Static v1 remains
 197/200, Positioning v1 53/100, no new render errors.
 
-**Not scrollable yet:** `overflow:scroll/auto` are parsed but
-deliberately leave content visible until R1.1 adds scroll offsets,
-scrollTop, nested wheel input and proper repaint/target translation.
+**Historical R1.0 limit:** `overflow:scroll/auto` were parsed but
+had no offset or clipping until R1.1 implemented vertical scrolling.
 The original VM still has no garbage collector.
 
 **Priority reset (11 October 2026):** P0 is rendering with

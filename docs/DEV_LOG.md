@@ -3361,3 +3361,13 @@ This file is append-only project history.
 - Added two real Win32 bitmap tests (hidden vs visible, nested intersections), native Engine.click_at regression on clipped hit regions, and CSS cascade/global-keywords test.
 - Re-ran immutable pinned WPT Static v1 exactly 197/200 and Positioning v1 exactly 53/100, no render errors/regressions; historical failures remain counted. No claim of overall visual compatibility.
 - STILL MISSING: wheel and per-element scroll offsets, DOM scrollTop, scrollbars, overflow-x/y axis-specific behavior, comprehensive positioned/inline fragment clipping, and actual GC. R1.1 and G1 remain high priority.
+
+## 2026-10-11 - R1.1 vertical scrolling: page-owned offsets, JS scrollTop and Win32 wheel
+
+- Extended R1.0 clipping to overflow:auto/scroll via real vertical scroll offsets, still restricted to normal-flow block descendants. Layout computes natural-content vs definite-height scroll range and translates descendant ink, native hit regions, nested overflow clips and child scroll bounds without altering flow height.
+- Added JsRuntime.dom_scroll_tops with scrollTop getter/setter (bounded node count), alias remapping for JS-created DOM Elements and scroll-only timer reflow signaling. PreparedDocument independently owns scroll offsets on no-script pages, avoiding an unnecessary VM just to scroll static HTML.
+- Added Engine::scroll_at routing to the smallest eligible container under the cursor, skipping exhausted/hidden wheel regions; nested wheel input chains to a parent, then the original document scrolling when no child can move.
+- Native Win32 WM_MOUSEWHEEL now forwards viewport coordinates as NavigationEvent::Scroll via the established worker and returns fallback_scroll to the existing page scroll path. Click hit-test coordinates remain consistent with translated descendant ink.
+- Verified real GDI pixels change from red to blue with scripted scrollTop; native click retargets newly exposed blue content; timer-only scrollTop repaints; nested wheel chains correctly on HTML without any JS runtime. All strict Rust formatting/Clippy and original workspace tests pass.
+- Reran frozen 200-case WPT Static v1: 197/200 PASS, 3 historical FAIL; unchanged 100-case Positioning v1 improved **53/100 to 54/100** with no manifest change and no render errors. Pinned manually selected DOM/Events v8 retains 21/21 attempted PASS and 3 SKIP.
+- LIMITS: vertical only; no visible scrollbars, overflow-x/y, fully clamped scrollTop JS property reporting, complete positioned/inline clipping or representative original WPT overflow selection. Original JS garbage collector still not implemented and remains P0.

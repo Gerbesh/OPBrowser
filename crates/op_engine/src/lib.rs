@@ -2,9 +2,11 @@ use op_css::{
     ComputedStyleMap, StyleCollection, StyleError, StyleMap, collect_author_styles,
     collect_author_styles_with_linked, compute_styles,
 };
+#[cfg(test)]
+use op_layout::layout_document_with_backgrounds_and_resources;
 use op_layout::{
-    ImageResources, layout_document_with_backgrounds_and_resources,
-    layout_document_with_computed_styles_and_viewport_metrics,
+    ImageResources, layout_document_with_computed_styles_and_viewport_metrics,
+    layout_document_with_scrolling,
 };
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link, resolve_script_source};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -126,9 +128,17 @@ struct PreparedDocument {
     color_profiles: std::collections::HashMap<String, Vec<u8>>,
     scripts: ScriptReport,
     runtime: Option<op_js::JsRuntime>,
+    // Native documents without page JavaScript remain scrollable.
+    scroll_offsets: std::collections::HashMap<usize, i32>,
 }
 
 impl PreparedDocument {
+    fn current_scroll_offsets(&self) -> &std::collections::HashMap<usize, i32> {
+        self.runtime
+            .as_ref()
+            .map_or(&self.scroll_offsets, |vm| vm.dom_scroll_offsets())
+    }
+
     /// Rebuild author matching and inline styles against the mutated real
     /// DOM, retaining originally loaded linked CSS and color profiles.
     fn refresh_styles(&mut self) {
@@ -155,13 +165,13 @@ impl PreparedDocument {
     }
 
     fn render(&self, width: i32, height: i32) -> RenderedPage {
-        let layout = layout_document_with_backgrounds_and_resources(
+        let layout = layout_document_with_scrolling(
             &self.document,
             width,
             height,
             (&self.images.elements, &self.images.backgrounds),
             &self.images.generated,
-            &self.computed_styles,
+            (&self.computed_styles, self.current_scroll_offsets()),
             &mut text::Measurer::new(),
         );
         RenderedPage {
@@ -306,6 +316,7 @@ impl Engine {
             color_profiles: std::collections::HashMap::new(),
             scripts: script_report,
             runtime,
+            scroll_offsets: std::collections::HashMap::new(),
         };
         let page = prepared.render(width, height);
         self.generation = self.generation.wrapping_add(1);
@@ -320,14 +331,13 @@ impl Engine {
     /// Coordinates are document pixels (already adjusted for toolbar/scroll).
     pub fn click_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<RenderedPage> {
         let prepared = self.active_document.as_mut()?;
-        let runtime = prepared.runtime.as_mut()?;
-        let layout = layout_document_with_backgrounds_and_resources(
+        let layout = layout_document_with_scrolling(
             &prepared.document,
             width,
             height,
             (&prepared.images.elements, &prepared.images.backgrounds),
             &prepared.images.generated,
-            &prepared.computed_styles,
+            (&prepared.computed_styles, prepared.current_scroll_offsets()),
             &mut text::Measurer::new(),
         );
         let target = layout
@@ -343,6 +353,7 @@ impl Engine {
             })
             .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
             .map(|region| region.node)?;
+        let runtime = prepared.runtime.as_mut()?;
         let (handled, changes) = scripts::dispatch_click(&mut prepared.document, runtime, target);
         if !handled && changes == 0 {
             return None;
@@ -350,6 +361,66 @@ impl Engine {
         prepared.scripts.mutations += changes;
         if changes > 0 {
             prepared.refresh_styles();
+        }
+        Some(prepared.render(width, height))
+    }
+
+    /// Wheel-driven nested element scrolling. The caller supplies document
+    /// coordinates (the window already subtracts toolbar and page scroll).
+    /// Return None when no scrollable element is under the cursor, so the
+    /// native window can retain its existing document-scroll fallback.
+    pub fn scroll_at(
+        &mut self,
+        x: i32,
+        y: i32,
+        delta_y: i32,
+        width: i32,
+        height: i32,
+    ) -> Option<RenderedPage> {
+        if delta_y == 0 {
+            return None;
+        }
+        let prepared = self.active_document.as_mut()?;
+        let layout = layout_document_with_scrolling(
+            &prepared.document,
+            width,
+            height,
+            (&prepared.images.elements, &prepared.images.backgrounds),
+            &prepared.images.generated,
+            (&prepared.computed_styles, prepared.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        let region = layout
+            .scroll_containers
+            .iter()
+            .filter(|region| {
+                region.wheel_scrollable
+                    && region.max_scroll_top > 0
+                    && region
+                        .scroll_top
+                        .saturating_add(delta_y)
+                        .clamp(0, region.max_scroll_top)
+                        != region.scroll_top
+                    && region.rect.width > 0
+                    && region.rect.height > 0
+                    && x >= region.rect.x
+                    && x < region.rect.x.saturating_add(region.rect.width)
+                    && y >= region.rect.y
+                    && y < region.rect.y.saturating_add(region.rect.height)
+            })
+            .min_by_key(|region| i64::from(region.rect.width) * i64::from(region.rect.height))?;
+        let next = region
+            .scroll_top
+            .saturating_add(delta_y)
+            .clamp(0, region.max_scroll_top);
+        if next == region.scroll_top {
+            return None;
+        }
+        if let Some(runtime) = prepared.runtime.as_mut() {
+            runtime.set_dom_scroll_top(region.node.index(), next);
+            runtime.take_scroll_dirty();
+        } else {
+            prepared.scroll_offsets.insert(region.node.index(), next);
         }
         Some(prepared.render(width, height))
     }
@@ -480,13 +551,15 @@ impl Engine {
         let runtime = prepared.runtime.as_mut()?;
         let fired = runtime.run_due_timers(16);
         prepared.scripts.failed += fired.failed + network_failed;
-        let mut changes = 0;
-        changes += scripts::apply_dom_operations(&mut prepared.document, runtime);
-        if changes == 0 {
+        let changes = scripts::apply_dom_operations(&mut prepared.document, runtime);
+        let scroll_changed = runtime.take_scroll_dirty();
+        if changes == 0 && !scroll_changed {
             return None;
         }
-        prepared.scripts.mutations += changes;
-        prepared.refresh_styles();
+        if changes > 0 {
+            prepared.scripts.mutations += changes;
+            prepared.refresh_styles();
+        }
         Some(prepared.render(width, height))
     }
 
@@ -628,6 +701,7 @@ impl Engine {
             color_profiles: profiles,
             scripts: script_report,
             runtime,
+            scroll_offsets: std::collections::HashMap::new(),
         })
     }
 }
@@ -833,6 +907,201 @@ mod tests {
             .expect("trusted hit-tested native click updates DOM");
         assert!(contains_text(&page.display_list, "M432B-UT"));
         assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    }
+
+    #[test]
+    fn r11_nested_wheel_scroll_chains_to_parent_at_inner_boundary() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            concat!(
+                "<body><div id='outer' style='height:80px;width:170px;overflow:auto'>",
+                "<div id='inner' style='height:40px;width:110px;overflow:auto'>",
+                "<div style='height:120px;background:red'></div></div>",
+                "<div style='height:200px;background:blue'></div>",
+                "</div></body>"
+            ),
+            500,
+            350,
+        );
+        let prepared = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_scrolling(
+            &prepared.document,
+            500,
+            350,
+            (&prepared.images.elements, &prepared.images.backgrounds),
+            &prepared.images.generated,
+            (&prepared.computed_styles, prepared.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        assert_eq!(layout.scroll_containers.len(), 2);
+        let inner = layout
+            .scroll_containers
+            .iter()
+            .min_by_key(|c| c.rect.width)
+            .unwrap();
+        let outer = layout
+            .scroll_containers
+            .iter()
+            .max_by_key(|c| c.rect.width)
+            .unwrap();
+        assert!(inner.max_scroll_top >= 80);
+        assert!(outer.max_scroll_top > 0);
+        let node_inner = inner.node.index();
+        let node_outer = outer.node.index();
+        let (x, y) = (inner.rect.x + 8, inner.rect.y + 8);
+        assert!(engine.scroll_at(x, y, 72, 500, 350).is_some());
+        assert_eq!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .scroll_offsets
+                .get(&node_inner),
+            Some(&72)
+        );
+        assert!(engine.scroll_at(x, y, 72, 500, 350).is_some());
+        assert_eq!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .scroll_offsets
+                .get(&node_inner),
+            Some(&80)
+        );
+        assert!(
+            engine.scroll_at(x, y, 72, 500, 350).is_some(),
+            "outer container must accept excess wheel after child reaches its limit"
+        );
+        assert!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .scroll_offsets
+                .get(&node_outer)
+                .is_some_and(|offset| *offset > 0)
+        );
+    }
+
+    #[test]
+    fn r11_wheel_scrolls_nested_container_and_reports_document_fallback_when_exhausted() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            concat!(
+                "<body><div id='pane' style='width:150px;height:40px;overflow:auto'>",
+                "<div id='red' style='height:40px;background:red'></div>",
+                "<div id='blue' style='height:40px;background:blue'></div>",
+                "</div><p>Bottom</p></body>"
+            ),
+            500,
+            350,
+        );
+        let active = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_scrolling(
+            &active.document,
+            500,
+            350,
+            (&active.images.elements, &active.images.backgrounds),
+            &active.images.generated,
+            (&active.computed_styles, active.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        let rect = layout
+            .scroll_containers
+            .iter()
+            .find(|region| region.max_scroll_top > 0)
+            .expect("real overflow container")
+            .rect;
+        let next = engine
+            .scroll_at(rect.x + 10, rect.y + 10, 72, 500, 350)
+            .expect("nested wheel event must change scroll position");
+        assert!(next.display_list.commands.iter().any(|cmd| {
+            let op_paint::PaintCommand::Clipped { rect, command } = cmd else {
+                return false;
+            };
+            matches!(command.as_ref(),op_paint::PaintCommand::FillRect{y,color,..}
+                if color.b==255 && color.r==0 && *y==rect.y)
+        }));
+        assert!(
+            engine
+                .scroll_at(rect.x + 10, rect.y + 10, 72, 500, 350)
+                .is_none(),
+            "at scroll end the native document wheel fallback must run"
+        );
+        assert!(
+            engine
+                .scroll_at(rect.x + rect.width + 60, rect.y + 10, 72, 500, 350)
+                .is_none(),
+            "outside the scrollable element must not hijack document wheel"
+        );
+        assert!(
+            engine
+                .scroll_at(rect.x + 10, rect.y + 10, -72, 500, 350)
+                .is_some(),
+            "wheel up restores the first child"
+        );
+    }
+
+    #[test]
+    fn r11_scroll_top_retargets_native_clicks_to_newly_visible_child() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            concat!(
+                "<body><div id='viewport' style='height:42px;width:150px;overflow:auto'>",
+                "<div id='first' style='height:42px;background:red'>FIRST</div>",
+                "<div id='second' style='height:42px;background:blue'>SECOND</div>",
+                "</div><p id='status'>WAIT</p><script>",
+                "var viewport=document.getElementById('viewport');",
+                "viewport.scrollTop=42;",
+                "document.getElementById('first').addEventListener('click',function(){",
+                "document.getElementById('status').textContent='WRONG';});",
+                "document.getElementById('second').addEventListener('click',function(){",
+                "document.getElementById('status').textContent='R11-SECOND';});",
+                "</script></body>"
+            ),
+            500,
+            350,
+        );
+        let active = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_scrolling(
+            &active.document,
+            500,
+            350,
+            (&active.images.elements, &active.images.backgrounds),
+            &active.images.generated,
+            (&active.computed_styles, active.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        let first = layout
+            .click_regions
+            .iter()
+            .find(|r| {
+                active.document.element(r.node).is_some_and(|e| {
+                    e.attributes
+                        .iter()
+                        .any(|a| a.name == "id" && a.value == "first")
+                })
+            })
+            .unwrap();
+        let second = layout
+            .click_regions
+            .iter()
+            .find(|r| {
+                active.document.element(r.node).is_some_and(|e| {
+                    e.attributes
+                        .iter()
+                        .any(|a| a.name == "id" && a.value == "second")
+                })
+            })
+            .unwrap();
+        assert_eq!(first.height, 0);
+        assert!(second.height > 0);
+        let hit = engine
+            .click_at(second.x + 9, second.y + 9, 500, 350)
+            .unwrap();
+        assert!(contains_text(&hit.display_list, "R11-SECOND"));
+        assert!(!contains_text(&hit.display_list, "WRONG"));
     }
 
     #[test]

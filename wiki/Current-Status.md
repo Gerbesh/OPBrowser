@@ -234,6 +234,25 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## R1.1: original nested vertical scrolling on Windows
+
+Native overflow:auto/scroll content is now clipped to its
+container and translated by a page-owned scroll offset without
+changing block flow height. JavaScript element.scrollTop updates
+rendered pixels, scroll hit-test targets and timer-driven repaint.
+Win32 wheel input routes into the renderer for the innermost
+movable container; at the edge it chains to the parent, then
+falls back to existing document scrolling. HTML pages with no
+JavaScript VM still scroll. Native bitmap/hit-test, nested-wheel,
+and delayed JS regressions pass.
+
+Unchanged WPT Static v1 exact: 197/200; unchanged WPT Positioning
+v1: 54/100, up from 53/100; no render errors. Remaining gaps:
+visible scrollbars, horizontal/overflow-x/y, accurate JS
+scrollTop maximum-range reporting, advanced inline/positioned
+clipping and real-world website benchmarks. Original JS GC
+remains unimplemented.
+
 ## R1.0: bounded CSS overflow clipping reaches native pixels
 
 Real `overflow:hidden/clip` is now implemented for normal-flow

@@ -18,9 +18,10 @@ pub(super) fn layout(
     viewport_height: i32,
     images_and_backgrounds: (&ImageResources, &ImageResources),
     generated_images: &GeneratedImageResources,
-    computed_styles: &ComputedStyleMap,
+    styles_and_scroll: (&ComputedStyleMap, &HashMap<usize, i32>),
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
+    let (computed_styles, scroll_offsets) = styles_and_scroll;
     let (images, backgrounds) = images_and_backgrounds;
     let viewport_width = viewport_width.max(240);
     let viewport_height = viewport_height.max(1);
@@ -49,6 +50,7 @@ pub(super) fn layout(
         backgrounds,
         computed_styles,
         measurer,
+        scroll_offsets,
         dom_order: &dom_order,
         inline_boxes: InlineBoxes::default(),
         viewport_width,
@@ -70,6 +72,7 @@ pub(super) fn layout(
         order: Vec::new(),
         click_regions: Vec::new(),
         overflow_scopes: Vec::new(),
+        scroll_containers: Vec::new(),
     };
 
     let root_style = document
@@ -108,6 +111,7 @@ pub(super) fn layout(
         paint_groups,
         clips,
         click_regions: context.click_regions,
+        scroll_containers: context.scroll_containers,
     }
 }
 
@@ -201,6 +205,7 @@ struct Context<'a, 'm> {
     backgrounds: &'a ImageResources,
     computed_styles: &'a ComputedStyleMap,
     measurer: &'m mut dyn TextMeasurer,
+    scroll_offsets: &'a HashMap<usize, i32>,
     dom_order: &'m HashMap<NodeId, usize>,
     inline_boxes: InlineBoxes,
     viewport_width: i32,
@@ -222,6 +227,7 @@ struct Context<'a, 'm> {
     order: Vec<LayoutItem>,
     click_regions: Vec<ClickRegion>,
     overflow_scopes: Vec<OverflowScope>,
+    scroll_containers: Vec<ScrollContainer>,
 }
 
 /// Generated blocks share ordinary block sizing without adding synthetic DOM nodes.
@@ -1140,6 +1146,9 @@ impl<'a> Context<'a, '_> {
 
         // Own background/border is never clipped by the box's overflow.
         // Only subsequent descendants are captured for clipping.
+        let child_output_start = self.output_start();
+        let child_scope_start = self.overflow_scopes.len();
+        let child_scroll_start = self.scroll_containers.len();
         let child_decoration_start = self.decorations.len();
         let child_text_start = self.text.len();
         let child_image_start = self.images_out.len();
@@ -1257,6 +1266,40 @@ impl<'a> Context<'a, '_> {
             used.border,
             containing_height,
         );
+        // Scroll offset moves only descendant ink/hit regions, not the
+        // box's own background or its ordinary document flow height.
+        let is_scroll_container = matches!(
+            style.overflow,
+            Overflow::Auto | Overflow::Scroll | Overflow::Hidden
+        );
+        let max_scroll_top = natural_content_height
+            .saturating_sub(target_content_height)
+            .max(0);
+        let scroll_top = if is_scroll_container {
+            match content {
+                BlockContent::Element(node) => self
+                    .scroll_offsets
+                    .get(&node.index())
+                    .copied()
+                    .unwrap_or(0)
+                    .clamp(0, max_scroll_top),
+                _ => 0,
+            }
+        } else {
+            0
+        };
+        if scroll_top != 0 {
+            self.translate_outputs_since(child_output_start, 0, -scroll_top);
+            for region in &mut self.click_regions[child_click_start..] {
+                region.y = region.y.saturating_sub(scroll_top);
+            }
+            for scope in &mut self.overflow_scopes[child_scope_start..] {
+                scope.rect.y = scope.rect.y.saturating_sub(scroll_top);
+            }
+            for nested in &mut self.scroll_containers[child_scroll_start..] {
+                nested.rect.y = nested.rect.y.saturating_sub(scroll_top);
+            }
+        }
         // Definite height/min/max controls the box even when its text overflows.
         self.y = content_top.saturating_add(target_content_height);
 
@@ -1296,6 +1339,27 @@ impl<'a> Context<'a, '_> {
                 text: child_text_start..self.text.len(),
                 images: child_image_start..self.images_out.len(),
                 clicks: child_click_start..self.click_regions.len(),
+            });
+        }
+        if is_scroll_container && let BlockContent::Element(node) = content {
+            self.scroll_containers.push(ScrollContainer {
+                node,
+                wheel_scrollable: matches!(style.overflow, Overflow::Auto | Overflow::Scroll),
+                rect: ClipRect {
+                    x: border_x.saturating_add(used.border.left.width),
+                    y: border_y.saturating_add(used.border.top.width),
+                    width: used
+                        .border_width
+                        .saturating_sub(used.border.left.width)
+                        .saturating_sub(used.border.right.width)
+                        .max(0),
+                    height: target_content_height
+                        .saturating_add(padding_top)
+                        .saturating_add(padding_bottom)
+                        .max(0),
+                },
+                scroll_top,
+                max_scroll_top,
             });
         }
 
@@ -1416,6 +1480,7 @@ impl<'a> Context<'a, '_> {
             backgrounds: self.backgrounds,
             computed_styles,
             measurer: &mut *self.measurer,
+            scroll_offsets: self.scroll_offsets,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -1437,6 +1502,7 @@ impl<'a> Context<'a, '_> {
             order: Vec::new(),
             click_regions: Vec::new(),
             overflow_scopes: Vec::new(),
+            scroll_containers: Vec::new(),
         };
         let metrics = local.table_box(&children, id, style, 0, available);
         local.finish_deferred_inline();
@@ -1507,6 +1573,7 @@ impl<'a> Context<'a, '_> {
             backgrounds: self.backgrounds,
             computed_styles,
             measurer: &mut *self.measurer,
+            scroll_offsets: self.scroll_offsets,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -1528,6 +1595,7 @@ impl<'a> Context<'a, '_> {
             order: Vec::new(),
             click_regions: Vec::new(),
             overflow_scopes: Vec::new(),
+            scroll_containers: Vec::new(),
         };
         local.block(BlockContent::Element(id), None, style, 0, available);
         local.flush_pending_margin();
@@ -1599,6 +1667,7 @@ impl<'a> Context<'a, '_> {
             backgrounds: self.backgrounds,
             computed_styles,
             measurer: &mut *self.measurer,
+            scroll_offsets: self.scroll_offsets,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -1620,6 +1689,7 @@ impl<'a> Context<'a, '_> {
             order: Vec::new(),
             click_regions: Vec::new(),
             overflow_scopes: Vec::new(),
+            scroll_containers: Vec::new(),
         };
         local.block(BlockContent::Element(id), None, style, 0, available);
         local.flush_pending_margin();
@@ -1855,6 +1925,7 @@ impl<'a> Context<'a, '_> {
             backgrounds: self.backgrounds,
             computed_styles,
             measurer: &mut *self.measurer,
+            scroll_offsets: self.scroll_offsets,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -1876,6 +1947,7 @@ impl<'a> Context<'a, '_> {
             order: Vec::new(),
             click_regions: Vec::new(),
             overflow_scopes: Vec::new(),
+            scroll_containers: Vec::new(),
         };
 
         let display = local

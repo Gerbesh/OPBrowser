@@ -336,6 +336,21 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S48",
+      "title": "Original JS scrollTop and nested Win32 wheel to GDI pixels and scroll-aware hit targets",
+      "status": "R1.1 vertical scroll offsets, programmatic and nested native wheel with document fallback",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "set_dom_scroll_top"},
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "layout_document_with_scrolling"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "ScrollContainer"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "scroll_at"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "clip_commands_since"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "NavigationEvent"},
+        {"path": "crates/op_browser/src/main.rs", "symbol": "LoadResult"}
+      ],
+      "limitation": "Bounded vertical-only scrolling; no visible scrollbars, horizontal overflow longhands, full JS max-scroll clamping or broad overflow WPT conformance."
+    },
+    {
       "id": "S47",
       "title": "Original CSS overflow hidden/clip through layout, paint, GDI pixels and native clicks",
       "status": "R1.0 verified nested GDI clipping and clipped native click hit testing",

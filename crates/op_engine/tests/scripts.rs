@@ -2,6 +2,46 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn r11_timer_scrolltop_repaints_even_without_dom_text_mutation() {
+    let mut engine = Engine::new();
+    let initial = engine.set_html_page(
+        concat!(
+            "<body><div id='scroll' style='height:40px;width:140px;overflow:auto'>",
+            "<div style='height:40px;background:red'></div>",
+            "<div style='height:40px;background:blue'></div></div>",
+            "<script>setTimeout(function(){",
+            "document.getElementById('scroll').scrollTop=40;",
+            "},0);</script></body>"
+        ),
+        500,
+        350,
+    );
+    let first_red = initial.commands.iter().any(|cmd| {
+        matches!(cmd,
+            op_paint::PaintCommand::Clipped{command,..}
+                if matches!(command.as_ref(),op_paint::PaintCommand::FillRect{color,..}
+                    if color.r==255 && color.g==0)
+        )
+    });
+    assert!(first_red);
+    let repaint = engine
+        .tick_timers(500, 350)
+        .expect("scroll-only timer must repaint");
+    let blue_at_top = repaint.display_list.commands.iter().any(|cmd| {
+        matches!(cmd,
+            op_paint::PaintCommand::Clipped{rect,command}
+                if matches!(command.as_ref(),op_paint::PaintCommand::FillRect{y,color,..}
+                    if color.b==255 && color.r==0 && *y==rect.y)
+        )
+    });
+    assert!(
+        blue_at_top,
+        "scrollTop must shift blue box into the visible viewport"
+    );
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m435_document_element_and_body_match_real_parser_tree() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(
