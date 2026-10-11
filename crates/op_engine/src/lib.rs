@@ -164,7 +164,7 @@ impl PreparedDocument {
         self.computed_styles = compute_styles(&self.document, &self.style_collection.styles);
     }
 
-    fn render(&self, width: i32, height: i32) -> RenderedPage {
+    fn render(&mut self, width: i32, height: i32) -> RenderedPage {
         let layout = layout_document_with_scrolling(
             &self.document,
             width,
@@ -174,6 +174,19 @@ impl PreparedDocument {
             (&self.computed_styles, self.current_scroll_offsets()),
             &mut text::Measurer::new(),
         );
+        let scroll_limits: std::collections::HashMap<usize, i32> = layout
+            .scroll_containers
+            .iter()
+            .map(|region| (region.node.index(), region.max_scroll_top))
+            .collect();
+        if let Some(vm) = self.runtime.as_mut() {
+            vm.sync_dom_scroll_limits(scroll_limits);
+        } else {
+            self.scroll_offsets.retain(|node, top| {
+                *top = (*top).clamp(0, scroll_limits.get(node).copied().unwrap_or(0));
+                *top > 0
+            });
+        }
         RenderedPage {
             address: self.address.clone(),
             mime_type: self.mime_type.clone(),
@@ -313,7 +326,7 @@ impl Engine {
         let (document, script_report, runtime) = scripts::parse_and_execute(html, None, None);
         let style_collection = collect_author_styles(&document);
         let computed_styles = compute_styles(&document, &style_collection.styles);
-        let prepared = PreparedDocument {
+        let mut prepared = PreparedDocument {
             address: String::new(),
             mime_type: "text/html".into(),
             document,
@@ -573,8 +586,8 @@ impl Engine {
     }
 
     /// Rebuild only layout/paint from the current DOM and shared image pixels.
-    pub fn reflow(&self, width: i32, height: i32) -> Option<RenderedPage> {
-        Some(self.active_document.as_ref()?.render(width, height))
+    pub fn reflow(&mut self, width: i32, height: i32) -> Option<RenderedPage> {
+        Some(self.active_document.as_mut()?.render(width, height))
     }
 
     fn load_active(
@@ -583,7 +596,7 @@ impl Engine {
         width: i32,
         height: i32,
     ) -> Result<RenderedPage, LoadError> {
-        let prepared = self.prepare_source(source)?;
+        let mut prepared = self.prepare_source(source)?;
         let page = prepared.render(width, height);
         self.generation = self.generation.wrapping_add(1);
         self.network_active = 0;
@@ -1076,6 +1089,80 @@ mod tests {
                 .is_some(),
             "wheel up restores the first child"
         );
+    }
+
+    #[test]
+    fn r12_script_reads_clamped_scroll_top_before_and_after_resize() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            concat!(
+                "<div id='pane' style='width:160px;height:40px;overflow:auto'>",
+                "<div style='height:120px;background:blue'></div></div>",
+                "<script>document.getElementById('pane').scrollTop=99999;</script>"
+            ),
+            500,
+            160,
+        );
+        let page = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_scrolling(
+            &page.document,
+            500,
+            160,
+            (&page.images.elements, &page.images.backgrounds),
+            &page.images.generated,
+            (&page.computed_styles, page.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        let region = layout.scroll_containers.first().unwrap();
+        let maximum = region.max_scroll_top;
+        let node = region.node.index();
+        assert!(maximum > 0);
+        assert_eq!(region.scroll_top, maximum);
+
+        {
+            let vm = engine
+                .active_document
+                .as_mut()
+                .unwrap()
+                .runtime
+                .as_mut()
+                .unwrap();
+            assert_eq!(vm.dom_scroll_offsets().get(&node), Some(&maximum));
+            vm.eval_script("var actual=document.getElementById('pane').scrollTop;")
+                .unwrap();
+            assert_eq!(
+                vm.global("actual"),
+                Some(&op_js::JsValue::Number(maximum as f64))
+            );
+            vm.eval_script("document.getElementById('pane').scrollTop=99999;var again=document.getElementById('pane').scrollTop;").unwrap();
+            assert_eq!(
+                vm.global("again"),
+                Some(&op_js::JsValue::Number(maximum as f64))
+            );
+        }
+
+        {
+            let prepared = engine.active_document.as_mut().unwrap();
+            let vm = prepared.runtime.as_mut().unwrap();
+            vm.eval_script("document.getElementById('pane').setAttribute('style','width:160px;height:200px;overflow:auto');").unwrap();
+            let changed = scripts::apply_dom_operations(&mut prepared.document, vm);
+            assert!(changed > 0);
+            prepared.refresh_styles();
+        }
+
+        engine.reflow(500, 400).unwrap();
+        let vm = engine
+            .active_document
+            .as_mut()
+            .unwrap()
+            .runtime
+            .as_mut()
+            .unwrap();
+        vm.eval_script("var afterResize=document.getElementById('pane').scrollTop;")
+            .unwrap();
+        assert_eq!(vm.global("afterResize"), Some(&op_js::JsValue::Number(0.0)));
+        vm.eval_script("document.getElementById('pane').scrollTop=40;var noOverflow=document.getElementById('pane').scrollTop;").unwrap();
+        assert_eq!(vm.global("noOverflow"), Some(&op_js::JsValue::Number(0.0)));
     }
 
     #[test]

@@ -336,6 +336,19 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S50",
+      "title": "Layout-derived scroll maxima to bounded JavaScript scrollTop after rendering",
+      "status": "R1.2a post-layout JS and no-script vertical scroll reconciliation",
+      "steps": [
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "max_scroll_top"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "render"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "sync_dom_scroll_limits"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "set_dom_scroll_top"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "reflow"}
+      ],
+      "limitation": "JS range readback synchronizes after render/reflow, not synchronously in parser-time scripts; vertical normal-flow only, no scrollbars/overflow-x/y."
+    },
+    {
       "id": "S49",
       "title": "Conservative original JS object and captured-environment reachability at idle page checkpoints",
       "status": "G1.0 read-only root tracer and engine memory-report integration; no GC",

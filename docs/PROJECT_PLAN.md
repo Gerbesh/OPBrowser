@@ -12,7 +12,7 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 
 | Priority | Workstream | Current reality | Next deliverable and exit gate |
 | --- | --- | --- | --- |
-| **P0-A** | **Usable rendering and scrolling** | **R1.0–R1.1 DONE (bounded):** CSS hidden/clip and auto/scroll clipping, vertical `scrollTop`, page-owned scroll offsets even without JS, nested Win32 wheel-to-container routing, boundary fallback, native pixel/hit-test alignment. | **R1.2 NEXT:** exact `scrollTop` range reporting, visible scrollbars, horizontal overflow-x/y, positioned/inline clipping, independent overflow WPT corpus and real-page visual/input smoke. |
+| **P0-A** | **Usable rendering and scrolling** | **R1.0–R1.1 DONE; R1.2a DONE (bounded):** original clipping and vertical nested wheel, native pixel/hit alignment, and layout-clamped JS `scrollTop` readback after render/reflow. | **R1.2b NEXT:** visible scrollbars, horizontal overflow-x/y, positioned/inline clipping, independent overflow WPT corpus and representative real-page visual/input smoke. |
 | **P0-B** | **Memory safety / original VM GC** | **G1.0 DONE:** conservative idle-checkpoint reachability scan counts reachable/unreachable objects and captured environments. Append-only arenas still retain everything. **No GC yet.** | G1.1: verify/register all native call-frame/operand roots. G2: generation-safe reclaim of both arenas and cycles. G3: automatic bounded GC, 30-minute plateau and stress tests. See [GC_IMPLEMENTATION.md](GC_IMPLEMENTATION.md). |
 | **P1-C** | **Flexbox with multiple lines** | A bounded single-line row formatter exists. | R2: flex-wrap, lines, gap, order, cross-axis layout, min-content constraints. Test resize and 2D pixel positions against frozen fixtures. |
 | **P1-D** | **CSS Grid foundation** | Table grid track sizing exists; it is **not** CSS Grid Layout. | R3: explicit/auto tracks, fraction units, item placement and basic gap, then implicit tracks and minmax. Screenshot+geometry tests. |
@@ -45,7 +45,7 @@ P0-A and P0-B are **both mandatory**; a renderer that cannot scroll or that exha
 ## Immediate implementation sequence
 
 - R1.0–R1.1 DONE: block clipping and vertical JS/native scrolling with original GDI pixel and hit-target checks; retain pinned WPT baselines.
-- R1.2 NEXT: visible scrollbars, horizontal axes, scrollTop max-range reporting, complex positioned/inline clipping, independent WPT overflow cases and real-page corpus.
+- R1.2a DONE: reconcile `scrollTop` requests to real layout maxima after render/reflow, including CSS height changes and no-JS pages; R1.2b NEXT: scrollbars, horizontal axes, complex positioned/inline clipping, independent WPT and real-page corpus.
 - G1.0 DONE: mark-only idle root tracing with no reclamation. G1.1 NEXT: complete native activation-frame, operand and host root coverage at safe checkpoints; G2: generation-safe object/environment slot reclamation, including cycles; G3: automatic bounded collections with performance baselines.
 - Only then expand flex-wrap, CSS Grid and form fidelity in visible, testable increments.
 

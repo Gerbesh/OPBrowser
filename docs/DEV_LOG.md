@@ -3380,3 +3380,12 @@ This file is append-only project history.
 - Exposed JsHeapReachability slot counters through Engine::active_script_heap_reachability on script-enabled documents. Pure HTML without a VM has no JS heap report; no allocation is freed and previous budget limits remain unchanged.
 - Added four VM regressions for captured closures, orphan cycles, DOM/timer roots, queued microtasks/pending text callbacks, dangling host callback handles and active-dispatch rejection, plus an engine integration regression for actual page VMs.
 - BLOCKERS: interpreter activation values are not registered as collector roots; conservative side maps are not swept; ObjectId/EnvironmentId are raw arena indices. Generation-safe sweep, automatic collections, long-session process-memory plateau and representative web compatibility remain entirely unimplemented.
+
+
+## 2026-10-11 - R1.2a post-layout scrollTop range reconciliation
+
+- Added bounded per-node layout scroll limits in the original JsRuntime; distinguish pre-layout pending requests from post-layout known maxima.
+- After each original layout/reflow, PreparedDocument reconciles JS and no-script vertical scroll offsets, including changed inline CSS height and resized layout.
+- Oversized scrollTop requests now read back as effective clamped positions after the first layout; later writes obey known maxima. Before this, paint moved by the clamped offset but JS returned the raw request.
+- Added VM test for initial requests, changing/removing limits and a page-engine HTML/JS/DOM-style-mutation integration regression.
+- LIMITATIONS: immediate JS readback in initial parser scripts before layout is still request-based; only normal-flow vertical scrolling, no visible scrollbars, horizontal overflow-x/y, full CSSOM View or new independent WPT results.

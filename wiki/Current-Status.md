@@ -234,6 +234,19 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## R1.2a: layout-clamped scrollTop after rendering
+
+After each render/reflow, the original layout engine reports each
+normal-flow vertical scroll container's maximum offset back to its
+JS runtime. Oversized requests read back as actual bounded offsets;
+DOM CSS height changes and native no-JS page offsets are reconciled
+as well. VM and full page-engine tests cover these transitions.
+
+This synchronization occurs at layout checkpoints, not during
+parser-time JS before initial layout. Scrollbars and horizontal
+overflow-x/y are still unimplemented.
+
+
 ## G1.0: conservative original VM heap tracing
 
 The original Rust JS VM can now trace retained ObjectId and

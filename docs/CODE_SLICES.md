@@ -16,6 +16,19 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S50 - Layout maxima to bounded JS scrollTop readback (R1.2a)
+
+IMPLEMENTED post-layout synchronization. op_layout computes each
+ScrollContainer::max_scroll_top. op_engine::PreparedDocument::render
+forwards the real bounds to JsRuntime::sync_dom_scroll_limits, which
+clamps both queued and future scrollTop assignments; the getter
+returns the effective position following layout/reflow. HTML pages
+without JS clamp native offsets the same way. Tests cover out-of-range
+assignments, changing limits and real DOM CSS height mutations.
+Initial parser-time reads can be request-based; no scrollbars,
+overflow-x/y or general CSSOM View are claimed.
+
+
 ## S49 - G1.0 mark-only object/environment reachability to page diagnostics
 
 IMPLEMENTED non-destructive tracing at idle Rust host checkpoints.

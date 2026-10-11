@@ -47,6 +47,15 @@ engine at idle checkpoints. VM and host integration tests pass.
 slots, no memory plateau claim. Native interpreter frame roots,
 generation-safe reclamation and long-session collection are next.
 
+**R1.2a layout-clamped scrollTop readback:** after render or
+reflow, real vertical scroll ranges are reconciled with JS and
+native no-script offsets. Out-of-range JS assignments report
+their effective clamped positions; DOM style changes and resize
+update the limits. Initial parser-time JS reads before layout
+are not yet synchronized. No visible scrollbars or horizontal
+overflow-x/y. VM and page-engine tests cover these cases.
+
+
 **R1.1 bounded native vertical scrolling delivered:** CSS
 `overflow:auto/scroll` now clips and moves descendant content
 via original page-owned layout scroll offsets. JavaScript
@@ -59,7 +68,7 @@ Pinned WPT Static v1 remains 197/200; Positioning v1 is
 **54/100** versus 53/100 previously.
 
 This is a bounded vertical-only slice: no visible scrollbars,
-horizontal overflow-x/y, complete JS scrollTop range semantics or
+horizontal overflow-x/y, full pre-layout JS scrollTop semantics or
 advanced positioning. The JS garbage collector is **still missing**.
 
 **R1.0 rendering delivered:** CSS `overflow:hidden/clip` now

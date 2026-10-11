@@ -383,6 +383,8 @@ pub struct JsRuntime {
     dom_query_lists: HashMap<ObjectId, Vec<usize>>,
     dom_styles: HashMap<usize, ObjectId>,
     dom_scroll_tops: HashMap<usize, i32>,
+    dom_scroll_limits: HashMap<usize, i32>,
+    dom_scroll_limits_known: bool,
     scroll_dirty: bool,
     dom_children: HashMap<usize, Vec<usize>>,
     dom_text_nodes: std::collections::HashSet<usize>,
@@ -508,6 +510,8 @@ impl Default for JsRuntime {
             dom_query_lists: HashMap::new(),
             dom_styles: HashMap::new(),
             dom_scroll_tops: HashMap::new(),
+            dom_scroll_limits: HashMap::new(),
+            dom_scroll_limits_known: false,
             scroll_dirty: false,
             dom_children: HashMap::new(),
             dom_text_nodes: std::collections::HashSet::new(),
@@ -2372,14 +2376,35 @@ impl JsRuntime {
 
     /// Real HTML parser root, not an Element. Only paths reaching this node
     /// should propagate further to document and window.
-    /// Page-owned CSS scroll positions, in layout pixels. These are
-    /// requests: layout clamps them to each element's actual scroll range.
+    /// Page-owned scroll positions in CSS pixels. Once layout has run,
+    /// getters/setters observe its actual scroll range, not raw requests.
     pub fn dom_scroll_offsets(&self) -> &HashMap<usize, i32> {
         &self.dom_scroll_tops
     }
 
+    /// Reconcile pending JS scroll requests with fresh layout/resize bounds.
+    pub fn sync_dom_scroll_limits(&mut self, limits: impl IntoIterator<Item = (usize, i32)>) {
+        self.dom_scroll_limits.clear();
+        self.dom_scroll_limits.extend(
+            limits
+                .into_iter()
+                .take(4096)
+                .map(|(node, max)| (node, max.max(0))),
+        );
+        self.dom_scroll_limits_known = true;
+        self.dom_scroll_tops.retain(|node, top| {
+            *top = (*top).clamp(0, self.dom_scroll_limits.get(node).copied().unwrap_or(0));
+            *top > 0
+        });
+    }
+
     pub fn set_dom_scroll_top(&mut self, node: usize, top: i32) -> bool {
-        let value = top.max(0);
+        let maximum = if self.dom_scroll_limits_known {
+            self.dom_scroll_limits.get(&node).copied().unwrap_or(0)
+        } else {
+            i32::MAX
+        };
+        let value = top.clamp(0, maximum);
         if self.dom_scroll_tops.get(&node).copied().unwrap_or(0) == value {
             return false;
         }
@@ -8415,6 +8440,21 @@ mod tests {
             vm.trace_heap_reachability().is_err(),
             "a dangling host callback handle must fail the trace"
         );
+    }
+
+    #[test]
+    fn r12_scroll_bounds_reconcile_pending_requests_and_resize() {
+        let mut vm = JsRuntime::new();
+        assert!(vm.set_dom_scroll_top(123, 999));
+        assert_eq!(vm.dom_scroll_offsets().get(&123), Some(&999));
+        vm.sync_dom_scroll_limits([(123, 40)]);
+        assert_eq!(vm.dom_scroll_offsets().get(&123), Some(&40));
+        assert!(!vm.set_dom_scroll_top(123, 999));
+        vm.sync_dom_scroll_limits([(123, 8)]);
+        assert_eq!(vm.dom_scroll_offsets().get(&123), Some(&8));
+        vm.sync_dom_scroll_limits(std::iter::empty());
+        assert!(!vm.dom_scroll_offsets().contains_key(&123));
+        assert!(!vm.set_dom_scroll_top(123, 99));
     }
 
     #[test]

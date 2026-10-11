@@ -16,6 +16,22 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## R1.2a: layout-derived scrollTop range reconciliation
+
+Original op_layout::ScrollContainer exposes max_scroll_top calculated from
+the actual block content height and viewport. PreparedDocument::render now
+supplies these maxima to JsRuntime::sync_dom_scroll_limits after each
+render and reflow (including timer and DOM style changes or resize).
+The VM stores bounded per-node maxima, clamps pending and subsequent
+scrollTop assignments, and returns the actual position to JS after layout.
+No-script HTML pages also reconcile retained native scroll offsets.
+
+Reads from an initial parser script can still see an unclamped request
+before first layout. Only normal-flow vertical containers are supported;
+there are no visible scrollbars, horizontal axes or full CSSOM View APIs.
+Unit and original HTML/page-engine tests cover changed bounds and readback.
+
+
 ## G1.0: original non-destructive VM root tracing to page diagnostics
 
 op_js::JsRuntime::trace_heap_reachability traverses global
