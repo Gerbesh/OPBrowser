@@ -16,6 +16,25 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G1.0: original non-destructive VM root tracing to page diagnostics
+
+op_js::JsRuntime::trace_heap_reachability traverses global
+prototypes/environment, own JS properties, function captured
+EnvironmentId chains, and conservatively retained DOM/Events/
+AbortSignal/timer/microtask/fetch side-map roots using an
+explicit bounded iterative object/environment worklist.
+Cycles are marked once. JsHeapReachability exposes allocated,
+reachable and unreachable slot counts without freeing memory.
+
+op_engine::Engine::active_script_heap_reachability exposes this
+read-only snapshot for an idle script-enabled page, returning
+None for plain HTML without a VM. VM and engine tests validate
+retained closures, orphan cyclic objects, DOM/timer roots and
+no changes to allocation counts. The implementation does NOT
+register active native execution frames, so automatic GC is
+forbidden until G1.1 root coverage and G2 slot reclamation
+are proven. No third-party JavaScript engine is used.
+
 ## R1.1: JS scrollTop and nested Win32 wheel into original pixels
 
 The page-owning original JsRuntime stores per-element scrollTop

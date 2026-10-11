@@ -13,7 +13,7 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 | Priority | Workstream | Current reality | Next deliverable and exit gate |
 | --- | --- | --- | --- |
 | **P0-A** | **Usable rendering and scrolling** | **R1.0–R1.1 DONE (bounded):** CSS hidden/clip and auto/scroll clipping, vertical `scrollTop`, page-owned scroll offsets even without JS, nested Win32 wheel-to-container routing, boundary fallback, native pixel/hit-test alignment. | **R1.2 NEXT:** exact `scrollTop` range reporting, visible scrollbars, horizontal overflow-x/y, positioned/inline clipping, independent overflow WPT corpus and real-page visual/input smoke. |
-| **P0-B** | **Memory safety / original VM GC** | JS heap and environment arena retain all allocations until runtime destruction, both with 100,000-slot budgets. M4.35 exposes allocation counters; **no GC yet**. | G1: explicit traced roots and non-moving reachability verification. G2: reclaimed slots with safe handles, cycles/closures/DOM/timer/Promise references. G3: bounded automatic GC safepoints and long-session stress. See [GC_IMPLEMENTATION.md](GC_IMPLEMENTATION.md). |
+| **P0-B** | **Memory safety / original VM GC** | **G1.0 DONE:** conservative idle-checkpoint reachability scan counts reachable/unreachable objects and captured environments. Append-only arenas still retain everything. **No GC yet.** | G1.1: verify/register all native call-frame/operand roots. G2: generation-safe reclaim of both arenas and cycles. G3: automatic bounded GC, 30-minute plateau and stress tests. See [GC_IMPLEMENTATION.md](GC_IMPLEMENTATION.md). |
 | **P1-C** | **Flexbox with multiple lines** | A bounded single-line row formatter exists. | R2: flex-wrap, lines, gap, order, cross-axis layout, min-content constraints. Test resize and 2D pixel positions against frozen fixtures. |
 | **P1-D** | **CSS Grid foundation** | Table grid track sizing exists; it is **not** CSS Grid Layout. | R3: explicit/auto tracks, fraction units, item placement and basic gap, then implicit tracks and minmax. Screenshot+geometry tests. |
 | **P1-E** | **Backgrounds and typography** | URL image tiling for blocks/tables and GDI font measurement exist, but broad backgrounds, web fonts and modern shaping/fallback do not. | R4: repeat/size/position and clipping for image backgrounds; then DirectWrite shaping/fallback and real @font-face loading with origin/security controls. |
@@ -46,7 +46,7 @@ P0-A and P0-B are **both mandatory**; a renderer that cannot scroll or that exha
 
 - R1.0–R1.1 DONE: block clipping and vertical JS/native scrolling with original GDI pixel and hit-target checks; retain pinned WPT baselines.
 - R1.2 NEXT: visible scrollbars, horizontal axes, scrollTop max-range reporting, complex positioned/inline clipping, independent WPT overflow cases and real-page corpus.
-- G1.0 enumerate all heap roots and record mark-only reachability statistics without freeing; G1.1 add generation-safe stable handles / free list; G2 collect both objects and captured environments; G3 automatic bounded collections with performance baselines.
+- G1.0 DONE: mark-only idle root tracing with no reclamation. G1.1 NEXT: complete native activation-frame, operand and host root coverage at safe checkpoints; G2: generation-safe object/environment slot reclamation, including cycles; G3: automatic bounded collections with performance baselines.
 - Only then expand flex-wrap, CSS Grid and form fidelity in visible, testable increments.
 
 ## Documentation ownership

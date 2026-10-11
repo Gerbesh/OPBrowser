@@ -48,6 +48,23 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## G1.0: traced reachability without memory reclamation
+
+JsRuntime::trace_heap_reachability now conservatively marks
+reachable object and lexical-environment slots from globals,
+prototypes, JS function closures, retained DOM/Events references,
+timers, microtasks and request callbacks. It detects unreachable
+cyclic allocations without freeing anything, handles cycles
+iteratively and refuses active event-dispatch checkpoints.
+Engine::active_script_heap_reachability exposes the report for
+an idle scripted document. Unit/integration tests pass.
+
+Still **no real GC**: no object slot release, environment sweep,
+generation-safe handle reuse, automatic collection, or long
+session memory plateau. Native recursive interpreter frames
+need explicit root registration before automatic collection
+can be safe.
+
 ## M4.35: pre-dispatch events fixed, GC is outstanding
 
 Original new/legacy Events preserve stopPropagation and

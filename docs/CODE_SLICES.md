@@ -16,6 +16,20 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S49 - G1.0 mark-only object/environment reachability to page diagnostics
+
+IMPLEMENTED non-destructive tracing at idle Rust host checkpoints.
+op_js::JsRuntime::trace_heap_reachability starts from all retained
+VM roots and traverses JS values, prototypes and closures into
+captured lexical environments with explicit cycle marking.
+An intentionally conservative model treats host DOM/Events/timer/
+fetch side maps as roots. op_engine::Engine surfaces the report
+for idle script-enabled pages. Tests distinguish live closures
+and orphan cycles and verify the scan never frees allocations.
+Automatic safe points, interpreter operand root registration,
+generation handles, sweeping and plateau metrics remain missing;
+this is **not a garbage collector**.
+
 ## S48 - Nested Win32 wheel and JS scrollTop through layout and paint (R1.1)
 
 IMPLEMENTED bounded vertical scrolling. Original JsRuntime

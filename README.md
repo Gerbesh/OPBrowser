@@ -38,6 +38,15 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+**G1.0 memory work:** the original VM now has a non-destructive
+mark-only reachability scanner for JS objects and captured lexical
+environments. It distinguishes retained closure/cyclic references
+from orphan allocations and exposes statistics through the page
+engine at idle checkpoints. VM and host integration tests pass.
+**No garbage collection occurs yet:** no sweeping or released
+slots, no memory plateau claim. Native interpreter frame roots,
+generation-safe reclamation and long-session collection are next.
+
 **R1.1 bounded native vertical scrolling delivered:** CSS
 `overflow:auto/scroll` now clips and moves descendant content
 via original page-owned layout scroll offsets. JavaScript

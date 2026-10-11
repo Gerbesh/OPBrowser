@@ -235,6 +235,15 @@ impl Engine {
         Some(self.active_document.as_ref()?.scripts)
     }
 
+    /// Conservative, read-only G1 reachability report for an idle page VM.
+    /// No objects or environments are freed by this diagnostic.
+    pub fn active_script_heap_reachability(
+        &self,
+    ) -> Option<Result<op_js::JsHeapReachability, op_js::JsError>> {
+        let runtime = self.active_document.as_ref()?.runtime.as_ref()?;
+        Some(runtime.trace_heap_reachability())
+    }
+
     /// Bounded diagnostics for exceptions thrown by event listeners.
     /// Listener exceptions do not count as top-level script failures.
     pub fn active_event_listener_errors(&self) -> Option<&[String]> {
@@ -907,6 +916,32 @@ mod tests {
             .expect("trusted hit-tested native click updates DOM");
         assert!(contains_text(&page.display_list, "M432B-UT"));
         assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    }
+
+    #[test]
+    fn g10_engine_reports_idle_page_heap_reachability_without_a_gc() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><script>var keep={};keep.self=keep;var lost={};lost.self=lost;lost=null;</script></body>",
+            500,350
+        );
+        let report = engine.active_script_heap_reachability().unwrap().unwrap();
+        assert!(report.reachable_objects > 0);
+        assert!(report.unreachable_objects > 0);
+        assert_eq!(
+            report.object_slots,
+            report.reachable_objects + report.unreachable_objects
+        );
+        assert_eq!(
+            report.environment_slots,
+            report.reachable_environments + report.unreachable_environments
+        );
+
+        engine.set_html_page("<body><p>Pure static</p></body>", 500, 350);
+        assert!(
+            engine.active_script_heap_reachability().is_none(),
+            "static pages do not need a JS VM for memory statistics"
+        );
     }
 
     #[test]

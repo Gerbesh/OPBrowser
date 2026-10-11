@@ -3371,3 +3371,12 @@ This file is append-only project history.
 - Verified real GDI pixels change from red to blue with scripted scrollTop; native click retargets newly exposed blue content; timer-only scrollTop repaints; nested wheel chains correctly on HTML without any JS runtime. All strict Rust formatting/Clippy and original workspace tests pass.
 - Reran frozen 200-case WPT Static v1: 197/200 PASS, 3 historical FAIL; unchanged 100-case Positioning v1 improved **53/100 to 54/100** with no manifest change and no render errors. Pinned manually selected DOM/Events v8 retains 21/21 attempted PASS and 3 SKIP.
 - LIMITS: vertical only; no visible scrollbars, overflow-x/y, fully clamped scrollTop JS property reporting, complete positioned/inline clipping or representative original WPT overflow selection. Original JS garbage collector still not implemented and remains P0.
+
+
+## 2026-10-11 - G1.0 original VM heap reachability tracing, no collection
+
+- Implemented non-destructive mark-only traversal of original JsRuntime object and lexical-environment arenas. The iterative worklist follows prototypes, own JS properties, live closures and captured parent environments, and handles cyclic references without recursion.
+- Conservatively treat retained DOM wrapper caches, event listeners and options, lifecycle targets, AbortSignal graphs, timer callback arguments, queued microtasks, pending text-response callbacks and host side maps as roots. This may overestimate liveness and cannot yet serve as a sweep set.
+- Exposed JsHeapReachability slot counters through Engine::active_script_heap_reachability on script-enabled documents. Pure HTML without a VM has no JS heap report; no allocation is freed and previous budget limits remain unchanged.
+- Added four VM regressions for captured closures, orphan cycles, DOM/timer roots, queued microtasks/pending text callbacks, dangling host callback handles and active-dispatch rejection, plus an engine integration regression for actual page VMs.
+- BLOCKERS: interpreter activation values are not registered as collector roots; conservative side maps are not swept; ObjectId/EnvironmentId are raw arena indices. Generation-safe sweep, automatic collections, long-session process-memory plateau and representative web compatibility remain entirely unimplemented.

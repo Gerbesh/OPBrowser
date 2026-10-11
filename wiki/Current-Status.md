@@ -234,6 +234,21 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## G1.0: conservative original VM heap tracing
+
+The original Rust JS VM can now trace retained ObjectId and
+EnvironmentId references at an idle page checkpoint. Roots
+include globals/prototypes, closures, DOM/listener caches,
+AbortSignal graphs, timer/microtask/fetch callbacks and host
+side maps. Reachability counts, including orphaned cyclic
+objects, are exposed on the page engine as a **read-only**
+snapshot. Three VM tests and a real-page host test pass.
+
+**This does not free memory.** Both arenas remain append-only,
+interpreter activation values still need explicit GC roots,
+and generation-safe handles/sweep plus long-session plateau
+testing remain mandatory before calling OPBrowser GC-equipped.
+
 ## R1.1: original nested vertical scrolling on Windows
 
 Native overflow:auto/scroll content is now clipped to its

@@ -336,6 +336,18 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S49",
+      "title": "Conservative original JS object and captured-environment reachability at idle page checkpoints",
+      "status": "G1.0 read-only root tracer and engine memory-report integration; no GC",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "trace_heap_reachability"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "TraceWork"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "trace_js_value"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "active_script_heap_reachability"}
+      ],
+      "limitation": "Read-only conservative mark at idle checkpoint; no native activation stack roots, arena sweeping, generation-safe slots, or automatic GC."
+    },
+    {
       "id": "S48",
       "title": "Original JS scrollTop and nested Win32 wheel to GDI pixels and scroll-aware hit targets",
       "status": "R1.1 vertical scroll offsets, programmatic and nested native wheel with document fallback",

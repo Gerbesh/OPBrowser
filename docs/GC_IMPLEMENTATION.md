@@ -1,6 +1,6 @@
 # Original JS VM garbage collector: implementation plan
 
-Status: **BLOCKER / NOT IMPLEMENTED** (2026-10-11). Owner: original Rust op_js. Do not label heap limits or VM reset as GC. Scope includes objects **and lexical environments**.
+Status: **G1.0 MARK-ONLY TRACE IMPLEMENTED; RECLAMATION / GC NOT IMPLEMENTED** (2026-10-11). Original Rust op_js. Both JS objects and captured environments still allocate into append-only arenas; this stage never frees memory.
 
 ## Observed implementation
 
@@ -10,6 +10,31 @@ Status: **BLOCKER / NOT IMPLEMENTED** (2026-10-11). Owner: original Rust op_js. 
 - `JsRuntime::heap_usage()` from M4.35 exposes allocated slot counts and budgets. Counters include unreachable allocations and are **not** live-memory measurements.
 - DOM event listeners, `onclick`, global/document listeners, AbortSignal follower graph, timers, microtasks, pending fetch callbacks, active composedPath, DOM node/object caches, Headers and boxed primitive side maps all hold handles which the collector must account for.
 - The stack/activation frames are currently recursive native interpreter calls with `EnvironmentId`, `JsValue` temporaries and synchronous nested event dispatch. Collecting in the middle of such a call before roots are explicit risks a use-after-free or wrong-object alias.
+
+## G1.0 implemented: conservative idle-checkpoint reachability
+
+`JsRuntime::trace_heap_reachability()` now traverses global
+objects/prototypes, lexical bindings, captured closures and their
+parent environments, DOM node caches, event listener options,
+AbortSignal follower graphs, timers/microtasks, pending text
+callbacks and retained host side maps. It returns
+`JsHeapReachability` counts of reachable/unreachable object
+and environment slots without mutating either arena.
+
+Four VM regressions cover live closures, orphan cyclic objects,
+DOM listener/timer roots, microtasks/pending text callbacks,
+dangling callback handles, and refusal during active event dispatch.
+`Engine::active_script_heap_reachability()` exposes the snapshot
+for an idle real page worker, tested with a scripted page and
+a pure HTML page with no VM. Side maps are deliberately treated
+conservatively as roots, so the result is a tracing diagnostic,
+not the minimal possible live set.
+
+**Remaining G1 work:** register native interpreter call frames,
+operand temporaries, currently executing async callbacks and
+host-held object references explicitly before enabling tracing
+as an automatic safepoint. No sweeping, slot reuse, GC pauses or
+memory plateau have been implemented. G2/G3 remain blockers.
 
 ## GC phase G1: safe non-destructive root tracing
 
@@ -40,4 +65,4 @@ Mark-only telemetry must report retained vs unreachable slots and avoid modifyin
 
 ## Current measurable baseline / next action
 
-M4.35 adds a regression that confirms transient allocations increase the object/environment slot counters. This is evidence of the problem, **not** a memory fix. The next GC code step is the safe mark-only root scanner; do not ship opportunistic object deletion before root and generation handling are proven.
+M4.35 demonstrates transient allocation growth, and G1.0 can now distinguish reachable from unreachable allocated slots without freeing either category. This is a diagnostic, **not** a memory fix. G1.1 must cover all native activation frames, operands and host-held references at safe checkpoints, then prove that tracing cannot miss live objects. Do not reclaim any slots until generation-safe handles and full root coverage are implemented and verified.

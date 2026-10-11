@@ -324,6 +324,30 @@ pub struct JsHeapUsage {
     pub environment_budget: usize,
 }
 
+/// Non-destructive reachability at a safe Rust host checkpoint.
+/// This is NOT a garbage collector, and does not release memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsHeapReachability {
+    pub object_slots: usize,
+    pub reachable_objects: usize,
+    pub unreachable_objects: usize,
+    pub environment_slots: usize,
+    pub reachable_environments: usize,
+    pub unreachable_environments: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TraceWork {
+    Object(ObjectId),
+    Environment(EnvironmentId),
+}
+
+fn trace_js_value(work: &mut Vec<TraceWork>, value: &JsValue) {
+    if let JsValue::Object(id) = value {
+        work.push(TraceWork::Object(*id));
+    }
+}
+
 #[derive(Debug)]
 pub struct JsRuntime {
     heap: Vec<JsObject>,
@@ -3880,6 +3904,172 @@ impl JsRuntime {
 
     /// Current allocated slots, including unreachable objects/environments.
     /// This is intentionally explicit about the absence of collection.
+    /// Mark reachability from all retained VM/host roots. Only call after
+    /// page tasks return to Rust; native recursive execution frames do not
+    /// register their temporary values as roots yet. Never sweep from this.
+    pub fn trace_heap_reachability(&self) -> Result<JsHeapReachability, JsError> {
+        if self.dom_dispatch_depth != 0 {
+            return Err(JsError::type_error(
+                "heap tracing requires an idle JavaScript task checkpoint",
+            ));
+        }
+        let mut pending = Vec::new();
+        for id in [
+            self.object_prototype,
+            self.function_prototype,
+            self.event_target_prototype,
+            self.array_prototype,
+            self.error_prototype,
+            self.type_error_prototype,
+            self.reference_error_prototype,
+            self.syntax_error_prototype,
+            self.global_object,
+        ] {
+            pending.push(TraceWork::Object(id));
+        }
+        pending.push(TraceWork::Environment(self.global_env));
+        if let Some(document) = self.dom_document {
+            pending.push(TraceWork::Object(document));
+        }
+        for map in [
+            &self.dom_node_objects,
+            &self.dom_class_lists,
+            &self.dom_node_lists,
+            &self.dom_html_collections,
+            &self.dom_styles,
+        ] {
+            for &id in map.values() {
+                pending.push(TraceWork::Object(id));
+            }
+        }
+        for &id in self
+            .dom_tag_collections
+            .keys()
+            .chain(self.dom_query_lists.keys())
+        {
+            pending.push(TraceWork::Object(id));
+        }
+        for listeners in self
+            .dom_click_listeners
+            .values()
+            .chain(self.dom_click_capture_listeners.values())
+            .chain(self.dom_typed_listeners.values())
+            .chain(self.lifecycle_listeners.values())
+        {
+            for value in listeners {
+                trace_js_value(&mut pending, value);
+            }
+        }
+        for value in self
+            .dom_onclick
+            .values()
+            .chain(self.microtasks.iter())
+            .chain(self.text_callbacks.values())
+        {
+            trace_js_value(&mut pending, value);
+        }
+        for (&(_, _, _, callback), options) in &self.dom_listener_options {
+            pending.push(TraceWork::Object(callback));
+            if let Some(signal) = options.signal {
+                pending.push(TraceWork::Object(signal));
+            }
+        }
+        for (&(receiver, _, _, callback), options) in &self.lifecycle_listener_options {
+            pending.push(TraceWork::Object(receiver));
+            pending.push(TraceWork::Object(callback));
+            if let Some(signal) = options.signal {
+                pending.push(TraceWork::Object(signal));
+            }
+        }
+        for &(receiver, _) in self.lifecycle_property_registration.keys() {
+            pending.push(TraceWork::Object(receiver));
+        }
+        for (&event, targets) in &self.event_paths {
+            pending.push(TraceWork::Object(event));
+            for &target in targets {
+                pending.push(TraceWork::Object(target));
+            }
+        }
+        for item in &self.abort_deadlines {
+            pending.push(TraceWork::Object(item.signal));
+        }
+        for (&source, followers) in &self.abort_followers {
+            pending.push(TraceWork::Object(source));
+            for &follower in followers {
+                pending.push(TraceWork::Object(follower));
+            }
+        }
+        for timer in &self.timers {
+            trace_js_value(&mut pending, &timer.callback);
+            for value in &timer.arguments {
+                trace_js_value(&mut pending, value);
+            }
+        }
+        for &signal in self.text_request_signals.values() {
+            pending.push(TraceWork::Object(signal));
+        }
+        for &id in self.header_values.keys() {
+            pending.push(TraceWork::Object(id));
+        }
+        for (&id, value) in &self.boxed_values {
+            pending.push(TraceWork::Object(id));
+            trace_js_value(&mut pending, value);
+        }
+
+        let mut object_marks = vec![false; self.heap.len()];
+        let mut environment_marks = vec![false; self.environments.len()];
+        while let Some(work) = pending.pop() {
+            match work {
+                TraceWork::Object(id) => {
+                    let object = self.heap.get(id.0).ok_or_else(|| {
+                        JsError::type_error("heap trace detected a dangling object handle")
+                    })?;
+                    if object_marks[id.0] {
+                        continue;
+                    }
+                    object_marks[id.0] = true;
+                    if let Some(parent) = object.prototype {
+                        pending.push(TraceWork::Object(parent));
+                    }
+                    for value in object.properties.values() {
+                        trace_js_value(&mut pending, value);
+                    }
+                    if let Some(FunctionObject {
+                        implementation: FunctionImplementation::User { closure, .. },
+                    }) = &object.function
+                    {
+                        pending.push(TraceWork::Environment(*closure));
+                    }
+                }
+                TraceWork::Environment(id) => {
+                    let environment = self.environments.get(id.0).ok_or_else(|| {
+                        JsError::type_error("heap trace detected a dangling environment handle")
+                    })?;
+                    if environment_marks[id.0] {
+                        continue;
+                    }
+                    environment_marks[id.0] = true;
+                    if let Some(parent) = environment.parent {
+                        pending.push(TraceWork::Environment(parent));
+                    }
+                    for binding in environment.bindings.values() {
+                        trace_js_value(&mut pending, &binding.value);
+                    }
+                }
+            }
+        }
+        let reachable_objects = object_marks.iter().filter(|&&marked| marked).count();
+        let reachable_environments = environment_marks.iter().filter(|&&marked| marked).count();
+        Ok(JsHeapReachability {
+            object_slots: self.heap.len(),
+            reachable_objects,
+            unreachable_objects: self.heap.len() - reachable_objects,
+            environment_slots: self.environments.len(),
+            reachable_environments,
+            unreachable_environments: self.environments.len() - reachable_environments,
+        })
+    }
+
     pub fn heap_usage(&self) -> JsHeapUsage {
         JsHeapUsage {
             object_slots: self.heap.len(),
@@ -8110,6 +8300,121 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn g10_trace_reachable_closures_and_cycles_without_collecting() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        let baseline = vm.trace_heap_reachability().unwrap();
+        vm.eval_script(
+            r#"
+            var cycle={tag:'live'};
+            cycle.self=cycle;
+            function make(){
+                var captured={value:42};
+                return function(){return captured.value;};
+            }
+            var keeper=make();
+            var abandoned={value:99};
+            abandoned.self=abandoned;
+            abandoned=null;
+        "#,
+        )
+        .unwrap();
+        let before = vm.heap_usage();
+        let snapshot = vm.trace_heap_reachability().unwrap();
+        assert_eq!(snapshot.object_slots, before.object_slots);
+        assert_eq!(snapshot.environment_slots, before.environment_slots);
+        assert_eq!(
+            snapshot.reachable_objects + snapshot.unreachable_objects,
+            before.object_slots
+        );
+        assert_eq!(
+            snapshot.reachable_environments + snapshot.unreachable_environments,
+            before.environment_slots
+        );
+        assert!(snapshot.reachable_objects > baseline.reachable_objects);
+        assert!(snapshot.reachable_environments > baseline.reachable_environments);
+        assert!(
+            snapshot.unreachable_objects >= 1,
+            "abandoned self-cycle must not be a root"
+        );
+        assert_eq!(vm.heap_usage(), before, "mark-only pass must not reclaim");
+        vm.eval_script("var outcome=keeper();").unwrap();
+        assert_eq!(vm.global("outcome"), Some(&JsValue::Number(42.0)));
+    }
+
+    #[test]
+    fn g10_trace_dom_event_and_pending_timer_roots() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        let before = vm.trace_heap_reachability().unwrap();
+        vm.eval_script(
+            r#"
+            var c=new AbortController();
+            var button=document.getElementById('button');
+            button.addEventListener('ping',function(){return 'ok';},{signal:c.signal});
+            setTimeout(function(){return 'later';},50000);
+        "#,
+        )
+        .unwrap();
+        let pending = vm.trace_heap_reachability().unwrap();
+        assert!(pending.reachable_objects > before.reachable_objects);
+        assert_eq!(pending.object_slots, vm.heap_usage().object_slots);
+        vm.eval_script("c.abort();").unwrap();
+        let after = vm.trace_heap_reachability().unwrap();
+        assert_eq!(after.object_slots, vm.heap_usage().object_slots);
+    }
+
+    #[test]
+    fn g10_no_heap_trace_during_active_event_dispatch() {
+        let mut vm = JsRuntime::new();
+        vm.dom_dispatch_depth = 1;
+        assert!(vm.trace_heap_reachability().is_err());
+        vm.dom_dispatch_depth = 0;
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g10_trace_queued_microtasks_and_pending_text_callbacks() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "function make(){var captured={answer:42};return function(){return captured.answer;};}var callback=make();",
+        )
+        .unwrap();
+        let callback = vm.global("callback").cloned().unwrap();
+        vm.eval_script("callback=null;").unwrap();
+        let unrooted = vm.trace_heap_reachability().unwrap();
+
+        vm.microtasks.push_back(callback.clone());
+        let queued = vm.trace_heap_reachability().unwrap();
+        assert!(queued.reachable_objects > unrooted.reachable_objects);
+        assert!(queued.reachable_environments > unrooted.reachable_environments);
+
+        vm.microtasks.clear();
+        vm.text_callbacks.insert(7, callback);
+        let pending_request = vm.trace_heap_reachability().unwrap();
+        assert_eq!(pending_request.reachable_objects, queued.reachable_objects);
+        assert_eq!(
+            pending_request.reachable_environments,
+            queued.reachable_environments
+        );
+
+        vm.text_callbacks.clear();
+        assert_eq!(vm.trace_heap_reachability().unwrap(), unrooted);
+
+        vm.text_callbacks
+            .insert(8, JsValue::Object(ObjectId(vm.heap.len())));
+        assert!(
+            vm.trace_heap_reachability().is_err(),
+            "a dangling host callback handle must fail the trace"
+        );
     }
 
     #[test]

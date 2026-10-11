@@ -19,7 +19,8 @@ pub use parser::{
     parse_script,
 };
 pub use runtime::{
-    DomElementSnapshot, DomOperation, DomTextMutation, JsHeapUsage, JsRuntime, TextResponse,
+    DomElementSnapshot, DomOperation, DomTextMutation, JsHeapReachability, JsHeapUsage, JsRuntime,
+    TextResponse,
 };
 pub use value::{JsValue, ObjectId};
 
