@@ -16,6 +16,22 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## R1.2c: native thumb capture to the original layout scroll offset
+
+Win32 maps mouse-down on a painted scrollbar thumb into capture,
+followed by moves and a release/capture-loss event. The browser
+worker serializes start/end and coalesces consecutive moves while
+busy without discarding capture boundaries. op_engine stores a
+transient node/grab-offset, uses the original op_layout geometry to
+derive clamped scrollTop under out-of-track mouse movement, and
+repaints. Script-driven and no-JS page offsets use the same path.
+Navigation cancels drag state; native input and engine tests cover
+capture, nested thumbs, release and event coalescing.
+
+No horizontal CSS overflow, reserved gutter or broad positioned
+clipping compatibility is implied.
+
+
 ## R1.2b: native vertical scrollbar paint and input
 
 Original op_layout::ScrollContainer computes a proportional 10px

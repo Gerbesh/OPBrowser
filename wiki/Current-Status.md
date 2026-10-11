@@ -234,6 +234,19 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## R1.2c: native scrollbar thumb dragging
+
+The original GDI-painted vertical scrollbar thumb can now be dragged
+with real Win32 pointer capture, even beyond the track. Releasing the
+button, capture loss or document navigation cancels the gesture.
+Nested thumbs target their own scroll container; pages without a
+JavaScript runtime also work. The layout clamps scrollTop and dragging
+never dispatches a DOM click to the element under the thumb.
+Queued pointer moves are coalesced while layout is busy.
+Native window input and page-engine tests verify these behaviors.
+Horizontal overflow-x/y and complex positioned clipping remain open.
+
+
 ## R1.2b: visible native vertical scrollbars
 
 Overflow:auto/scroll boxes now paint original GDI track/thumb
@@ -244,8 +257,8 @@ links or DOM handlers underneath. Win32 pixels and HTML engine
 click interactions are tested. See the offline fixture:
 examples/css/overflow-scrollbars.html.
 
-The track overlays content: no gutter reservation, thumb drag,
-horizontal axes or complete nested/positioned clipping yet.
+The track overlays content: no reserved gutter, horizontal axes
+or complete nested/positioned clipping. Thumb drag arrives in R1.2c.
 
 
 ## R1.2a: layout-clamped scrollTop after rendering

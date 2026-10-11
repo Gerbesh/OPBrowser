@@ -671,3 +671,19 @@ rerun: 54/100 PASS, 46 FAIL, zero render errors, matching R1.1.
 No frozen manifest was changed or selectively excluded.
 These subsets are not a substitute for an independent WPT Overflow
 suite; R1.2b-specific tests are original native GDI/engine regressions.
+
+
+## 2026-10-11 - R1.2c draggable scrollbar verification
+
+Original Win32 mouse capture and release now drive vertical thumb
+dragging via OPBrowser-owned layout geometry and page scroll offsets.
+New engine tests cover nested thumb isolation, scriptless scrolling,
+out-of-track clamping and no DOM click delivery. The Win32 message
+loop test covers capture start, move, release and capture loss;
+worker tests verify mouse-move coalescing.
+
+Unmodified pinned WPT Static v1 rerun: 197/200 PASS,
+3 historical CSS Color failures, zero render errors.
+Unmodified pinned WPT Positioning v1 rerun: 54/100 PASS,
+46 FAIL, zero render errors. Neither suite measures thumb gestures
+or broad real-world compatibility. No manifests were edited.

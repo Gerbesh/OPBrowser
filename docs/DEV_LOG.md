@@ -3399,3 +3399,12 @@ This file is append-only project history.
 - Added engine and native offscreen BGRA regressions for scroll modes, proportional geometry, track clicks and suppression of underlying DOM handlers; introduced examples/css/overflow-scrollbars.html for offline visual verification.
 - LIMITATIONS: vertical overlay-only scrollbars, no dragging, reserved layout gutters, horizontal overflow-x/y or full positioned/ancestor clipping; original GC is still missing. No frozen external WPT/Test262 fixture modified.
 - Reran the unchanged pinned WPT Static v1: 197/200 PASS, 3 historic FAIL, 0 render errors; WPT Positioning v1: 54/100 PASS, 46 FAIL, 0 render errors. Neither constitutes general CSS/Overflow support.
+
+
+## 2026-10-11 - R1.2c captured native scrollbar thumb dragging
+
+- Added bounded layout mapping from a thumb's initial pointer grab-offset to clamped scrollTop, with i64 intermediates, no cumulative per-frame rounding, and pointer positions permitted outside track bounds.
+- op_engine now tracks a transient node-specific drag state, retains it for nested scroll containers without DOM click dispatch, works for both JavaScript-owned and scriptless page offsets, and invalidates it on navigation.
+- Native Win32 message-loop recognizes a mouse-down on painted thumb, uses SetCapture/GetCapture/ReleaseCapture, terminates on normal release and capture loss, then resumes regular page mouse clicks. Worker side coalesces redundant mouse movement while retaining capture start/end order.
+- Regression tests cover nested inner thumb selection and out-of-bounds clamps, no-JS pointer offset preservation, post-release behavior, native OS capture/loss, and worker event queue. Updated the offline overflow-scrollbars fixture to include drag usage.
+- LIMITS: horizontal overflow-x/y, reserved scrollbar gutters, and exact ancestor/positioned clipping remain outstanding; no JS GC or general real-world browsing conformance is claimed. An unrelated 4 ms setInterval timing test failed once in a full concurrent run, passed in isolation and passed on full-suite rerun. No frozen WPT/Test262 fixture altered.

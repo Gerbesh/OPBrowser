@@ -195,6 +195,12 @@ impl PreparedDocument {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ScrollbarDrag {
+    node: usize,
+    grab_offset: i32,
+}
+
 #[derive(Debug)]
 pub struct Engine {
     state: EngineState,
@@ -202,6 +208,7 @@ pub struct Engine {
     navigation: NavigationState,
     document_address: Option<String>,
     active_document: Option<PreparedDocument>,
+    scrollbar_drag: Option<ScrollbarDrag>,
     network_completion_send: mpsc::Sender<NetworkCompletion>,
     network_completion_recv: mpsc::Receiver<NetworkCompletion>,
     generation: u64,
@@ -221,6 +228,7 @@ impl Engine {
             navigation: NavigationState::default(),
             document_address: None,
             active_document: None,
+            scrollbar_drag: None,
         }
     }
 
@@ -344,9 +352,84 @@ impl Engine {
         self.generation = self.generation.wrapping_add(1);
         self.network_active = 0;
         self.active_document = Some(prepared);
+        self.scrollbar_drag = None;
         self.document_address = None;
         self.navigation = NavigationState::default();
         page.display_list
+    }
+
+    /// Start a mouse-captured drag only when the pointer hits a native
+    /// scrollbar thumb. Coordinates are document pixels, as for click_at.
+    pub fn start_scrollbar_drag_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> bool {
+        self.scrollbar_drag = None;
+        let Some(prepared) = self.active_document.as_ref() else {
+            return false;
+        };
+        let layout = layout_document_with_scrolling(
+            &prepared.document,
+            width,
+            height,
+            (&prepared.images.elements, &prepared.images.backgrounds),
+            &prepared.images.generated,
+            (&prepared.computed_styles, prepared.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        self.scrollbar_drag = layout
+            .scroll_containers
+            .iter()
+            .filter_map(|region| {
+                region
+                    .thumb_grab_offset(x, y)
+                    .map(|grab_offset| (region, grab_offset))
+            })
+            .min_by_key(|(region, _)| i64::from(region.rect.width) * i64::from(region.rect.height))
+            .map(|(region, grab_offset)| ScrollbarDrag {
+                node: region.node.index(),
+                grab_offset,
+            });
+        self.scrollbar_drag.is_some()
+    }
+
+    /// Move the captured thumb. Cursor may be outside the track/window;
+    /// the original layout mapping clamps it to the page's scroll range.
+    pub fn move_scrollbar_drag_to(
+        &mut self,
+        pointer_y: i32,
+        width: i32,
+        height: i32,
+    ) -> Option<RenderedPage> {
+        let drag = self.scrollbar_drag?;
+        let prepared = self.active_document.as_mut()?;
+        let layout = layout_document_with_scrolling(
+            &prepared.document,
+            width,
+            height,
+            (&prepared.images.elements, &prepared.images.backgrounds),
+            &prepared.images.generated,
+            (&prepared.computed_styles, prepared.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        let region = layout
+            .scroll_containers
+            .iter()
+            .find(|region| region.node.index() == drag.node)?;
+        let next = region.scroll_top_for_thumb_drag(pointer_y, drag.grab_offset)?;
+        if next == region.scroll_top {
+            return None;
+        }
+        if let Some(vm) = prepared.runtime.as_mut() {
+            vm.set_dom_scroll_top(drag.node, next);
+            vm.take_scroll_dirty();
+        } else if next == 0 {
+            prepared.scroll_offsets.remove(&drag.node);
+        } else {
+            prepared.scroll_offsets.insert(drag.node, next);
+        }
+        Some(prepared.render(width, height))
+    }
+
+    pub fn end_scrollbar_drag(&mut self) {
+        self.scrollbar_drag = None;
     }
 
     /// Dispatch an initial DOM click to the smallest live block hit region.
@@ -624,6 +707,7 @@ impl Engine {
         self.generation = self.generation.wrapping_add(1);
         self.network_active = 0;
         self.active_document = Some(prepared);
+        self.scrollbar_drag = None;
         self.document_address = Some(page.address.clone());
         Ok(page)
     }
@@ -1217,6 +1301,132 @@ mod tests {
             })
             .expect("overflow scroll retains its visible inactive track");
         assert_eq!(track.height, thumb.height);
+    }
+
+    #[test]
+    fn r12c_drag_captures_inner_thumb_and_clamps_beyond_track_without_dom_clicks() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            concat!(
+                "<div id='outer' style='height:120px;width:240px;overflow:auto'>",
+                "<div style='height:25px'>OUTER</div>",
+                "<div id='inner' style='height:60px;width:100px;overflow:auto'>",
+                "<div style='height:240px;background:blue'></div></div>",
+                "<div style='height:190px;background:red'></div></div>",
+                "<script>var hits=0;document.getElementById('inner').addEventListener('click',",
+                "function(){hits=hits+1;});</script>"
+            ),
+            500,
+            320,
+        );
+        let page = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_scrolling(
+            &page.document,
+            500,
+            320,
+            (&page.images.elements, &page.images.backgrounds),
+            &page.images.generated,
+            (&page.computed_styles, page.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        assert_eq!(layout.scroll_containers.len(), 2);
+        let inner = layout
+            .scroll_containers
+            .iter()
+            .min_by_key(|r| r.rect.width)
+            .unwrap();
+        let outer = layout
+            .scroll_containers
+            .iter()
+            .max_by_key(|r| r.rect.width)
+            .unwrap();
+        let inner_node = inner.node.index();
+        let outer_node = outer.node.index();
+        let geometry = inner.scrollbar_geometry().unwrap();
+        let x = geometry.thumb.x + 3;
+        let y = geometry.thumb.y + geometry.thumb.height / 2;
+        assert!(!engine.start_scrollbar_drag_at(5, 5, 500, 320));
+        assert!(engine.start_scrollbar_drag_at(x, y, 500, 320));
+        assert_eq!(engine.scrollbar_drag.unwrap().node, inner_node);
+        assert!(engine.move_scrollbar_drag_to(y + 300, 500, 320).is_some());
+        {
+            let vm = engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .runtime
+                .as_ref()
+                .unwrap();
+            assert_eq!(
+                vm.dom_scroll_offsets().get(&inner_node),
+                Some(&inner.max_scroll_top)
+            );
+            assert_eq!(vm.dom_scroll_offsets().get(&outer_node), None);
+            assert_eq!(vm.global("hits"), Some(&op_js::JsValue::Number(0.0)));
+        }
+        assert!(engine.move_scrollbar_drag_to(y - 500, 500, 320).is_some());
+        {
+            let vm = engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .runtime
+                .as_ref()
+                .unwrap();
+            assert!(!vm.dom_scroll_offsets().contains_key(&inner_node));
+        }
+        engine.end_scrollbar_drag();
+        assert!(engine.scrollbar_drag.is_none());
+        assert!(engine.move_scrollbar_drag_to(y + 200, 500, 320).is_none());
+        assert!(engine.start_scrollbar_drag_at(x, y, 500, 320));
+        engine.set_html_page("<p>Different page</p>", 500, 320);
+        assert!(
+            engine.scrollbar_drag.is_none(),
+            "new document must invalidate capture"
+        );
+    }
+
+    #[test]
+    fn r12c_drag_scrolls_scriptless_page_and_preserves_pointer_offset() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<div style='height:80px;width:170px;overflow:auto'><div style='height:260px;background:blue'></div></div>",
+            500, 320,
+        );
+        let page = engine.active_document.as_ref().unwrap();
+        assert!(page.runtime.is_none());
+        let layout = layout_document_with_scrolling(
+            &page.document,
+            500,
+            320,
+            (&page.images.elements, &page.images.backgrounds),
+            &page.images.generated,
+            (&page.computed_styles, page.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        let region = layout.scroll_containers.first().unwrap();
+        let bar = region.scrollbar_geometry().unwrap();
+        let x = bar.thumb.x + 2;
+        let y = bar.thumb.y + bar.thumb.height - 2;
+        assert!(engine.start_scrollbar_drag_at(x, y, 500, 320));
+        assert!(engine.move_scrollbar_drag_to(y + 20, 500, 320).is_some());
+        let offset = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .scroll_offsets
+            .get(&region.node.index())
+            .copied()
+            .unwrap();
+        assert_eq!(
+            offset,
+            region
+                .scroll_top_for_thumb_drag(y + 20, bar.thumb.height - 2)
+                .unwrap()
+        );
+        assert!(offset > 0 && offset < region.max_scroll_top);
+        assert!(engine.move_scrollbar_drag_to(y + 20, 500, 320).is_none());
+        engine.end_scrollbar_drag();
     }
 
     #[test]

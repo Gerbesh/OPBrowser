@@ -283,6 +283,32 @@ impl ScrollContainer {
         })
     }
 
+    /// Pointer capture starts only on the painted thumb, not the track.
+    pub fn thumb_grab_offset(&self, x: i32, y: i32) -> Option<i32> {
+        let thumb = self.scrollbar_geometry()?.thumb;
+        (x >= thumb.x
+            && x < thumb.x.saturating_add(thumb.width)
+            && y >= thumb.y
+            && y < thumb.y.saturating_add(thumb.height))
+        .then_some(y.saturating_sub(thumb.y))
+    }
+
+    /// Drag by preserving the original cursor-to-thumb offset. This works
+    /// beyond track edges while Win32 holds capture, without accumulating
+    /// rounding error across intermediate pointer movements.
+    pub fn scroll_top_for_thumb_drag(&self, pointer_y: i32, grab_offset: i32) -> Option<i32> {
+        let geometry = self.scrollbar_geometry()?;
+        let travel = geometry.track.height.saturating_sub(geometry.thumb.height);
+        if travel <= 0 || self.max_scroll_top <= 0 {
+            return Some(0);
+        }
+        let thumb_top = pointer_y
+            .saturating_sub(geometry.track.y)
+            .saturating_sub(grab_offset)
+            .clamp(0, travel);
+        Some(((i64::from(thumb_top) * i64::from(self.max_scroll_top)) / i64::from(travel)) as i32)
+    }
+
     /// Native click on the track jumps the thumb toward the pointer.
     pub fn scroll_top_at_track_point(&self, x: i32, y: i32) -> Option<i32> {
         let geometry = self.scrollbar_geometry()?;

@@ -336,6 +336,19 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S52",
+      "title": "Captured Win32 scrollbar thumb movement to nested original scrollTop",
+      "status": "R1.2c capture, busy-worker pointer coalescing, original layout mapping and clamped scrollTop",
+      "steps": [
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "navigation_event"},
+        {"path": "crates/op_browser/src/main.rs", "symbol": "queue_thumb_event"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "start_scrollbar_drag_at"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "move_scrollbar_drag_to"},
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "scroll_top_for_thumb_drag"}
+      ],
+      "limitation": "Vertical overlay thumb dragging only, no horizontal axes, reserved gutter or complete complex clipping."
+    },
+    {
       "id": "S51",
       "title": "Original vertical scrollbar geometry through GDI pixels and track hit testing",
       "status": "R1.2b native vertical overlay scrollbar pixels and track click routing",

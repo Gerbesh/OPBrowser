@@ -77,6 +77,28 @@ struct LoadResult {
     fallback_scroll: Option<i32>,
 }
 
+/// Keep the first/last capture events in order, but collapse repeated
+/// movements while the layout worker is busy. A drag must not be lost when
+/// the pointer is released before the preceding frame finishes painting.
+fn queue_thumb_event(
+    queued: &mut std::collections::VecDeque<NavigationEvent>,
+    event: NavigationEvent,
+) {
+    match event {
+        NavigationEvent::ScrollbarDragMove { y } => {
+            if let Some(NavigationEvent::ScrollbarDragMove { y: last_y }) = queued.back_mut() {
+                *last_y = y;
+            } else {
+                queued.push_back(NavigationEvent::ScrollbarDragMove { y });
+            }
+        }
+        NavigationEvent::ScrollbarDragStart { .. } | NavigationEvent::ScrollbarDragEnd => {
+            queued.push_back(event);
+        }
+        _ => {}
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let source = args.iter().find(|argument| !argument.starts_with("--"));
@@ -170,6 +192,9 @@ fn main() {
                 NavigationEvent::Resize
                     | NavigationEvent::Click { .. }
                     | NavigationEvent::Scroll { .. }
+                    | NavigationEvent::ScrollbarDragStart { .. }
+                    | NavigationEvent::ScrollbarDragMove { .. }
+                    | NavigationEvent::ScrollbarDragEnd
             );
             let mut fallback_scroll = None;
             let page = match event {
@@ -190,6 +215,17 @@ fn main() {
                         fallback_scroll = Some(delta_y);
                     }
                     Ok(page)
+                }
+                NavigationEvent::ScrollbarDragStart { x, y } => {
+                    engine.start_scrollbar_drag_at(x, y, width, height);
+                    Ok(None)
+                }
+                NavigationEvent::ScrollbarDragMove { y } => {
+                    Ok(engine.move_scrollbar_drag_to(y, width, height))
+                }
+                NavigationEvent::ScrollbarDragEnd => {
+                    engine.end_scrollbar_drag();
+                    Ok(None)
                 }
                 NavigationEvent::Poll => continue,
             }
@@ -226,6 +262,9 @@ fn main() {
     }
 
     let mut busy = false;
+    // Preserve capture start/end even while a previous layout is rendering;
+    // coalesce intermediate thumb positions to the newest mouse location.
+    let mut queued_thumb_events = std::collections::VecDeque::new();
     let mut back = false;
     let mut forward = false;
     let mut reload = false;
@@ -248,6 +287,10 @@ fn main() {
         });
     }
     let exit_code = window.run_message_loop(|event| {
+        if busy && event != NavigationEvent::Poll {
+            queue_thumb_event(&mut queued_thumb_events, event);
+            return;
+        }
         if event == NavigationEvent::Poll {
             match results.try_recv() {
                 Ok(result) => {
@@ -355,6 +398,17 @@ fn main() {
                         }
                         window.close();
                     }
+                    // Serialize native capture events through the render worker.
+                    // Starting the next command re-arms the UI's Poll timer.
+                    if let Some(next) = queued_thumb_events.pop_front() {
+                        let (width, height) = window.viewport_size();
+                        busy = commands.send(LoadCommand {
+                            event: next,
+                            width,
+                            height,
+                        }).is_ok();
+                        window.set_navigation_state(back, forward, reload, busy);
+                    }
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -376,6 +430,9 @@ fn main() {
                 event,
                 NavigationEvent::Resize | NavigationEvent::Click { .. }
                     | NavigationEvent::Scroll { .. }
+                    | NavigationEvent::ScrollbarDragStart { .. }
+                    | NavigationEvent::ScrollbarDragMove { .. }
+                    | NavigationEvent::ScrollbarDragEnd
             );
             if commands
                 .send(LoadCommand {
@@ -408,6 +465,34 @@ fn main() {
 #[cfg(test)]
 mod overflow_tests {
     use super::*;
+
+    #[test]
+    fn r12c_busy_drag_queue_coalesces_moves_without_losing_capture_edges() {
+        let mut queue = std::collections::VecDeque::new();
+        queue_thumb_event(
+            &mut queue,
+            NavigationEvent::ScrollbarDragStart { x: 41, y: 21 },
+        );
+        for y in 22..100 {
+            queue_thumb_event(&mut queue, NavigationEvent::ScrollbarDragMove { y });
+        }
+        queue_thumb_event(&mut queue, NavigationEvent::ScrollbarDragEnd);
+        assert_eq!(queue.len(), 3);
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::ScrollbarDragStart { x: 41, y: 21 })
+        );
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::ScrollbarDragMove { y: 99 })
+        );
+        assert_eq!(queue.pop_front(), Some(NavigationEvent::ScrollbarDragEnd));
+        queue_thumb_event(&mut queue, NavigationEvent::Click { x: 1, y: 2 });
+        assert!(
+            queue.is_empty(),
+            "unrelated clicks are not queued as drag input"
+        );
+    }
 
     fn rgb_at(pixels: &[u8], width: i32, x: i32, y: i32) -> (u8, u8, u8) {
         let index = ((y * width + x) * 4) as usize;

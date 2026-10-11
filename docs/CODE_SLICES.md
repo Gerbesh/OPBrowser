@@ -16,6 +16,18 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S52 - Native thumb drag to bounded original scrollTop (R1.2c)
+
+IMPLEMENTED Win32 mouse capture, pointer movement outside tracks,
+button release and capture-loss handling. op_browser::queue_thumb_event
+coalesces redundant moves while retaining the first/last capture
+events. op_engine::Engine::start_scrollbar_drag_at and
+move_scrollbar_drag_to reuse op_layout's scrollbar geometry and
+original JS/no-script scroll offsets. Native message-loop,
+nested-container, DOM non-click and drag clamping tests pass.
+Vertical overlay only; no horizontal overflow-x/y or reserved gutter.
+
+
 ## S51 - Native vertical scrollbar pixels and clicks (R1.2b)
 
 Original op_layout::ScrollContainer::scrollbar_geometry feeds

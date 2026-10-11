@@ -47,6 +47,16 @@ engine at idle checkpoints. VM and host integration tests pass.
 slots, no memory plateau claim. Native interpreter frame roots,
 generation-safe reclamation and long-session collection are next.
 
+**R1.2c native thumb dragging:** Mouse capture starts on a painted
+vertical scrollbar thumb, continues beyond track boundaries and
+ends on release, OS capture loss or navigation. Original layout
+computes bounded scrollTop for nested JS/no-script pages; queued
+pointer moves are coalesced while the worker is busy.
+Native input and engine tests verify behavior. Try
+examples/css/overflow-scrollbars.html.
+Horizontal axes, reserved gutters and complex clipping remain pending.
+
+
 **R1.2b visible vertical scrollbars:** Original layout-derived tracks
 and proportional thumbs are painted through Win32 GDI. CSS
 overflow:auto shows a track only for vertical overflow; overflow:scroll
@@ -54,8 +64,8 @@ keeps a track without overflow; hidden has none. Clicking the track
 changes the scroll offset without dispatching a DOM click or opening
 a link underneath it. Real GDI pixel and engine tests pass.
 See examples/css/overflow-scrollbars.html for a demo.
-This is vertical overlay scrolling without drag support,
-horizontal axes or reserved layout gutter.
+Vertical thumb dragging is provided in R1.2c;
+horizontal axes and reserved layout gutters remain unimplemented.
 
 **R1.2a layout-clamped scrollTop readback:** after render or
 reflow, real vertical scroll ranges are reconciled with JS and

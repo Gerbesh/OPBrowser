@@ -18,7 +18,8 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    EnableWindow, GetKeyState, SetFocus, VK_CONTROL, VK_F5, VK_L, VK_RETURN,
+    EnableWindow, GetCapture, GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_CONTROL, VK_F5,
+    VK_L, VK_RETURN,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -26,6 +27,8 @@ static DISPLAY_LIST: OnceLock<RwLock<DisplayList>> = OnceLock::new();
 static PAINTED_ONCE: AtomicBool = AtomicBool::new(false);
 static PAINTED_IMAGES: AtomicUsize = AtomicUsize::new(0);
 static SCROLL_Y: AtomicI32 = AtomicI32::new(0);
+static THUMB_DRAG_ACTIVE: AtomicBool = AtomicBool::new(false);
+static THUMB_DRAG_LAST_Y: AtomicI32 = AtomicI32::new(0);
 static LINK_REGIONS: OnceLock<RwLock<Vec<LinkRegion>>> = OnceLock::new();
 
 struct LinkRegion {
@@ -42,6 +45,7 @@ const STATUS: i32 = 106;
 const POLL_TIMER: usize = 1;
 const RESIZE_TIMER: usize = 2;
 const NAVIGATION_COMMAND: u32 = WM_APP + 1;
+const CANCEL_THUMB_DRAG: u32 = WM_APP + 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NavigationEvent {
@@ -49,6 +53,9 @@ pub enum NavigationEvent {
     FollowLink(String),
     Click { x: i32, y: i32 },
     Scroll { x: i32, y: i32, delta_y: i32 },
+    ScrollbarDragStart { x: i32, y: i32 },
+    ScrollbarDragMove { y: i32 },
+    ScrollbarDragEnd,
     Back,
     Forward,
     Reload,
@@ -83,6 +90,7 @@ impl NativeBrowserWindow {
     pub fn create(title: &str, display_list: DisplayList) -> Result<Self, String> {
         PAINTED_ONCE.store(false, Ordering::SeqCst);
         SCROLL_Y.store(0, Ordering::SeqCst);
+        THUMB_DRAG_ACTIVE.store(false, Ordering::SeqCst);
         set_display_list(display_list);
 
         let class_name = wide("OPBrowserMainWindow");
@@ -253,6 +261,10 @@ impl NativeBrowserWindow {
     }
 
     pub fn present(&self, address: &str, display_list: DisplayList) {
+        // A new document invalidates the previous scrollbar thumb and capture.
+        if THUMB_DRAG_ACTIVE.swap(false, Ordering::SeqCst) {
+            unsafe { ReleaseCapture() };
+        }
         self.set_address(address);
         set_display_list(display_list);
         SCROLL_Y.store(0, Ordering::SeqCst);
@@ -385,7 +397,43 @@ impl NativeBrowserWindow {
 
     fn navigation_event(&self, message: &MSG) -> Option<NavigationEvent> {
         match message.message {
+            WM_LBUTTONDOWN if message.hwnd == self.hwnd => {
+                let x = (message.lParam as u16 as i16) as i32;
+                let y = ((message.lParam >> 16) as u16 as i16) as i32;
+                let mut client: RECT = unsafe { zeroed() };
+                unsafe { GetClientRect(self.hwnd, &mut client) };
+                let document_y = y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst);
+                if x >= 0
+                    && x < client.right
+                    && y >= TOOLBAR_HEIGHT
+                    && y < client.bottom
+                    && scrollbar_thumb_at_document_point(x, document_y)
+                {
+                    THUMB_DRAG_LAST_Y.store(document_y, Ordering::SeqCst);
+                    THUMB_DRAG_ACTIVE.store(true, Ordering::SeqCst);
+                    unsafe { SetCapture(self.hwnd) };
+                    Some(NavigationEvent::ScrollbarDragStart { x, y: document_y })
+                } else {
+                    None
+                }
+            }
+            WM_MOUSEMOVE
+                if message.hwnd == self.hwnd && THUMB_DRAG_ACTIVE.load(Ordering::SeqCst) =>
+            {
+                if unsafe { GetCapture() } != self.hwnd {
+                    THUMB_DRAG_ACTIVE.store(false, Ordering::SeqCst);
+                    return Some(NavigationEvent::ScrollbarDragEnd);
+                }
+                let y = ((message.lParam >> 16) as u16 as i16) as i32;
+                let document_y = y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst);
+                (THUMB_DRAG_LAST_Y.swap(document_y, Ordering::SeqCst) != document_y)
+                    .then_some(NavigationEvent::ScrollbarDragMove { y: document_y })
+            }
             WM_LBUTTONUP if message.hwnd == self.hwnd => {
+                if THUMB_DRAG_ACTIVE.swap(false, Ordering::SeqCst) {
+                    unsafe { ReleaseCapture() };
+                    return Some(NavigationEvent::ScrollbarDragEnd);
+                }
                 let x = (message.lParam as u16 as i16) as i32;
                 let y = ((message.lParam >> 16) as u16 as i16) as i32;
                 if let Some(href) = self.link_at_client_point(x, y) {
@@ -449,6 +497,9 @@ impl NativeBrowserWindow {
                     KillTimer(self.hwnd, RESIZE_TIMER);
                 }
                 Some(NavigationEvent::Resize)
+            }
+            CANCEL_THUMB_DRAG if message.hwnd == self.hwnd => {
+                Some(NavigationEvent::ScrollbarDragEnd)
             }
             _ => None,
         }
@@ -530,6 +581,25 @@ fn set_display_list(display_list: DisplayList) {
 }
 
 /// Scrollbar overlays take priority over links painted beneath their tracks.
+/// The UI uses the painted thumb rectangles to start native mouse capture.
+/// The original page engine independently resolves the same layout geometry.
+fn scrollbar_thumb_at_document_point(x: i32, y: i32) -> bool {
+    DISPLAY_LIST
+        .get()
+        .and_then(|storage| storage.read().ok())
+        .is_some_and(|list| {
+            list.commands.iter().rev().any(|command| {
+                let PaintCommand::Scrollbar { thumb, .. } = command else {
+                    return false;
+                };
+                x >= thumb.x
+                    && x < thumb.x.saturating_add(thumb.width)
+                    && y >= thumb.y
+                    && y < thumb.y.saturating_add(thumb.height)
+            })
+        })
+}
+
 fn scrollbar_at_document_point(x: i32, y: i32) -> bool {
     DISPLAY_LIST
         .get()
@@ -580,6 +650,18 @@ unsafe extern "system" fn window_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match message {
+        WM_CAPTURECHANGED => {
+            if THUMB_DRAG_ACTIVE.swap(false, Ordering::SeqCst) {
+                unsafe { PostMessageW(hwnd, CANCEL_THUMB_DRAG, 0, 0) };
+            }
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
+        WM_CANCELMODE => {
+            if THUMB_DRAG_ACTIVE.load(Ordering::SeqCst) {
+                unsafe { ReleaseCapture() };
+            }
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
         WM_SETCURSOR if lparam as u16 as i16 as i32 == HTCLIENT as i32 => {
             let mut point: POINT = unsafe { zeroed() };
             unsafe {
@@ -1564,6 +1646,99 @@ mod tests {
                 8 => {
                     assert_eq!(event, NavigationEvent::Resize);
                     assert_eq!(window.viewport_size(), (320, 400));
+                    window.present_reflow(DisplayList {
+                        commands: vec![
+                            PaintCommand::FillRect {
+                                x: 0,
+                                y: 0,
+                                width: 320,
+                                height: 250,
+                                color: Color::WHITE,
+                            },
+                            PaintCommand::Scrollbar {
+                                track: op_paint::ClipRect {
+                                    x: 40,
+                                    y: 120,
+                                    width: 10,
+                                    height: 80,
+                                },
+                                thumb: op_paint::ClipRect {
+                                    x: 41,
+                                    y: 126,
+                                    width: 8,
+                                    height: 20,
+                                },
+                            },
+                        ],
+                    });
+                    assert!(scrollbar_thumb_at_document_point(44, 130));
+                    let down_y = TOOLBAR_HEIGHT + 130;
+                    unsafe {
+                        PostMessageW(
+                            window.hwnd,
+                            WM_LBUTTONDOWN,
+                            1,
+                            ((down_y as u32) << 16 | 44) as LPARAM,
+                        );
+                    }
+                }
+                9 => {
+                    assert_eq!(event, NavigationEvent::ScrollbarDragStart { x: 44, y: 130 });
+                    assert_eq!(unsafe { GetCapture() }, window.hwnd);
+                    let move_y = TOOLBAR_HEIGHT + 190;
+                    unsafe {
+                        PostMessageW(
+                            window.hwnd,
+                            WM_MOUSEMOVE,
+                            1,
+                            ((move_y as u32) << 16 | 160) as LPARAM,
+                        );
+                    }
+                }
+                10 => {
+                    assert_eq!(event, NavigationEvent::ScrollbarDragMove { y: 190 });
+                    let up_y = TOOLBAR_HEIGHT + 190;
+                    unsafe {
+                        PostMessageW(
+                            window.hwnd,
+                            WM_LBUTTONUP,
+                            0,
+                            ((up_y as u32) << 16 | 160) as LPARAM,
+                        );
+                    }
+                }
+                11 => {
+                    assert_eq!(event, NavigationEvent::ScrollbarDragEnd);
+                    assert_ne!(unsafe { GetCapture() }, window.hwnd);
+                    let click_y = TOOLBAR_HEIGHT + 40;
+                    unsafe {
+                        PostMessageW(
+                            window.hwnd,
+                            WM_LBUTTONUP,
+                            0,
+                            ((click_y as u32) << 16 | 15) as LPARAM,
+                        );
+                    }
+                }
+                12 => {
+                    assert_eq!(event, NavigationEvent::Click { x: 15, y: 40 });
+                    let down_y = TOOLBAR_HEIGHT + 130;
+                    unsafe {
+                        PostMessageW(
+                            window.hwnd,
+                            WM_LBUTTONDOWN,
+                            1,
+                            ((down_y as u32) << 16 | 44) as LPARAM,
+                        );
+                    }
+                }
+                13 => {
+                    assert_eq!(event, NavigationEvent::ScrollbarDragStart { x: 44, y: 130 });
+                    unsafe { ReleaseCapture() };
+                }
+                14 => {
+                    assert_eq!(event, NavigationEvent::ScrollbarDragEnd);
+                    assert!(!THUMB_DRAG_ACTIVE.load(Ordering::SeqCst));
                     window.close();
                 }
                 _ => panic!("unexpected extra UI event"),
@@ -1573,6 +1748,6 @@ mod tests {
         done.send(()).unwrap();
         watchdog.join().unwrap();
         assert_eq!(exit, 0);
-        assert_eq!(step, 9);
+        assert_eq!(step, 15);
     }
 }
