@@ -20,7 +20,7 @@ op_platform_win::paint_command
 - [`op_html::Tokenizer`](../crates/op_html/src/lib.rs#L56)
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L261)
 - [`op_layout::layout`](../crates/op_layout/src/flow.rs#L15)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 - [`op_platform_win::paint_command`](../crates/op_platform_win/src/lib.rs#L653)
 
 This path lacks complete CSS, forms, DOM scripting and a GPU backend.
@@ -55,7 +55,7 @@ op_paint::build_display_list
 - [`op_engine::load`](../crates/op_engine/src/styles.rs#L105)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
 - [`op_layout::layout`](../crates/op_layout/src/flow.rs#L15)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 CSS cascade, first-line and some grouping exist; many CSS properties and layout modes remain partial.
 
@@ -113,7 +113,7 @@ op_paint::build_display_list
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L267)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
 - [`op_engine::render`](../crates/op_engine/src/lib.rs#L157)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Bounded classic execution at script closing tags during DOM construction; basic external scripts now exist but no event loop, general DOM mutations or full HTML5test support.
 
@@ -449,6 +449,28 @@ op_platform_win::present_reflow
 
 Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol.
 
+## S47 — Original CSS overflow hidden/clip through layout, paint, GDI pixels and native clicks
+
+Status: **R1.0 verified nested GDI clipping and clipped native click hit testing**.
+
+```text
+op_css::parse_overflow
+op_layout::collect_overflow_clips
+op_layout::ClipRect
+op_paint::clip_commands_since
+op_platform_win::paint_command
+op_engine::click_at
+```
+
+- [`op_css::parse_overflow`](../crates/op_css/src/computed.rs#L1871)
+- [`op_layout::collect_overflow_clips`](../crates/op_layout/src/flow.rs#L93)
+- [`op_layout::ClipRect`](../crates/op_layout/src/lib.rs#L187)
+- [`op_paint::clip_commands_since`](../crates/op_paint/src/lib.rs#L201)
+- [`op_platform_win::paint_command`](../crates/op_platform_win/src/lib.rs#L653)
+- [`op_engine::click_at`](../crates/op_engine/src/lib.rs#L321)
+
+Only overflow hidden/clip block descendant clipping; no scrollTop/wheel/nested offsets, axis longhands or comprehensive positioned/inline clipping.
+
 ## S46 — Original VM object/environment allocation observability before garbage collection
 
 Status: **M4.35 non-collecting heap_usage diagnostic and explicit GC design**.
@@ -537,7 +559,7 @@ op_paint::build_display_list
 - [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L2065)
 - [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L2693)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Bounded original EventTarget prototype and callback objects; no full WebIDL descriptors, Event subclasses, Shadow DOM or broad pinned WPT Events conformance.
 
@@ -563,7 +585,7 @@ op_paint::build_display_list
 - [`op_js::dispatch_abort_signal_event`](../crates/op_js/src/runtime.rs#L1992)
 - [`op_js::set_property`](../crates/op_js/src/runtime.rs#L3948)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Light-DOM events only; no Shadow DOM retargeting, trusted default activation, WebIDL property descriptors or broad WPT Events conformance.
 
@@ -589,7 +611,7 @@ op_paint::build_display_list
 - [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L2552)
 - [`op_js::finish_event_dispatch`](../crates/op_js/src/runtime.rs#L2230)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Bounded connected light-DOM paths only; no Shadow DOM composed retargeting, full Event WebIDL descriptors or broad WPT Events conformance.
 
@@ -611,7 +633,7 @@ op_paint::build_display_list
 - [`op_js::deliver_lifecycle_target`](../crates/op_js/src/runtime.rs#L2171)
 - [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L2693)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Bounded original property handler ordering; no complete WHATWG EventTarget/HTML activation or broad WPT Events coverage.
 
@@ -633,7 +655,7 @@ op_paint::build_display_list
 - [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L2065)
 - [`op_js::bind_dom_node`](../crates/op_js/src/runtime.rs#L2411)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Original JS function callbacks only; no listener object interface or full WPT/DOM EventTarget conformance.
 
@@ -657,7 +679,7 @@ op_paint::build_display_list
 - [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L918)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L447)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Buffered same-origin GET; JS callbacks canceled and late completions dropped but blocking WinHTTP work may finish; no streaming, CORS or non-GET.
 
@@ -707,7 +729,7 @@ op_paint::build_display_list
 - [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L2693)
 - [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L2065)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 No DOMException default reason, AbortSignal.timeout/any, signal cancellation of fetch/timers, or broad WPT Events conformance.
 
@@ -735,7 +757,7 @@ op_paint::build_display_list
 - [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L2552)
 - [`op_js::has_dom_click_path_listener`](../crates/op_js/src/runtime.rs#L2596)
 - [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L782)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 64-element ancestry budget, no Shadow DOM, default activation, AbortSignal or broad WPT conformance.
 
@@ -759,7 +781,7 @@ op_paint::build_display_list
 - [`op_js::call_isolated_event_handler`](../crates/op_js/src/runtime.rs#L2123)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L267)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Element event paths do not yet include document/window; no AbortSignal or official asynchronous WPT harness.
 
@@ -781,7 +803,7 @@ op_paint::build_display_list
 - [`op_js::call_isolated_event_handler`](../crates/op_js/src/runtime.rs#L2123)
 - [`op_engine::active_event_listener_errors`](../crates/op_engine/src/lib.rs#L230)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Element listener dictionaries only. No AbortSignal or document/window options, official async WPT harness or broad event conformance.
 
@@ -801,7 +823,7 @@ op_paint::build_display_list
 - [`op_js::dispatch_custom_event_inner`](../crates/op_js/src/runtime.rs#L2768)
 - [`op_js::event_immediate_stopped`](../crates/op_js/src/runtime.rs#L2125)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Immediate-stop control only; once/passive and listener exception isolation remain incomplete. External WPT baseline unchanged.
 
@@ -823,7 +845,7 @@ op_paint::build_display_list
 - [`op_js::dispatch_custom_event`](../crates/op_js/src/runtime.rs#L2723)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_dom::append_child`](../crates/op_dom/src/lib.rs#L123)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Bounded partial Selectors and EventTarget only; pinned WPT DOM/Events v5 is 12 chosen attempted/pass and 3 skips, not a conformance rate.
 
@@ -847,7 +869,7 @@ op_paint::build_display_list
 - [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L2552)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_dom::append_child`](../crates/op_dom/src/lib.rs#L123)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Partial in, simple selectors, static query lists, bounded click only. 11 pinned manually chosen WPT files pass; 3 SKIP. Not full WPT.
 
@@ -871,7 +893,7 @@ op_paint::build_display_list
 - [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4293)
 - [`op_js::elements_by_tag`](../crates/op_js/src/runtime.rs#L1289)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Ten manually selected original source WPT fixtures, 11 test callbacks, 3 skips; partial live tag collections, not full DOM.
 
@@ -895,7 +917,7 @@ op_paint::build_display_list
 - [`op_js::dom_html_collection_object`](../crates/op_js/src/runtime.rs#L3109)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_dom::remove_child`](../crates/op_dom/src/lib.rs#L213)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Seven manually scoped real WPT DOM fixtures, three explicit skips; no official WPT compliance score.
 
@@ -919,7 +941,7 @@ op_paint::build_display_list
 - [`op_js::get_property`](../crates/op_js/src/runtime.rs#L1812)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_dom::remove_child`](../crates/op_dom/src/lib.rs#L213)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Exactly one original upstream WPT file attempted; limited harness, three explicit skips, not a full WPT score.
 
@@ -943,7 +965,7 @@ op_paint::build_display_list
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_dom::replace_child`](../crates/op_dom/src/lib.rs#L194)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Limited bounded live NodeList, DOMTokenList and CSSStyleDeclaration only, not broad WPT DOM/CSSOM compliance.
 
@@ -969,7 +991,7 @@ op_paint::build_display_list
 - [`op_dom::insert_before`](../crates/op_dom/src/lib.rs#L124)
 - [`op_css::collect_author_styles_with_linked`](../crates/op_css/src/lib.rs#L25)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Initial bounded DOM subset, not full WPT or CSSOM.
 
@@ -994,8 +1016,8 @@ op_paint::build_display_list
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_dom::append_child`](../crates/op_dom/src/lib.rs#L123)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
-- [`op_layout::layout_document_with_backgrounds_and_resources`](../crates/op_layout/src/lib.rs#L304)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_layout::layout_document_with_backgrounds_and_resources`](../crates/op_layout/src/lib.rs#L344)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Initial bounded createElement/appendChild/id/textContent only, with missing general DOM methods.
 
@@ -1017,7 +1039,7 @@ op_paint::build_display_list
 - [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4293)
 - [`op_js::get_property`](../crates/op_js/src/runtime.rs#L1812)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L267)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 Existing text DOM only; no insertion, lone UTF-16 surrogates or generic array-like methods.
 
@@ -1043,7 +1065,7 @@ op_paint::build_display_list
 - [`op_js::typeof_value`](../crates/op_js/src/runtime.rs#L1173)
 - [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4293)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L267)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 
 No complete modern ECMAScript, DOM or test harness support; v2 65/179 attempted with 110 explicit SKIP.
 
@@ -1070,7 +1092,7 @@ op_js::evaluate
 - [`op_js::coerce_to_primitive`](../crates/op_js/src/runtime.rs#L1140)
 - [`op_js::binary_with_coercion`](../crates/op_js/src/runtime.rs#L1308)
 - [`op_js::apply_binary`](../crates/op_js/src/runtime.rs#L1384)
-- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L86)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L91)
 - [`op_js::evaluate`](../crates/op_js/src/bin/test262_runtime_probe.rs#L170)
 
 91-case legacy arithmetic/equality suite; no strict mode, eval, Date, Symbol, or modern ES full semantics.

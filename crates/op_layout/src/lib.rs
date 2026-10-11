@@ -182,6 +182,45 @@ impl LayoutItem {
     }
 }
 
+/// A bounded layout-coordinate CSS overflow clip (logical px).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl ClipRect {
+    pub fn intersect(self, other: Self) -> Self {
+        let x = self.x.max(other.x);
+        let y = self.y.max(other.y);
+        let right = self
+            .x
+            .saturating_add(self.width)
+            .min(other.x.saturating_add(other.width));
+        let bottom = self
+            .y
+            .saturating_add(self.height)
+            .min(other.y.saturating_add(other.height));
+        Self {
+            x,
+            y,
+            width: right.saturating_sub(x).max(0),
+            height: bottom.saturating_sub(y).max(0),
+        }
+    }
+}
+
+/// Per-primitive overflow clips survive stacking-order paint regrouping.
+/// Missing entries (as in older hand-authored layout fixtures) mean visible.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LayoutClips {
+    pub decorations: Vec<Option<ClipRect>>,
+    pub text: Vec<Option<ClipRect>>,
+    pub images: Vec<Option<ClipRect>>,
+}
+
 /// Hit rectangles for the initial click-event block target subset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClickRegion {
@@ -201,6 +240,7 @@ pub struct LayoutTree {
     pub image_boxes: Vec<ImageBox>,
     pub order: Vec<LayoutItem>,
     pub paint_groups: Vec<PaintGroup>,
+    pub clips: LayoutClips,
     pub click_regions: Vec<ClickRegion>,
 }
 

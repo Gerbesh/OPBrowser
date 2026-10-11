@@ -1,6 +1,6 @@
 pub use op_image::RasterImage;
-pub use op_layout::LinkSpan;
 use op_layout::{BoxDecoration, FontStyle, FontWeight, LayoutItem, LayoutTree, TextColor};
+pub use op_layout::{ClipRect, LinkSpan};
 use std::sync::Arc;
 
 /// Shared by the worker's font extent adapter and native painter.
@@ -35,6 +35,11 @@ impl Color {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaintCommand {
+    /// Limit an individual primitive to its ancestor overflow padding box.
+    Clipped {
+        rect: op_layout::ClipRect,
+        command: Box<PaintCommand>,
+    },
     BeginLayer {
         opacity: u8,
         invert: u8,
@@ -191,15 +196,39 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
     DisplayList { commands }
 }
 
+/// Wrap only emitted primitives, not the entire stacking group. This
+/// preserves CSS overflow clipping across z-index/opacity reordering.
+fn clip_commands_since(
+    commands: &mut [PaintCommand],
+    start: usize,
+    rect: Option<op_layout::ClipRect>,
+) {
+    if let Some(rect) = rect {
+        for command in &mut commands[start..] {
+            let old = std::mem::replace(command, PaintCommand::EndLayer);
+            *command = PaintCommand::Clipped {
+                rect,
+                command: Box::new(old),
+            };
+        }
+    }
+}
+
 fn emit_backgrounds(
     layout: &LayoutTree,
     commands: &mut Vec<PaintCommand>,
     layer: op_layout::DecorationPaintLayer,
     context: Option<op_layout::PaintKey>,
 ) {
-    for decoration in &layout.box_decorations {
+    for (index, decoration) in layout.box_decorations.iter().enumerate() {
         if decoration.paint_layer == layer && decoration.paint_key == context {
+            let start = commands.len();
             push_box_decoration(commands, decoration);
+            clip_commands_since(
+                commands,
+                start,
+                layout.clips.decorations.get(index).copied().flatten(),
+            );
         }
     }
 }
@@ -239,6 +268,12 @@ fn emit_foreground(
                     color: composite_text_color(text_box.color),
                     links: text_box.links.clone(),
                 });
+                let start = commands.len() - 1;
+                clip_commands_since(
+                    commands,
+                    start,
+                    layout.clips.text.get(index).copied().flatten(),
+                );
             }
             LayoutItem::Image(index) | LayoutItem::PositionedImage(index, _) => {
                 let Some(image_box) = layout.image_boxes.get(index) else {
@@ -255,6 +290,12 @@ fn emit_foreground(
                     image: image_box.image.clone(),
                     href: image_box.href.clone(),
                 });
+                let start = commands.len() - 1;
+                clip_commands_since(
+                    commands,
+                    start,
+                    layout.clips.images.get(index).copied().flatten(),
+                );
             }
         }
     }
@@ -408,6 +449,7 @@ mod tests {
                 LayoutItem::Text(0),
             ],
             paint_groups: vec![],
+            clips: op_layout::LayoutClips::default(),
             click_regions: vec![],
         };
         let result = build_display_list(&layout, 60);
@@ -468,6 +510,7 @@ mod tests {
                 ),
             ],
             paint_groups: vec![],
+            clips: op_layout::LayoutClips::default(),
             click_regions: vec![],
         };
         let ordered_x: Vec<_> = build_display_list(&layout, 20)
@@ -538,6 +581,7 @@ mod tests {
             image_boxes: vec![],
             order: vec![],
             paint_groups: vec![],
+            clips: op_layout::LayoutClips::default(),
             click_regions: vec![],
         };
         let commands = build_display_list(&layout, 90).commands;
@@ -650,6 +694,7 @@ mod tests {
             image_boxes: vec![],
             order: vec![],
             paint_groups: vec![],
+            clips: op_layout::LayoutClips::default(),
             click_regions: vec![],
         };
 
@@ -760,6 +805,7 @@ mod tests {
             image_boxes: vec![],
             order: vec![LayoutItem::Text(0)],
             paint_groups: vec![],
+            clips: op_layout::LayoutClips::default(),
             click_regions: vec![],
         };
 
@@ -804,6 +850,7 @@ mod tests {
             image_boxes: vec![],
             order: vec![LayoutItem::Text(0)],
             paint_groups: vec![],
+            clips: op_layout::LayoutClips::default(),
             click_regions: vec![],
         };
 

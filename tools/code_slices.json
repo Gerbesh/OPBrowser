@@ -336,6 +336,20 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S47",
+      "title": "Original CSS overflow hidden/clip through layout, paint, GDI pixels and native clicks",
+      "status": "R1.0 verified nested GDI clipping and clipped native click hit testing",
+      "steps": [
+        {"path": "crates/op_css/src/computed.rs", "symbol": "parse_overflow"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "collect_overflow_clips"},
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "ClipRect"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "clip_commands_since"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "paint_command"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "click_at"}
+      ],
+      "limitation": "Only overflow hidden/clip block descendant clipping; no scrollTop/wheel/nested offsets, axis longhands or comprehensive positioned/inline clipping."
+    },
+    {
       "id": "S46",
       "title": "Original VM object/environment allocation observability before garbage collection",
       "status": "M4.35 non-collecting heap_usage diagnostic and explicit GC design",

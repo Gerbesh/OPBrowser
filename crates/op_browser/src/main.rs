@@ -382,3 +382,86 @@ fn main() {
         exit_code
     });
 }
+
+#[cfg(test)]
+mod overflow_tests {
+    use super::*;
+
+    fn rgb_at(pixels: &[u8], width: i32, x: i32, y: i32) -> (u8, u8, u8) {
+        let index = ((y * width + x) * 4) as usize;
+        (pixels[index + 2], pixels[index + 1], pixels[index])
+    }
+
+    #[test]
+    fn r10_overflow_hidden_clips_real_pixels_but_visible_does_not() {
+        let engine = Engine::new();
+        let clipped=engine.render_html(
+            "<body><div style='width:140px;height:42px;overflow:hidden'>             <div style='width:140px;height:140px;background:#ff0000'></div>             </div></body>",
+            500,320
+        );
+        let (rect, child_height) = clipped
+            .commands
+            .iter()
+            .find_map(|command| {
+                let op_paint::PaintCommand::Clipped { rect, command } = command else {
+                    return None;
+                };
+                let op_paint::PaintCommand::FillRect { height, color, .. } = command.as_ref()
+                else {
+                    return None;
+                };
+                (color.r == 255 && color.g == 0 && color.b == 0).then_some((*rect, *height))
+            })
+            .expect("red child paint command has CSS overflow ancestor clip");
+        assert!(child_height > rect.height);
+        let pixels = op_platform_win::render_display_list_to_bgra(&clipped, 500, 320).unwrap();
+        assert_eq!(rgb_at(&pixels, 500, rect.x + 10, rect.y + 10), (255, 0, 0));
+        assert_eq!(
+            rgb_at(&pixels, 500, rect.x + 10, rect.y + rect.height + 10),
+            (255, 255, 255)
+        );
+
+        let visible=engine.render_html(
+            "<body><div style='width:140px;height:42px;overflow:visible'>             <div style='width:140px;height:140px;background:#ff0000'></div>             </div></body>",
+            500,320
+        );
+        let pixels = op_platform_win::render_display_list_to_bgra(&visible, 500, 320).unwrap();
+        assert_eq!(
+            rgb_at(&pixels, 500, rect.x + 10, rect.y + rect.height + 10),
+            (255, 0, 0)
+        );
+    }
+
+    #[test]
+    fn r10_nested_overflow_clips_to_intersection_of_parent_padding_boxes() {
+        let engine = Engine::new();
+        let list=engine.render_html(
+            "<body><div style='height:64px;width:130px;overflow:hidden'>               <div style='height:100px;width:80px;overflow:clip'>                 <div style='height:180px;width:140px;background:#ff0000'></div>               </div>             </div></body>",
+            500,320
+        );
+        let clip = list
+            .commands
+            .iter()
+            .find_map(|command| {
+                let op_paint::PaintCommand::Clipped { rect, command } = command else {
+                    return None;
+                };
+                let op_paint::PaintCommand::FillRect { color, .. } = command.as_ref() else {
+                    return None;
+                };
+                (color.r == 255 && color.g == 0 && color.b == 0).then_some(*rect)
+            })
+            .expect("child paint command clipped to nested CSS overflow");
+        assert!(clip.width <= 80 && clip.height <= 64);
+        let pixels = op_platform_win::render_display_list_to_bgra(&list, 500, 320).unwrap();
+        assert_eq!(rgb_at(&pixels, 500, clip.x + 10, clip.y + 10), (255, 0, 0));
+        assert_eq!(
+            rgb_at(&pixels, 500, clip.x + clip.width + 8, clip.y + 10),
+            (255, 255, 255)
+        );
+        assert_eq!(
+            rgb_at(&pixels, 500, clip.x + 10, clip.y + clip.height + 8),
+            (255, 255, 255)
+        );
+    }
+}

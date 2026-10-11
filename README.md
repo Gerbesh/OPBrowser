@@ -38,6 +38,19 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+**R1.0 rendering delivered:** CSS `overflow:hidden/clip` now
+clips normal-flow descendants through original CSS/layout/paint
+into real GDI pixels, including nested padding-box intersections,
+hyperlink regions and native click hit testing. Two Win32 bitmap
+tests, one native click regression and one computed-style cascade
+test prove this behavior. Existing pinned WPT Static v1 remains
+197/200, Positioning v1 53/100, no new render errors.
+
+**Not scrollable yet:** `overflow:scroll/auto` are parsed but
+deliberately leave content visible until R1.1 adds scroll offsets,
+scrollTop, nested wheel input and proper repaint/target translation.
+The original VM still has no garbage collector.
+
 **Priority reset (11 October 2026):** P0 is rendering with
 working overflow/scrolling, and a real garbage collector in the
 original JS VM. No more EventTarget-only milestone streaks. See

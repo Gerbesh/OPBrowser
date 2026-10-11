@@ -3352,3 +3352,12 @@ This file is append-only project history.
 - Created GC_IMPLEMENTATION.md with object and captured-environment root tracing, generation-safe stable handles, bounded mark/sweep phases and long-session memory-plateau exit criteria.
 - Restated independent test limitations: static exact 197/200 is only a handpicked 200-reftest set, positioning remains 53/100, Test262 Runtime v2 has 110 explicit skips, and DOM/Events v8 is 21/21 on a small selected synchronous sample. None is a browser readiness metric.
 - Subsequent work must deliver end-to-end visible rendering and memory progress; do not launch another API-naming-only milestone sequence.
+
+## 2026-10-11 - R1.0 rendering-first overflow clipping
+
+- Implemented original computed CSS Overflow property and shorthand cascade with hidden, clip, visible, auto, scroll, global keywords and !important. R1.0 clips **only hidden/clip**; scroll/auto are parsed without clipping until interactive scrolling exists.
+- Original op_layout tracks clipping padding-box boundaries per normal-flow block and descendant primitive index spans; intersects nested overflow clips across decorations/text/images and clamps native click hit rectangles. This preserves source-specific clipping even when z-index/paint groups reorder display commands.
+- Original op_paint wraps clipped primitives in PaintCommand::Clipped. The Win32 painter applies scoped SaveDC/IntersectClipRect/RestoreDC per primitive, clips links, and intersects layer bounds. Parent background/border stays outside its own descendant clip.
+- Added two real Win32 bitmap tests (hidden vs visible, nested intersections), native Engine.click_at regression on clipped hit regions, and CSS cascade/global-keywords test.
+- Re-ran immutable pinned WPT Static v1 exactly 197/200 and Positioning v1 exactly 53/100, no render errors/regressions; historical failures remain counted. No claim of overall visual compatibility.
+- STILL MISSING: wheel and per-element scroll offsets, DOM scrollTop, scrollbars, overflow-x/y axis-specific behavior, comprehensive positioned/inline fragment clipping, and actual GC. R1.1 and G1 remain high priority.

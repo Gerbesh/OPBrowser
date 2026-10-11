@@ -4,7 +4,7 @@ OPBrowser aims to be an independent Windows browser with an original Rust web/Ja
 
 ## Current priorities (11 October 2026)
 
-1. **P0-A: rendering and scroll UX.** Implement real `overflow` clipping, nested wheel/programmatic scrolling, scroll-position-aware paint and click hit tests. Then flex-wrap/multi-line layout and the first actual CSS Grid tracks/items. Limited flex and URL background images exist already, but are not complete.
+1. **P0-A: rendering and scroll UX.** R1.0 shipped real native pixel and hit-test clipping for normal-flow `overflow:hidden/clip`. R1.1 must add per-element scroll offsets, wheel/programmatic scrolling, and scroll-aware repaint/hit testing. Afterward implement flex-wrap and a proper CSS Grid layout. Implement real `overflow` clipping, nested wheel/programmatic scrolling, scroll-position-aware paint and click hit tests. Then flex-wrap/multi-line layout and the first actual CSS Grid tracks/items. Limited flex and URL background images exist already, but are not complete.
 2. **P0-B: original JS garbage collection.** The current object/environment arenas retain all allocations until VM destruction. `heap_usage()` reports slot counts, but no collection is implemented. Build safe mark-only reachability first, then generation-safe reclamation and memory-plateau benchmarks. See [GC implementation design](https://github.com/Gerbesh/OPBrowser/blob/main/docs/GC_IMPLEMENTATION.md).
 3. **P1: backgrounds and fonts.** Improve background positioning/sizing/clipping, then DirectWrite fallback/shaping and real origin-checked web font loading.
 4. **P1: forms and interaction.** Keyboard editing, focus, selection, form controls and submission with native end-to-end tests.

@@ -7,8 +7,8 @@ use op_css::{
     BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide, Clear,
     ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Direction, Display,
     FloatSide, FontStyle as CssFontStyle, InsetEdges, LengthPercentage, MarginEdges, MarginValue,
-    PaddingEdges, Position, PseudoElement, TableLayout, TextAlign, TextTransform, VerticalAlign,
-    Visibility, WhiteSpace,
+    Overflow, PaddingEdges, Position, PseudoElement, TableLayout, TextAlign, TextTransform,
+    VerticalAlign, Visibility, WhiteSpace,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -69,6 +69,7 @@ pub(super) fn layout(
         images_out: Vec::new(),
         order: Vec::new(),
         click_regions: Vec::new(),
+        overflow_scopes: Vec::new(),
     };
 
     let root_style = document
@@ -89,6 +90,7 @@ pub(super) fn layout(
         context.flush_pending_margin();
     }
     context.finish_deferred_inline();
+    let clips = context.collect_overflow_clips();
     let paint_groups = collect_paint_groups(
         document,
         computed_styles,
@@ -104,6 +106,7 @@ pub(super) fn layout(
         image_boxes: context.images_out,
         order: context.order,
         paint_groups,
+        clips,
         click_regions: context.click_regions,
     }
 }
@@ -181,6 +184,16 @@ fn collect_paint_groups(
         .collect()
 }
 
+/// Layout emission is later regrouped by stacking context, so capture
+/// descendant output indices, not a fragile contiguous paint-command range.
+struct OverflowScope {
+    rect: ClipRect,
+    decorations: std::ops::Range<usize>,
+    text: std::ops::Range<usize>,
+    images: std::ops::Range<usize>,
+    clicks: std::ops::Range<usize>,
+}
+
 struct Context<'a, 'm> {
     document: &'a Document,
     images: &'a ImageResources,
@@ -208,6 +221,7 @@ struct Context<'a, 'm> {
     images_out: Vec<ImageBox>,
     order: Vec<LayoutItem>,
     click_regions: Vec<ClickRegion>,
+    overflow_scopes: Vec<OverflowScope>,
 }
 
 /// Generated blocks share ordinary block sizing without adding synthetic DOM nodes.
@@ -337,6 +351,7 @@ struct Style {
     border_spacing: BorderSpacing,
     table_layout: TableLayout,
     caption_side: CaptionSide,
+    overflow: Overflow,
 }
 
 #[derive(Debug, Clone)]
@@ -979,6 +994,45 @@ impl<'a> Context<'a, '_> {
         self.floats = saved_floats;
     }
 
+    /// Intersect nested overflow clips on primitive identities before
+    /// stacking-context reordering. Click hit regions are clipped as well.
+    fn collect_overflow_clips(&mut self) -> LayoutClips {
+        let mut clips = LayoutClips {
+            decorations: vec![None; self.decorations.len()],
+            text: vec![None; self.text.len()],
+            images: vec![None; self.images_out.len()],
+        };
+        for scope in &self.overflow_scopes {
+            for index in scope.decorations.clone() {
+                let clip = &mut clips.decorations[index];
+                *clip = Some(clip.map_or(scope.rect, |old| old.intersect(scope.rect)));
+            }
+            for index in scope.text.clone() {
+                let clip = &mut clips.text[index];
+                *clip = Some(clip.map_or(scope.rect, |old| old.intersect(scope.rect)));
+            }
+            for index in scope.images.clone() {
+                let clip = &mut clips.images[index];
+                *clip = Some(clip.map_or(scope.rect, |old| old.intersect(scope.rect)));
+            }
+            for index in scope.clicks.clone() {
+                let region = &mut self.click_regions[index];
+                let intersected = ClipRect {
+                    x: region.x,
+                    y: region.y,
+                    width: region.width,
+                    height: region.height,
+                }
+                .intersect(scope.rect);
+                region.x = intersected.x;
+                region.y = intersected.y;
+                region.width = intersected.width;
+                region.height = intersected.height;
+            }
+        }
+        clips
+    }
+
     fn block(
         &mut self,
         content: BlockContent,
@@ -1084,6 +1138,12 @@ impl<'a> Context<'a, '_> {
             None
         };
 
+        // Own background/border is never clipped by the box's overflow.
+        // Only subsequent descendants are captured for clipping.
+        let child_decoration_start = self.decorations.len();
+        let child_text_start = self.text.len();
+        let child_image_start = self.images_out.len();
+        let child_click_start = self.click_regions.len();
         self.y = self
             .y
             .saturating_add(used.border.top.width)
@@ -1215,6 +1275,29 @@ impl<'a> Context<'a, '_> {
             self.floats = outer_floats;
         }
         self.pending_margin = Some(margin_bottom);
+
+        if style.overflow.clips() {
+            let rect = ClipRect {
+                x: border_x.saturating_add(used.border.left.width),
+                y: border_y.saturating_add(used.border.top.width),
+                width: used
+                    .border_width
+                    .saturating_sub(used.border.left.width)
+                    .saturating_sub(used.border.right.width)
+                    .max(0),
+                height: target_content_height
+                    .saturating_add(padding_top)
+                    .saturating_add(padding_bottom)
+                    .max(0),
+            };
+            self.overflow_scopes.push(OverflowScope {
+                rect,
+                decorations: child_decoration_start..self.decorations.len(),
+                text: child_text_start..self.text.len(),
+                images: child_image_start..self.images_out.len(),
+                clicks: child_click_start..self.click_regions.len(),
+            });
+        }
 
         if let BlockContent::Element(node) = content
             && self
@@ -1353,6 +1436,7 @@ impl<'a> Context<'a, '_> {
             images_out: Vec::new(),
             order: Vec::new(),
             click_regions: Vec::new(),
+            overflow_scopes: Vec::new(),
         };
         let metrics = local.table_box(&children, id, style, 0, available);
         local.finish_deferred_inline();
@@ -1443,6 +1527,7 @@ impl<'a> Context<'a, '_> {
             images_out: Vec::new(),
             order: Vec::new(),
             click_regions: Vec::new(),
+            overflow_scopes: Vec::new(),
         };
         local.block(BlockContent::Element(id), None, style, 0, available);
         local.flush_pending_margin();
@@ -1534,6 +1619,7 @@ impl<'a> Context<'a, '_> {
             images_out: Vec::new(),
             order: Vec::new(),
             click_regions: Vec::new(),
+            overflow_scopes: Vec::new(),
         };
         local.block(BlockContent::Element(id), None, style, 0, available);
         local.flush_pending_margin();
@@ -1789,6 +1875,7 @@ impl<'a> Context<'a, '_> {
             images_out: Vec::new(),
             order: Vec::new(),
             click_regions: Vec::new(),
+            overflow_scopes: Vec::new(),
         };
 
         let display = local
@@ -5676,6 +5763,7 @@ fn computed_style(style: ComputedStyle) -> Style {
         border_spacing: style.border_spacing,
         table_layout: style.table_layout,
         caption_side: style.caption_side,
+        overflow: style.overflow,
     }
 }
 
@@ -5836,6 +5924,7 @@ fn default_style() -> Style {
         border_spacing: BorderSpacing::ZERO,
         table_layout: TableLayout::Auto,
         caption_side: CaptionSide::Top,
+        overflow: Overflow::Visible,
     }
 }
 
@@ -5881,6 +5970,7 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         border_collapse: inherited.border_collapse,
         table_layout: TableLayout::Auto,
         caption_side: inherited.caption_side,
+        overflow: Overflow::Visible,
         border_spacing: if tag == "table" {
             BorderSpacing {
                 horizontal_px: 2.0,

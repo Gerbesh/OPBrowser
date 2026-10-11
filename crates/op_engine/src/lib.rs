@@ -836,6 +836,63 @@ mod tests {
     }
 
     #[test]
+    fn r10_overflow_hidden_intersects_hit_region_and_blocks_hidden_clicks() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            concat!(
+                "<body><div id='outer' style='display:block;width:150px;height:40px;",
+                "overflow:hidden'>",
+                "<div id='inner' style='display:block;width:150px;height:140px;",
+                "background:red'>CLICK</div></div>",
+                "<p id='result'>WAIT</p><script>",
+                "document.getElementById('inner').addEventListener('click',function(){",
+                "document.getElementById('result').textContent='R10-HIT-OK';",
+                "});</script>"
+            ),
+            500,
+            350,
+        );
+        let active = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_backgrounds_and_resources(
+            &active.document,
+            500,
+            350,
+            (&active.images.elements, &active.images.backgrounds),
+            &active.images.generated,
+            &active.computed_styles,
+            &mut text::Measurer::new(),
+        );
+        let by_id = |name: &str| {
+            *layout
+                .click_regions
+                .iter()
+                .find(|region| {
+                    active.document.element(region.node).is_some_and(|element| {
+                        element
+                            .attributes
+                            .iter()
+                            .any(|attr| attr.name == "id" && attr.value == name)
+                    })
+                })
+                .expect("identified hit region")
+        };
+        let outer = by_id("outer");
+        let inner = by_id("inner");
+        assert_eq!(
+            inner.height, 40,
+            "descendant hit area must end at clipping edge"
+        );
+        assert_eq!(inner.y, outer.y);
+        let visible = engine.click_at(inner.x + 8, inner.y + 8, 500, 350).unwrap();
+        assert!(contains_text(&visible.display_list, "R10-HIT-OK"));
+        let hidden = engine.click_at(inner.x + 8, inner.y + inner.height + 8, 500, 350);
+        assert!(
+            hidden.is_none(),
+            "clipped-away child must not receive a native click"
+        );
+    }
+
+    #[test]
     fn m429b_native_click_triggers_global_only_listeners_and_repaints() {
         let mut engine = Engine::new();
         engine.set_html_page(

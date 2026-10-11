@@ -16,6 +16,19 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S47 - CSS overflow clipping through native pixels/hit tests (R1.0)
+
+Implemented: op_css cascades `overflow:hidden/clip` into layout.
+Original block formatting tracks padding-box overflow scopes and
+intersects nested descendant decoration/text/image and click ranges.
+op_paint wraps the indexed leaves after paint order regrouping,
+and Win32 GDI scopes clip drawing and link bounds. Engine::click_at
+consumes the clipped hit rectangles. Two real Win32 pixel tests,
+one native click test and one CSS cascade test pass. Frozen Static
+v1 remains 197/200, Positioning v1 53/100.
+R1.1 must implement actual per-element scrolling; scroll/auto
+are parsed but deliberately have no clipping/scroll effect yet.
+
 ## S46 - Observe original JS allocation growth before GC (M4.35)
 
 DIAGNOSTIC BASELINE ONLY. JsRuntime::heap_usage reports allocated

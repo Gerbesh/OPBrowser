@@ -623,6 +623,14 @@ sources and a sticky error result.
 Reproduce:
   cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
 
+R1.0 rendering baseline (11 October 2026): both pinned, immutable
+WPT Static v1 and WPT Positioning v1 were rerun through the same
+native Windows pixel comparator. Static exact **197/200**, three
+historical FAIL, zero render errors. Positioning **53/100**,
+47 FAIL, zero render errors. No manifest changed. Four new
+project-owned tests cover native clipped pixels, nested
+overflow hit regions and the CSS cascade, not broad WPT Overflow.
+
 M4.35 pinned original WPT DOM/Events v8 selects 24 HTML source
 files: 21 attempted PASS, zero FAIL, 3 explicit SKIP.
 Five untouched upstream files cover redispatch, pre-stopped events

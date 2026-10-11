@@ -354,6 +354,25 @@ pub enum CaptionSide {
     Bottom,
 }
 
+/// Clipping behavior of a block's descendants. Scrolling offsets are a
+/// separate R1 milestone; clip/hidden already suppress out-of-bounds ink.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Overflow {
+    Visible,
+    Hidden,
+    Clip,
+    Scroll,
+    Auto,
+}
+
+impl Overflow {
+    pub fn clips(self) -> bool {
+        // Scroll and auto must not hide content until real scroll offsets,
+        // scrollbars and input routing land. R1.0 only implements hidden/clip.
+        matches!(self, Self::Hidden | Self::Clip)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BorderSpacing {
     pub horizontal_px: f32,
@@ -386,6 +405,7 @@ pub struct ComputedStyle {
     pub vertical_align: VerticalAlign,
     pub white_space: WhiteSpace,
     pub visibility: Visibility,
+    pub overflow: Overflow,
     pub text_decoration_line: TextDecorationLine,
     pub letter_spacing_px: f32,
     pub word_spacing_px: f32,
@@ -508,6 +528,7 @@ impl ComputedStyle {
             vertical_align: VerticalAlign::Baseline,
             white_space: WhiteSpace::Normal,
             visibility: Visibility::Visible,
+            overflow: Overflow::Visible,
             text_decoration_line: TextDecorationLine::NONE,
             letter_spacing_px: 0.0,
             word_spacing_px: 0.0,
@@ -1548,6 +1569,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             vertical_align: initial.vertical_align,
             white_space: parent.white_space,
             visibility: parent.visibility,
+            overflow: initial.overflow,
             text_decoration_line: parent.text_decoration_line,
             letter_spacing_px: parent.letter_spacing_px,
             word_spacing_px: parent.word_spacing_px,
@@ -1844,6 +1866,13 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.visibility),
             Visibility::Visible,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "overflow", parse_overflow) {
+        style.overflow = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.overflow),
+            Overflow::Visible,
         );
     }
     if let Some((_, value)) = winning_text_decoration(declarations) {
@@ -2211,6 +2240,20 @@ fn parse_white_space(tokens: &[TokenKind]) -> Option<Specified<WhiteSpace>> {
         "pre" => Some(Specified::Value(WhiteSpace::Pre)),
         "pre-wrap" => Some(Specified::Value(WhiteSpace::PreWrap)),
         "pre-line" => Some(Specified::Value(WhiteSpace::PreLine)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_overflow(tokens: &[TokenKind]) -> Option<Specified<Overflow>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "visible" => Some(Specified::Value(Overflow::Visible)),
+        "hidden" => Some(Specified::Value(Overflow::Hidden)),
+        "clip" => Some(Specified::Value(Overflow::Clip)),
+        "scroll" => Some(Specified::Value(Overflow::Scroll)),
+        "auto" => Some(Specified::Value(Overflow::Auto)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
         "unset" => Some(Specified::Unset),
@@ -4250,6 +4293,27 @@ mod tests {
         }
 
         find(document, document.root(), id).expect("expected id")
+    }
+
+    #[test]
+    fn r10_overflow_cascade_is_non_inherited_and_preserves_global_keywords() {
+        let document = parse_document(
+            "<style>             #parent{overflow:hidden}             #inherit{overflow:inherit}             #unset{overflow:unset}             #auto{overflow:auto}             #clip{overflow:clip}             #priority{overflow:hidden!important;overflow:visible}             #invalid{overflow:bogus}             </style>             <div id='parent'><div id='inherit'></div><div id='unset'></div></div>             <div id='auto'></div><div id='clip'></div>             <div id='priority'></div><div id='invalid'></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let value = |id| {
+            computed
+                .style_for(find_by_id(&document, id))
+                .unwrap()
+                .overflow
+        };
+        assert_eq!(value("parent"), Overflow::Hidden);
+        assert_eq!(value("inherit"), Overflow::Hidden);
+        assert_eq!(value("unset"), Overflow::Visible);
+        assert_eq!(value("auto"), Overflow::Auto);
+        assert_eq!(value("clip"), Overflow::Clip);
+        assert_eq!(value("priority"), Overflow::Hidden);
+        assert_eq!(value("invalid"), Overflow::Visible);
     }
 
     #[test]

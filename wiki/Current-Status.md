@@ -234,6 +234,24 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## R1.0: bounded CSS overflow clipping reaches native pixels
+
+Real `overflow:hidden/clip` is now implemented for normal-flow
+block descendant rendering and hit testing. Layout intersects
+nested padding-box clipping ranges, the paint display list carries
+them across stacking-context ordering, and the Win32 painter
+clips background/text/image pixels and link bounds. Tests verify
+visible versus clipped GDI pixels, nested scopes, CSS cascade
+and actual mouse-click suppression outside the clipped region.
+
+The original frozen WPT Static v1 remains 197/200 (exact) and
+Positioning v1 53/100 without render errors. These are not
+broad web-compatibility scores. **Still missing:** scrollTop,
+per-container scroll offsets, wheel input for nested containers,
+scrollbars, overflow-x/y longhands, and certain positioned/inline
+fragment cases. overflow:scroll/auto deliberately stays visibly
+unclipped until scrolling is implemented. No GC yet.
+
 ## M4.35: original WPT v8 and roadmap correction
 
 The pinned original-source WPT DOM/Events v8 smoke selects

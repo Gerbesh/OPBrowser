@@ -13,8 +13,8 @@ use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateFontW, CreateSolidBrush,
     DEFAULT_CHARSET, DEFAULT_PITCH, DeleteObject, EndPaint, FF_DONTCARE, FW_BOLD, FW_NORMAL,
     FillRect, GetStockObject, GetTextExtentPoint32W, IntersectClipRect, InvalidateRect,
-    OUT_DEFAULT_PRECIS, PAINTSTRUCT, ScreenToClient, SelectObject, SetBkMode, SetTextColor,
-    SetViewportOrgEx, TRANSPARENT, TextOutW, UpdateWindow, WHITE_BRUSH,
+    OUT_DEFAULT_PRECIS, PAINTSTRUCT, RestoreDC, SaveDC, ScreenToClient, SelectObject, SetBkMode,
+    SetTextColor, SetViewportOrgEx, TRANSPARENT, TextOutW, UpdateWindow, WHITE_BRUSH,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -714,6 +714,21 @@ fn layer_bounds(commands: &[PaintCommand]) -> Option<(i32, i32, i32, i32)> {
                     .max(1),
                 font_size.saturating_mul(3).max(1),
             ),
+            PaintCommand::Clipped { rect, command } => {
+                let Some((x, y, right, bottom)) =
+                    layer_bounds(std::slice::from_ref(command.as_ref()))
+                else {
+                    continue;
+                };
+                let clipped = op_paint::ClipRect {
+                    x,
+                    y,
+                    width: right.saturating_sub(x),
+                    height: bottom.saturating_sub(y),
+                }
+                .intersect(*rect);
+                (clipped.x, clipped.y, clipped.width, clipped.height)
+            }
             _ => continue,
         };
         if rect.2 <= 0 || rect.3 <= 0 {
@@ -824,6 +839,38 @@ fn composite_layer(
 
 fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Vec<LinkRegion>) {
     match command {
+        PaintCommand::Clipped { rect, command } => {
+            if rect.width <= 0 || rect.height <= 0 {
+                return;
+            }
+            let saved = unsafe { SaveDC(hdc) };
+            if saved == 0 {
+                return;
+            }
+            unsafe {
+                IntersectClipRect(
+                    hdc,
+                    rect.x,
+                    rect.y,
+                    rect.x.saturating_add(rect.width),
+                    rect.y.saturating_add(rect.height),
+                );
+            }
+            let link_start = link_regions.len();
+            paint_command(hdc, command, link_regions);
+            for region in &mut link_regions[link_start..] {
+                region.bounds.left = region.bounds.left.max(rect.x);
+                region.bounds.top = region.bounds.top.max(rect.y);
+                region.bounds.right = region.bounds.right.min(rect.x.saturating_add(rect.width));
+                region.bounds.bottom = region.bounds.bottom.min(rect.y.saturating_add(rect.height));
+            }
+            link_regions.retain(|region| {
+                region.bounds.right > region.bounds.left && region.bounds.bottom > region.bounds.top
+            });
+            unsafe {
+                RestoreDC(hdc, saved);
+            }
+        }
         PaintCommand::BeginLayer { .. } | PaintCommand::EndLayer => {}
         PaintCommand::BackgroundImage { .. } => {
             raster::paint_background(hdc, command);

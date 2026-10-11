@@ -16,6 +16,29 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## R1.0: CSS overflow -> native GDI clipping and hit testing
+
+Original op_css::Overflow is a noninherited computed property.
+op_layout::flow::Context records overflow scopes as descendant
+primitive index ranges plus padding-box rectangles. At layout
+completion nested ranges intersect into LayoutTree::clips, while
+ClickRegion bounds are clamped to visible areas. Source-index
+clipping persists across paint stacking-context reordering.
+
+op_paint::clip_commands_since wraps individual leaves in
+PaintCommand::Clipped. Original op_platform_win::paint_command
+uses GDI SaveDC/IntersectClipRect/RestoreDC; native layer bounds
+and hyperlink hit rectangles respect clipping. Engine::click_at
+consumes the clipped regions. CSS cascade, two actual Windows
+bitmap regressions and one real clipped mouse-hit test cover
+the cross-crate path. Frozen WPT Static v1 197/200 and
+Positioning v1 53/100 did not regress.
+
+**No scrolling yet.** overflow:auto/scroll syntax is parsed
+but intentionally remains visually unclipped until R1.1
+implements offsets/wheel/scrollTop. Axis longhands and full
+positioned/inline-atomic overflow remain unsupported.
+
 ## M4.35: parser documentElement and allocation accounting
 
 op_engine::scripts::sync_dom_tree identifies the real parser html
