@@ -35,6 +35,11 @@ impl Color {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaintCommand {
+    /// Native track and thumb painted above descendant ink.
+    Scrollbar {
+        track: ClipRect,
+        thumb: ClipRect,
+    },
     /// Limit an individual primitive to its ancestor overflow padding box.
     Clipped {
         rect: op_layout::ClipRect,
@@ -191,6 +196,17 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
             && (opacity < 255 || invert > 0)
         {
             commands.push(PaintCommand::EndLayer);
+        }
+    }
+    // Scrollbars overlay document ink and do not alter layout width.
+    // Parents are stored after their children; paint parents first so
+    // nested scrollbar thumbs remain visually on top.
+    for container in layout.scroll_containers.iter().rev() {
+        if let Some(geometry) = container.scrollbar_geometry() {
+            commands.push(PaintCommand::Scrollbar {
+                track: geometry.track,
+                thumb: geometry.thumb,
+            });
         }
     }
     DisplayList { commands }

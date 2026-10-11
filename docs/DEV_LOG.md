@@ -3389,3 +3389,13 @@ This file is append-only project history.
 - Oversized scrollTop requests now read back as effective clamped positions after the first layout; later writes obey known maxima. Before this, paint moved by the clamped offset but JS returned the raw request.
 - Added VM test for initial requests, changing/removing limits and a page-engine HTML/JS/DOM-style-mutation integration regression.
 - LIMITATIONS: immediate JS readback in initial parser scripts before layout is still request-based; only normal-flow vertical scrolling, no visible scrollbars, horizontal overflow-x/y, full CSSOM View or new independent WPT results.
+
+
+## 2026-10-11 - R1.2b visible original vertical scrollbars
+
+- Added proportional vertical track/thumb geometry to op_layout ScrollContainer using the actual layout scroll_top/max_scroll_top. overflow:auto paints tracks only for overflow, overflow:scroll always retains the track, overflow:hidden paints none.
+- Added PaintCommand::Scrollbar overlay above normal content; original Win32 GDI painter draws distinct track/thumb pixels. The native link hit test gives the scrollbar track precedence over links underneath it.
+- Engine::click_at now routes scrollbar track clicks through the same layout geometry before DOM click dispatch, updating either the JS-owned scrollTop or scriptless page-owned offset before repaint.
+- Added engine and native offscreen BGRA regressions for scroll modes, proportional geometry, track clicks and suppression of underlying DOM handlers; introduced examples/css/overflow-scrollbars.html for offline visual verification.
+- LIMITATIONS: vertical overlay-only scrollbars, no dragging, reserved layout gutters, horizontal overflow-x/y or full positioned/ancestor clipping; original GC is still missing. No frozen external WPT/Test262 fixture modified.
+- Reran the unchanged pinned WPT Static v1: 197/200 PASS, 3 historic FAIL, 0 render errors; WPT Positioning v1: 54/100 PASS, 46 FAIL, 0 render errors. Neither constitutes general CSS/Overflow support.

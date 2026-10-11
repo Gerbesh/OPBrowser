@@ -1345,6 +1345,7 @@ impl<'a> Context<'a, '_> {
             self.scroll_containers.push(ScrollContainer {
                 node,
                 wheel_scrollable: matches!(style.overflow, Overflow::Auto | Overflow::Scroll),
+                scrollbar_always_visible: style.overflow == Overflow::Scroll,
                 rect: ClipRect {
                     x: border_x.saturating_add(used.border.left.width),
                     y: border_y.saturating_add(used.border.top.width),

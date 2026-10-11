@@ -230,6 +230,85 @@ pub struct ScrollContainer {
     pub max_scroll_top: i32,
     /// Hidden overflow permits script scrolling but not wheel input.
     pub wheel_scrollable: bool,
+    /// CSS overflow:scroll paints a track even with no vertical excess.
+    pub scrollbar_always_visible: bool,
+}
+
+/// Bounded, overlay-style vertical scrollbar geometry in document pixels.
+/// Tracks intentionally do not change layout widths at this stage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollbarGeometry {
+    pub track: ClipRect,
+    pub thumb: ClipRect,
+}
+
+impl ScrollContainer {
+    pub fn scrollbar_geometry(&self) -> Option<ScrollbarGeometry> {
+        if !self.wheel_scrollable
+            || (self.max_scroll_top == 0 && !self.scrollbar_always_visible)
+            || self.rect.width < 12
+            || self.rect.height < 12
+        {
+            return None;
+        }
+        let width = 10;
+        let track = ClipRect {
+            x: self
+                .rect
+                .x
+                .saturating_add(self.rect.width)
+                .saturating_sub(width),
+            y: self.rect.y,
+            width,
+            height: self.rect.height,
+        };
+        let height = i64::from(track.height);
+        let content = height + i64::from(self.max_scroll_top);
+        let thumb_height = ((height * height / content).max(16) as i32).min(track.height);
+        let travel = track.height - thumb_height;
+        let top = if self.max_scroll_top > 0 {
+            (i64::from(travel) * i64::from(self.scroll_top.clamp(0, self.max_scroll_top))
+                / i64::from(self.max_scroll_top)) as i32
+        } else {
+            0
+        };
+        Some(ScrollbarGeometry {
+            track,
+            thumb: ClipRect {
+                x: track.x + 1,
+                y: track.y.saturating_add(top),
+                width: track.width - 2,
+                height: thumb_height,
+            },
+        })
+    }
+
+    /// Native click on the track jumps the thumb toward the pointer.
+    pub fn scroll_top_at_track_point(&self, x: i32, y: i32) -> Option<i32> {
+        let geometry = self.scrollbar_geometry()?;
+        let track = geometry.track;
+        if x < track.x
+            || x >= track.x.saturating_add(track.width)
+            || y < track.y
+            || y >= track.y.saturating_add(track.height)
+        {
+            return None;
+        }
+        if y >= geometry.thumb.y && y < geometry.thumb.y.saturating_add(geometry.thumb.height) {
+            return Some(self.scroll_top);
+        }
+        let travel = track.height - geometry.thumb.height;
+        if travel <= 0 {
+            return Some(0);
+        }
+        let centered = y
+            .saturating_sub(track.y)
+            .saturating_sub(geometry.thumb.height / 2);
+        Some(
+            ((i64::from(centered.clamp(0, travel)) * i64::from(self.max_scroll_top))
+                / i64::from(travel)) as i32,
+        )
+    }
 }
 
 /// Hit rectangles for the initial click-event block target subset.

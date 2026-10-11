@@ -658,3 +658,16 @@ M4.34, measured on actual original pinned WPT checkout: v6 has 15 attempted PASS
 These are manually selected smoke tests, NOT representative
 WPT DOM/Events conformance. The separately pinned Test262
 runtime v1/v2 baselines must not be averaged with them.
+
+
+## 2026-10-11 - R1.2b frozen WPT visual regression verification
+
+After native vertical scrollbar overlays were added, the original
+pinned WPT Static v1 set was rerun at upstream
+97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d:
+197/200 PASS, 3 FAIL (same historical CSS Color cases), zero render
+errors. The unmodified pinned WPT Positioning v1 set was also
+rerun: 54/100 PASS, 46 FAIL, zero render errors, matching R1.1.
+No frozen manifest was changed or selectively excluded.
+These subsets are not a substitute for an independent WPT Overflow
+suite; R1.2b-specific tests are original native GDI/engine regressions.

@@ -47,13 +47,23 @@ engine at idle checkpoints. VM and host integration tests pass.
 slots, no memory plateau claim. Native interpreter frame roots,
 generation-safe reclamation and long-session collection are next.
 
+**R1.2b visible vertical scrollbars:** Original layout-derived tracks
+and proportional thumbs are painted through Win32 GDI. CSS
+overflow:auto shows a track only for vertical overflow; overflow:scroll
+keeps a track without overflow; hidden has none. Clicking the track
+changes the scroll offset without dispatching a DOM click or opening
+a link underneath it. Real GDI pixel and engine tests pass.
+See examples/css/overflow-scrollbars.html for a demo.
+This is vertical overlay scrolling without drag support,
+horizontal axes or reserved layout gutter.
+
 **R1.2a layout-clamped scrollTop readback:** after render or
 reflow, real vertical scroll ranges are reconciled with JS and
 native no-script offsets. Out-of-range JS assignments report
 their effective clamped positions; DOM style changes and resize
 update the limits. Initial parser-time JS reads before layout
-are not yet synchronized. No visible scrollbars or horizontal
-overflow-x/y. VM and page-engine tests cover these cases.
+are not yet synchronized. Vertical scrollbars arrive in R1.2b;
+horizontal overflow-x/y remains open. VM and engine tests cover this.
 
 
 **R1.1 bounded native vertical scrolling delivered:** CSS

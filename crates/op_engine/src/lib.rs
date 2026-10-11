@@ -362,6 +362,29 @@ impl Engine {
             (&prepared.computed_styles, prepared.current_scroll_offsets()),
             &mut text::Measurer::new(),
         );
+        // Scrollbars are native page chrome, not DOM click targets. Their
+        // overlay takes precedence over a link or event handler underneath.
+        if let Some((node, top)) = layout
+            .scroll_containers
+            .iter()
+            .filter_map(|region| {
+                region
+                    .scroll_top_at_track_point(x, y)
+                    .map(|top| (region, top))
+            })
+            .min_by_key(|(region, _)| i64::from(region.rect.width) * i64::from(region.rect.height))
+            .map(|(region, top)| (region.node.index(), top))
+        {
+            if let Some(runtime) = prepared.runtime.as_mut() {
+                runtime.set_dom_scroll_top(node, top);
+                runtime.take_scroll_dirty();
+            } else if top == 0 {
+                prepared.scroll_offsets.remove(&node);
+            } else {
+                prepared.scroll_offsets.insert(node, top);
+            }
+            return Some(prepared.render(width, height));
+        }
         let target = layout
             .click_regions
             .iter()
@@ -1089,6 +1112,147 @@ mod tests {
                 .is_some(),
             "wheel up restores the first child"
         );
+    }
+
+    #[test]
+    fn r12b_scrollbar_pixels_and_track_click_share_real_layout_geometry() {
+        let mut engine = Engine::new();
+        let display = engine.set_html_page(
+            concat!(
+                "<div id='pane' style='width:130px;height:50px;overflow:auto'>",
+                "<div id='content' style='height:180px;background:red'>TEXT</div></div>",
+                "<script>var hits=0;document.getElementById('pane').addEventListener('click',function(){hits=hits+1;});</script>"
+            ),
+            500,
+            300,
+        );
+        let bar = display
+            .commands
+            .iter()
+            .find_map(|command| {
+                if let op_paint::PaintCommand::Scrollbar { track, thumb } = command {
+                    Some((*track, *thumb))
+                } else {
+                    None
+                }
+            })
+            .expect("overflow auto must paint a visible scrollbar");
+        assert_eq!(bar.0.width, 10);
+        assert!(bar.1.height < bar.0.height);
+        let page = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_scrolling(
+            &page.document,
+            500,
+            300,
+            (&page.images.elements, &page.images.backgrounds),
+            &page.images.generated,
+            (&page.computed_styles, page.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        let container = layout.scroll_containers.first().unwrap();
+        assert_eq!(container.scrollbar_geometry().unwrap().track, bar.0);
+        let target_x = bar.0.x + bar.0.width / 2;
+        let target_y = bar.0.y + bar.0.height - 2;
+        let changed = engine.click_at(target_x, target_y, 500, 300).unwrap();
+        assert!(changed.display_list.commands.iter().any(|command| {
+            matches!(command, op_paint::PaintCommand::Scrollbar { thumb, .. }
+                if thumb.y > bar.1.y)
+        }));
+        let vm = engine
+            .active_document
+            .as_mut()
+            .unwrap()
+            .runtime
+            .as_mut()
+            .unwrap();
+        assert_eq!(
+            vm.global("hits"),
+            Some(&op_js::JsValue::Number(0.0)),
+            "scrollbar click must not dispatch a DOM click"
+        );
+        let actual = vm
+            .dom_scroll_offsets()
+            .get(&container.node.index())
+            .copied()
+            .unwrap();
+        assert!(actual > 0 && actual <= container.max_scroll_top);
+    }
+
+    #[test]
+    fn r12b_auto_hidden_and_forced_scroll_have_distinct_tracks() {
+        let mut engine = Engine::new();
+        let auto = engine.set_html_page(
+            "<div style='height:60px;width:120px;overflow:auto'><div style='height:20px'></div></div>",
+            500, 300
+        );
+        assert!(
+            !auto
+                .commands
+                .iter()
+                .any(|c| matches!(c, op_paint::PaintCommand::Scrollbar { .. }))
+        );
+        let hidden = engine.set_html_page(
+            "<div style='height:40px;width:120px;overflow:hidden'><div style='height:180px'></div></div>",
+            500, 300
+        );
+        assert!(
+            !hidden
+                .commands
+                .iter()
+                .any(|c| matches!(c, op_paint::PaintCommand::Scrollbar { .. }))
+        );
+        let forced = engine.set_html_page(
+            "<div style='height:60px;width:120px;overflow:scroll'><div style='height:20px'></div></div>",
+            500, 300
+        );
+        let (track, thumb) = forced
+            .commands
+            .iter()
+            .find_map(|c| {
+                if let op_paint::PaintCommand::Scrollbar { track, thumb } = c {
+                    Some((track, thumb))
+                } else {
+                    None
+                }
+            })
+            .expect("overflow scroll retains its visible inactive track");
+        assert_eq!(track.height, thumb.height);
+    }
+
+    #[test]
+    fn r12b_track_click_scrolls_page_without_a_javascript_vm() {
+        let mut engine = Engine::new();
+        let page = engine.set_html_page(
+            "<div style='height:48px;width:130px;overflow:auto'><div style='height:165px;background:blue'></div></div>",
+            500, 300,
+        );
+        let (track, start_thumb) = page
+            .commands
+            .iter()
+            .find_map(|cmd| {
+                if let op_paint::PaintCommand::Scrollbar { track, thumb } = cmd {
+                    Some((*track, *thumb))
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert!(engine.active_document.as_ref().unwrap().runtime.is_none());
+        let changed = engine
+            .click_at(track.x + 5, track.y + track.height - 2, 500, 300)
+            .unwrap();
+        assert!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .scroll_offsets
+                .values()
+                .any(|offset| *offset > 0)
+        );
+        assert!(changed.display_list.commands.iter().any(|cmd| {
+            matches!(cmd, op_paint::PaintCommand::Scrollbar { thumb, .. } if thumb.y > start_thumb.y)
+        }));
     }
 
     #[test]

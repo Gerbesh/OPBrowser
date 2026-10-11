@@ -529,6 +529,24 @@ fn set_display_list(display_list: DisplayList) {
     }
 }
 
+/// Scrollbar overlays take priority over links painted beneath their tracks.
+fn scrollbar_at_document_point(x: i32, y: i32) -> bool {
+    DISPLAY_LIST
+        .get()
+        .and_then(|storage| storage.read().ok())
+        .is_some_and(|list| {
+            list.commands.iter().rev().any(|command| {
+                let PaintCommand::Scrollbar { track, .. } = command else {
+                    return false;
+                };
+                x >= track.x
+                    && x < track.x.saturating_add(track.width)
+                    && y >= track.y
+                    && y < track.y.saturating_add(track.height)
+            })
+        })
+}
+
 fn link_at_client_point(hwnd: HWND, x: i32, y: i32) -> Option<String> {
     let mut client: RECT = unsafe { zeroed() };
     unsafe {
@@ -538,6 +556,9 @@ fn link_at_client_point(hwnd: HWND, x: i32, y: i32) -> Option<String> {
         return None;
     }
     let document_y = y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst);
+    if scrollbar_at_document_point(x, document_y) {
+        return None;
+    }
     LINK_REGIONS
         .get()?
         .read()
@@ -875,6 +896,38 @@ fn composite_layer(
 
 fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Vec<LinkRegion>) {
     match command {
+        PaintCommand::Scrollbar { track, thumb } => {
+            for (rect, color) in [
+                (
+                    *track,
+                    Color {
+                        r: 234,
+                        g: 237,
+                        b: 241,
+                    },
+                ),
+                (
+                    *thumb,
+                    Color {
+                        r: 120,
+                        g: 130,
+                        b: 144,
+                    },
+                ),
+            ] {
+                paint_command(
+                    hdc,
+                    &PaintCommand::FillRect {
+                        x: rect.x,
+                        y: rect.y,
+                        width: rect.width,
+                        height: rect.height,
+                        color,
+                    },
+                    link_regions,
+                );
+            }
+        }
         PaintCommand::Clipped { rect, command } => {
             if rect.width <= 0 || rect.height <= 0 {
                 return;
@@ -1203,6 +1256,48 @@ fn wide(value: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn r12b_scrollbar_track_and_thumb_render_to_distinct_native_pixels() {
+        let width = 64usize;
+        let pixels = render_display_list_to_bgra(
+            &DisplayList {
+                commands: vec![
+                    PaintCommand::FillRect {
+                        x: 0,
+                        y: 0,
+                        width: width as i32,
+                        height: 90,
+                        color: Color::WHITE,
+                    },
+                    PaintCommand::Scrollbar {
+                        track: op_paint::ClipRect {
+                            x: 20,
+                            y: 10,
+                            width: 10,
+                            height: 60,
+                        },
+                        thumb: op_paint::ClipRect {
+                            x: 21,
+                            y: 11,
+                            width: 8,
+                            height: 20,
+                        },
+                    },
+                ],
+            },
+            width as i32,
+            90,
+        )
+        .unwrap();
+        let sample = |x: usize, y: usize| {
+            let offset = (y * width + x) * 4;
+            &pixels[offset..offset + 3]
+        };
+        assert_eq!(sample(24, 18), &[144, 130, 120]);
+        assert_eq!(sample(24, 55), &[241, 237, 234]);
+        assert_eq!(sample(16, 55), &[255, 255, 255]);
+    }
 
     #[test]
     fn native_controls_dispatch_navigation_and_repaint() {

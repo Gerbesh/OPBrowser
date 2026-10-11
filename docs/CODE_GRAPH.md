@@ -16,6 +16,22 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## R1.2b: native vertical scrollbar paint and input
+
+Original op_layout::ScrollContainer computes a proportional 10px
+vertical track and thumb from real layout max_scroll_top/scroll_top.
+auto paints tracks only for overflowing elements, scroll always
+paints a track, hidden never does. op_paint emits original scrollbar
+commands after regular page ink; op_platform_win draws the track
+and thumb as native GDI pixels and prioritizes their hit areas over
+links beneath the overlay. Engine::click_at intercepts track clicks
+before DOM dispatch and repaints at the clicked bounded offset.
+Tests cover native BGRA pixels and script/no-script behavior;
+examples/css/overflow-scrollbars.html is the offline fixture.
+No thumb drag, horizontal overflow, reserved gutter or complex
+positioned clipping is implemented.
+
+
 ## R1.2a: layout-derived scrollTop range reconciliation
 
 Original op_layout::ScrollContainer exposes max_scroll_top calculated from

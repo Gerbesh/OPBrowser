@@ -234,6 +234,20 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## R1.2b: visible native vertical scrollbars
+
+Overflow:auto/scroll boxes now paint original GDI track/thumb
+overlays linked to their real vertical scroll ranges. auto draws
+a track only with overflow; scroll retains one even when empty;
+hidden draws none. Native track clicks scroll without triggering
+links or DOM handlers underneath. Win32 pixels and HTML engine
+click interactions are tested. See the offline fixture:
+examples/css/overflow-scrollbars.html.
+
+The track overlays content: no gutter reservation, thumb drag,
+horizontal axes or complete nested/positioned clipping yet.
+
+
 ## R1.2a: layout-clamped scrollTop after rendering
 
 After each render/reflow, the original layout engine reports each
@@ -243,8 +257,8 @@ DOM CSS height changes and native no-JS page offsets are reconciled
 as well. VM and full page-engine tests cover these transitions.
 
 This synchronization occurs at layout checkpoints, not during
-parser-time JS before initial layout. Scrollbars and horizontal
-overflow-x/y are still unimplemented.
+parser-time JS before initial layout. Horizontal overflow-x/y and
+fully synchronous pre-layout readback remain unimplemented.
 
 
 ## G1.0: conservative original VM heap tracing

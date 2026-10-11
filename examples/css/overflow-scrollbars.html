@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OPBrowser R1.2b - native vertical scrollbars</title>
+<style>
+body { background: #edf1f5; color: #202936; font-family: Arial; padding: 24px; }
+h1 { color: #243b55; }
+h2 { font-size: 18px; }
+.panel { background: white; padding: 18px; margin-bottom: 24px; }
+.viewport { width: 360px; height: 148px; overflow: auto; background: #d7e7f5; }
+.forced { width: 360px; height: 82px; overflow: scroll; background: #e8e2f7; }
+.row { height: 48px; padding-left: 14px; background: #c6e2f1; }
+.row2 { height: 48px; padding-left: 14px; background: #a9d1e6; }
+.row3 { height: 48px; padding-left: 14px; background: #91bed8; }
+.inner { height: 65px; width: 230px; overflow: auto; background: #f1dac8; }
+.innerline { height: 52px; background: #eab98f; }
+</style>
+</head>
+<body>
+<h1>Native scrollbars - R1.2b</h1>
+<p>Use the mouse wheel or click a scrollbar track. The scrollbar belongs to OPBrowser's own renderer.</p>
+<div class="panel">
+<h2>overflow:auto - track appears when content exceeds its viewport</h2>
+<div class="viewport">
+<div class="row">One: start of the scrollable region</div>
+<div class="row2">Two: the thumb follows the actual scrollTop</div>
+<div class="row3">Three: more content below</div>
+<div class="row">Four: scroll toward the bottom</div>
+<div class="row2">Five: the final row</div>
+</div>
+</div>
+<div class="panel">
+<h2>overflow:scroll - persistent vertical track</h2>
+<div class="forced"><p>There is no vertical overflow here, but the track remains visible.</p></div>
+</div>
+<div class="panel">
+<h2>Nested scroll containers</h2>
+<div class="viewport">
+<div class="row">Outer region, top</div>
+<div class="inner">
+<div class="innerline">Inner region, first row</div>
+<div class="innerline">Inner region, second row</div>
+<div class="innerline">Inner region, third row</div>
+</div>
+<div class="row2">Outer region, below the inner scroller</div>
+<div class="row3">Outer region, bottom</div>
+</div>
+</div>
+<p>Known limits: vertical tracks overlay the right edge of content; no drag-to-scroll or horizontal overflow-x/y yet.</p>
+</body>
+</html>

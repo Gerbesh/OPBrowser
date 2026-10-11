@@ -336,6 +336,20 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S51",
+      "title": "Original vertical scrollbar geometry through GDI pixels and track hit testing",
+      "status": "R1.2b native vertical overlay scrollbar pixels and track click routing",
+      "steps": [
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "scrollbar_geometry"},
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "scroll_top_at_track_point"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "paint_command"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "scrollbar_at_document_point"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "click_at"}
+      ],
+      "limitation": "Vertical overlay scrollbars only; no drag, horizontal overflow-x/y, reserved gutters or complete complex positioned clipping."
+    },
+    {
       "id": "S50",
       "title": "Layout-derived scroll maxima to bounded JavaScript scrollTop after rendering",
       "status": "R1.2a post-layout JS and no-script vertical scroll reconciliation",

@@ -16,6 +16,17 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S51 - Native vertical scrollbar pixels and clicks (R1.2b)
+
+Original op_layout::ScrollContainer::scrollbar_geometry feeds
+op_paint::PaintCommand::Scrollbar and the Win32 GDI painter.
+The browser/native link hit paths give scrollbar tracks priority,
+then op_engine::Engine::click_at updates scrollTop before DOM click
+dispatch. Tests cover CSS auto/scroll/hidden, click routing and
+actual native pixels. Only overlay vertical tracks work: no thumb
+drag, horizontal axes or complete positioned/ancestor clipping.
+
+
 ## S50 - Layout maxima to bounded JS scrollTop readback (R1.2a)
 
 IMPLEMENTED post-layout synchronization. op_layout computes each
