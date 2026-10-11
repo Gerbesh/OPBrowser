@@ -16,6 +16,21 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S46 - Observe original JS allocation growth before GC (M4.35)
+
+DIAGNOSTIC BASELINE ONLY. JsRuntime::heap_usage reports allocated
+object/environment slots and budgets, including unreachable items.
+A VM test verifies allocation growth with transient objects and
+closures. No objects are reclaimed yet; see GC_IMPLEMENTATION.md.
+
+## S45 - Parser root and pre-stopped Events through WPT (M4.35)
+
+Verified original WPT v8 source selection, 21/21 attempted PASS and
+3 explicit SKIP. op_engine::scripts::sync_dom_tree exposes the real
+html root through document.documentElement. Original Event phase
+constants and pre-dispatch stop flags are retained until the
+event finishes. Tests cover host DOM pixel output and JS VM.
+
 ## S44 - Original pinned WPT Events to native test verdict (M4.34)
 
 VERIFIED: upstream immutable revision 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d, v7 19 selected, 16 attempted PASS, 0 FAIL, 3 SKIP, 39 source callbacks. Original assertions are untouched; op_engine::wpt_dom_probe injects a narrow testharness adapter, calls through original op_js Function.prototype.call, checks native op_paint status output and diagnoses first failure. Event.srcElement and cancelBubble flag resets are exercised. Not general WPT compliance.

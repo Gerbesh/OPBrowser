@@ -314,6 +314,16 @@ struct DomListenerOptions {
     registration_id: u64,
 }
 
+/// Observable allocation totals for the original non-collecting VM.
+/// These counts are not a live-object measurement until a GC exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsHeapUsage {
+    pub object_slots: usize,
+    pub environment_slots: usize,
+    pub object_budget: usize,
+    pub environment_budget: usize,
+}
+
 #[derive(Debug)]
 pub struct JsRuntime {
     heap: Vec<JsObject>,
@@ -524,6 +534,16 @@ impl Default for JsRuntime {
         let event_ctor = runtime
             .allocate_lifecycle_method("Event", BuiltinFunction::DomEventConstructor)
             .expect("Event constructor fits VM initial budget");
+        runtime
+            .object_mut(event_ctor)
+            .expect("Event constructor exists")
+            .properties
+            .extend([
+                ("NONE".into(), JsValue::Number(0.0)),
+                ("CAPTURING_PHASE".into(), JsValue::Number(1.0)),
+                ("AT_TARGET".into(), JsValue::Number(2.0)),
+                ("BUBBLING_PHASE".into(), JsValue::Number(3.0)),
+            ]);
         runtime.install_global_binding(
             "Event",
             JsValue::Object(event_ctor),
@@ -817,6 +837,7 @@ impl JsRuntime {
                 ("createEvent".into(), JsValue::Object(create_event)),
                 ("dispatchEvent".into(), JsValue::Object(dispatch_listener)),
                 ("body".into(), JsValue::Null),
+                ("documentElement".into(), JsValue::Null),
                 ("addEventListener".into(), JsValue::Object(add_listener)),
                 (
                     "removeEventListener".into(),
@@ -2254,13 +2275,16 @@ impl JsRuntime {
             let properties = &mut self.object_mut(event)?.properties;
             properties.insert("target".into(), JsValue::Object(receiver));
             properties.insert("__dispatching".into(), JsValue::Boolean(true));
-            properties.insert("__stopPropagation".into(), JsValue::Boolean(false));
-            properties.insert("__stopImmediatePropagation".into(), JsValue::Boolean(false));
+            // A stop flag set before dispatch suppresses all callbacks on
+            // this dispatch, and is cleared only when dispatch completes.
         }
         self.install_global_event_path(event, receiver)?;
         self.dom_dispatch_depth += 1;
         let mut steps = 0;
         let result = (|| {
+            if self.event_propagation_stopped(event)? {
+                return Ok(());
+            }
             if Some(receiver) == self.dom_document {
                 self.deliver_lifecycle_listeners(
                     self.global_object,
@@ -2488,6 +2512,17 @@ impl JsRuntime {
             self.dom_onclick_registration
                 .insert(physical_node, registration);
         }
+    }
+
+    /// Expose the parser-owned html root as document.documentElement.
+    pub fn set_dom_document_element_node(&mut self, node: usize) -> Result<(), JsError> {
+        let object = self.dom_element_object(node)?;
+        if let Some(document) = self.dom_document {
+            self.object_mut(document)?
+                .properties
+                .insert("documentElement".into(), JsValue::Object(object));
+        }
+        Ok(())
     }
 
     /// Expose the real tree-builder's body element as document.body.
@@ -2726,12 +2761,8 @@ impl JsRuntime {
         self.object_mut(event)?
             .properties
             .insert("__dispatching".into(), JsValue::Boolean(true));
-        self.object_mut(event)?
-            .properties
-            .insert("__stopPropagation".into(), JsValue::Boolean(false));
-        self.object_mut(event)?
-            .properties
-            .insert("__stopImmediatePropagation".into(), JsValue::Boolean(false));
+        // Keep pre-dispatch stopPropagation/cancelBubble state until the
+        // completion cleanup, rather than resetting it before delivery.
         self.install_element_event_path(event, path)?;
         self.dom_dispatch_depth += 1;
         let result = self.dispatch_custom_event_inner(event, path, &event_type, bubbles);
@@ -2759,6 +2790,9 @@ impl JsRuntime {
         let Some(&target) = path.first() else {
             return Ok(());
         };
+        if self.event_propagation_stopped(event)? {
+            return Ok(());
+        }
         let mut steps = 0usize;
         let connected = self.path_reaches_document(path);
         if connected {
@@ -3809,6 +3843,17 @@ impl JsRuntime {
                 .get(&node)
                 .is_some_and(|v| !v.is_empty())
             || self.dom_onclick.contains_key(&node)
+    }
+
+    /// Current allocated slots, including unreachable objects/environments.
+    /// This is intentionally explicit about the absence of collection.
+    pub fn heap_usage(&self) -> JsHeapUsage {
+        JsHeapUsage {
+            object_slots: self.heap.len(),
+            environment_slots: self.environments.len(),
+            object_budget: self.object_budget,
+            environment_budget: self.environment_budget,
+        }
     }
 
     pub fn eval_script(&mut self, source: &str) -> Result<JsValue, JsError> {
@@ -8015,6 +8060,88 @@ mod tests {
         .unwrap();
         assert!(vm.dispatch_dom_click_path(&[2, 1]).unwrap());
         assert_eq!(vm.global("trace"), Some(&JsValue::String("first;".into())));
+    }
+
+    #[test]
+    fn m435_gc_baseline_exposes_repeated_allocation_growth_without_claiming_collection() {
+        let mut vm = JsRuntime::new();
+        let initial = vm.heap_usage();
+        vm.eval_script(
+            r#"
+            for(var i=0;i<80;i=i+1){
+                var temporary={index:i, child:{v:i}};
+                (function(){var scoped={payload:i};})();
+            }
+        "#,
+        )
+        .unwrap();
+        let after = vm.heap_usage();
+        assert!(after.object_slots >= initial.object_slots + 160);
+        assert!(after.environment_slots > initial.environment_slots);
+        assert_eq!(after.object_budget, initial.object_budget);
+        assert_eq!(after.environment_budget, initial.environment_budget);
+    }
+
+    #[test]
+    fn m435_stop_before_dispatch_suppresses_target_and_resets_after() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "parent".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 2,
+                id: "child".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.set_dom_document_root(0);
+        vm.sync_dom_tag(1, "div".into());
+        vm.sync_dom_tag(2, "button".into());
+        vm.sync_dom_existing_node(1, Some(0), vec![]);
+        vm.sync_dom_existing_node(2, Some(1), vec![]);
+        vm.eval_script(
+            r#"
+            var parent=document.getElementById('parent');
+            var child=document.getElementById('child');
+            var hits='';
+            parent.addEventListener('go',function(){hits=hits+'P';},true);
+            child.addEventListener('go',function(){hits=hits+'T';});
+            var e=new Event('go',{bubbles:true});
+            e.stopPropagation();
+            child.dispatchEvent(e);
+            var before=hits===''&&!e.cancelBubble;
+            child.dispatchEvent(e);
+            var result=before&&hits==='PT'&&!e.cancelBubble;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn m435_pre_dispatch_cancel_bubble_stops_global_custom_event() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var trace='';
+            window.addEventListener('hello',function(){trace=trace+'W';},true);
+            document.addEventListener('hello',function(){trace=trace+'D';});
+            var e=document.createEvent('Event');
+            e.initEvent('hello',true,true);
+            e.cancelBubble=true;
+            document.dispatchEvent(e);
+            var initial=trace===''&&!e.cancelBubble;
+            document.dispatchEvent(e);
+            var result=initial&&trace==='WD';
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
     }
 
     #[test]

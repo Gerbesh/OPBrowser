@@ -3335,3 +3335,20 @@ This file is append-only project history.
 - WPT harness shim now supports sync test context/step_func, assert_unreached, sticky first-failure index and exact file test counts; added two shim tests.
 - Original VM supports Function.prototype.call, Event.srcElement and correct initEvent/post-dispatch stop flag resets. Added two VM tests and updated prior incorrect expectations.
 - No third-party JS engine or new crates; sample is not official full WPT conformance.
+
+## 2026-10-11 - M4.35 pinned WPT v8, documentElement and pre-dispatch propagation
+
+- Verified real upstream WPT at fixed revision 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d. Added frozen v8 with five unchanged source files on redispatch, capture defaults and pre-dispatch stop flags. Result: **24 selected, 21 attempted PASS, 0 FAIL, 3 explicit SKIP**. Prior frozen v1-v7 remain unchanged. This is not a complete WPT run.
+- Extended the bounded synchronous WPT shim with strict assert_array_equals (length and element identity). Kept upstream assertions untouched; errors remain sticky.
+- op_engine::scripts::sync_dom_tree exposes the parser-owned html root via JsRuntime::set_dom_document_element_node and document.documentElement; Event phase constants now exist on Event.
+- Fixed event dispatch: pre-existing stopPropagation/cancelBubble state must suppress all callbacks, including capture/target, and only reset at dispatch completion. Added original VM and full HTML/native-paint tests.
+- Added JsRuntime::heap_usage() read-only counters for currently allocated object/environment arena slots and budgets. A regression verifies temporary allocations stay allocated in today's non-collecting VM. This is **diagnostic**, not a garbage collector.
+
+## 2026-10-11 - Project priority correction: visible pages and GC ahead of more EventTarget work
+
+- Acknowledged the recent M4.28-M4.35 series over-invested in EventTarget semantics relative to overflow scrolling, flex-wrap, grid, backgrounds, fonts, forms, and the lack of garbage collection.
+- Replaced the 1618-line PROJECT_PLAN.md historical timeline with a 61-line active roadmap: P0-A usable overflow scrolling/paint/hit-testing and P0-B original JS GC, followed by flex-wrap/grid, backgrounds/fonts and editing/forms. New per-milestone logs belong here, not in the plan.
+- Existing detailed milestone records remain present in this append-only DEV_LOG and earlier Git commits; no historical commits or test manifests were rewritten.
+- Created GC_IMPLEMENTATION.md with object and captured-environment root tracing, generation-safe stable handles, bounded mark/sweep phases and long-session memory-plateau exit criteria.
+- Restated independent test limitations: static exact 197/200 is only a handpicked 200-reftest set, positioning remains 53/100, Test262 Runtime v2 has 110 explicit skips, and DOM/Events v8 is 21/21 on a small selected synchronous sample. None is a browser readiness metric.
+- Subsequent work must deliver end-to-end visible rendering and memory progress; do not launch another API-naming-only milestone sequence.

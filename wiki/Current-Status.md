@@ -234,6 +234,27 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## M4.35: original WPT v8 and roadmap correction
+
+The pinned original-source WPT DOM/Events v8 smoke selects
+24 manually chosen HTML files: **21 attempted PASS, 0 FAIL,
+3 explicit SKIP**. New fixtures test redispatch, event stop
+flags set before dispatch, and omitted capture options.
+Host document.documentElement and Event phase constants now work
+through original DOM and paint, and dispatch respects pre-stopped
+events. This sample does not measure broad web compatibility.
+
+**P0 changed to working rendering/overflow scrolling and
+a real original JS garbage collector.** Previously, too much
+work went to narrowly passing EventTarget semantics while
+visible CSS and long-session memory were incomplete. Current
+object/environment arenas are append-only and have no GC.
+M4.35 adds heap_usage() diagnostics, not reclamation.
+
+The [active project plan](https://github.com/Gerbesh/OPBrowser/blob/main/docs/PROJECT_PLAN.md)
+has been reduced from 1618 lines to a short priority roadmap;
+historical details remain in the development log and Git.
+
 ## M4.34: measured original WPT Events progress
 
 Verified upstream commit 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d. Old v5 still passes 12/12 attempted, 3 SKIP. New frozen v7 selects 19 original HTML fixtures: **16 attempted PASS, 0 FAIL, 3 SKIP**, 39 untouched synchronous WPT callbacks. The four added upstream Events sources cover defaultPrevented, returnValue, post-dispatch srcElement and cancelBubble.

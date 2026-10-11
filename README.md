@@ -38,6 +38,19 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
+**Priority reset (11 October 2026):** P0 is rendering with
+working overflow/scrolling, and a real garbage collector in the
+original JS VM. No more EventTarget-only milestone streaks. See
+[active roadmap](docs/PROJECT_PLAN.md) and
+[GC design](docs/GC_IMPLEMENTATION.md). There is **no GC yet**;
+the new heap_usage() API reports allocated arena slots.
+
+M4.35 extends the pinned, original-source WPT DOM/Events smoke to
+21/21 attempted PASS, 3 explicit SKIP (24 selected). Implemented
+parser-backed document.documentElement, Event phase constants and
+correct pre-dispatch stopPropagation/cancelBubble behavior.
+These are narrowly selected tests, not representative readiness.
+
 M4.34 expands original pinned WPT DOM/Events smoke to 16/16 attempted HTML files PASS, 3 SKIP, 39 unmodified synchronous callbacks. The VM now has Function.prototype.call, Event.srcElement, and correct cancelBubble reset by initEvent and after dispatch. Narrow WPT shim forwards test context and records first failures. Reproduce: cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt. This is not broad official WPT conformance.
 
 M4.33a-b introduces original new EventTarget() with a shared

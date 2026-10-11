@@ -336,6 +336,32 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S46",
+      "title": "Original VM object/environment allocation observability before garbage collection",
+      "status": "M4.35 non-collecting heap_usage diagnostic and explicit GC design",
+      "steps": [
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "heap_usage"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "allocate_object_with_function"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "allocate_environment"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "execute_retained"}
+      ],
+      "limitation": "Append-only arenas; diagnostic counts include unreachable slots; no collection, no long-session memory plateau."
+    },
+    {
+      "id": "S45",
+      "title": "Parser documentElement and pre-dispatch propagation through original WPT",
+      "status": "M4.35 pinned original WPT DOM/Events v8 21/21 attempted PASS 3 SKIP",
+      "steps": [
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "sync_dom_tree"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "set_dom_document_element_node"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "dispatch_custom_event_inner"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "finish_event_dispatch"},
+        {"path": "crates/op_engine/src/bin/wpt_dom_probe.rs", "symbol": "instrument"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "PaintCommand"}
+      ],
+      "limitation": "Narrow pinned original synchronous WPT selection; not representative DOM/Event/visual readiness."
+    },
+    {
       "id": "S44",
       "title": "Real pinned WPT Events source through original Function.call and native render verdict",
       "status": "M4.34 original v7 16/16 selected attempted PASS, 3 explicit SKIP",

@@ -158,6 +158,15 @@ fn find_body(document: &Document) -> Option<NodeId> {
 /// real parser-built nodes as well as new nodes created in the VM.
 fn sync_dom_tree(document: &Document, runtime: &mut JsRuntime) {
     runtime.set_dom_document_root(document.root().index());
+    for child in document.children(document.root()) {
+        if document
+            .element(*child)
+            .is_some_and(|element| element.tag_name == "html")
+        {
+            let _ = runtime.set_dom_document_element_node(child.index());
+            break;
+        }
+    }
     let mut stack = vec![(document.root(), None)];
     let mut count = 0usize;
     while let Some((node, parent)) = stack.pop() {

@@ -16,6 +16,23 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## M4.35: parser documentElement and allocation accounting
+
+op_engine::scripts::sync_dom_tree identifies the real parser html
+child, calling JsRuntime::set_dom_document_element_node to expose
+document.documentElement with original DOM identity. Event constructor
+phase constants and element/global dispatch preserve any stop flag
+set before dispatch; finish_event_dispatch clears them afterward.
+The unchanged original upstream WPT v8 source smoke validates
+21/21 attempted files with 3 explicit SKIP.
+
+JsRuntime::heap_usage returns allocated object/environment slots
+against budgets. This includes unreachable allocations, and is
+**not** a collector or live-object count. GC implementation phases
+and roots are specified in docs/GC_IMPLEMENTATION.md. The main
+development priority has shifted to scroll/overflow rendering and
+real garbage collection.
+
 ## M4.34: pinned upstream WPT to native rendering
 
 op_engine::wpt_dom_probe checks the real upstream git revision, reads original source and instruments only WPT harness references. Its synchronous test context uses op_js::JsRuntime::FunctionCall via call_value and the shared function prototype. The same original VM exposes Event.srcElement and resets stopPropagation flags in DomInitEvent and finish_event_dispatch. Native op_engine/op_dom/op_layout/op_paint renders a sticky PASS/FAIL verdict. No foreign engine or new crate dependency.

@@ -1,5 +1,5 @@
 //! Pinned original WPT DOM source runner with a narrow sync test adapter.
-//! Only explicitly listed one-test fixtures are executable; unsupported
+//! Only explicitly listed synchronous fixtures are executable; unsupported
 //! WPT cases are explicit SKIPs, never counted as passes.
 use op_engine::Engine;
 use op_paint::PaintCommand;
@@ -10,7 +10,7 @@ const WPT_REVISION: &str = "97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d";
 const PASS: &str = "OPBROWSER_WPT_DOM_PASS";
 const FAIL: &str = "OPBROWSER_WPT_DOM_FAIL";
 const NOT_RUN: &str = "OPBROWSER_WPT_DOM_NOT_RUN";
-const MANIFEST: &str = include_str!("../../../../compat/wpt-dom-smoke-v7.tsv");
+const MANIFEST: &str = include_str!("../../../../compat/wpt-dom-smoke-v8.tsv");
 
 fn git(repo: &Path, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
@@ -67,6 +67,12 @@ fn instrument(original: &str, expected_tests: usize) -> Result<String, String> {
         "if(!Object.is(actual,expected))throw new Error('WPT assert_equals');",
         "}",
         "function assert_unreached(){throw new Error('WPT assert_unreached');}",
+        "function assert_array_equals(actual,expected){",
+        "if(actual.length!==expected.length)throw new Error('WPT assert_array_equals length');",
+        "for(var i=0;i<expected.length;i=i+1){",
+        "if(!Object.is(actual[i],expected[i]))throw new Error('WPT assert_array_equals item '+i);",
+        "}",
+        "}",
         "function assert_true(actual){",
         "if(!actual)throw new Error('WPT assert_true');",
         "}",
@@ -194,11 +200,11 @@ fn run() -> Result<(), String> {
             _ => return Err(format!("unknown WPT manifest disposition for {fixture}")),
         }
     }
-    if selected != 19 || attempted != 16 || skipped != 3 {
-        return Err("frozen WPT DOM v7 manifest shape changed".into());
+    if selected != 24 || attempted != 21 || skipped != 3 {
+        return Err("frozen WPT DOM v8 manifest shape changed".into());
     }
     println!(
-        "WPT DOM/events smoke v7: multi-test synchronous shim, unchanged pinned fixture assertions"
+        "WPT DOM/events smoke v8: multi-test synchronous shim, unchanged pinned fixture assertions"
     );
     println!("upstream_revision_verified=true");
     println!(

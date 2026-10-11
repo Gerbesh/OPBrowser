@@ -623,6 +623,19 @@ sources and a sticky error result.
 Reproduce:
   cargo run -p op_engine --bin wpt_dom_probe -- target/compat-wpt
 
+M4.35 pinned original WPT DOM/Events v8 selects 24 HTML source
+files: 21 attempted PASS, zero FAIL, 3 explicit SKIP.
+Five untouched upstream files cover redispatch, pre-stopped events
+and omitted capture options. The original runtime now exposes
+document.documentElement and Event constants and preserves
+pre-existing propagation stops until dispatch cleanup.
+
+Readiness limitation: 21/21 is a manually selected synchronous
+subset, not official full WPT. Static v1 exact 197/200 (200 selected
+reftests), Positioning v1 53/100, and Test262 Runtime v2
+78/179 attempted with 110 explicitly skipped are distinct limited
+measurements. None measures usable scrolling or memory reclamation.
+
 M4.34, measured on actual original pinned WPT checkout: v6 has 15 attempted PASS, 3 SKIP, 31 callbacks; v7 has 16 attempted PASS, 0 FAIL, 3 SKIP, 39 callbacks. Four added original Events fixtures cover defaultPrevented, returnValue, post-dispatch Event.srcElement and cancelBubble propagation/reset. Immutable v1-v5 manifests and original upstream assertions remain unchanged. New VM fixes include Function.prototype.call, srcElement and propagation-stop cleanup. The synchronous shim is not the full WPT harness.
 
 These are manually selected smoke tests, NOT representative

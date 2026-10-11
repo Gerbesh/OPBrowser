@@ -2,6 +2,32 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn m435_document_element_and_body_match_real_parser_tree() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<!doctype html><html><head><title>T</title></head>",
+            "<body><div id='child'>Content</div><p id='out'>WAIT</p><script>",
+            "var root=document.documentElement;",
+            "var body=document.body;",
+            "var child=document.getElementById('child');",
+            "document.getElementById('out').textContent=",
+            "root.tagName==='HTML'&&body.tagName==='BODY'&&",
+            "root.contains(body)&&body.contains(child)?",
+            "'M435-DOCUMENT-ROOT-PASS':'M435-DOCUMENT-ROOT-FAIL';",
+            "</script></body></html>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd,op_paint::PaintCommand::Text{text,..}
+            if text.contains("M435-DOCUMENT-ROOT-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m433_original_eventtarget_dispatch_updates_native_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

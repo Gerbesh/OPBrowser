@@ -48,6 +48,21 @@ prototype chains, name/message properties and catchable objects. Runtime Type/Re
 inside try regions are converted to those JavaScript objects; execution-limit failures deliberately
 remain engine-level guards.
 
+## M4.35: pre-dispatch events fixed, GC is outstanding
+
+Original new/legacy Events preserve stopPropagation and
+cancelBubble state already set when dispatch begins. The
+flag clears on dispatch completion. Event phase constants and
+document.documentElement allow further original upstream WPT
+validation: 21/21 attempted v8 fixtures PASS, 3 SKIP.
+
+The VM still stores every JsObject and captured Environment
+in append-only vectors for the page lifetime. heap_usage()
+now exposes allocation slot counts and budgets, including
+unreachable slots. It is diagnostic only, **not GC**.
+G1 trace roots, G2 reclaim and G3 bounded collection are
+explicit required tasks ahead of more minor Web APIs.
+
 ## M4.34: WPT-guided Function.call and Event cleanup
 
 Original function objects now inherit a shared Function prototype with Function.prototype.call. call_value binds the supplied this and forwards arguments, enabling genuine upstream WPT test contexts. Event.srcElement aliases target. initEvent clears propagation-stop flags, and dispatch completion clears them while preserving defaultPrevented and target. The v7 original WPT selection passed 16/16 attempted files, with 3 SKIP (39 original callbacks) at verified pinned SHA. It is not broad WPT compliance.
