@@ -6,9 +6,9 @@ use super::*;
 use op_css::{
     BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide, Clear,
     ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Direction, Display,
-    FloatSide, FontStyle as CssFontStyle, InsetEdges, LengthPercentage, MarginEdges, MarginValue,
-    Overflow, PaddingEdges, Position, PseudoElement, TableLayout, TextAlign, TextTransform,
-    VerticalAlign, Visibility, WhiteSpace,
+    FlexWrap, FloatSide, FontStyle as CssFontStyle, InsetEdges, LengthPercentage, MarginEdges,
+    MarginValue, Overflow, PaddingEdges, Position, PseudoElement, TableLayout, TextAlign,
+    TextTransform, VerticalAlign, Visibility, WhiteSpace,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -330,6 +330,8 @@ struct UsedBlockHorizontal {
 #[derive(Clone, Copy)]
 struct Style {
     inline: InlineStyle,
+    flex_wrap: FlexWrap,
+    flex_gap: BorderSpacing,
     inline_ancestor_dx: i32,
     inline_ancestor_dy: i32,
     direction: Direction,
@@ -1756,14 +1758,28 @@ impl<'a> Context<'a, '_> {
             image_boxes: Vec::new(),
             order: Vec::new(),
         };
-        let mut x = 0;
+        let mut x = 0i32;
+        let mut y = 0i32;
+        let mut line_height = 0i32;
+        let limit = containing_width.max(1);
+        let row_gap = style.flex_gap.vertical_px.round().clamp(0.0, 4096.0) as i32;
+        let column_gap = style.flex_gap.horizontal_px.round().clamp(0.0, 4096.0) as i32;
         for child in children_out {
             let width = child.width.max(0);
-            row.height = row.height.max(child.height);
-            append_atomic(&mut row, child, x, 0);
+            let needed = x.saturating_add(column_gap).saturating_add(width);
+            if style.flex_wrap == FlexWrap::Wrap && x > 0 && needed > limit {
+                y = y.saturating_add(line_height).saturating_add(row_gap);
+                x = 0;
+                line_height = 0;
+            } else if x > 0 {
+                x = x.saturating_add(column_gap);
+            }
+            line_height = line_height.max(child.height);
+            append_atomic(&mut row, child, x, y);
             x = x.saturating_add(width);
+            row.width = row.width.max(x);
         }
-        row.width = x;
+        row.height = y.saturating_add(line_height);
         row.baseline = row.height;
         row
     }
@@ -5786,6 +5802,8 @@ fn computed_style(style: ComputedStyle) -> Style {
     }
 
     Style {
+        flex_wrap: style.flex_wrap,
+        flex_gap: style.flex_gap,
         inline: InlineStyle {
             font_size,
             line_height: used_line_height(style.line_height, font_size),
@@ -5946,6 +5964,8 @@ fn anonymous_table_cell_style(parent: Style) -> Style {
 
 fn default_style() -> Style {
     Style {
+        flex_wrap: FlexWrap::NoWrap,
+        flex_gap: BorderSpacing::ZERO,
         inline: InlineStyle {
             font_size: 18,
             line_height: 24,
@@ -6011,6 +6031,8 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         _ => (0, 0),
     };
     Style {
+        flex_wrap: FlexWrap::NoWrap,
+        flex_gap: BorderSpacing::ZERO,
         inline: fallback_inline_style(tag, inherited.inline),
         inline_ancestor_dx: inherited.inline_ancestor_dx,
         inline_ancestor_dy: inherited.inline_ancestor_dy,

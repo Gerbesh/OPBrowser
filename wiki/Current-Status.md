@@ -234,6 +234,25 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## R2a: multi-line Flexbox rows and gaps
+
+The original CSS engine now recognizes flex-wrap:wrap, nowrap and
+the non-negative length-based gap shorthand on flex containers.
+The original layout engine wraps intrinsic-sized items into multiple
+rows, applies independent row/column gaps, and reserves correct
+vertical space for following content. The same commands go to our
+GDI painter; regression tests inspect real native RGB pixels.
+
+Try examples/css/flex-wrap-cards.html on OPBrowser. This is not
+complete Flexbox: flex-grow/shrink, flex-direction, justification,
+cross-axis alignment, item ordering and min-content sizing are still
+not implemented, and modern websites remain visually incomplete.
+The unchanged pinned WPT Static v1 now reports 194/200 (previously
+197/200): three extra failures involve unsupported flex margin-trim,
+whose references now render gap. They are real missing CSS cases,
+not tests to ignore. Positioning v1 remains 54/100.
+
+
 ## R1.2c: native scrollbar thumb dragging
 
 The original GDI-painted vertical scrollbar thumb can now be dragged

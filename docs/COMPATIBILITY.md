@@ -687,3 +687,27 @@ Unmodified pinned WPT Static v1 rerun: 197/200 PASS,
 Unmodified pinned WPT Positioning v1 rerun: 54/100 PASS,
 46 FAIL, zero render errors. Neither suite measures thumb gestures
 or broad real-world compatibility. No manifests were edited.
+
+
+## 2026-10-11 - R2a flex-wrap and gap pixel baseline
+
+Original CSS/layout now render bounded row-direction multi-line flex
+items and length-based gap; local geometry tests and original Win32 GDI
+pixel comparison pass. Frozen WPT Positioning v1 stays 54/100 with
+zero render errors.
+
+Frozen WPT Static v1 now measures **194/200**, down from 197/200
+(6 FAIL, zero render errors). The three additional exact mismatches
+are css/css-box/margin-trim/flex-inline-end-trimmed-only.html,
+flex-inline-trimmed-only.html, and flex-trim-all-margins.html.
+Their references use CSS gap, now rendered correctly, while test
+sources require logical margin-inline/block and margin-trim, still
+unsupported. Before R2a, the test/reference pairs accidentally
+matched because gap was ignored too. These FAILs are genuine missing
+CSS functionality, not deprecated or intentionally skipped tests.
+The three historic CSS Color failures are unchanged.
+
+The immutable upstream revision 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d
+and both pinned manifests are unchanged. R2b must add proper
+logical margins and margin-trim (and flexible sizing) instead of
+weakening supported gap to restore an accidental test pass.

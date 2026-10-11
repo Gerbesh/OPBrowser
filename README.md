@@ -47,6 +47,16 @@ engine at idle checkpoints. VM and host integration tests pass.
 slots, no memory plateau claim. Native interpreter frame roots,
 generation-safe reclamation and long-session collection are next.
 
+**R2a bounded Flexbox rows and gaps:** original CSS computed styles
+now carry flex-wrap:wrap and length-based gap into the row formatter.
+Intrinsic-width flex items wrap across rows with distinct column
+and row gaps; later blocks follow the full multiline container.
+Correct behavior is covered by geometry and actual Win32 GDI pixel
+tests. Try examples/css/flex-wrap-cards.html.
+No grow/shrink, column-direction flex, justify-content, align-items,
+item ordering, full min-content rules, Grid or web-site parity yet.
+
+
 **R1.2c native thumb dragging:** Mouse capture starts on a painted
 vertical scrollbar thumb, continues beyond track boundaries and
 ends on release, OS capture loss or navigation. Original layout

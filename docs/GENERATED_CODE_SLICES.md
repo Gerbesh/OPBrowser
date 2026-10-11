@@ -449,6 +449,26 @@ op_platform_win::present_reflow
 
 Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol.
 
+## S53 — Computed flex-wrap and gap to original multi-row GDI pixels
+
+Status: **R2a bounded row-direction flex-wrap and non-negative CSS gap shorthand**.
+
+```text
+op_css::parse_flex_wrap
+op_css::parse_flex_gap
+op_layout::flex_row_atomic
+op_paint::build_display_list
+op_platform_win::render_display_list_to_bgra
+```
+
+- [`op_css::parse_flex_wrap`](../crates/op_css/src/computed.rs#L1764)
+- [`op_css::parse_flex_gap`](../crates/op_css/src/computed.rs#L1772)
+- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1185)
+- [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L96)
+- [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L69)
+
+Intrinsic-width row flex only; no grow/shrink, direction, item order, alignment, percent gap, Grid or general Flexbox conformance.
+
 ## S52 — Captured Win32 scrollbar thumb movement to nested original scrollTop
 
 Status: **R1.2c capture, busy-worker pointer coalescing, original layout mapping and clamped scrollTop**.
@@ -503,7 +523,7 @@ op_js::set_dom_scroll_top
 op_engine::reflow
 ```
 
-- [`op_layout::max_scroll_top`](../crates/op_layout/src/flow.rs#L1275)
+- [`op_layout::max_scroll_top`](../crates/op_layout/src/flow.rs#L1277)
 - [`op_engine::render`](../crates/op_engine/src/lib.rs#L167)
 - [`op_js::sync_dom_scroll_limits`](../crates/op_js/src/runtime.rs#L2386)
 - [`op_js::set_dom_scroll_top`](../crates/op_js/src/runtime.rs#L2401)
@@ -566,7 +586,7 @@ op_platform_win::paint_command
 op_engine::click_at
 ```
 
-- [`op_css::parse_overflow`](../crates/op_css/src/computed.rs#L1871)
+- [`op_css::parse_overflow`](../crates/op_css/src/computed.rs#L1901)
 - [`op_layout::collect_overflow_clips`](../crates/op_layout/src/flow.rs#L96)
 - [`op_layout::ClipRect`](../crates/op_layout/src/lib.rs#L187)
 - [`op_paint::clip_commands_since`](../crates/op_paint/src/lib.rs#L217)

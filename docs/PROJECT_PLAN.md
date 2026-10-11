@@ -14,7 +14,7 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 | --- | --- | --- | --- |
 | **P0-A** | **Usable rendering and scrolling** | **R1.0–R1.2c vertical DONE (bounded):** clipping, nested wheel, JS ranges, GDI scrollbars and captured thumb dragging with bounded input queue. | **R1.2d NEXT:** horizontal overflow-x/y, complex nested/positioned clipping and independent WPT Overflow/real-page comparisons. |
 | **P0-B** | **Memory safety / original VM GC** | **G1.0 DONE:** conservative idle-checkpoint reachability scan counts reachable/unreachable objects and captured environments. Append-only arenas still retain everything. **No GC yet.** | G1.1: verify/register all native call-frame/operand roots. G2: generation-safe reclaim of both arenas and cycles. G3: automatic bounded GC, 30-minute plateau and stress tests. See [GC_IMPLEMENTATION.md](GC_IMPLEMENTATION.md). |
-| **P1-C** | **Flexbox with multiple lines** | A bounded single-line row formatter exists. | R2: flex-wrap, lines, gap, order, cross-axis layout, min-content constraints. Test resize and 2D pixel positions against frozen fixtures. |
+| **P1-C** | **Flexbox with multiple lines** | **R2a DONE (bounded):** original row-direction `flex-wrap:wrap` and non-negative pixel/font-relative `gap` shorthand, verified on native GDI pixels and multiline geometry. | **R2b NEXT:** flex-grow/shrink, `justify-content`, `align-items`, `flex-direction`, order and sizing constraints. Test layout and actual real-page comparisons. |
 | **P1-D** | **CSS Grid foundation** | Table grid track sizing exists; it is **not** CSS Grid Layout. | R3: explicit/auto tracks, fraction units, item placement and basic gap, then implicit tracks and minmax. Screenshot+geometry tests. |
 | **P1-E** | **Backgrounds and typography** | URL image tiling for blocks/tables and GDI font measurement exist, but broad backgrounds, web fonts and modern shaping/fallback do not. | R4: repeat/size/position and clipping for image backgrounds; then DirectWrite shaping/fallback and real @font-face loading with origin/security controls. |
 | **P1-F** | **Forms and editing** | Some native/text/checkbox and selector subsets; not a usable complete form implementation. | R5: input/edit focus, keyboard text, caret/selection, submission semantics, accessibility names and persistent state; real click+typing integration. |
@@ -34,7 +34,7 @@ P0-A and P0-B are **both mandatory**; a renderer that cannot scroll or that exha
 
 | Suite | Latest recorded measurement | What it does **not** prove |
 | --- | --- | --- |
-| Pinned WPT Static v1 | 197/200 exact; 198/200 with source-authored fuzzy rules | Only 200 selected reftests; not broad CSS or visual web readiness |
+| Pinned WPT Static v1 | **194/200 exact after R2a** (197/200 before); three extra FAIL in modern `margin-trim` flex reftests now that `gap` is painted | Only 200 selected reftests; current flex lacks logical margin-trim and cannot claim broad CSS readiness |
 | Pinned WPT Positioning v1 | 54/100 exact (R1.1) | Substantial positioned-layout gaps remain |
 | Pinned Test262 Parser v1 | 523/1,983 attempted | Parser subset, not whole ECMAScript |
 | Pinned Test262 Runtime v2 | 78/179 attempted; 110 explicitly SKIP | Handpicked language/runtime families, not overall JS compatibility |
@@ -47,7 +47,7 @@ P0-A and P0-B are **both mandatory**; a renderer that cannot scroll or that exha
 - R1.0–R1.1 DONE: block clipping and vertical JS/native scrolling with original GDI pixel and hit-target checks; retain pinned WPT baselines.
 - R1.2a–R1.2c DONE (bounded vertical): clamped JS scrollTop, native track click and captured thumb drag; next R1.2d horizontal axes and complex clipping, then visual Flexbox/Grid/typography work gated by representative real-page comparisons.
 - G1.0 DONE: mark-only idle root tracing with no reclamation. G1.1 NEXT: complete native activation-frame, operand and host root coverage at safe checkpoints; G2: generation-safe object/environment slot reclamation, including cycles; G3: automatic bounded collections with performance baselines.
-- Only then expand flex-wrap, CSS Grid and form fidelity in visible, testable increments.
+- R2a DONE in parallel with P0: bounded multiline flex rows and gap with native pixel regression. R2b next: flexible widths, alignment and direction; these are prerequisites for convincing modern-page layouts, but do not replace unfinished overflow and GC work.
 
 ## Documentation ownership
 

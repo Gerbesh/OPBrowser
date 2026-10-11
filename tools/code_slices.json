@@ -336,6 +336,19 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S53",
+      "title": "Computed flex-wrap and gap to original multi-row GDI pixels",
+      "status": "R2a bounded row-direction flex-wrap and non-negative CSS gap shorthand",
+      "steps": [
+        {"path": "crates/op_css/src/computed.rs", "symbol": "parse_flex_wrap"},
+        {"path": "crates/op_css/src/computed.rs", "symbol": "parse_flex_gap"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "flex_row_atomic"},
+        {"path": "crates/op_paint/src/lib.rs", "symbol": "build_display_list"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "render_display_list_to_bgra"}
+      ],
+      "limitation": "Intrinsic-width row flex only; no grow/shrink, direction, item order, alignment, percent gap, Grid or general Flexbox conformance."
+    },
+    {
       "id": "S52",
       "title": "Captured Win32 scrollbar thumb movement to nested original scrollTop",
       "status": "R1.2c capture, busy-worker pointer coalescing, original layout mapping and clamped scrollTop",

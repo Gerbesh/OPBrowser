@@ -16,6 +16,31 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## R2a: computed flex-wrap and gap to multi-line native pixels
+
+The original op_css::ComputedStyle parses flex-wrap:wrap and the gap
+shorthand as non-inherited flex properties. Length parsing currently
+accepts non-negative absolute/font-relative pixel values, not
+percentage gaps. flex-wrap defaults to nowrap; unsupported wrap-reverse
+and broader flex-flow shorthand remain unimplemented.
+
+op_layout::flow::Style carries these values through to flex_row_atomic:
+row-direction items keep their intrinsic widths, wrap when the next
+item plus column gap would exceed the container, and advance by the
+tallest line item plus row gap. No-wrap preserves its old behavior.
+The resulting paint/hit geometry follows the normal original display
+list and Win32 GDI path, not a separate layout renderer.
+
+Layout regressions prove row breaks, horizontal/vertical gap, next
+block placement and wider-container non-wrapping. The original GDI
+pixel regression confirms painted RGB rectangles on distinct rows.
+A manual offline example is examples/css/flex-wrap-cards.html.
+
+Limitations: no grow/shrink, justify-content/align-items, ordering,
+column-direction flex, min-content algorithm or CSS Grid. This is
+a bounded row flex implementation, not general Flexbox conformance.
+
+
 ## R1.2c: native thumb capture to the original layout scroll offset
 
 Win32 maps mouse-down on a painted scrollbar thumb into capture,

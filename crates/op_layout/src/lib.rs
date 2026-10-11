@@ -1661,6 +1661,96 @@ mod tests {
     }
 
     #[test]
+    fn r2a_flex_gap_affects_column_advance_row_breaks_and_block_height() {
+        let source = "<body style='margin:0'>\
+            <div style='display:flex;flex-wrap:wrap;gap:7px 15px;width:200px'>\
+              <div style='width:90px;height:25px;background:red'>One</div>\
+              <div style='width:90px;height:25px;background:green'>Two</div>\
+              <div style='width:90px;height:25px;background:blue'>Three</div>\
+            </div><p>After</p></body>";
+        let document = op_html::parse_document(source);
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let tree = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let at = |label: &str| {
+            let item = tree.text_boxes.iter().find(|t| t.text == label).unwrap();
+            (item.x, item.y)
+        };
+        let one = at("One");
+        let two = at("Two");
+        let three = at("Three");
+        let after = at("After");
+        assert_eq!(two.0 - one.0, 105, "90px first item + 15px column gap");
+        assert_eq!(two.1, one.1);
+        assert_eq!(three.0, one.0);
+        assert_eq!(three.1 - one.1, 32, "25px line height + 7px row gap");
+        assert!(after.1 >= three.1 + 25);
+    }
+
+    #[test]
+    fn r2a_flex_wrap_creates_multiple_visual_lines_with_accurate_height() {
+        fn render(property: &str, width: i32) -> LayoutTree {
+            let source = format!(
+                "<body style='margin:0'><div style='display:flex;flex-wrap:{property};width:{width}px'>\
+                 <div style='width:90px;height:25px;background:red'>Alpha</div>\
+                 <div style='width:90px;height:25px;background:green'>Beta</div>\
+                 <div style='width:90px;height:25px;background:blue'>Gamma</div>\
+                 </div><p>Below</p></body>"
+            );
+            let document = op_html::parse_document(&source);
+            let author = op_css::collect_author_styles(&document);
+            let computed = op_css::compute_styles(&document, &author.styles);
+            layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            )
+        }
+        fn pos(tree: &LayoutTree, label: &str) -> (i32, i32) {
+            let text = tree
+                .text_boxes
+                .iter()
+                .find(|text| text.text.contains(label))
+                .unwrap();
+            (text.x, text.y)
+        }
+
+        let wrapped = render("wrap", 190);
+        let (a_x, a_y) = pos(&wrapped, "Alpha");
+        let (b_x, b_y) = pos(&wrapped, "Beta");
+        let (c_x, c_y) = pos(&wrapped, "Gamma");
+        assert!(b_x > a_x && b_y == a_y, "first two items share a flex line");
+        assert_eq!(c_x, a_x, "third item begins at the left of next line");
+        assert!(
+            c_y >= a_y + 25,
+            "wrap advances by the preceding line height"
+        );
+        assert!(
+            pos(&wrapped, "Below").1 >= c_y + 25,
+            "following block clears all flex lines"
+        );
+
+        let unwrapped = render("nowrap", 190);
+        let (a_x, a_y) = pos(&unwrapped, "Alpha");
+        let (c_x, c_y) = pos(&unwrapped, "Gamma");
+        assert!(
+            c_x > a_x && c_y == a_y,
+            "nowrap retains one overflowing row"
+        );
+
+        let wide = render("wrap", 300);
+        assert_eq!(pos(&wide, "Alpha").1, pos(&wide, "Gamma").1);
+    }
+
+    #[test]
     fn flex_display_contents_flattens_into_the_flex_item_sequence() {
         fn render(source: &str) -> LayoutTree {
             let document = op_html::parse_document(source);

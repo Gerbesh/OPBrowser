@@ -16,6 +16,21 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S53 - Computed wrap/gap to rendered multi-line flex cards (R2a)
+
+IMPLEMENTED in the original CSS/layout/paint pipeline:
+op_css::ComputedStyle::flex_wrap/flex_gap receives computed values;
+op_layout::flow::flex_row_atomic wraps intrinsic-width children,
+preserves per-line heights, applies column/row gap and places the
+following block below all rows. Paint commands and native GDI pixels
+reflect the revised geometry automatically. Tests cover narrow/wide,
+nowrap, row/column gap, following block, and RGB pixel positions.
+Fixture: examples/css/flex-wrap-cards.html.
+
+Only row-direction and limited gap lengths; grow/shrink, min-content,
+align-items, ordering, flex-direction and CSS Grid remain pending.
+
+
 ## S52 - Native thumb drag to bounded original scrollTop (R1.2c)
 
 IMPLEMENTED Win32 mouse capture, pointer movement outside tracks,

@@ -32,6 +32,13 @@ pub enum Display {
     None,
 }
 
+/// Bounded first step toward a multi-line flex formatting context.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlexWrap {
+    NoWrap,
+    Wrap,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Position {
     Static,
@@ -389,6 +396,9 @@ impl BorderSpacing {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ComputedStyle {
     pub display: Display,
+    pub flex_wrap: FlexWrap,
+    /// Flex row/column gaps in CSS pixels; stored as horizontal/vertical spacing.
+    pub flex_gap: BorderSpacing,
     pub position: Position,
     /// `auto` is None; integer stacking levels are only effective on positioned boxes.
     pub z_index: Option<i32>,
@@ -513,6 +523,8 @@ impl ComputedStyle {
     pub fn initial() -> Self {
         Self {
             display: Display::Inline,
+            flex_wrap: FlexWrap::NoWrap,
+            flex_gap: BorderSpacing::ZERO,
             position: Position::Static,
             z_index: None,
             float_side: FloatSide::None,
@@ -1554,6 +1566,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
     match parent {
         Some(parent) => ComputedStyle {
             display: initial.display,
+            flex_wrap: initial.flex_wrap,
+            flex_gap: initial.flex_gap,
             position: initial.position,
             z_index: initial.z_index,
             float_side: initial.float_side,
@@ -1746,6 +1760,22 @@ fn apply_author_declarations(
 ) {
     if let Some((_, value)) = winning_value(declarations, "display", parse_display) {
         style.display = resolve_display(value, parent_style);
+    }
+    if let Some((_, value)) = winning_value(declarations, "flex-wrap", parse_flex_wrap) {
+        style.flex_wrap = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.flex_wrap),
+            FlexWrap::NoWrap,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "gap", |tokens| {
+        parse_flex_gap(tokens, style.font_size_px)
+    }) {
+        style.flex_gap = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.flex_gap),
+            BorderSpacing::ZERO,
+        );
     }
     if let Some((_, value)) = winning_value(declarations, "position", parse_position) {
         style.position = resolve_non_inherited(
@@ -2245,6 +2275,48 @@ fn parse_white_space(tokens: &[TokenKind]) -> Option<Specified<WhiteSpace>> {
         "unset" => Some(Specified::Unset),
         _ => None,
     }
+}
+
+fn parse_flex_wrap(tokens: &[TokenKind]) -> Option<Specified<FlexWrap>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "nowrap" => Some(Specified::Value(FlexWrap::NoWrap)),
+        "wrap" => Some(Specified::Value(FlexWrap::Wrap)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+/// CSS gap shorthand: first length is row gap, optional second is column gap.
+/// This bounded first slice supports non-negative absolute/font-relative lengths.
+fn parse_flex_gap(tokens: &[TokenKind], font_px: f32) -> Option<Specified<BorderSpacing>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| BorderSpacing::ZERO));
+    }
+    if single_ident(tokens).is_some_and(|word| word.eq_ignore_ascii_case("normal")) {
+        return Some(Specified::Value(BorderSpacing::ZERO));
+    }
+    let values: Vec<&TokenKind> = significant_tokens(tokens).collect();
+    if !(1..=2).contains(&values.len()) {
+        return None;
+    }
+    let parse = |token: &TokenKind| -> Option<f32> {
+        match parse_length_percentage_token(token, font_px, false, false)? {
+            LengthPercentage::Px(px) if px.is_finite() && (0.0..=4096.0).contains(&px) => Some(px),
+            _ => None,
+        }
+    };
+    let row = parse(values[0])?;
+    let column = if values.len() == 2 {
+        parse(values[1])?
+    } else {
+        row
+    };
+    Some(Specified::Value(BorderSpacing {
+        horizontal_px: column,
+        vertical_px: row,
+    }))
 }
 
 fn parse_overflow(tokens: &[TokenKind]) -> Option<Specified<Overflow>> {

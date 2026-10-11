@@ -500,6 +500,49 @@ mod overflow_tests {
     }
 
     #[test]
+    fn r2a_wrapped_flex_cards_paint_separate_gdi_rows() {
+        let engine = Engine::new();
+        let page = engine.render_html(
+            "<body style='margin:0'><div style='display:flex;flex-wrap:wrap;gap:8px 15px;width:200px'>\
+              <div style='width:90px;height:25px;background:#f00000'></div>\
+              <div style='width:90px;height:25px;background:#00f000'></div>\
+              <div style='width:90px;height:25px;background:#0000f0'></div>\
+             </div></body>",
+            400, 240,
+        );
+        let rectangle = |r: u8, g: u8, b: u8| {
+            page.commands
+                .iter()
+                .find_map(|cmd| {
+                    let op_paint::PaintCommand::FillRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        color,
+                    } = cmd
+                    else {
+                        return None;
+                    };
+                    (color.r == r && color.g == g && color.b == b)
+                        .then_some((*x, *y, *width, *height))
+                })
+                .expect("flex item is actually painted")
+        };
+        let red = rectangle(240, 0, 0);
+        let green = rectangle(0, 240, 0);
+        let blue = rectangle(0, 0, 240);
+        assert_eq!(green.0 - red.0, 105);
+        assert_eq!(green.1, red.1);
+        assert_eq!(blue.0, red.0);
+        assert_eq!(blue.1 - red.1, 33);
+        let pixels = op_platform_win::render_display_list_to_bgra(&page, 400, 240).unwrap();
+        assert_eq!(rgb_at(&pixels, 400, red.0 + 5, red.1 + 5), (240, 0, 0));
+        assert_eq!(rgb_at(&pixels, 400, green.0 + 5, green.1 + 5), (0, 240, 0));
+        assert_eq!(rgb_at(&pixels, 400, blue.0 + 5, blue.1 + 5), (0, 0, 240));
+    }
+
+    #[test]
     fn r11_scroll_top_moves_native_pixels_inside_overflow_auto() {
         let mut engine = Engine::new();
         let without = engine.set_html_page(

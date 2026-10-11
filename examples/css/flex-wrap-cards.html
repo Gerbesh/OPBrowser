@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OPBrowser R2a - wrapping flex cards</title>
+<style>
+body { margin: 12px; color: #222c3b; background: #edf1f6; font-family: Arial; }
+h1 { font-size: 25px; }
+h2 { font-size: 18px; }
+.panel { background: #ffffff; padding: 16px; margin-bottom: 16px; }
+.menu { display: flex; flex-wrap: wrap; gap: 10px 14px; width: 460px; background: #dce9f5; padding: 9px; }
+.chip { width: 95px; height: 28px; background: #d0dfee; border: 1px solid #8eaac8; color: #173b60; }
+.cards { display: flex; flex-wrap: wrap; gap: 12px 18px; width: 480px; }
+.card { width: 142px; height: 88px; background: #cce2f8; border: 1px solid #4683bc; color: #1c395c; }
+.blue { background: #b9d8fa; }
+.green { background: #cae8d0; }
+.gold { background: #f4dfb5; }
+</style>
+</head>
+<body>
+<h1>OPBrowser R2a: multi-line Flexbox</h1>
+<p>Compare a narrow flex container with a multi-line card section. This is an original layout feature, not a webview.</p>
+<div class="panel">
+<h2>Wrapping navigation</h2>
+<div class="menu">
+<div class="chip">News</div><div class="chip">Communities</div>
+<div class="chip">Projects</div><div class="chip">Discover</div>
+<div class="chip">Bookmarks</div><div class="chip">Settings</div>
+</div>
+</div>
+<div class="panel">
+<h2>Card columns, automatic second line</h2>
+<div class="cards">
+<div class="card blue">Article 1</div>
+<div class="card green">Article 2</div>
+<div class="card gold">Article 3</div>
+<div class="card blue">Article 4</div>
+<div class="card green">Article 5</div>
+<div class="card gold">Article 6</div>
+</div>
+</div>
+<p>Limits: row-direction flex-wrap and pixel/font-relative gap only. No flex-grow, shrink, order, justify-content, align-items, grid or complete responsive CSS yet.</p>
+</body>
+</html>

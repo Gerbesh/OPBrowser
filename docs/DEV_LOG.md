@@ -3408,3 +3408,12 @@ This file is append-only project history.
 - Native Win32 message-loop recognizes a mouse-down on painted thumb, uses SetCapture/GetCapture/ReleaseCapture, terminates on normal release and capture loss, then resumes regular page mouse clicks. Worker side coalesces redundant mouse movement while retaining capture start/end order.
 - Regression tests cover nested inner thumb selection and out-of-bounds clamps, no-JS pointer offset preservation, post-release behavior, native OS capture/loss, and worker event queue. Updated the offline overflow-scrollbars fixture to include drag usage.
 - LIMITS: horizontal overflow-x/y, reserved scrollbar gutters, and exact ancestor/positioned clipping remain outstanding; no JS GC or general real-world browsing conformance is claimed. An unrelated 4 ms setInterval timing test failed once in a full concurrent run, passed in isolation and passed on full-suite rerun. No frozen WPT/Test262 fixture altered.
+
+
+## 2026-10-11 - R2a multi-line flex-wrap and length-based gap
+
+- Added a non-inherited computed CSS flex-wrap enum (nowrap/wrap) and bounded non-negative length-based gap shorthand (one or two values: row gap then column gap). Percentage gap, flex-flow shorthand, wrap-reverse and independent longhands remain unsupported.
+- The original row flex formatter now creates multiple lines when intrinsic-sized children overflow, separates columns/rows using computed gap, and advances following blocks by the combined row heights. Existing nowrap remains single-line.
+- Added layout regressions for narrow/wide containers, nowrap behavior, horizontal/vertical gaps and following block position. Added a native Win32 GDI bitmap regression showing three colored flex cards on correctly separated rows and a reusable manual fixture examples/css/flex-wrap-cards.html.
+- This is only a bounded first visual slice, NOT CSS Flexbox conformance: grow/shrink, direction, justify-content, align-items, ordering, intrinsic min-content, Grid and real-site comparison remain open. Full JS GC is also missing.
+- Independent unmodified WPT Static v1 decreased from 197/200 to 194/200 (zero render errors): three modern flex margin-trim tests were accidental passes while gap was ignored in their references. WPT Positioning stays 54/100. Do not exclude the three failures; implement logical margins/margin-trim in a later CSS slice.
