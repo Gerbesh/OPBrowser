@@ -47,6 +47,16 @@ engine at idle checkpoints. VM and host integration tests pass.
 slots, no memory plateau claim. Native interpreter frame roots,
 generation-safe reclamation and long-session collection are next.
 
+**R2c shrink, basis and flex shorthand:** original CSS now resolves
+flex-shrink, flex-basis (auto/pixels/percentages) and common
+flex shorthands such as flex:1, flex:none and flex:2 1 80px.
+Flex lines shrink items by weighted base width, redistribute
+deficits after min-width limits, and reflow real text and paint
+at final dimensions. Shorthand/longhand CSS cascade and actual
+native GDI pixels are tested. See examples/css/flex-sizing.html.
+This remains row-direction-only: no align-items, column layout,
+item ordering, full automatic min-content rules or Grid.
+
 **R2b flexible row spacing and growth:** the original CSS cascade
 recognizes justify-content (start/end/center/between/around/evenly)
 and bounded nonnegative flex-grow factors. Each flex line computes

@@ -3426,4 +3426,14 @@ This file is append-only project history.
 - Added examples/css/flex-distribution.html, updated Code Graph, Code Slices and Wiki. Known limitations: positive growth only; no flex-shrink/basis/shorthand, cross-axis alignment, direction, order, full min/max constraints or CSS Grid. No JS GC has been implemented.
 - Unchanged pinned WPT Static v1 stays 194/200 with six known failures; Positioning v1 stays 54/100 with 46 known failures and zero render errors. No test manifest was altered.
 
+## 2026-10-11 - R2c original flex shrink, basis, and shorthand
+
+- Extended computed CSS with initial flex-shrink:1 and flex-basis:auto; length and percentage bases override width during initial flex item measurement. Parsed bounded nonnegative shrink factors, shorthand flex:none/auto/1/2 1 80px, and global inherit/reset keywords. Shorthand and longhand declarations compete by actual cascade source priority.
+- Added per-line negative free-space distribution weighted by shrink times initial outer width. Iterative freezing respects explicit min-width and reassigns remaining deficit. The previously developed final-width element reflow is reused for both shrink and grow, preserving text and paint geometry rather than stretching screenshots.
+- New CSS cascade tests cover shorthand priority/keywords and invalid declarations. GDI pixel tests cover 1:3 shrink widths, min-width freezing, percentage basis, flex:1 equal halves, zero-shrink overflow and correct rendered RGB. Added the independent offline demo examples/css/flex-sizing.html.
+- LIMITATIONS: horizontal row direction only, approximate scaled outer-width weighting, no full automatic min-content minimums, flex-basis:content, align-items, column direction/order or CSS Grid. JS GC is still mark-only. No general site readiness claim.
+- Unmodified frozen WPT Static v1 remains 194/200 and Positioning v1 remains 54/100, zero render errors. No selection/manifests changed.
+
+
+
 

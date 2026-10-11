@@ -723,4 +723,17 @@ the new layout behavior adds no additional mismatch in these suites.
 Standalone CSS and native GDI pixel tests cover the added flex subset,
 not comprehensive WPT Flexbox or production website readiness.
 
+## 2026-10-11 - R2c frozen CSS reftests
+
+After implementing original weighted flex-shrink, flex-basis and
+common flex shorthand behavior, unmodified WPT Static v1 remains
+194/200 exact (six known failures, zero render errors) and WPT
+Positioning v1 remains 54/100 exact (46 known failures, zero
+render errors). No new failures relative to R2b; still no complete
+Flexbox WPT conformance suite or real-world visual parity baseline.
+Native GDI pixel regressions and CSS computed-value tests exercise
+the newly supported subset. All frozen manifests remain unmodified.
+
+
+
 

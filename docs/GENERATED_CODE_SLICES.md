@@ -449,6 +449,26 @@ op_platform_win::present_reflow
 
 Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol.
 
+## S55 — Original flex basis, weighted shrinking and shorthand to native pixels
+
+Status: **R2c row-only flex-shrink, flex-basis, shorthand cascade and min-width redistribution**.
+
+```text
+op_css::parse_flex_shorthand
+op_css::parse_flex_basis
+op_layout::flex_row_atomic
+op_layout::reflow_flex_item_to_outer_width
+op_platform_win::render_display_list_to_bgra
+```
+
+- [`op_css::parse_flex_shorthand`](../crates/op_css/src/computed.rs#L1814)
+- [`op_css::parse_flex_basis`](../crates/op_css/src/computed.rs#L1845)
+- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1200)
+- [`op_layout::reflow_flex_item_to_outer_width`](../crates/op_layout/src/flow.rs#L1835)
+- [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L69)
+
+Horizontal row flex only, no full automatic min-content, column direction, cross-axis alignment/order, Grid or complete Flexbox conformance.
+
 ## S54 — Original CSS flex-grow and justify-content to GDI pixel coordinates
 
 Status: **R2b positive weighted flex growth and six main-axis justification values**.
@@ -461,9 +481,9 @@ op_paint::build_display_list
 op_platform_win::render_display_list_to_bgra
 ```
 
-- [`op_css::parse_flex_grow`](../crates/op_css/src/computed.rs#L1805)
-- [`op_css::parse_justify_content`](../crates/op_css/src/computed.rs#L1797)
-- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1197)
+- [`op_css::parse_flex_grow`](../crates/op_css/src/computed.rs#L1832)
+- [`op_css::parse_justify_content`](../crates/op_css/src/computed.rs#L1805)
+- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1200)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L96)
 - [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L69)
 
@@ -481,9 +501,9 @@ op_paint::build_display_list
 op_platform_win::render_display_list_to_bgra
 ```
 
-- [`op_css::parse_flex_wrap`](../crates/op_css/src/computed.rs#L1781)
-- [`op_css::parse_flex_gap`](../crates/op_css/src/computed.rs#L1789)
-- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1197)
+- [`op_css::parse_flex_wrap`](../crates/op_css/src/computed.rs#L1789)
+- [`op_css::parse_flex_gap`](../crates/op_css/src/computed.rs#L1797)
+- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1200)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L96)
 - [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L69)
 
@@ -543,7 +563,7 @@ op_js::set_dom_scroll_top
 op_engine::reflow
 ```
 
-- [`op_layout::max_scroll_top`](../crates/op_layout/src/flow.rs#L1289)
+- [`op_layout::max_scroll_top`](../crates/op_layout/src/flow.rs#L1292)
 - [`op_engine::render`](../crates/op_engine/src/lib.rs#L167)
 - [`op_js::sync_dom_scroll_limits`](../crates/op_js/src/runtime.rs#L2386)
 - [`op_js::set_dom_scroll_top`](../crates/op_js/src/runtime.rs#L2401)
@@ -606,7 +626,7 @@ op_platform_win::paint_command
 op_engine::click_at
 ```
 
-- [`op_css::parse_overflow`](../crates/op_css/src/computed.rs#L1930)
+- [`op_css::parse_overflow`](../crates/op_css/src/computed.rs#L1972)
 - [`op_layout::collect_overflow_clips`](../crates/op_layout/src/flow.rs#L96)
 - [`op_layout::ClipRect`](../crates/op_layout/src/lib.rs#L187)
 - [`op_paint::clip_commands_since`](../crates/op_paint/src/lib.rs#L217)

@@ -16,6 +16,22 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S55 - Flex basis and weighted shrinking through native pixels (R2c)
+
+IMPLEMENTED. op_css::computed::parse_flex_basis and
+parse_flex_shorthand resolve row flex bases, shrink factors, common
+shorthand forms and CSS cascade conflicts. op_layout::flow::FlexItem
+keeps the base width and factor; flex_row_atomic distributes negative
+space by scaled shrink weights with min-width freezing. Both grow
+and shrink call reflow_flex_item_to_outer_width before normal
+op_paint display list creation and original native GDI rasterization.
+Tests cover basis percentages, flex:1, shrink weights, min-width
+constraints, shrink:0 overflow, shorthand priority and bitmap pixels.
+Demo: examples/css/flex-sizing.html.
+
+Still missing full flex automatic min-content, cross-axis alignment,
+column direction, ordering, complex sizing and CSS Grid.
+
 ## S54 - Computed justify and proportional grow to native pixels (R2b)
 
 IMPLEMENTED. op_css::computed::parse_justify_content and

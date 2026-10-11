@@ -500,6 +500,129 @@ mod overflow_tests {
     }
 
     #[test]
+    fn r2c_shorthand_flex_one_and_percentage_basis_control_painted_width() {
+        let engine = Engine::new();
+        let read = |html: &str| {
+            let page = engine.render_html(html, 430, 170);
+            let widths: Vec<i32> = [(240, 0, 0), (0, 0, 240)]
+                .iter()
+                .map(|&(r, g, b)| {
+                    page.commands
+                        .iter()
+                        .find_map(|command| {
+                            let op_paint::PaintCommand::FillRect { width, color, .. } = command
+                            else {
+                                return None;
+                            };
+                            (color.r == r && color.g == g && color.b == b).then_some(*width)
+                        })
+                        .unwrap()
+                })
+                .collect();
+            let pixels = op_platform_win::render_display_list_to_bgra(&page, 430, 170).unwrap();
+            (widths, pixels)
+        };
+        let (widths, _) = read(
+            "<body style='margin:0'><div style='display:flex;width:300px'>\
+             <div style='width:20px;flex:1;height:30px;background:#f00000'></div>\
+             <div style='width:80px;flex:1;height:30px;background:#0000f0'></div></div>",
+        );
+        assert_eq!(
+            widths,
+            [150, 150],
+            "flex:1 ignores different CSS widths via 0% basis"
+        );
+
+        let (widths, _) = read(
+            "<body style='margin:0'><div style='display:flex;width:300px'>\
+             <div style='width:20px;flex-basis:50%;height:30px;background:#f00000'></div>\
+             <div style='width:40px;height:30px;background:#0000f0'></div></div>",
+        );
+        assert_eq!(
+            widths,
+            [150, 40],
+            "percentage basis uses containing flex width"
+        );
+
+        let (widths, _) = read(
+            "<body style='margin:0'><div style='display:flex;width:300px;gap:10px'>\
+             <div style='width:180px;flex-shrink:0;height:30px;background:#f00000'></div>\
+             <div style='width:180px;flex-shrink:0;height:30px;background:#0000f0'></div></div>",
+        );
+        assert_eq!(
+            widths,
+            [180, 180],
+            "shrink factor zero must retain overflow"
+        );
+    }
+
+    #[test]
+    fn r2c_shrink_weights_basis_and_minimums_paint_real_native_pixels() {
+        let engine = Engine::new();
+        let rects = |html: &str| {
+            let page = engine.render_html(html, 440, 180);
+            let red = page
+                .commands
+                .iter()
+                .find_map(|cmd| {
+                    let op_paint::PaintCommand::FillRect {
+                        x, y, width, color, ..
+                    } = cmd
+                    else {
+                        return None;
+                    };
+                    (color.r == 240 && color.g == 0 && color.b == 0).then_some((*x, *y, *width))
+                })
+                .expect("red flex box");
+            let blue = page
+                .commands
+                .iter()
+                .find_map(|cmd| {
+                    let op_paint::PaintCommand::FillRect {
+                        x, y, width, color, ..
+                    } = cmd
+                    else {
+                        return None;
+                    };
+                    (color.r == 0 && color.g == 0 && color.b == 240).then_some((*x, *y, *width))
+                })
+                .expect("blue flex box");
+            let pixels = op_platform_win::render_display_list_to_bgra(&page, 440, 180).unwrap();
+            (red, blue, pixels)
+        };
+        let (red, blue, pixels) = rects(
+            "<body style='margin:0'><div style='display:flex;width:300px;gap:10px'>\
+             <div style='width:180px;flex-shrink:1;height:30px;background:#f00000'>R</div>\
+             <div style='width:180px;flex-shrink:3;height:30px;background:#0000f0'>B</div></div>",
+        );
+        assert_eq!(red.2, 163, "1:3 shrink of 70px deficit");
+        assert_eq!(blue.2, 127);
+        assert_eq!(blue.0 - red.0, 173);
+        assert_eq!(rgb_at(&pixels, 440, red.0 + 155, red.1 + 20), (240, 0, 0));
+        assert_eq!(rgb_at(&pixels, 440, blue.0 + 120, blue.1 + 20), (0, 0, 240));
+
+        let (red, blue, _) = rects(
+            "<body style='margin:0'><div style='display:flex;width:300px;gap:10px'>\
+             <div style='width:40px;flex-basis:120px;flex-grow:1;height:30px;background:#f00000'>R</div>\
+             <div style='width:40px;flex-grow:1;height:30px;background:#0000f0'>B</div></div>",
+        );
+        assert_eq!(red.2, 185, "basis 120px plus 65px growth");
+        assert_eq!(blue.2, 105, "basis auto resolves explicit width 40px");
+        assert_eq!(blue.0 - red.0, 195);
+
+        let (red, blue, _) = rects(
+            "<body style='margin:0'><div style='display:flex;width:250px'>\
+             <div style='width:200px;min-width:150px;height:30px;background:#f00000'>R</div>\
+             <div style='width:200px;height:30px;background:#0000f0'>B</div></div>",
+        );
+        assert_eq!(red.2, 150, "first item freezes at min-width");
+        assert_eq!(
+            blue.2, 100,
+            "remaining deficit redistributes to second item"
+        );
+    }
+
+    #[test]
     fn r2b_growth_is_independent_for_each_wrapped_flex_line() {
         let engine = Engine::new();
         let page = engine.render_html(

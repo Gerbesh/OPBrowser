@@ -334,6 +334,8 @@ struct Style {
     flex_gap: BorderSpacing,
     justify_content: JustifyContent,
     flex_grow: f32,
+    flex_shrink: f32,
+    flex_basis: Option<LengthPercentage>,
     inline_ancestor_dx: i32,
     inline_ancestor_dy: i32,
     direction: Direction,
@@ -372,6 +374,7 @@ struct FlexItem<'a> {
     style: Style,
     href: Option<&'a str>,
     grow: f32,
+    shrink: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -1815,7 +1818,9 @@ impl<'a> Context<'a, '_> {
                     .iter()
                     .rposition(|item| item.grow > 0.0 && item.node.is_some());
                 for (i, item) in line.iter_mut().enumerate() {
-                    let Some(node) = item.node else { continue };
+                    if item.node.is_none() {
+                        continue;
+                    }
                     if item.grow <= 0.0 {
                         continue;
                     }
@@ -1827,35 +1832,86 @@ impl<'a> Context<'a, '_> {
                     };
                     granted = granted.saturating_add(extra);
                     if extra > 0 {
-                        // Re-layout children at their assigned width, not just
-                        // their background rectangles; text must also reflow.
+                        self.reflow_flex_item_to_outer_width(
+                            item,
+                            item.atomic.width.saturating_add(extra),
+                            limit,
+                        );
+                    }
+                }
+            }
+            if occupied > limit {
+                // CSS flex-shrink distributes negative free space by each
+                // item's shrink factor multiplied by its initial base width.
+                // Redistribute any amount blocked by min-width to remaining
+                // eligible items rather than allowing overlap silently.
+                let mut widths: Vec<i32> =
+                    line.iter().map(|item| item.atomic.width.max(0)).collect();
+                let minimums: Vec<i32> = line
+                    .iter()
+                    .map(|item| {
+                        if item.node.is_none() {
+                            return item.atomic.width.max(0);
+                        }
                         let mut zero = item.style;
                         zero.width = Some(LengthPercentage::Px(0.0));
                         let metrics = resolve_block_horizontal(zero, limit);
-                        // border_width has a 1px minimum even without borders.
-                        // Count only real decoration widths, not that safety floor.
-                        let extras = metrics
-                            .padding
-                            .left
-                            .saturating_add(metrics.padding.right)
-                            .saturating_add(metrics.border.left.width)
-                            .saturating_add(metrics.border.right.width);
-                        let content = item
-                            .atomic
-                            .width
-                            .saturating_add(extra)
-                            .saturating_sub(metrics.margin_left)
-                            .saturating_sub(metrics.margin_right)
-                            .saturating_sub(extras)
-                            .clamp(0, 100_000);
-                        let specified = if item.style.box_sizing == BoxSizing::BorderBox {
-                            content.saturating_add(extras)
+                        metrics
+                            .margin_left
+                            .saturating_add(metrics.border_width)
+                            .saturating_add(metrics.margin_right)
+                            .max(0)
+                    })
+                    .collect();
+                let weights: Vec<f64> = line
+                    .iter()
+                    .map(|item| {
+                        if item.node.is_some() {
+                            f64::from(item.shrink) * f64::from(item.atomic.width.max(0))
                         } else {
-                            content
+                            0.0
+                        }
+                    })
+                    .collect();
+                let mut deficit = occupied.saturating_sub(limit);
+                for _ in 0..line.len() {
+                    if deficit == 0 {
+                        break;
+                    }
+                    let eligible: Vec<bool> = (0..line.len())
+                        .map(|i| weights[i] > 0.0 && widths[i] > minimums[i])
+                        .collect();
+                    let total: f64 = (0..line.len())
+                        .filter(|&i| eligible[i])
+                        .map(|i| weights[i])
+                        .sum();
+                    if total <= 0.0 {
+                        break;
+                    }
+                    let last = (0..line.len()).rfind(|&i| eligible[i]);
+                    let mut reduced = 0i32;
+                    for i in 0..line.len() {
+                        if !eligible[i] {
+                            continue;
+                        }
+                        let share = if Some(i) == last {
+                            deficit.saturating_sub(reduced)
+                        } else {
+                            ((f64::from(deficit) * weights[i] / total).floor() as i32)
+                                .clamp(0, deficit.saturating_sub(reduced))
                         };
-                        let mut grown = item.style;
-                        grown.width = Some(LengthPercentage::Px(specified as f32));
-                        item.atomic = self.flex_element_atomic(node, item.href, grown, limit);
+                        let actual = share.min(widths[i].saturating_sub(minimums[i]));
+                        widths[i] = widths[i].saturating_sub(actual);
+                        reduced = reduced.saturating_add(actual);
+                    }
+                    if reduced == 0 {
+                        break;
+                    }
+                    deficit = deficit.saturating_sub(reduced);
+                }
+                for (item, width) in line.iter_mut().zip(widths) {
+                    if item.node.is_some() && width != item.atomic.width {
+                        self.reflow_flex_item_to_outer_width(item, width, limit);
                     }
                 }
             }
@@ -1896,6 +1952,39 @@ impl<'a> Context<'a, '_> {
         row.height = y;
         row.baseline = y;
         row
+    }
+
+    /// Convert an assigned outer flex width back into a content/border
+    /// width and re-layout the item, including its text and paint fragments.
+    fn reflow_flex_item_to_outer_width(
+        &mut self,
+        item: &mut FlexItem<'a>,
+        outer_width: i32,
+        containing_width: i32,
+    ) {
+        let Some(node) = item.node else { return };
+        let mut zero = item.style;
+        zero.width = Some(LengthPercentage::Px(0.0));
+        let metrics = resolve_block_horizontal(zero, containing_width);
+        let extras = metrics
+            .padding
+            .left
+            .saturating_add(metrics.padding.right)
+            .saturating_add(metrics.border.left.width)
+            .saturating_add(metrics.border.right.width);
+        let content = outer_width
+            .saturating_sub(metrics.margin_left)
+            .saturating_sub(metrics.margin_right)
+            .saturating_sub(extras)
+            .clamp(0, 100_000);
+        let specified = if item.style.box_sizing == BoxSizing::BorderBox {
+            content.saturating_add(extras)
+        } else {
+            content
+        };
+        let mut resized = item.style;
+        resized.width = Some(LengthPercentage::Px(specified as f32));
+        item.atomic = self.flex_element_atomic(node, item.href, resized, containing_width);
     }
 
     fn collect_flex_nodes(
@@ -1942,14 +2031,24 @@ impl<'a> Context<'a, '_> {
                         );
                     } else {
                         self.flush_anonymous_flex_item(pending, inherited, output);
-                        let atomic =
-                            self.flex_element_atomic(*id, current_href, current, containing_width);
+                        // flex-basis overrides CSS width during initial item sizing.
+                        let mut base_style = current;
+                        if let Some(basis) = current.flex_basis {
+                            base_style.width = Some(basis);
+                        }
+                        let atomic = self.flex_element_atomic(
+                            *id,
+                            current_href,
+                            base_style,
+                            containing_width,
+                        );
                         output.push(FlexItem {
                             atomic,
                             node: Some(*id),
                             style: current,
                             href: current_href,
                             grow: current.flex_grow,
+                            shrink: current.flex_shrink,
                         });
                     }
                 }
@@ -2029,6 +2128,7 @@ impl<'a> Context<'a, '_> {
             style,
             href: None,
             grow: 0.0,
+            shrink: 1.0,
         });
     }
 
@@ -5929,6 +6029,8 @@ fn computed_style(style: ComputedStyle) -> Style {
         flex_gap: style.flex_gap,
         justify_content: style.justify_content,
         flex_grow: style.flex_grow,
+        flex_shrink: style.flex_shrink,
+        flex_basis: style.flex_basis,
         inline: InlineStyle {
             font_size,
             line_height: used_line_height(style.line_height, font_size),
@@ -6093,6 +6195,8 @@ fn default_style() -> Style {
         flex_gap: BorderSpacing::ZERO,
         justify_content: JustifyContent::Start,
         flex_grow: 0.0,
+        flex_shrink: 1.0,
+        flex_basis: None,
         inline: InlineStyle {
             font_size: 18,
             line_height: 24,
@@ -6162,6 +6266,8 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         flex_gap: BorderSpacing::ZERO,
         justify_content: JustifyContent::Start,
         flex_grow: 0.0,
+        flex_shrink: 1.0,
+        flex_basis: None,
         inline: fallback_inline_style(tag, inherited.inline),
         inline_ancestor_dx: inherited.inline_ancestor_dx,
         inline_ancestor_dy: inherited.inline_ancestor_dy,

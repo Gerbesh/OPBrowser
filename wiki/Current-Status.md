@@ -234,6 +234,23 @@ deferred mutations and saved object identity. Pinned manually
 selected original DOM WPT smoke v4: 11/11 attempted files PASS,
 3 SKIP; a narrow sample, not overall WPT conformance.
 
+## R2c: original Flexbox shrink, basis and shorthand
+
+Row-direction flex items now support nonnegative flex-shrink,
+flex-basis:auto/length/percentage and common flex shorthand forms:
+flex:1, flex:auto, flex:none and numeric growth/shrink/basis values.
+The CSS cascade resolves shorthand versus individual longhands
+by actual priority. The layout reduces overlapping widths when
+the row is too narrow, distributes deficit by shrink weight,
+respects configured min-width constraints, and recalculates child
+text/decoration using the final width.
+
+Native GDI pixel tests, cascade tests and the offline demo at
+examples/css/flex-sizing.html verify the bounded feature.
+This is not complete Flexbox: automatic min-content, flex-basis:content,
+column direction, align-items, ordering and CSS Grid remain unsupported.
+Frozen WPT Static stays 194/200 and Positioning 54/100.
+
 ## R2b: proportional flex growth and justify-content
 
 The original OPBrowser row Flexbox now distributes extra space

@@ -16,6 +16,35 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## R2c: flex-basis, weighted shrink and shorthand to real pixels
+
+op_css::ComputedStyle adds non-inherited flex_shrink (initial 1)
+and flex_basis (auto or bounded pixel/percentage lengths).
+op_css::computed::parse_flex_shorthand resolves common CSS flex
+keywords and one/two/three-component shorthand forms; each of
+its longhand values competes against explicit flex-grow/shrink/basis
+by ordinary declaration cascade priority and source order.
+
+op_layout::flow::FlexItem keeps its intrinsic/base width plus shrink
+factor. The first item measurement uses flex-basis when specified,
+including percentages of the flex container. If a line exceeds its
+available content width, a bounded redistribution loop reduces
+items in proportion to shrink factor times initial outer width,
+freezing min-width-constrained items and offering leftover deficit
+to others. A shared reflow_flex_item_to_outer_width path recalculates
+text, backgrounds and hit geometry for both growth and shrink.
+
+Original GDI bitmap tests cover weighted shrink, min-width freezing,
+flex-basis override, percent basis, flex:1 and zero-shrink overflow.
+Cascade tests verify shorthand precedence, keywords and invalid input.
+Fixture: examples/css/flex-sizing.html.
+
+LIMITS: horizontal row direction only, approximate CSS sizing based
+on outer-width weights; full automatic min-content constraints,
+flex-basis:content, align-items, column direction, ordering and
+CSS Grid are still missing. This is not full Flexbox conformance.
+Static/Positioning frozen WPT stay 194/200 and 54/100.
+
 ## R2b: proportional flex growth and distributed row positions
 
 op_css::ComputedStyle::justify_content and flex_grow enter through

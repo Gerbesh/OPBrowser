@@ -412,6 +412,10 @@ pub struct ComputedStyle {
     pub justify_content: JustifyContent,
     /// Positive unitless flex growth factor for this element as a flex item.
     pub flex_grow: f32,
+    /// CSS initial shrink factor is 1, applied to the item's flex basis.
+    pub flex_shrink: f32,
+    /// None means flex-basis:auto; percentages use the flex container width.
+    pub flex_basis: Option<LengthPercentage>,
     pub position: Position,
     /// `auto` is None; integer stacking levels are only effective on positioned boxes.
     pub z_index: Option<i32>,
@@ -540,6 +544,8 @@ impl ComputedStyle {
             flex_gap: BorderSpacing::ZERO,
             justify_content: JustifyContent::Start,
             flex_grow: 0.0,
+            flex_shrink: 1.0,
+            flex_basis: None,
             position: Position::Static,
             z_index: None,
             float_side: FloatSide::None,
@@ -1585,6 +1591,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             flex_gap: initial.flex_gap,
             justify_content: initial.justify_content,
             flex_grow: initial.flex_grow,
+            flex_shrink: initial.flex_shrink,
+            flex_basis: initial.flex_basis,
             position: initial.position,
             z_index: initial.z_index,
             float_side: initial.float_side,
@@ -1802,9 +1810,43 @@ fn apply_author_declarations(
             JustifyContent::Start,
         );
     }
-    if let Some((_, value)) = winning_value(declarations, "flex-grow", parse_flex_grow) {
+    let shorthand = winning_value(declarations, "flex", |tokens| {
+        parse_flex_shorthand(tokens, style.font_size_px)
+    });
+    if let Some((_, value)) = shorthand {
+        let parent_flex = parent_style.map(|parent| FlexShorthand {
+            grow: parent.flex_grow,
+            shrink: parent.flex_shrink,
+            basis: parent.flex_basis,
+        });
+        let resolved = resolve_non_inherited(value, parent_flex, FlexShorthand::INITIAL);
+        style.flex_grow = resolved.grow;
+        style.flex_shrink = resolved.shrink;
+        style.flex_basis = resolved.basis;
+    }
+    // Each longhand participates in the same cascade as the shorthand.
+    // A weaker longhand must not override a stronger shorthand rule.
+    let wins_shorthand = |matched: &MatchedDeclaration| {
+        shorthand.is_some_and(|(short, _)| cascade_key(short) > cascade_key(matched))
+    };
+    if let Some((matched, value)) = winning_value(declarations, "flex-grow", parse_flex_grow)
+        && !wins_shorthand(matched)
+    {
         style.flex_grow =
             resolve_non_inherited(value, parent_style.map(|parent| parent.flex_grow), 0.0);
+    }
+    if let Some((matched, value)) = winning_value(declarations, "flex-shrink", parse_flex_grow)
+        && !wins_shorthand(matched)
+    {
+        style.flex_shrink =
+            resolve_non_inherited(value, parent_style.map(|parent| parent.flex_shrink), 1.0);
+    }
+    if let Some((matched, value)) = winning_value(declarations, "flex-basis", |tokens| {
+        parse_flex_basis(tokens, style.font_size_px)
+    }) && !wins_shorthand(matched)
+    {
+        style.flex_basis =
+            resolve_non_inherited(value, parent_style.map(|parent| parent.flex_basis), None);
     }
     if let Some((_, value)) = winning_value(declarations, "position", parse_position) {
         style.position = resolve_non_inherited(
@@ -2341,6 +2383,110 @@ fn parse_flex_grow(tokens: &[TokenKind]) -> Option<Specified<f32>> {
     };
     let factor = parse_number(value)?;
     (factor.is_finite() && (0.0..=4096.0).contains(&factor)).then_some(Specified::Value(factor))
+}
+
+/// A bounded row-direction flex basis: auto, pixels/font-relative lengths,
+/// or percentages resolved against the flex container's content width.
+fn parse_flex_basis(
+    tokens: &[TokenKind],
+    font_px: f32,
+) -> Option<Specified<Option<LengthPercentage>>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| None));
+    }
+    if single_ident(tokens).is_some_and(|value| value.eq_ignore_ascii_case("auto")) {
+        return Some(Specified::Value(None));
+    }
+    let value =
+        parse_length_percentage_token(single_significant_token(tokens)?, font_px, false, true)?;
+    match value {
+        LengthPercentage::Px(px) if px.is_finite() && (0.0..=100_000.0).contains(&px) => {}
+        LengthPercentage::Percent(pct) if pct.is_finite() && (0.0..=100.0).contains(&pct) => {}
+        _ => return None,
+    }
+    Some(Specified::Value(Some(value)))
+}
+
+/// Row-flex shorthand represented as its three independently cascaded
+/// longhand values. `flex:1` has a 0% basis, unlike `flex:auto`.
+#[derive(Debug, Clone, Copy)]
+struct FlexShorthand {
+    grow: f32,
+    shrink: f32,
+    basis: Option<LengthPercentage>,
+}
+
+impl FlexShorthand {
+    const INITIAL: Self = Self {
+        grow: 0.0,
+        shrink: 1.0,
+        basis: None,
+    };
+}
+
+fn parse_flex_shorthand(tokens: &[TokenKind], font_px: f32) -> Option<Specified<FlexShorthand>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| FlexShorthand::INITIAL));
+    }
+    if let Some(ident) = single_ident(tokens) {
+        return match ident.to_ascii_lowercase().as_str() {
+            "none" => Some(Specified::Value(FlexShorthand {
+                grow: 0.0,
+                shrink: 0.0,
+                basis: None,
+            })),
+            "auto" => Some(Specified::Value(FlexShorthand {
+                grow: 1.0,
+                shrink: 1.0,
+                basis: None,
+            })),
+            _ => None,
+        };
+    }
+    let values: Vec<&TokenKind> = significant_tokens(tokens).collect();
+    if values.is_empty() || values.len() > 3 {
+        return None;
+    }
+    let mut grow: Option<f32> = None;
+    let mut shrink: Option<f32> = None;
+    let mut basis: Option<Option<LengthPercentage>> = None;
+    for token in values {
+        if let TokenKind::Number(number) = token {
+            let factor = parse_number(number)?;
+            if !factor.is_finite() || !(0.0..=4096.0).contains(&factor) {
+                return None;
+            }
+            if grow.is_none() {
+                grow = Some(factor);
+            } else if shrink.is_none() {
+                shrink = Some(factor);
+            } else {
+                return None;
+            }
+        } else {
+            let Some(Specified::Value(parsed)) =
+                parse_flex_basis(std::slice::from_ref(token), font_px)
+            else {
+                return None;
+            };
+            if basis.replace(parsed).is_some() {
+                return None;
+            }
+        }
+    }
+    let numeric = grow.is_some();
+    if !numeric && basis.is_none() {
+        return None;
+    }
+    Some(Specified::Value(FlexShorthand {
+        grow: grow.unwrap_or(1.0),
+        shrink: shrink.unwrap_or(1.0),
+        basis: basis.unwrap_or(if numeric {
+            Some(LengthPercentage::Percent(0.0))
+        } else {
+            None
+        }),
+    }))
 }
 
 /// CSS gap shorthand: first length is row gap, optional second is column gap.
@@ -4420,6 +4566,46 @@ mod tests {
         }
 
         find(document, document.root(), id).expect("expected id")
+    }
+
+    #[test]
+    fn r2c_flex_shorthand_basis_and_longhands_obey_cascade() {
+        let document = parse_document(
+            "<div id='host' style='flex:2 0 40px'>\
+               <i id='default'></i>\
+               <i id='one' style='flex:1'></i>\
+               <i id='none' style='flex:none'></i>\
+               <i id='auto' style='flex:auto'></i>\
+               <i id='three' style='flex:3 0 25%'></i>\
+               <i id='basis' style='flex:80px'></i>\
+               <i id='shorthand_wins' style='flex-grow:3;flex:1 0 10px'></i>\
+               <i id='longhand_wins' style='flex:1 0 10px;flex-grow:3'></i>\
+               <i id='inherited' style='flex:inherit'></i>\
+               <i id='unset' style='flex:unset'></i>\
+               <i id='invalid' style='flex:-1;flex-shrink:-4'></i>\
+               <i id='important' style='flex:1 1 5px!important;flex-grow:7'></i>\
+             </div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let assert_flex = |id: &str, grow, shrink, basis| {
+            let value = *computed.style_for(find_by_id(&document, id)).unwrap();
+            assert_eq!(value.flex_grow, grow, "{id} grow");
+            assert_eq!(value.flex_shrink, shrink, "{id} shrink");
+            assert_eq!(value.flex_basis, basis, "{id} basis");
+        };
+        assert_flex("host", 2.0, 0.0, Some(LengthPercentage::Px(40.0)));
+        assert_flex("default", 0.0, 1.0, None);
+        assert_flex("one", 1.0, 1.0, Some(LengthPercentage::Percent(0.0)));
+        assert_flex("none", 0.0, 0.0, None);
+        assert_flex("auto", 1.0, 1.0, None);
+        assert_flex("three", 3.0, 0.0, Some(LengthPercentage::Percent(0.25)));
+        assert_flex("basis", 1.0, 1.0, Some(LengthPercentage::Px(80.0)));
+        assert_flex("shorthand_wins", 1.0, 0.0, Some(LengthPercentage::Px(10.0)));
+        assert_flex("longhand_wins", 3.0, 0.0, Some(LengthPercentage::Px(10.0)));
+        assert_flex("inherited", 2.0, 0.0, Some(LengthPercentage::Px(40.0)));
+        assert_flex("unset", 0.0, 1.0, None);
+        assert_flex("invalid", 0.0, 1.0, None);
+        assert_flex("important", 1.0, 1.0, Some(LengthPercentage::Px(5.0)));
     }
 
     #[test]

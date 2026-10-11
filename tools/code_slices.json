@@ -336,6 +336,19 @@
       "limitation": "Bounded JSON parse/serialize, array-like combinators; no toJSON/reviver/replacer or true iterable protocol."
     },
     {
+      "id": "S55",
+      "title": "Original flex basis, weighted shrinking and shorthand to native pixels",
+      "status": "R2c row-only flex-shrink, flex-basis, shorthand cascade and min-width redistribution",
+      "steps": [
+        {"path": "crates/op_css/src/computed.rs", "symbol": "parse_flex_shorthand"},
+        {"path": "crates/op_css/src/computed.rs", "symbol": "parse_flex_basis"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "flex_row_atomic"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "reflow_flex_item_to_outer_width"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "render_display_list_to_bgra"}
+      ],
+      "limitation": "Horizontal row flex only, no full automatic min-content, column direction, cross-axis alignment/order, Grid or complete Flexbox conformance."
+    },
+    {
       "id": "S54",
       "title": "Original CSS flex-grow and justify-content to GDI pixel coordinates",
       "status": "R2b positive weighted flex growth and six main-axis justification values",

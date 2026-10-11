@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OPBrowser R2c - flex shrink, basis and shorthand</title>
+<style>
+body { margin: 12px; background: #edf1f5; color: #23374b; font-family: Arial; }
+h1 { font-size: 26px; }
+h2 { font-size: 18px; }
+section { background: white; padding: 16px; margin-bottom: 16px; }
+.row { display: flex; width: 430px; gap: 10px; margin-bottom: 10px; background: #dce4ee; }
+.item { height: 55px; padding: 8px; border: 1px solid #6890b8; background: #b7d5f0; }
+.red { background: #edbabb; }
+.blue { background: #adceed; }
+.green { background: #bbdfc4; }
+.shrink-one { width: 245px; flex-shrink: 1; }
+.shrink-three { width: 245px; flex-shrink: 3; }
+.no-shrink { flex-shrink: 0; width: 245px; }
+.grow { flex: 1; }
+.basis { flex: 2 1 80px; }
+.half { flex-basis: 50%; width: 20px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<h1>OPBrowser R2c - flexible sizing</h1>
+<p>Rendered by the original CSS layout and Win32 GDI painter, without WebView.</p>
+<section>
+<h2>flex-shrink: 1 and 3</h2>
+<p>The right card shrinks more. Their combined width stays inside 430 pixels.</p>
+<div class="row">
+<div class="item red shrink-one">Shrink 1</div>
+<div class="item blue shrink-three">Shrink 3</div>
+</div>
+<h2>flex-shrink: 0 keeps overflowing widths</h2>
+<div class="row">
+<div class="item red no-shrink">Keep width</div>
+<div class="item blue no-shrink">Keep width</div>
+</div>
+</section>
+<section>
+<h2>flex: 1 vs flex: 2 1 80px</h2>
+<div class="row">
+<div class="item green grow">Flex 1</div>
+<div class="item blue basis">Flex 2 basis 80px</div>
+</div>
+<h2>flex-basis: 50% overrides width: 20px</h2>
+<div class="row">
+<div class="item green half">Half of container</div>
+<div class="item blue" style="width:90px">Fixed 90px</div>
+</div>
+</section>
+<p>Limits: row-direction only. Min-content automatic constraints, cross-axis alignment, column direction, Grid and complete responsive behavior remain unfinished.</p>
+</body>
+</html>
