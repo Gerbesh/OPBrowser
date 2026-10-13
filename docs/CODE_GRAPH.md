@@ -16,6 +16,19 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G2b partial: automatic browser-owned idle GC
+
+op_js::JsRuntime::collect_if_needed_at_idle monitors live heap and lexical
+environment slots with a 512-entry initial threshold and adaptive trigger
+based on survivors. Only op_engine's browser page boundary invokes it
+after script and DOM operations, native click callbacks, timer callbacks,
+and network completions; ordinary embedders still use explicit root lists.
+JS execution-frame barriers continue to prevent in-flight collection.
+Host side maps for Headers, query NodeLists, tag collections and boxed
+primitives are now weak-owned. Live wrapper objects mark their boxed values;
+dead owner metadata is removed before generation-safe slot recycling.
+Tests cover these ownership edges and live browser parser checkpoints.
+
 ## G2a partial: generation-safe heap and lexical environment recycling
 
 op_js::value::ObjectId encodes slot index plus generation in its usize handle.

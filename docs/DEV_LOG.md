@@ -3464,6 +3464,15 @@ This file is append-only project history.
 - Five new G2a tests pass: orphan cycle collection, recycled object identity, recycled environment identity, external closure/lexical root retention, failed-trace atomicity, and 80 repeated manual GC cycles with bounded reserved arena sizes.
 - LIMITATIONS: caller must supply externally retained JS handles; conservative DOM/host side maps still pin their keys, async/abort/fetch/DOM lifetime audit incomplete. G3 requires automatic safe collection, 30-minute process working-set plateau and pause statistics. All other feature work remains deferred.
 
+## 2026-10-13 - G2b partial: pressure-aware browser idle checkpoints and weak owner maps
+
+- Removed strong GC root treatment of dom_tag_collections, dom_query_lists, header_values and boxed_values side-map keys. A live boxed JS object still traces its boxed JsValue; successful sweeps purge metadata keyed by dead owners before any generational slot reuse.
+- Added JsRuntime::collect_if_needed_at_idle and automatic_gc_runs telemetry. The browser-owned trigger starts at 512 live object+environment slots, resizes to twice the survivor set after a pass, and refuses in-flight native evaluation. No heap collection runs inside recursive allocations.
+- Integrated idle checkpoints after parser script/DOM operation commits, trusted native click handling, and page worker timer/network callback batches. Generic VM execute/eval_script deliberately remains opt-out because a Rust caller may retain the returned JsValue.
+- Four new JS runtime regressions prove orphan side-map reclamation, boxed child retention, idle pressure GC, no in-flight sweep, and preserved timer/event listener closure captures. A real engine parser regression checks two sequential scripts automatically recycle slots while retaining global state.
+- LIMITS: opaque host/AbortSignal/fetch root lifetime audits and failed-collection diagnostics remain; heap arena plateau in short tests does not prove 30-minute process RSS plateau or bounded pauses. Renderer work stays on hold.
+
+
 
 
 

@@ -1,6 +1,6 @@
 # Original JS VM garbage collector: implementation plan
 
-Status: **G2a PARTIAL: EXPLICIT IDLE MARK-AND-SWEEP WITH GENERATION-VALIDATED SLOT REUSE IMPLEMENTED** (2026-10-13). Explicit invocation can reclaim unreachable objects and environments. Automatic GC and full host-root audit are still incomplete.
+Status: **G2b PARTIAL: BROWSER-OWNED AUTOMATIC IDLE CHECKPOINT GC IMPLEMENTED** (2026-10-13). G2a generation-safe sweeping is retained. GC runs after script/DOM/click/timer/network tasks when live slot pressure crosses a bounded trigger, but complete host-root audits and a long-session memory plateau are still outstanding.
 
 ## Observed implementation
 
@@ -61,6 +61,32 @@ DOM/timer/AbortSignal/Promise/fetch identity across sweeps; schedule GC at
 safe task checkpoints and on allocation pressure. No automatic collection,
 real process working-set plateau or GC pause distribution is yet measured.
 
+## G2b partial: task-boundary automatic GC and weak owner metadata
+
+In the browser-owned VM, collect_if_needed_at_idle is called after HTML script
+execution and DOM mutation commit, after dispatched clicks, and after the
+timer/network task batch. It uses a live object+environment count threshold:
+512 slots initially, then at least twice the previous surviving live set.
+No collection occurs while native JS call frames or event dispatch are active.
+Generic embedders calling JsRuntime::execute still receive an uncollected
+return value and must use explicit host root ownership when collecting.
+There is deliberately NO collection from an allocator inside a recursive
+native evaluation frame.
+
+Four owner-indexed metadata tables now have weak keys:
+dom_tag_collections, dom_query_lists, header_values, boxed_values.
+They no longer root their owner objects by themselves. When a boxed wrapper
+is genuinely reachable, its boxed JsValue is traversed as a strong edge.
+After a validated mark, metadata for dead owners is removed before slots
+can be recycled. Tests cover metadata pruning, boxed child retention,
+idle threshold/reuse, prohibited in-flight GC, pending DOM/timer callbacks,
+and a real browser parser running consecutive scripts with bounded heap.
+
+Remaining: audit other conservative DOM/AbortSignal/fetch host ownership,
+track and diagnose failed automatic passes, add allocation-pressure recovery
+without collecting inside the interpreter, and measure sustained process
+working-set plateau and GC pauses. These are not claimed by the above tests.
+
 ## GC phase G1: safe non-destructive root tracing
 
 Implement an ownership-aware scanner that marks `ObjectId` and `EnvironmentId` reachable from the following roots:
@@ -90,4 +116,4 @@ Mark-only telemetry must report retained vs unreachable slots and avoid modifyin
 
 ## Current measurable baseline / next action
 
-G1 mark-only diagnostics and G2a explicit generation-safe reclamation now coexist. Five targeted G2a tests pass, including 80 manual sweep/reuse cycles with stable reserved slots, but this is NOT an automatic browser GC or a measured 30-minute working-set plateau. Next GC-only work: complete host/async root audit, add persistent host ownership and task-safe triggering, then verify real memory growth, pauses, and pinned compat suites before returning to UI work.
+G2b enables browser-owned automatic idle collection at live allocation pressure, in addition to explicit G2a sweeping. Tests prove two real page scripts reuse object slots, and pending timer/listener callbacks survive a sweep. Next: complete opaque host/fetch/AbortSignal roots, report failed GC passes, profile pauses and process working set under a fixed 30-minute workload. Long-session memory stability is NOT established, so unrelated renderer work remains deferred.

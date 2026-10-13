@@ -505,6 +505,9 @@ impl ParserScriptRunner<'_> {
             return;
         };
         self.report.mutations += apply_dom_operations(document, runtime);
+        // Browser-owned idle checkpoint: callback results were discarded and
+        // DOM mutations committed before reclamation.
+        let _ = runtime.collect_if_needed_at_idle();
     }
     fn execute(&mut self, document: &mut Document, script: NodeId) -> Option<ScriptFetch> {
         let element = document.element(script)?;
@@ -774,6 +777,7 @@ pub(crate) fn execute_retained(
         // Apply completed mutations even when a later statement throws.
         // All DOM changes affect the retained tree before CSS/layout.
         report.mutations += apply_dom_operations(document, &mut runtime);
+        let _ = runtime.collect_if_needed_at_idle();
     }
     (report, Some(runtime))
 }
@@ -803,6 +807,7 @@ pub(crate) fn dispatch_click(
     }
     let handled = runtime.dispatch_dom_click_path(&path).unwrap_or(false);
     let changed = apply_dom_operations(document, runtime);
+    let _ = runtime.collect_if_needed_at_idle();
     (handled, changed)
 }
 
@@ -810,6 +815,36 @@ pub(crate) fn dispatch_click(
 mod tests {
     use super::*;
     use op_html::parse_document;
+
+    #[test]
+    fn g2b_page_parser_auto_collects_between_scripts_without_breaking_globals() {
+        let html = "<div id='content'>Original</div>
+          <script>
+            for(var i=0;i<700;i=i+1){var first={index:i};}
+            first=null;
+            var keeper={answer:42};
+          </script>
+          <script>
+            for(var j=0;j<700;j=j+1){var second={index:j};}
+            second=null;
+            document.getElementById('content').textContent='Updated';
+          </script>";
+        let (document, report, runtime) = parse_and_execute(html, None, None);
+        assert_eq!(report.executed, 2);
+        assert_eq!(report.failed, 0);
+        assert!(!document.is_empty());
+        let mut vm = runtime.expect("scripted page retains a VM");
+        assert!(
+            vm.automatic_gc_runs() > 0,
+            "browser scripts must hit real GC checkpoints"
+        );
+        assert!(
+            vm.heap_usage().object_slots < 1000,
+            "second script must recycle object slots"
+        );
+        vm.eval_script("var retained=keeper.answer;").unwrap();
+        assert_eq!(vm.global("retained"), Some(&op_js::JsValue::Number(42.0)));
+    }
 
     #[test]
     fn executes_script_and_replaces_text_without_reparsing_html() {

@@ -409,6 +409,8 @@ pub struct JsRuntime {
     environments: Vec<Environment>,
     free_objects: Vec<usize>,
     free_environments: Vec<usize>,
+    next_gc_live_trigger: usize,
+    automatic_gc_runs: usize,
     global_env: EnvironmentId,
     object_prototype: ObjectId,
     function_prototype: ObjectId,
@@ -543,6 +545,8 @@ impl Default for JsRuntime {
             environments,
             free_objects: Vec::new(),
             free_environments: Vec::new(),
+            next_gc_live_trigger: 512,
+            automatic_gc_runs: 0,
             global_env,
             object_prototype,
             function_prototype,
@@ -4063,13 +4067,6 @@ impl JsRuntime {
                 pending.push(TraceWork::Object(id));
             }
         }
-        for &id in self
-            .dom_tag_collections
-            .keys()
-            .chain(self.dom_query_lists.keys())
-        {
-            pending.push(TraceWork::Object(id));
-        }
         for listeners in self
             .dom_click_listeners
             .values()
@@ -4129,13 +4126,6 @@ impl JsRuntime {
         for &signal in self.text_request_signals.values() {
             pending.push(TraceWork::Object(signal));
         }
-        for &id in self.header_values.keys() {
-            pending.push(TraceWork::Object(id));
-        }
-        for (&id, value) in &self.boxed_values {
-            pending.push(TraceWork::Object(id));
-            trace_js_value(&mut pending, value);
-        }
 
         let mut object_marks = vec![false; self.heap.len()];
         let mut environment_marks = vec![false; self.environments.len()];
@@ -4156,6 +4146,10 @@ impl JsRuntime {
                     object_marks[id.slot()] = true;
                     if let Some(parent) = object.prototype {
                         pending.push(TraceWork::Object(parent));
+                    }
+                    // Boxed values are owned by their JS wrapper object.
+                    if let Some(boxed) = self.boxed_values.get(&id) {
+                        trace_js_value(&mut pending, boxed);
                     }
                     for value in object.properties.values() {
                         trace_js_value(&mut pending, value);
@@ -4201,6 +4195,19 @@ impl JsRuntime {
         host_roots: &[JsValue],
     ) -> Result<JsGcReport, JsError> {
         let (object_marks, environment_marks) = self.trace_heap_marks(host_roots)?;
+        // These maps are weak-keyed metadata, not separate ownership roots.
+        // Drop dead owners before returning slots to the allocator.
+        let heap = &self.heap;
+        let marked_owner = |id: &ObjectId| {
+            object_marks.get(id.slot()).copied().unwrap_or(false)
+                && heap
+                    .get(id.slot())
+                    .is_some_and(|object| object.alive && object.generation == id.generation())
+        };
+        self.dom_tag_collections.retain(|id, _| marked_owner(id));
+        self.dom_query_lists.retain(|id, _| marked_owner(id));
+        self.header_values.retain(|id, _| marked_owner(id));
+        self.boxed_values.retain(|id, _| marked_owner(id));
         let mut freed_objects = 0;
         let mut freed_environments = 0;
         for (index, object) in self.heap.iter_mut().enumerate() {
@@ -4239,6 +4246,26 @@ impl JsRuntime {
             reserved_object_slots: self.heap.len(),
             reserved_environment_slots: self.environments.len(),
         })
+    }
+
+    /// Browser-owned task checkpoint. Call only after callbacks finish,
+    /// DOM operation queues are drained, and no JsValue escaped to Rust.
+    /// Generic embedders must use collect_garbage_with_roots instead.
+    pub fn collect_if_needed_at_idle(&mut self) -> Result<Option<JsGcReport>, JsError> {
+        let live = self.heap.iter().filter(|o| o.alive).count()
+            + self.environments.iter().filter(|e| e.alive).count();
+        if live < self.next_gc_live_trigger {
+            return Ok(None);
+        }
+        let report = self.collect_garbage_with_roots(&[])?;
+        self.automatic_gc_runs = self.automatic_gc_runs.saturating_add(1);
+        let retained = report.live_objects.saturating_add(report.live_environments);
+        self.next_gc_live_trigger = retained.saturating_mul(2).max(512);
+        Ok(Some(report))
+    }
+
+    pub fn automatic_gc_runs(&self) -> usize {
+        self.automatic_gc_runs
     }
 
     pub fn heap_usage(&self) -> JsHeapUsage {
@@ -8580,6 +8607,144 @@ mod tests {
         vm.eval_script("c.abort();").unwrap();
         let after = vm.trace_heap_reachability().unwrap();
         assert_eq!(after.object_slots, vm.heap_usage().object_slots);
+    }
+
+    #[test]
+    fn g2b_timer_and_dom_listener_closures_survive_automatic_heap_reclamation() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.next_gc_live_trigger = 64;
+        vm.eval_script(
+            r#"var observed='';
+            function setup(){
+                var captured={value:'ok'};
+                document.getElementById('button').addEventListener('click',function(){observed=observed+'click-'+captured.value+';';});
+                setTimeout(function(){observed=observed+'timer-'+captured.value+';';},0);
+            }
+            setup();for(var i=0;i<100;i=i+1){var garbage={n:i};}garbage=null;"#
+        ).unwrap();
+        let report = vm
+            .collect_if_needed_at_idle()
+            .unwrap()
+            .expect("script allocation pressure");
+        assert!(report.freed_objects > 50);
+        assert!(vm.dispatch_dom_click(1).unwrap());
+        let timer = vm.run_due_timers(16);
+        assert!(
+            timer.fired >= 1,
+            "pending callback must remain live after collection"
+        );
+        assert_eq!(
+            vm.global("observed"),
+            Some(&JsValue::String("click-ok;timer-ok;".into()))
+        );
+    }
+
+    #[test]
+    fn g2b_owner_side_tables_do_not_pin_unreachable_headers_or_query_results() {
+        let mut vm = JsRuntime::new();
+        let headers = vm
+            .make_headers(HashMap::from([("x-test".into(), "one".into())]))
+            .unwrap();
+        let query = vm
+            .allocate_object(
+                ObjectKind::Ordinary,
+                Some(vm.object_prototype),
+                HashMap::new(),
+            )
+            .unwrap();
+        let tag = vm
+            .allocate_object(
+                ObjectKind::Ordinary,
+                Some(vm.object_prototype),
+                HashMap::new(),
+            )
+            .unwrap();
+        vm.dom_query_lists.insert(query, vec![1, 2]);
+        vm.dom_tag_collections.insert(tag, (1, "span".into()));
+        let child = vm
+            .allocate_object(
+                ObjectKind::Ordinary,
+                Some(vm.object_prototype),
+                HashMap::new(),
+            )
+            .unwrap();
+        let wrapper = vm
+            .allocate_object(
+                ObjectKind::Ordinary,
+                Some(vm.object_prototype),
+                HashMap::new(),
+            )
+            .unwrap();
+        vm.boxed_values.insert(wrapper, JsValue::Object(child));
+
+        let rooted = vm
+            .collect_garbage_with_roots(&[JsValue::Object(wrapper)])
+            .unwrap();
+        assert!(rooted.freed_objects >= 3);
+        assert!(!vm.header_values.contains_key(&headers));
+        assert!(!vm.dom_query_lists.contains_key(&query));
+        assert!(!vm.dom_tag_collections.contains_key(&tag));
+        assert_eq!(vm.boxed_values.get(&wrapper), Some(&JsValue::Object(child)));
+        assert!(
+            vm.object(child).is_ok(),
+            "live wrapper must retain its boxed value"
+        );
+
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(!vm.boxed_values.contains_key(&wrapper));
+        assert!(vm.object(wrapper).is_err());
+        assert!(vm.object(child).is_err());
+    }
+
+    #[test]
+    fn g2b_idle_pressure_auto_gc_reuses_arena_and_preserves_reachable_state() {
+        let mut vm = JsRuntime::new();
+        vm.next_gc_live_trigger = 64;
+        vm.eval_script(
+            "var keep={answer:42};for(var i=0;i<150;i=i+1){var garbage={index:i};}garbage=null;",
+        )
+        .unwrap();
+        let report = vm
+            .collect_if_needed_at_idle()
+            .unwrap()
+            .expect("pressure must trigger automatic sweep");
+        assert!(report.freed_objects > 100);
+        assert_eq!(vm.automatic_gc_runs(), 1);
+        assert!(vm.collect_if_needed_at_idle().unwrap().is_none());
+        assert_eq!(
+            vm.get_property(&vm.global("keep").unwrap().clone(), "answer")
+                .unwrap(),
+            JsValue::Number(42.0)
+        );
+        let first_capacity = vm.heap_usage().object_slots;
+        vm.eval_script("for(var j=0;j<150;j=j+1){var scratch={index:j};}scratch=null;")
+            .unwrap();
+        assert!(
+            vm.heap_usage().object_slots <= first_capacity + 2,
+            "free slots should absorb fresh allocations"
+        );
+        let _ = vm.collect_if_needed_at_idle().unwrap();
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g2b_auto_checkpoint_must_not_sweep_with_active_interpreter_frame() {
+        let mut vm = JsRuntime::new();
+        vm.next_gc_live_trigger = 1;
+        let before = vm.heap_usage();
+        {
+            let _frame = ActiveExecutionGuard::enter(Arc::clone(&vm.active_execution_depth));
+            assert!(vm.collect_if_needed_at_idle().is_err());
+        }
+        assert_eq!(vm.heap_usage(), before);
+        assert_eq!(vm.automatic_gc_runs(), 0);
+        assert!(vm.collect_if_needed_at_idle().unwrap().is_some());
     }
 
     #[test]

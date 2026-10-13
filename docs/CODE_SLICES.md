@@ -16,6 +16,20 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S60 - Browser-owned automatic idle JS GC and weak host metadata (G2b partial)
+
+After original JS VM script and DOM operations, op_engine::scripts requests
+a pressure-aware mark/sweep when idle. Native click callbacks, timers, and
+network completions reach the same checkpoint. Recursive call frames remain
+protected. The VM checks live object+environment slots, sweeps when pressure
+crosses its adaptive threshold, and recycles generation-checked handles.
+Headers/boxed values and DOM query/tag side maps no longer pin their owners;
+live boxed wrappers still trace child JsValue handles. VM regressions cover
+weak owner pruning, preserved timer/event callbacks and safe thresholding.
+An engine parser integration test verifies two scripts reuse reserved slots.
+Host-owned escaped handles need explicit roots; real process memory plateau
+and collection pause measurements remain unverified.
+
 ## S59 - Explicit original VM mark/sweep with safe identities (G2a partial)
 
 At an idle Rust host checkpoint, collect_garbage_with_roots validates every

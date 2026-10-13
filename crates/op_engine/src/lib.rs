@@ -788,6 +788,9 @@ impl Engine {
         let fired = runtime.run_due_timers(16);
         prepared.scripts.failed += fired.failed + network_failed;
         let changes = scripts::apply_dom_operations(&mut prepared.document, runtime);
+        // Network/timer callbacks completed and native DOM mutations are
+        // committed before the browser-owned automatic GC checkpoint.
+        let _ = runtime.collect_if_needed_at_idle();
         let scroll_changed = runtime.take_scroll_dirty();
         if changes == 0 && !scroll_changed {
             return None;
