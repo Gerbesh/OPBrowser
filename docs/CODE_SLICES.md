@@ -16,6 +16,11 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S62 - AbortSignal.any GC ownership and process-memory probe (G3 partial)
+
+Abandoned AbortSignal.any follower entries no longer root both upstream and downstream signals. The original JS VM traces live composite -> source links, reclaims orphan graphs and prunes weak host bookkeeping after a successful mark. Abort cascades unlink finished composites from unrelated sources. Two targeted tests verify orphan collection and nested propagation. An original op_engine timer workload now exports `JsGcTelemetry` and process working set via `gc_stress_probe` to CSV; see GC_STRESS_RESULTS.md for measured 12-second baseline and the uncompleted 30-minute gate.
+
+
 ## S61 - Automatic GC failure/pause telemetry and pending fetch-root regression (G2c partial)
 
 A browser-owned idle checkpoint measures each successful mark/sweep pause, retains its JsGcReport, and increments an error counter when tracing is rejected. A pending network callback keeps its captured JavaScript closure/environment graph alive, and releasing the pending host callback permits reclaiming it. Regression tests cover failure accounting and callback lifecycle without pretending to establish a long-session process working-set plateau.

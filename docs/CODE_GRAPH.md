@@ -16,6 +16,11 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G3 partial: reverse AbortSignal retention and browser GC telemetry
+
+AbortSignal.any composite -> source edges are traced through reverse lookup during marking; the source-to-follower host map itself does not act as a strong root. Successful sweeps purge links to dead composites; aborted composites detach from other sources. Engine::active_script_gc_telemetry bridges JS VM GC diagnostics to the native page worker. The `gc_stress_probe` binary drives real timer checkpoints and samples operating-system process working set. No new engine crates or external JavaScript runtime are involved.
+
+
 ## G2c partial: observable VM garbage collection
 
 Original JsRuntime now retains failure count, last successful sweep report, and last/maximum pause Duration for browser-owned automatic checkpoints. The report is preserved on rejected traces; a pending host-owned network callback is a strong root until removed. No new crate dependencies or automatic in-flight collection were introduced.

@@ -270,6 +270,17 @@ impl Engine {
         Some(self.active_document.as_ref()?.scripts)
     }
 
+    /// Snapshot of browser-owned JS GC counters and arena occupancy.
+    pub fn active_script_gc_telemetry(&self) -> Option<op_js::JsGcTelemetry> {
+        Some(
+            self.active_document
+                .as_ref()?
+                .runtime
+                .as_ref()?
+                .gc_telemetry(),
+        )
+    }
+
     /// Conservative, read-only G1 reachability report for an idle page VM.
     /// No objects or environments are freed by this diagnostic.
     pub fn active_script_heap_reachability(

@@ -1,6 +1,13 @@
 # Original JS VM garbage collector: implementation plan
 
-Status: **G2b PARTIAL: BROWSER-OWNED AUTOMATIC IDLE CHECKPOINT GC IMPLEMENTED** (2026-10-13). G2a generation-safe sweeping is retained. GC runs after script/DOM/click/timer/network tasks when live slot pressure crosses a bounded trigger, but complete host-root audits and a long-session memory plateau are still outstanding.
+## G3 partial: AbortSignal.any lifetime and measurable browser memory
+
+A live composite AbortSignal now traces the reverse follower graph back to its sources, including nested composites. The map is no longer an unconditional root: orphan composites/sources are collected and metadata pruned before slot reuse. When a composite aborts, connections to *other* sources are unlinked because its reason cannot change. Two G3 tests cover orphan graph reclamation and nested abort propagation through a sweep.
+
+The browser now exposes `active_script_gc_telemetry()` (live/reserved slots, success/failure counts, latest sweep report and pauses). The standalone `gc_stress_probe` executes a scripted page timer on the browser-owned worker and samples Windows process working set each second. A 12-second DEBUG trial had 817 successful passes, zero GC failures, stable reserved arenas of 414 object / 247 environment slots, and a worst pause of 1,164 microseconds. Detailed reproduction and limitations: [GC_STRESS_RESULTS.md](GC_STRESS_RESULTS.md). A 30-minute steady-state proof is still pending.
+
+
+Status: **G3 PARTIAL: SAFE AUTOMATIC GC, WEAK ABORT COMPOSITES AND NATIVE PROCESS RSS PROBE** (2026-10-13). G2a generation-safe sweeping is retained. GC runs after script/DOM/click/timer/network tasks when live slot pressure crosses a bounded trigger, but complete host-root audits and a long-session memory plateau are still outstanding.
 
 ## Observed implementation
 

@@ -373,6 +373,20 @@ pub struct JsGcReport {
     pub reserved_environment_slots: usize,
 }
 
+/// Browser-visible collection diagnostics and arena counters.
+/// Reserved slots are a high-water mark, not process memory usage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsGcTelemetry {
+    pub successful: usize,
+    pub failed: usize,
+    pub last_report: Option<JsGcReport>,
+    pub last_pause: Option<Duration>,
+    pub max_pause: Duration,
+    pub heap: JsHeapUsage,
+    pub live_objects: usize,
+    pub live_environments: usize,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum TraceWork {
     Object(ObjectId),
@@ -2098,6 +2112,12 @@ impl JsRuntime {
             if let Some(followers) = self.abort_followers.remove(&current) {
                 work.extend(followers);
             }
+            // A composite that has already aborted no longer needs links
+            // from other sources: no later source can override its reason.
+            self.abort_followers.retain(|_, followers| {
+                followers.retain(|&follower| follower != current);
+                !followers.is_empty()
+            });
             self.dispatch_abort_signal_event(current)?;
         }
         Ok(())
@@ -4119,10 +4139,16 @@ impl JsRuntime {
         for item in &self.abort_deadlines {
             pending.push(TraceWork::Object(item.signal));
         }
+        // An AbortSignal.any() composite keeps its upstream sources alive.
+        // The reverse is NOT true: sources alone must not pin abandoned
+        // composites, nor should this metadata be an unconditional GC root.
+        let mut abort_sources_by_follower: HashMap<ObjectId, Vec<ObjectId>> = HashMap::new();
         for (&source, followers) in &self.abort_followers {
-            pending.push(TraceWork::Object(source));
             for &follower in followers {
-                pending.push(TraceWork::Object(follower));
+                abort_sources_by_follower
+                    .entry(follower)
+                    .or_default()
+                    .push(source);
             }
         }
         for timer in &self.timers {
@@ -4152,6 +4178,11 @@ impl JsRuntime {
                         continue;
                     }
                     object_marks[id.slot()] = true;
+                    if let Some(sources) = abort_sources_by_follower.get(&id) {
+                        for &source in sources {
+                            pending.push(TraceWork::Object(source));
+                        }
+                    }
                     if let Some(parent) = object.prototype {
                         pending.push(TraceWork::Object(parent));
                     }
@@ -4216,6 +4247,10 @@ impl JsRuntime {
         self.dom_query_lists.retain(|id, _| marked_owner(id));
         self.header_values.retain(|id, _| marked_owner(id));
         self.boxed_values.retain(|id, _| marked_owner(id));
+        self.abort_followers.retain(|source, followers| {
+            followers.retain(|follower| marked_owner(follower));
+            marked_owner(source) && !followers.is_empty()
+        });
         let mut freed_objects = 0;
         let mut freed_environments = 0;
         for (index, object) in self.heap.iter_mut().enumerate() {
@@ -4302,6 +4337,19 @@ impl JsRuntime {
 
     pub fn max_automatic_gc_pause(&self) -> Duration {
         self.max_gc_pause
+    }
+
+    pub fn gc_telemetry(&self) -> JsGcTelemetry {
+        JsGcTelemetry {
+            successful: self.automatic_gc_runs,
+            failed: self.automatic_gc_failures,
+            last_report: self.last_gc_report,
+            last_pause: self.last_gc_pause,
+            max_pause: self.max_gc_pause,
+            heap: self.heap_usage(),
+            live_objects: self.heap.iter().filter(|obj| obj.alive).count(),
+            live_environments: self.environments.iter().filter(|env| env.alive).count(),
+        }
     }
 
     pub fn heap_usage(&self) -> JsHeapUsage {
@@ -8643,6 +8691,65 @@ mod tests {
         vm.eval_script("c.abort();").unwrap();
         let after = vm.trace_heap_reachability().unwrap();
         assert_eq!(after.object_slots, vm.heap_usage().object_slots);
+    }
+
+    #[test]
+    fn g3_orphan_abort_any_graph_no_longer_roots_source_or_composite() {
+        let mut vm = JsRuntime::new();
+        let source = vm.new_abort_signal().unwrap();
+        let composite = vm.new_abort_signal().unwrap();
+        vm.abort_followers
+            .entry(source)
+            .or_default()
+            .push(composite);
+        let before = vm.trace_heap_reachability().unwrap();
+        assert!(before.unreachable_objects >= 2);
+        let collected = vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(collected.freed_objects >= 2);
+        assert!(vm.object(source).is_err());
+        assert!(vm.object(composite).is_err());
+        assert!(vm.abort_followers.is_empty());
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_live_composite_preserves_sources_and_abort_propagation_after_gc() {
+        let mut vm = JsRuntime::new();
+        let first = vm.new_abort_signal().unwrap();
+        let second = vm.new_abort_signal().unwrap();
+        let combined = vm.new_abort_signal().unwrap();
+        let nested = vm.new_abort_signal().unwrap();
+        vm.abort_followers.entry(first).or_default().push(combined);
+        vm.abort_followers.entry(second).or_default().push(combined);
+        vm.abort_followers.entry(combined).or_default().push(nested);
+        let report = vm
+            .collect_garbage_with_roots(&[JsValue::Object(nested)])
+            .unwrap();
+        assert!(report.live_objects >= 4);
+        for id in [first, second, combined, nested] {
+            assert!(
+                vm.object(id).is_ok(),
+                "reachable composite must preserve every upstream signal"
+            );
+        }
+        vm.abort_signal(first, JsValue::String("stop".into()))
+            .unwrap();
+        for id in [combined, nested] {
+            let properties = &vm.object(id).unwrap().properties;
+            assert_eq!(properties.get("aborted"), Some(&JsValue::Boolean(true)));
+            assert_eq!(
+                properties.get("reason"),
+                Some(&JsValue::String("stop".into()))
+            );
+        }
+        assert!(
+            vm.abort_followers.is_empty(),
+            "abort must drop links to other sources"
+        );
+        assert!(
+            vm.collect_garbage_with_roots(&[JsValue::Object(nested)])
+                .is_ok()
+        );
     }
 
     #[test]

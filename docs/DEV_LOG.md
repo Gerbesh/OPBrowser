@@ -3479,6 +3479,15 @@ This file is append-only project history.
 - VM regressions verify successful collection metrics, blocked in-flight collection failure accounting, and pending network callbacks retaining captured environments until cancellation/removal.
 - LIMITS: this is per-VM instrumentation; no 30-minute browser process memory plateau, GC pause distribution or exhaustive asynchronous host-root audit has yet been completed.
 
+## 2026-10-13 - G3 partial: weak AbortSignal.any follower links and real-process GC probe
+
+- Converted AbortSignal.any host follower graphs from unconditional roots to reverse-only composite-to-source tracing. Unreachable composites no longer pin sources or vice versa. Successful sweeps prune orphan follower metadata before generation-safe slot recycling.
+- Aborting a composite now removes obsolete follower edges from other sources; propagation continues to nested composites. G3 tests cover orphan reclamation, reverse source retention and nested abort reason propagation after GC.
+- Exported compact JsGcTelemetry through original JsRuntime and Engine.active_script_gc_telemetry. Added repeatable `op_engine --bin gc_stress_probe` browser timer workload with Windows/Linux process working-set sampling and per-second GC CSV rows.
+- Initial Windows debug 12-second probe: 7,288 worker ticks, 817 collections, 0 failed, reserved 414 objects / 247 environments, worst pause 1,164 microseconds and ~10.6–10.9 MB working set. See docs/GC_STRESS_RESULTS.md; insufficient evidence for 30-minute plateau or real-site workloads.
+- Still P0 GC exclusively; next: complete host ownership audit and 30-minute resource/pause distribution measurements, including DOM and fetch/AbortSignal races.
+
+
 
 
 
