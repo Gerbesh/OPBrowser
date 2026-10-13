@@ -523,6 +523,7 @@ impl Engine {
             .iter()
             .filter(|region| {
                 region.wheel_scrollable
+                    && region.visible_at(x, y)
                     && region.max_scroll_top > 0
                     && region
                         .scroll_top
@@ -1301,6 +1302,57 @@ mod tests {
             })
             .expect("overflow scroll retains its visible inactive track");
         assert_eq!(track.height, thumb.height);
+    }
+
+    #[test]
+    fn r12d_nested_scrollbar_respects_ancestor_clip_in_pixels_and_input() {
+        let mut engine = Engine::new();
+        let display = engine.set_html_page(
+            concat!(
+                "<div id='outer' style='height:70px;width:230px;overflow:auto'>",
+                "<div style='height:50px'></div>",
+                "<div id='inner' style='height:100px;width:90px;overflow:scroll'>",
+                "<div style='height:220px;background:blue'></div></div></div>"
+            ),
+            500,
+            350,
+        );
+        let prepared = engine.active_document.as_ref().unwrap();
+        let layout = layout_document_with_scrolling(
+            &prepared.document,
+            500,
+            350,
+            (&prepared.images.elements, &prepared.images.backgrounds),
+            &prepared.images.generated,
+            (&prepared.computed_styles, prepared.current_scroll_offsets()),
+            &mut text::Measurer::new(),
+        );
+        let inner = layout
+            .scroll_containers
+            .iter()
+            .find(|s| s.rect.width == 90)
+            .unwrap();
+        let outer = layout
+            .scroll_containers
+            .iter()
+            .find(|s| s.rect.width == 230)
+            .unwrap();
+        assert_eq!(inner.clip, Some(outer.rect));
+        assert_eq!(outer.clip, None);
+        let track = inner.scrollbar_geometry().unwrap().track;
+        let hidden_y = inner.rect.y + inner.rect.height - 5;
+        let x = track.x + 5;
+        assert!(hidden_y >= outer.rect.y + outer.rect.height);
+        assert!(!inner.visible_at(x, hidden_y));
+        assert!(inner.scroll_top_at_track_point(x, hidden_y).is_none());
+        assert!(display.commands.iter().any(|command| {
+            matches!(command,
+                op_paint::PaintCommand::Clipped { rect, command }
+                if *rect == outer.rect
+                    && matches!(command.as_ref(), op_paint::PaintCommand::Scrollbar { track: painted, .. } if *painted == track))
+        }));
+        assert!(engine.scroll_at(x - 5, hidden_y, 72, 500, 350).is_none());
+        assert!(engine.click_at(x, hidden_y, 500, 350).is_none());
     }
 
     #[test]

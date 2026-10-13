@@ -583,20 +583,35 @@ fn set_display_list(display_list: DisplayList) {
 /// Scrollbar overlays take priority over links painted beneath their tracks.
 /// The UI uses the painted thumb rectangles to start native mouse capture.
 /// The original page engine independently resolves the same layout geometry.
+fn scrollbar_hit(command: &PaintCommand, x: i32, y: i32, thumb_only: bool) -> bool {
+    match command {
+        PaintCommand::Clipped { rect, command } => {
+            x >= rect.x
+                && x < rect.x.saturating_add(rect.width)
+                && y >= rect.y
+                && y < rect.y.saturating_add(rect.height)
+                && scrollbar_hit(command, x, y, thumb_only)
+        }
+        PaintCommand::Scrollbar { track, thumb } => {
+            let rect = if thumb_only { thumb } else { track };
+            x >= rect.x
+                && x < rect.x.saturating_add(rect.width)
+                && y >= rect.y
+                && y < rect.y.saturating_add(rect.height)
+        }
+        _ => false,
+    }
+}
+
 fn scrollbar_thumb_at_document_point(x: i32, y: i32) -> bool {
     DISPLAY_LIST
         .get()
         .and_then(|storage| storage.read().ok())
         .is_some_and(|list| {
-            list.commands.iter().rev().any(|command| {
-                let PaintCommand::Scrollbar { thumb, .. } = command else {
-                    return false;
-                };
-                x >= thumb.x
-                    && x < thumb.x.saturating_add(thumb.width)
-                    && y >= thumb.y
-                    && y < thumb.y.saturating_add(thumb.height)
-            })
+            list.commands
+                .iter()
+                .rev()
+                .any(|command| scrollbar_hit(command, x, y, true))
         })
 }
 
@@ -605,15 +620,10 @@ fn scrollbar_at_document_point(x: i32, y: i32) -> bool {
         .get()
         .and_then(|storage| storage.read().ok())
         .is_some_and(|list| {
-            list.commands.iter().rev().any(|command| {
-                let PaintCommand::Scrollbar { track, .. } = command else {
-                    return false;
-                };
-                x >= track.x
-                    && x < track.x.saturating_add(track.width)
-                    && y >= track.y
-                    && y < track.y.saturating_add(track.height)
-            })
+            list.commands
+                .iter()
+                .rev()
+                .any(|command| scrollbar_hit(command, x, y, false))
         })
 }
 
@@ -1338,6 +1348,61 @@ fn wide(value: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn r12d_clipped_scrollbar_paints_only_visible_pixels_and_rejects_hidden_hits() {
+        let inner = PaintCommand::Scrollbar {
+            track: op_paint::ClipRect {
+                x: 20,
+                y: 10,
+                width: 10,
+                height: 60,
+            },
+            thumb: op_paint::ClipRect {
+                x: 21,
+                y: 11,
+                width: 8,
+                height: 18,
+            },
+        };
+        let clipped = PaintCommand::Clipped {
+            rect: op_paint::ClipRect {
+                x: 0,
+                y: 0,
+                width: 64,
+                height: 23,
+            },
+            command: Box::new(inner),
+        };
+        assert!(scrollbar_hit(&clipped, 24, 15, true));
+        assert!(!scrollbar_hit(&clipped, 24, 28, true));
+        assert!(!scrollbar_hit(&clipped, 24, 60, false));
+        assert!(scrollbar_hit(&clipped, 24, 20, false));
+        let width = 64usize;
+        let pixels = render_display_list_to_bgra(
+            &DisplayList {
+                commands: vec![
+                    PaintCommand::FillRect {
+                        x: 0,
+                        y: 0,
+                        width: 64,
+                        height: 80,
+                        color: Color::WHITE,
+                    },
+                    clipped,
+                ],
+            },
+            64,
+            80,
+        )
+        .unwrap();
+        let rgb = |x: usize, y: usize| -> &[u8] {
+            let offset = (y * width + x) * 4;
+            &pixels[offset..offset + 3]
+        };
+        assert_eq!(rgb(24, 15), &[144, 130, 120]);
+        assert_eq!(rgb(24, 35), &[255, 255, 255]);
+    }
 
     #[test]
     fn r12b_scrollbar_track_and_thumb_render_to_distinct_native_pixels() {

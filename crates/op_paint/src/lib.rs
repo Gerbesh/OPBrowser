@@ -203,9 +203,17 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
     // nested scrollbar thumbs remain visually on top.
     for container in layout.scroll_containers.iter().rev() {
         if let Some(geometry) = container.scrollbar_geometry() {
-            commands.push(PaintCommand::Scrollbar {
+            let scrollbar = PaintCommand::Scrollbar {
                 track: geometry.track,
                 thumb: geometry.thumb,
+            };
+            commands.push(if let Some(rect) = container.clip {
+                PaintCommand::Clipped {
+                    rect,
+                    command: Box::new(scrollbar),
+                }
+            } else {
+                scrollbar
             });
         }
     }

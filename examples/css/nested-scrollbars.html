@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Nested scrollbar clipping - R1.2d</title>
+<style>
+  body { font-family: Segoe UI, sans-serif; background: #fafafa; }
+  #outer { width: 240px; height: 95px; overflow: auto; border: 3px solid #28496a; background: #d5eefc; }
+  #spacer { height: 54px; background: #b1d1e4; }
+  #inner { width: 112px; height: 130px; overflow: scroll; border: 2px solid #7a4060; background: #fff; }
+  .bar { height: 70px; background: #f59d72; }
+  .bar:nth-child(2) { background: #98c79e; }
+  #tail { height: 130px; background: #c0b2e9; }
+</style>
+<body>
+<h2>Nested scrollbar clipping (R1.2d)</h2>
+<p>Inner scrollbar must vanish below the outer blue pane. Clicks below that pane must not scroll the hidden inner region.</p>
+<div id="outer">
+  <div id="spacer">Top spacer</div>
+  <div id="inner">
+    <div class="bar">Inner content 1</div>
+    <div class="bar">Inner content 2</div>
+    <div class="bar">Inner content 3</div>
+  </div>
+  <div id="tail">More outer content</div>
+</div>
+<p>Move the pointer into the visible portion of the inner scrollbar to drag it; move beneath the blue pane and it must not react.</p>
+</body>
+</html>

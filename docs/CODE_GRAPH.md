@@ -1,6 +1,6 @@
 # OPBrowser Code Graph
 
-Last updated: 2026-10-10
+Last updated: 2026-10-13
 
 This document is the maintained human-readable code/dependency graph. It is updated
 whenever crates, important types, or ownership boundaries change.
@@ -15,6 +15,20 @@ the generated graph describes **crate-level edges only**, not a call graph.
 See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
+
+## R1.2d partial: nested scrollbar clip ownership
+
+op_layout::flow::OverflowScope now keeps descendant ScrollContainer ranges
+and intersects ancestor clips into each container after layout. Vertical
+scrollbar geometry is not altered. op_paint converts the clip into the
+existing PaintCommand::Clipped wrapper around the scrollbar overlay;
+op_platform_win's native painter and recursive scrollbar_hit both honor it.
+op_layout::ScrollContainer::visible_at gates engine wheel, track-click and
+thumb capture behavior in hidden regions. Engine and original GDI bitmap
+tests verify the end-to-end path.
+
+This does not implement horizontal scrolling, gutter reservations,
+all positioned clipping cases or broad WPT Overflow conformance.
 
 ## R2c: flex-basis, weighted shrink and shorthand to real pixels
 

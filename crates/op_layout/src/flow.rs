@@ -196,6 +196,7 @@ struct OverflowScope {
     text: std::ops::Range<usize>,
     images: std::ops::Range<usize>,
     clicks: std::ops::Range<usize>,
+    scrollbars: std::ops::Range<usize>,
 }
 
 struct Context<'a, 'm> {
@@ -1052,6 +1053,16 @@ impl<'a> Context<'a, '_> {
                 region.width = intersected.width;
                 region.height = intersected.height;
             }
+            // Overlay scrollbars must obey the same ancestor clips as ink and
+            // click targets, even after the parent scrolls out of view.
+            for index in scope.scrollbars.clone() {
+                let container = &mut self.scroll_containers[index];
+                container.clip = Some(
+                    container
+                        .clip
+                        .map_or(scope.rect, |old| old.intersect(scope.rect)),
+                );
+            }
         }
         clips
     }
@@ -1356,11 +1367,13 @@ impl<'a> Context<'a, '_> {
                 text: child_text_start..self.text.len(),
                 images: child_image_start..self.images_out.len(),
                 clicks: child_click_start..self.click_regions.len(),
+                scrollbars: child_scroll_start..self.scroll_containers.len(),
             });
         }
         if is_scroll_container && let BlockContent::Element(node) = content {
             self.scroll_containers.push(ScrollContainer {
                 node,
+                clip: None,
                 wheel_scrollable: matches!(style.overflow, Overflow::Auto | Overflow::Scroll),
                 scrollbar_always_visible: style.overflow == Overflow::Scroll,
                 rect: ClipRect {

@@ -3433,6 +3433,13 @@ This file is append-only project history.
 - New CSS cascade tests cover shorthand priority/keywords and invalid declarations. GDI pixel tests cover 1:3 shrink widths, min-width freezing, percentage basis, flex:1 equal halves, zero-shrink overflow and correct rendered RGB. Added the independent offline demo examples/css/flex-sizing.html.
 - LIMITATIONS: horizontal row direction only, approximate scaled outer-width weighting, no full automatic min-content minimums, flex-basis:content, align-items, column direction/order or CSS Grid. JS GC is still mark-only. No general site readiness claim.
 - Unmodified frozen WPT Static v1 remains 194/200 and Positioning v1 remains 54/100, zero render errors. No selection/manifests changed.
+## 2026-10-13 - R1.2d partial: ancestor-clipped nested vertical scrollbar overlays
+
+- OverflowScope tracks descendant scrollbar ranges. Layout intersects nested scrollbar visibility with ancestor overflow padding-box clips while preserving actual geometry and scroll ranges.
+- op_paint wraps overlays in PaintCommand::Clipped; native GDI clips pixels. Win32 track/thumb hit tests walk clips; the engine rejects hidden pointer and wheel targets.
+- Added nested engine and Win32 GDI bitmap/input regressions plus examples/css/nested-scrollbars.html.
+- LIMITS: horizontal scrolling or overflow-x/y, complex positioned-overflow behavior and broad upstream WPT/real-site coverage remain open. Frozen selections unchanged.
+
 
 
 

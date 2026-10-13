@@ -1,6 +1,6 @@
 # OPBrowser Code Slices
 
-Last updated: 2026-10-10
+Last updated: 2026-10-13
 
 A code slice is an end-to-end path through the architecture that produces one
 observable capability. This prevents isolated subsystems from becoming impressive
@@ -15,6 +15,21 @@ current. The same validator runs in CI. This is a **source-anchor
 feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
+
+## S56 - Ancestor-clipped nested scrollbar paint and input (R1.2d partial)
+
+Original op_layout::flow::OverflowScope tracks scrollbar ranges as well as
+primitive and click ranges. Final clip collection intersects ancestor
+overflow padding boxes into each nested ScrollContainer. op_paint wraps
+the unchanged vertical track/thumb geometry in PaintCommand::Clipped;
+Win32 GDI honors the same clip when painting. Native track/thumb hit tests
+walk clip commands recursively, and op_layout's visible_at prevents hidden
+click/drag/wheel targets in op_engine.
+Engine and Win32 pixel regressions verify nested visibility and input.
+Manual page: examples/css/nested-scrollbars.html.
+
+Only nested vertical overlays are fixed; horizontal overflow-x/y,
+complex positioned clipping and independent WPT Overflow remain open.
 
 ## S55 - Flex basis and weighted shrinking through native pixels (R2c)
 

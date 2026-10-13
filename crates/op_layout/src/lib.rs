@@ -226,6 +226,7 @@ pub struct LayoutClips {
 pub struct ScrollContainer {
     pub node: NodeId,
     pub rect: ClipRect,
+    pub clip: Option<ClipRect>,
     pub scroll_top: i32,
     pub max_scroll_top: i32,
     /// Hidden overflow permits script scrolling but not wheel input.
@@ -243,6 +244,15 @@ pub struct ScrollbarGeometry {
 }
 
 impl ScrollContainer {
+    pub fn visible_at(&self, x: i32, y: i32) -> bool {
+        self.clip.is_none_or(|rect| {
+            x >= rect.x
+                && x < rect.x.saturating_add(rect.width)
+                && y >= rect.y
+                && y < rect.y.saturating_add(rect.height)
+        })
+    }
+
     pub fn scrollbar_geometry(&self) -> Option<ScrollbarGeometry> {
         if !self.wheel_scrollable
             || (self.max_scroll_top == 0 && !self.scrollbar_always_visible)
@@ -285,6 +295,9 @@ impl ScrollContainer {
 
     /// Pointer capture starts only on the painted thumb, not the track.
     pub fn thumb_grab_offset(&self, x: i32, y: i32) -> Option<i32> {
+        if !self.visible_at(x, y) {
+            return None;
+        }
         let thumb = self.scrollbar_geometry()?.thumb;
         (x >= thumb.x
             && x < thumb.x.saturating_add(thumb.width)
@@ -311,6 +324,9 @@ impl ScrollContainer {
 
     /// Native click on the track jumps the thumb toward the pointer.
     pub fn scroll_top_at_track_point(&self, x: i32, y: i32) -> Option<i32> {
+        if !self.visible_at(x, y) {
+            return None;
+        }
         let geometry = self.scrollbar_geometry()?;
         let track = geometry.track;
         if x < track.x
