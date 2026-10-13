@@ -8,6 +8,8 @@ OPBrowser aims to be an independent Windows browser with an original Rust web/Ja
 
 **G3 native DOM/fetch checkpoint (14 October 2026):** unused unwrapped child metadata is reclaimed; live querySelectorAll results retain native parent identity. Two new fetch-GC races pass. Full memory proof remains open.
 
+**G3 budget-pressure checkpoint:** automatic idle GC now observes object and lexical-environment arena headroom as well as live allocations. Three regressions pass for low-budget and repeated allocation bursts; long-run RSS remains pending.
+
 ## Current priorities (13 October 2026)
 
 1. **P0-1 NOW: original JavaScript GC only.** G1/G2/G3 partial now provides browser-owned automatic mark/sweep, generation-safe slot reuse, weak AbortSignal.any follower ownership and GC pause/failure telemetry. A repeatable Windows native-engine timer probe measured 817 successful collections in 12 seconds with zero GC errors and bounded object/environment arenas. **Not a 30-minute memory proof.** Next: sustained RSS/pause measurement and remaining fetch/DOM/abort root audits. See [GC implementation design](https://github.com/Gerbesh/OPBrowser/blob/main/docs/GC_IMPLEMENTATION.md) and [stress procedure](https://github.com/Gerbesh/OPBrowser/blob/main/docs/GC_STRESS_RESULTS.md).

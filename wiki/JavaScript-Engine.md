@@ -21,6 +21,9 @@ GC also purges never-wrapped native descendants of dead detached subtrees.
 Retained static query results preserve their backing native parent identity.
 Fetch completion and cancellation have GC-root regressions: native callbacks
 survive pending requests, while late replies after abort are ignored.
+Automatic idle GC now also reacts to object/environment arena headroom;
+near-budget allocation bursts can recycle slots even when the adaptive
+live-object trigger has not been reached. Three VM regressions cover this.
 Other DOM/fetch host roots and a 30-minute memory plateau remain unverified.
 Older milestones below describe their historical state.
 

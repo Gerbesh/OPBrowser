@@ -4522,12 +4522,22 @@ impl JsRuntime {
     }
 
     /// Browser-owned task checkpoint. Call only after callbacks finish,
+    /// Hard arena headroom is also a reason to run a safe checkpoint.
     /// DOM operation queues are drained, and no JsValue escaped to Rust.
     /// Generic embedders must use collect_garbage_with_roots instead.
     pub fn collect_if_needed_at_idle(&mut self) -> Result<Option<JsGcReport>, JsError> {
         let live = self.heap.iter().filter(|o| o.alive).count()
             + self.environments.iter().filter(|e| e.alive).count();
-        if live < self.next_gc_live_trigger {
+        // A pending script can need multiple allocations before its next
+        // safe idle checkpoint. Keep some arena headroom for that burst.
+        let object_headroom = (self.object_budget / 8).max(1);
+        let environment_headroom = (self.environment_budget / 8).max(1);
+        let object_pressure = self.heap.len() >= self.object_budget.saturating_sub(object_headroom)
+            && self.free_objects.len() <= object_headroom;
+        let environment_pressure = self.environments.len()
+            >= self.environment_budget.saturating_sub(environment_headroom)
+            && self.free_environments.len() <= environment_headroom;
+        if live < self.next_gc_live_trigger && !object_pressure && !environment_pressure {
             return Ok(None);
         }
         let started = Instant::now();
@@ -9647,6 +9657,82 @@ mod tests {
         assert!(!vm.boxed_values.contains_key(&wrapper));
         assert!(vm.object(wrapper).is_err());
         assert!(vm.object(child).is_err());
+    }
+
+    #[test]
+    fn g3_idle_gc_triggers_early_and_reuses_free_slots_between_task_bursts() {
+        let mut vm = JsRuntime::new();
+        let initial_slots = vm.heap.len();
+        vm.object_budget = initial_slots + 80;
+        vm.next_gc_live_trigger = 100_000;
+        for _ in 0..65 {
+            vm.allocate_object(
+                ObjectKind::Ordinary,
+                Some(vm.object_prototype),
+                HashMap::new(),
+            )
+            .unwrap();
+        }
+        assert!(vm.heap.len() < vm.object_budget);
+        let report = vm
+            .collect_if_needed_at_idle()
+            .unwrap()
+            .expect("approaching budget");
+        assert!(report.freed_objects >= 65);
+        for _ in 0..65 {
+            vm.allocate_object(
+                ObjectKind::Ordinary,
+                Some(vm.object_prototype),
+                HashMap::new(),
+            )
+            .unwrap();
+        }
+        assert_eq!(vm.heap.len(), initial_slots + 65);
+        assert!(vm.collect_if_needed_at_idle().unwrap().is_some());
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_idle_gc_reclaims_when_object_budget_is_full() {
+        let mut vm = JsRuntime::new();
+        vm.object_budget = vm.heap.len() + 12;
+        vm.next_gc_live_trigger = 100_000;
+        for _ in 0..12 {
+            vm.allocate_object(
+                ObjectKind::Ordinary,
+                Some(vm.object_prototype),
+                HashMap::new(),
+            )
+            .unwrap();
+        }
+        let report = vm.collect_if_needed_at_idle().unwrap().unwrap();
+        assert!(report.freed_objects >= 12);
+        assert!(
+            vm.allocate_object(
+                ObjectKind::Ordinary,
+                Some(vm.object_prototype),
+                HashMap::new()
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn g3_idle_gc_reclaims_when_environment_budget_is_full() {
+        let mut vm = JsRuntime::new();
+        vm.environment_budget = vm.environments.len() + 12;
+        vm.next_gc_live_trigger = 100_000;
+        for _ in 0..12 {
+            vm.allocate_environment(Some(vm.global_env), EnvironmentKind::Block)
+                .unwrap();
+        }
+        let report = vm.collect_if_needed_at_idle().unwrap().unwrap();
+        assert_eq!(report.freed_environments, 12);
+        assert!(vm.environment_is_live(vm.global_env));
+        assert!(
+            vm.allocate_environment(Some(vm.global_env), EnvironmentKind::Block)
+                .is_ok()
+        );
     }
 
     #[test]

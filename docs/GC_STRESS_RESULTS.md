@@ -75,6 +75,18 @@ when no DOM wrappers are collectible; the full Rust tests were rerun after
 that optimization. A 12-second synthetic timer probe does not demonstrate
 a 30-minute memory plateau or concurrent real-network behavior.
 
+## G3 budget-headroom checkpoint: 12-second worker sanity run
+
+After enabling arena-headroom-triggered idle GC, ran
+`cargo run -p op_engine --bin gc_stress_probe -- --seconds 12`.
+The worker completed 7,582 ticks, **831 successful GC passes, zero
+errors**, with 414 reserved object slots and 247 environment slots.
+Maximum observed stop-the-world pause was **1,724 microseconds**. Sampled
+Windows process working set ranged from 9,846,784 bytes at startup to
+10,133,504 bytes by second 11. The synthetic worker exercises timer and
+JavaScript allocation churn, not tight configured-budget limits (verified
+separately by three VM unit tests). This is not a long-run plateau proof.
+
 ### Exit criteria still open
 
 A proper 1,800-second run on the same build must record the post-warmup

@@ -16,6 +16,14 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G3 partial: heap arena headroom at browser idle checkpoints
+
+JsRuntime::collect_if_needed_at_idle compares object/environment reserved
+arena slots and recyclable free slot counts against each budget's 1/8
+headroom margin, in addition to next_gc_live_trigger. A pressure-triggered
+checkpoint still delegates to generation-safe collect_garbage_with_roots,
+and retains GC pause/error telemetry. No new module or dependency.
+
 ## G3 partial: unwrapped native DOM descendants and network callbacks
 
 Successful GC sweeps extend discarded detached wrappers down native

@@ -1,5 +1,20 @@
 # Original JS VM garbage collector: implementation plan
 
+## G3 partial: idle GC on arena allocation headroom
+
+The automatic idle checkpoint now also checks object/environment arena
+capacity, not only the adaptive live-object trigger. When a reserved
+arena has reached seven-eighths of its configured allocation budget and
+the remaining free slots are scarce, a safe mark/sweep runs before the
+next JavaScript task's allocation burst. The 1/8 margin gives typical
+scripts time to reach an idle checkpoint without prematurely hitting
+the hard limit. Recycling retains generational ObjectId/EnvironmentId
+identity and never permits collection within interpreter call frames.
+Three VM tests cover exhausted object and environment budgets and two
+consecutive bursts that reuse freed slots under the cap. This is not
+in-interpreter GC: an individual oversized task may still hit the hard
+allocation limit before reaching its next checkpoint.
+
 ## G3 partial: unwrapped detached DOM descendants and fetch completion races
 
 Validated DOM sweeps traverse unwrapped native descendants of discarded

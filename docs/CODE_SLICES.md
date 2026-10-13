@@ -16,6 +16,15 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S67 - Budget-pressure original JS GC checkpoint (G3 partial)
+
+Script allocation burst -> engine drains task/callbacks and DOM changes ->
+collect_if_needed_at_idle considers live heap and remaining free arena
+capacity -> mark/sweep reclaims objects and lexical environments ->
+next task reuses generational slots without crossing configured limits.
+Three focused VM regressions cover object, environment and consecutive
+allocation bursts. No interpreter-frame collection is attempted.
+
 ## S66 - Unwrapped native DOM descendants and fetch GC (G3 partial)
 
 Detached node -> idle GC -> native parent/child edges -> orphan text/tag/

@@ -30,6 +30,8 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 
 **G3 follow-up (2026-10-14):** GC purges native descendants without JS wrappers; live static query results preserve backing ancestors. Five new tests include two fetch completion/cancellation races across GC. Full host-root audit and sustained native memory proof are still outstanding.
 
+**G3 allocation-pressure update:** browser idle GC now observes remaining object/environment budget headroom (including free slots), so low configured limits and allocation bursts are reclaimed before the next task. Three tests pass; oversized single tasks and extended navigation/RSS profiling remain outstanding.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

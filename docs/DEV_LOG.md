@@ -3517,6 +3517,12 @@ This file is append-only project history.
 - Avoided per-sweep construction of the full native parent/child map when no disconnected JS wrappers are collectible. Rust workspace tests and strict Clippy remain green.
 - Pre-optimization native 12-second worker probe: 7,402 ticks, 825 successful GC passes, zero failures, 414/247 reserved slots, max pause 1,551 microseconds. Logged exact limits in GC_STRESS_RESULTS.md.
 
+## 2026-10-14 - G3 partial: reserve-aware idle GC allocation pressure
+
+- Previously, collect_if_needed_at_idle only compared live object/environment counts with an adaptive trigger, which could sit above a smaller configured hard arena budget. Idle tasks could then exhaust object or environment slots despite containing collectible garbage.
+- Added 1/8 budget headroom checks against reserved arenas and the remaining recycled free slots. A near-budget idle checkpoint can reclaim unreachable data before the next allocation burst; tracing remains prohibited during active interpreter frames.
+- Three VM regressions verify reclaiming exhausted object and environment arenas plus early collection across consecutive object allocation bursts with generational slot reuse. Single oversized scripts can still hit their hard cap until an idle checkpoint; sustained process-memory proof remains open.
+
 
 
 
