@@ -4084,39 +4084,73 @@ impl JsRuntime {
         if let Some(document) = self.dom_document {
             pending.push(TraceWork::Object(document));
         }
-        for map in [
-            &self.dom_node_objects,
-            &self.dom_class_lists,
-            &self.dom_node_lists,
-            &self.dom_html_collections,
-            &self.dom_styles,
-        ] {
-            for &id in map.values() {
-                pending.push(TraceWork::Object(id));
+        for map in [&self.dom_node_objects] {
+            for (&node, &id) in map {
+                if self.dom_attached.contains(&self.resolve_dom_node(node)) {
+                    pending.push(TraceWork::Object(id));
+                }
             }
         }
-        for listeners in self
-            .dom_click_listeners
-            .values()
-            .chain(self.dom_click_capture_listeners.values())
-            .chain(self.dom_typed_listeners.values())
-        {
-            for value in listeners {
-                trace_js_value(&mut pending, value);
+        for listeners in self.microtasks.iter().chain(self.text_callbacks.values()) {
+            trace_js_value(&mut pending, listeners);
+        }
+        // Cache and handler edges belong to a reachable node, not the
+        // native side table containing its ID.
+        let mut dom_edges: HashMap<ObjectId, Vec<TraceWork>> = HashMap::new();
+        for (&node, &owner) in &self.dom_node_objects {
+            let edges = dom_edges.entry(owner).or_default();
+            if let Some(parent) = self.dom_pending_parents.get(&node)
+                && let Some(&id) = self.dom_node_objects.get(parent)
+            {
+                edges.push(TraceWork::Object(id));
+            }
+            if let Some(children) = self.dom_children.get(&node) {
+                for child in children {
+                    if let Some(&id) = self.dom_node_objects.get(child) {
+                        edges.push(TraceWork::Object(id));
+                    }
+                }
+            }
+            for map in [
+                &self.dom_class_lists,
+                &self.dom_node_lists,
+                &self.dom_html_collections,
+                &self.dom_styles,
+            ] {
+                if let Some(&id) = map.get(&node) {
+                    edges.push(TraceWork::Object(id));
+                }
+            }
+            for listeners in [
+                self.dom_click_listeners.get(&node),
+                self.dom_click_capture_listeners.get(&node),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                for handler in listeners {
+                    trace_js_value(edges, handler);
+                }
+            }
+            if let Some(handler) = self.dom_onclick.get(&node) {
+                trace_js_value(edges, handler);
             }
         }
-        for value in self
-            .dom_onclick
-            .values()
-            .chain(self.microtasks.iter())
-            .chain(self.text_callbacks.values())
-        {
-            trace_js_value(&mut pending, value);
+        for (&(node, _, _), handlers) in &self.dom_typed_listeners {
+            if let Some(&owner) = self.dom_node_objects.get(&node) {
+                let edges = dom_edges.entry(owner).or_default();
+                for handler in handlers {
+                    trace_js_value(edges, handler);
+                }
+            }
         }
-        for (&(_, _, _, callback), options) in &self.dom_listener_options {
-            pending.push(TraceWork::Object(callback));
-            if let Some(signal) = options.signal {
-                pending.push(TraceWork::Object(signal));
+        for (&(node, _, _, callback), options) in &self.dom_listener_options {
+            if let Some(&owner) = self.dom_node_objects.get(&node) {
+                let edges = dom_edges.entry(owner).or_default();
+                edges.push(TraceWork::Object(callback));
+                if let Some(signal) = options.signal {
+                    edges.push(TraceWork::Object(signal));
+                }
             }
         }
         // Lifecycle/AbortSignal listeners belong to their EventTarget.
@@ -4200,6 +4234,35 @@ impl JsRuntime {
                         continue;
                     }
                     object_marks[id.slot()] = true;
+                    if let Some(edges) = dom_edges.get(&id) {
+                        pending.extend(edges.iter().copied());
+                    }
+                    // DOM views/collections must retain their backing node
+                    // even when the node itself is detached from the tree.
+                    let backing_node = match object.kind {
+                        ObjectKind::DomClassList(node)
+                        | ObjectKind::DomNodeList(node)
+                        | ObjectKind::DomHtmlCollection(node)
+                        | ObjectKind::DomStyle(node) => Some(node),
+                        ObjectKind::DomTagCollection => {
+                            self.dom_tag_collections.get(&id).map(|(node, _)| *node)
+                        }
+                        _ => None,
+                    };
+                    if let Some(node) = backing_node
+                        && let Some(&owner) = self.dom_node_objects.get(&node)
+                    {
+                        pending.push(TraceWork::Object(owner));
+                    }
+                    if object.kind == ObjectKind::DomQueryNodeList
+                        && let Some(nodes) = self.dom_query_lists.get(&id)
+                    {
+                        for node in nodes {
+                            if let Some(&owner) = self.dom_node_objects.get(node) {
+                                pending.push(TraceWork::Object(owner));
+                            }
+                        }
+                    }
                     if let Some(edges) = lifecycle_edges.get(&id) {
                         pending.extend(edges.iter().copied());
                     }
@@ -4272,6 +4335,79 @@ impl JsRuntime {
         self.dom_query_lists.retain(|id, _| marked_owner(id));
         self.header_values.retain(|id, _| marked_owner(id));
         self.boxed_values.retain(|id, _| marked_owner(id));
+        // Owner-indexed native maps must not outlive an unreachable detached
+        // node or silently resolve to a recycled generational object ID.
+        let live_dom_nodes = self
+            .dom_node_objects
+            .iter()
+            .filter_map(|(&node, &id)| marked_owner(&id).then_some(node))
+            .collect::<std::collections::HashSet<_>>();
+        let forgotten_nodes = self
+            .dom_node_objects
+            .iter()
+            .filter_map(|(&node, &id)| (!marked_owner(&id)).then_some(node))
+            .collect::<std::collections::HashSet<_>>();
+        self.dom_node_objects.retain(|_, id| marked_owner(id));
+        // Detachment only disconnects the JS wrapper from the document; the
+        // host snapshot also owns strings, attributes and tree-link maps.
+        // Release these records when no JavaScript view can access the node.
+        if !forgotten_nodes.is_empty() {
+            self.dom_node_aliases.retain(|from, to| {
+                !forgotten_nodes.contains(from) && !forgotten_nodes.contains(to)
+            });
+            self.dom_ids
+                .retain(|_, node| !forgotten_nodes.contains(node));
+            self.dom_pending_ids
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_pending_parents.retain(|node, parent| {
+                !forgotten_nodes.contains(node) && !forgotten_nodes.contains(parent)
+            });
+            self.dom_children.retain(|node, children| {
+                if forgotten_nodes.contains(node) {
+                    return false;
+                }
+                children.retain(|child| !forgotten_nodes.contains(child));
+                true
+            });
+            self.dom_text
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_attributes
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_tags
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_text_nodes
+                .retain(|node| !forgotten_nodes.contains(node));
+            self.dom_attached
+                .retain(|node| !forgotten_nodes.contains(node));
+            self.dom_scroll_tops
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_scroll_limits
+                .retain(|node, _| !forgotten_nodes.contains(node));
+        }
+        for map in [
+            &mut self.dom_class_lists,
+            &mut self.dom_node_lists,
+            &mut self.dom_html_collections,
+            &mut self.dom_styles,
+        ] {
+            map.retain(|_, id| marked_owner(id));
+        }
+        for map in [
+            &mut self.dom_click_listeners,
+            &mut self.dom_click_capture_listeners,
+        ] {
+            map.retain(|node, _| live_dom_nodes.contains(node));
+        }
+        self.dom_typed_listeners
+            .retain(|(node, _, _), _| live_dom_nodes.contains(node));
+        self.dom_onclick
+            .retain(|node, _| live_dom_nodes.contains(node));
+        self.dom_onclick_registration
+            .retain(|node, _| live_dom_nodes.contains(node));
+        self.dom_listener_options
+            .retain(|(node, _, _, callback), _| {
+                live_dom_nodes.contains(node) && marked_owner(callback)
+            });
         self.lifecycle_listeners.retain(|(owner, _, _), listeners| {
             if !marked_owner(owner) {
                 return false;
@@ -8832,6 +8968,225 @@ mod tests {
         vm.collect_garbage_with_roots(&[]).unwrap();
         assert!(vm.object(id).is_err());
         assert!(vm.abort_deadlines.is_empty());
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_detached_dom_listener_cycle_and_views_are_collectible() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "host".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.sync_dom_tag(1, "div".into());
+        vm.eval_script(
+            r#"function build(){
+            var host=document.getElementById('host');
+            var child=document.createElement('button');
+            host.appendChild(child);
+            var data={owner:child};
+            child.addEventListener('ping',function(){return data.owner;});
+            child.onclick=function(){return data;};
+            child.classList; child.style; child.childNodes; child.children;
+            host.removeChild(child);
+        }
+        build();"#,
+        )
+        .unwrap();
+        let node = *vm.dom_node_objects.keys().find(|&&node| node != 1).unwrap();
+        let orphan = vm.dom_node_objects[&node];
+        let handler = vm
+            .dom_typed_listeners
+            .get(&(node, "ping".to_owned(), false))
+            .unwrap()[0]
+            .clone();
+        assert!(!vm.dom_attached.contains(&node));
+        vm.take_dom_operations();
+        let report = vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(report.freed_objects > 0);
+        assert!(vm.object(orphan).is_err());
+        assert!(!vm.dom_node_objects.contains_key(&node));
+        assert!(!vm.dom_typed_listeners.keys().any(|(id, _, _)| *id == node));
+        assert!(
+            !vm.dom_listener_options
+                .keys()
+                .any(|(id, _, _, _)| *id == node)
+        );
+        assert!(!vm.dom_onclick.contains_key(&node));
+        assert!(!vm.dom_class_lists.contains_key(&node));
+        assert!(!vm.dom_styles.contains_key(&node));
+        assert!(!vm.dom_node_lists.contains_key(&node));
+        assert!(!vm.dom_html_collections.contains_key(&node));
+        assert!(vm.trace_heap_reachability_with_roots(&[handler]).is_err());
+    }
+
+    #[test]
+    fn g3_detached_dom_reachable_node_preserves_event_and_view_identity() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "host".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.sync_dom_tag(1, "div".into());
+        vm.eval_script(
+            r#"var kept=document.createElement('section');
+            var host=document.getElementById('host');
+            host.appendChild(kept);
+            var styleView=kept.style;
+            var classView=kept.classList;
+            var nodeView=kept.childNodes;
+            var child=document.createElement('span');
+            kept.appendChild(child);
+            var calls=0;
+            kept.addEventListener('ping',function(){calls=calls+1;});
+            host.removeChild(kept);"#,
+        )
+        .unwrap();
+        let node = match vm.global("kept").unwrap() {
+            JsValue::Object(id) => *id,
+            _ => panic!("expected DOM node"),
+        };
+        vm.take_dom_operations();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.object(node).is_ok());
+        vm.eval_script(
+            r#"var intact=kept.style===styleView&&
+            kept.classList===classView&&kept.childNodes===nodeView&&
+            kept.firstChild===child&&child.parentNode===kept;
+            kept.dispatchEvent(new Event('ping'));"#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("intact"), Some(&JsValue::Boolean(true)));
+        assert_eq!(vm.global("calls"), Some(&JsValue::Number(1.0)));
+        vm.eval_script("kept=null;child=null;styleView=null;classView=null;nodeView=null;")
+            .unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.object(node).is_err());
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_repeated_detached_dom_churn_recycles_heap_and_native_metadata() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "host".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.sync_dom_tag(1, "div".into());
+        let reserved_baseline = vm.heap_usage().object_slots;
+        for cycle in 0..40 {
+            vm.eval_script(
+                r#"function churn(){
+                    var parent=document.getElementById('host');
+                    var element=document.createElement('b');
+                    element.setAttribute('data-token','scratch');
+                    parent.appendChild(element);
+                    element.addEventListener('ping',function(){return element;});
+                    element.classList; element.style;
+                    parent.removeChild(element);
+                }
+                churn();"#,
+            )
+            .unwrap();
+            vm.take_dom_operations();
+            let report = vm.collect_garbage_with_roots(&[]).unwrap();
+            assert!(report.freed_objects > 0);
+            assert_eq!(
+                vm.dom_node_objects.len(),
+                1,
+                "cycle {cycle}: orphan wrapper"
+            );
+            assert_eq!(
+                vm.dom_typed_listeners.len(),
+                0,
+                "cycle {cycle}: dead callbacks"
+            );
+            assert_eq!(
+                vm.dom_listener_options.len(),
+                0,
+                "cycle {cycle}: dead options"
+            );
+            assert_eq!(vm.dom_tags.len(), 1, "cycle {cycle}: old tag metadata");
+            assert!(
+                vm.dom_attributes.len() <= 1,
+                "cycle {cycle}: stale attributes"
+            );
+            assert!(
+                vm.dom_pending_parents.is_empty(),
+                "cycle {cycle}: tree links"
+            );
+            assert!(vm.heap_usage().object_slots <= reserved_baseline + 100);
+            assert!(vm.trace_heap_reachability().is_ok());
+        }
+    }
+
+    #[test]
+    fn g3_detached_dom_caller_root_keeps_wrapper_and_listener() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "host".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        let escaped = vm
+            .eval_script(
+                r#"function create(){
+                var n=document.createElement('button');
+                n.addEventListener('ping',function(){return n;});
+                return n;
+            }
+            create();"#,
+            )
+            .unwrap();
+        let JsValue::Object(id) = escaped.clone() else {
+            panic!("expected detached node");
+        };
+        vm.take_dom_operations();
+        vm.collect_garbage_with_roots(std::slice::from_ref(&escaped))
+            .unwrap();
+        assert!(vm.object(id).is_ok());
+        let node = match vm.object(id).unwrap().kind {
+            ObjectKind::DomElement(node) => node,
+            _ => panic!("expected detached DOM element"),
+        };
+        assert!(vm.dom_typed_listeners.keys().any(|(n, _, _)| *n == node));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.object(id).is_err());
+        assert!(!vm.dom_node_objects.contains_key(&node));
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_connected_dom_still_roots_registered_listener_and_signal() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "button".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"var seen=0;
+            function install(){
+              var captured={n:7};
+              var controller=new AbortController();
+              document.getElementById('button').addEventListener('ping',
+                function(){seen=seen+captured.n;},{signal:controller.signal});
+            }
+            install();"#,
+        )
+        .unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("document.getElementById('button').dispatchEvent(new Event('ping'));")
+            .unwrap();
+        assert_eq!(vm.global("seen"), Some(&JsValue::Number(7.0)));
         assert!(vm.trace_heap_reachability().is_ok());
     }
 

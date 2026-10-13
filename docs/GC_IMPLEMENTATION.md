@@ -1,5 +1,17 @@
 # Original JS VM garbage collector: implementation plan
 
+## G3 partial: detached DOM nodes and event listener lifetime
+
+Only connected native DOM nodes are unconditional roots. Detached node
+wrappers survive through JS globals, explicit host roots, parent/child
+relationships or live DOM views, rather than through unconditional caches.
+Listener callbacks, onclick, AbortSignal options and cached classList/style/
+childNodes/children are traced from the reachable owning DOM node.
+Validated sweeps prune dead wrapper identities, callbacks and node metadata
+(tags, text, attributes, virtual aliases and native tree links) before
+generation-safe slot reuse. Five VM regressions include 40 DOM churn cycles.
+Full native host-root audit, fetch races and 30-minute RSS proof remain open.
+
 ## G3 partial: weak AbortSignal.timeout deadlines with observer/fetch ownership
 
 Pending AbortSignal.timeout deadlines are no longer unconditional JS heap

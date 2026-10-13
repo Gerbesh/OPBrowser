@@ -16,6 +16,14 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G3 partial: detached DOM ownership
+
+JsRuntime::trace_heap_marks roots wrappers of connected nodes and follows
+node-indexed dom_edges for descendants, ancestors, listeners, signal options,
+and native DOM view caches. Live collections trace backing nodes.
+collect_garbage_with_roots prunes dead disconnected wrapper/listener entries
+and snapshot metadata before generation-safe slot reuse. No crate changes.
+
 ## G3 partial: weak timeout queue ownership
 
 JsRuntime::trace_heap_marks treats abort_deadlines as conditional roots:

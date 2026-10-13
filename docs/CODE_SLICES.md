@@ -16,6 +16,14 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S65 - Detached DOM GC lifetime slice (G3 partial)
+
+Script creates/attaches/removes a node -> idle GC marks live attached and JS/
+host-referenced nodes -> DOM listener/view/parent-child edges are followed
+-> orphan listener cycles and native node metadata are pruned -> heap slots
+recycled. Five VM regressions verify detached identity, closures, external
+roots and 40 synthetic churn passes. Broader browsing proof remains open.
+
 ## S64 - Weak AbortSignal.timeout queue with live observer roots (G3 partial)
 
 AbortSignal.timeout registers a deadline -> idle task checkpoint invokes

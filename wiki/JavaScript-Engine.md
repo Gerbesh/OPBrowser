@@ -13,6 +13,10 @@ Timeout deadlines are weak unless an abort handler is registered; a reachable
 global, pending fetch or composite signal also keeps its deadline valid.
 Orphan deadlines are pruned after successful GC and their fixed 64-slot
 pending budget becomes reusable. Live listeners still receive TimeoutError.
+Connected DOM nodes remain roots; detached node wrappers and their event
+listener cycles are reclaimable when unreachable. Live retained nodes and
+DOM collection/style/classList handles keep identities across sweeps.
+Successful collection also prunes orphan native snapshot metadata.
 Other DOM/fetch host roots and a 30-minute memory plateau remain unverified.
 Older milestones below describe their historical state.
 

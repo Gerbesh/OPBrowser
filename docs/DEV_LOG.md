@@ -3500,6 +3500,14 @@ This file is append-only project history.
 - Five new VM regressions cover 64 orphan timeouts and budget recovery, both abort observer types, listener removal, pending network host root, and nested composite propagation after a sweep. No full-process 30-minute plateau has been measured; DOM root audit and fetch races remain open.
 - Post-change five-second original native worker probe: 3,269 ticks, 356 successful GC passes, zero failures, 414 object/247 environment reserved slots, max pause 385 microseconds. Logged in GC_STRESS_RESULTS.md. This is a smoke probe, not a long-session plateau.
 
+## 2026-10-13 - G3 partial: detached DOM roots and metadata reclamation
+
+- Connected DOM node wrappers remain roots. Detached wrappers, listener callbacks, option AbortSignals and associated classList/style/childNodes/children views are traced only from reachable node/view/host edges.
+- Validated sweeps drop orphan node wrappers, listener tables, native tags/attributes/text/tree links, scroll data and virtual aliases before generation-safe slot reuse. DOM operation queues must be committed before collection.
+- Five new regressions cover orphan listener cycles, retained subtree/view identity, connected handlers, caller-owned host roots and 40 repeated create/remove cycles with bounded metadata and arenas.
+- Still pending: complete native host ownership, fetch/Promise races, synthetic node-id budgeting and 30-minute process memory proof.
+- Native worker timer sanity probe (12 seconds): 7,709 ticks, 846 successful GC passes, zero failures, 414 object/247 environment reserved slots, worst pause 493 microseconds. The independent 5-second probe briefly reached 475/329 slots. These timings are not a long-session browsing proof; details in GC_STRESS_RESULTS.md.
+
 
 
 

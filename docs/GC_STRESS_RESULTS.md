@@ -49,6 +49,19 @@ GC pause **385 microseconds**. Five sampled working sets ranged from
 9,801,728 to 10,035,200 bytes. This validates the synthetic worker
 path only and is **not** a plateau proof or comparable throughput benchmark.
 
+## G3 detached-DOM ownership: 12-second native-worker regression run
+
+Executed `cargo run -p op_engine --bin gc_stress_probe -- --seconds 12`
+after the detached DOM tracing and native-cache cleanup changes.
+Observed 7,709 worker ticks, **846 successful collections, 0 failures**,
+and reserved arenas of **414 object / 247 environment slots**. Maximum
+reported GC pause was **493 microseconds**. Sampled working set ranged from
+9,830,400 bytes at start to a maximum of 10,137,600 bytes during the trial.
+An independent 5-second run observed 354 successful collections and zero
+failures, but briefly reserved 475/329 slots. Short probes can vary by timer
+scheduling and are not proof of a 30-minute memory plateau. The 40-cycle DOM
+reclamation test is a separate VM unit test, not part of this timer workload.
+
 ### Exit criteria still open
 
 A proper 1,800-second run on the same build must record the post-warmup
