@@ -17,6 +17,10 @@ Connected DOM nodes remain roots; detached node wrappers and their event
 listener cycles are reclaimable when unreachable. Live retained nodes and
 DOM collection/style/classList handles keep identities across sweeps.
 Successful collection also prunes orphan native snapshot metadata.
+GC also purges never-wrapped native descendants of dead detached subtrees.
+Retained static query results preserve their backing native parent identity.
+Fetch completion and cancellation have GC-root regressions: native callbacks
+survive pending requests, while late replies after abort are ignored.
 Other DOM/fetch host roots and a 30-minute memory plateau remain unverified.
 Older milestones below describe their historical state.
 

@@ -3508,6 +3508,15 @@ This file is append-only project history.
 - Still pending: complete native host ownership, fetch/Promise races, synthetic node-id budgeting and 30-minute process memory proof.
 - Native worker timer sanity probe (12 seconds): 7,709 ticks, 846 successful GC passes, zero failures, 414 object/247 environment reserved slots, worst pause 493 microseconds. The independent 5-second probe briefly reached 475/329 slots. These timings are not a long-session browsing proof; details in GC_STRESS_RESULTS.md.
 
+## 2026-10-14 - G3 partial: native unwrapped descendants and fetch GC races
+
+- Reproduced native child metadata leakage after detaching a parent whose children never had JS wrappers. Successful sweep now traverses native parent/child relations and frees orphan text, tags and attribute records; connected and retained nodes remain protected.
+- Static query results trace up from an unwrapped native child to a materialized ancestor wrapper so retained NodeLists preserve native parentNode data. Three focused DOM regressions passed after fixes.
+- Two new fetch GC regressions verify rooted callbacks/signals survive while native I/O is pending, are collected after response/abort, and late completions cannot settle an aborted promise. Existing fetch code passed unchanged.
+- Remaining: broader browser host roots, Promise/fetch race matrix, 30-minute RSS/pause distribution and native allocation-pressure limits.
+- Avoided per-sweep construction of the full native parent/child map when no disconnected JS wrappers are collectible. Rust workspace tests and strict Clippy remain green.
+- Pre-optimization native 12-second worker probe: 7,402 ticks, 825 successful GC passes, zero failures, 414/247 reserved slots, max pause 1,551 microseconds. Logged exact limits in GC_STRESS_RESULTS.md.
+
 
 
 

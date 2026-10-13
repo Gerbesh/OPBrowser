@@ -62,6 +62,19 @@ failures, but briefly reserved 475/329 slots. Short probes can vary by timer
 scheduling and are not proof of a 30-minute memory plateau. The 40-cycle DOM
 reclamation test is a separate VM unit test, not part of this timer workload.
 
+## G3 native-unwrapped DOM and fetch-root audit: 12-second probe
+
+Executed `cargo run -p op_engine --bin gc_stress_probe -- --seconds 12`
+after native descendant retention/cleanup and new fetch GC race tests.
+Observed 7,402 worker ticks, **825 successful GC passes, zero failures**,
+reserved arenas of **414 object / 247 environment slots**, and maximum
+reported pause **1,551 microseconds**. Sampled Windows working set ranged
+from **9,859,072** bytes at initialization to **10,145,792** bytes at peak.
+This run predates the final guard that skips native subtree-map construction
+when no DOM wrappers are collectible; the full Rust tests were rerun after
+that optimization. A 12-second synthetic timer probe does not demonstrate
+a 30-minute memory plateau or concurrent real-network behavior.
+
 ### Exit criteria still open
 
 A proper 1,800-second run on the same build must record the post-warmup

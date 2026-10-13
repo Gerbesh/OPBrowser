@@ -1,5 +1,21 @@
 # Original JS VM garbage collector: implementation plan
 
+## G3 partial: unwrapped detached DOM descendants and fetch completion races
+
+Validated DOM sweeps traverse unwrapped native descendants of discarded
+detached wrappers using pending-parent and child relationships. They purge
+orphan text/tag/attribute/tree records even when no child JavaScript wrapper
+was allocated. Live wrappers and query/tag collections protect retained
+native children. A live static query result traces its closest materialized
+ancestor wrapper, preserving parentNode and object identity.
+
+Three DOM regressions verify orphan descendant reclaim, a live detached
+parent and querySelectorAll retention. Two fetch GC regressions verify
+callback/signal roots across completion and cancellation while native I/O
+is in flight; late replies do not revive aborted Promise callbacks.
+No behavioral network changes were needed. Comprehensive host audits,
+real browsing and a 30-minute process memory plateau remain open.
+
 ## G3 partial: detached DOM nodes and event listener lifetime
 
 Only connected native DOM nodes are unconditional roots. Detached node

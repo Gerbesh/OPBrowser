@@ -16,6 +16,15 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G3 partial: unwrapped native DOM descendants and network callbacks
+
+Successful GC sweeps extend discarded detached wrappers down native
+dom_pending_parents/dom_children edges while excluding attached nodes,
+live wrappers and nodes referenced by reachable query/tag collections.
+Reachable query NodeLists trace native ancestry to a materialized wrapper.
+Pending fetch callbacks/signals are still host roots until completion or
+abort removes them; new regressions verify both paths. No new crate.
+
 ## G3 partial: detached DOM ownership
 
 JsRuntime::trace_heap_marks roots wrappers of connected nodes and follows

@@ -4258,8 +4258,24 @@ impl JsRuntime {
                         && let Some(nodes) = self.dom_query_lists.get(&id)
                     {
                         for node in nodes {
-                            if let Some(&owner) = self.dom_node_objects.get(node) {
-                                pending.push(TraceWork::Object(owner));
+                            // A static query may contain a native child
+                            // before any JavaScript wrapper was constructed.
+                            // Its backing ancestor wrapper still owns the
+                            // detached tree and must survive this sweep.
+                            let mut cursor = Some(*node);
+                            let mut remaining = 20_000;
+                            while let Some(native_node) = cursor {
+                                if remaining == 0 {
+                                    return Err(JsError::execution_limit(
+                                        "native DOM ancestor trace limit exceeded",
+                                    ));
+                                }
+                                remaining -= 1;
+                                if let Some(&owner) = self.dom_node_objects.get(&native_node) {
+                                    pending.push(TraceWork::Object(owner));
+                                    break;
+                                }
+                                cursor = self.dom_pending_parents.get(&native_node).copied();
                             }
                         }
                     }
@@ -4342,11 +4358,48 @@ impl JsRuntime {
             .iter()
             .filter_map(|(&node, &id)| marked_owner(&id).then_some(node))
             .collect::<std::collections::HashSet<_>>();
-        let forgotten_nodes = self
+        let mut forgotten_nodes = self
             .dom_node_objects
             .iter()
             .filter_map(|(&node, &id)| (!marked_owner(&id)).then_some(node))
             .collect::<std::collections::HashSet<_>>();
+        if !forgotten_nodes.is_empty() {
+            // Unmaterialized descendants have no dom_node_objects entry, but
+            // their native text, tag and attribute records still consume memory.
+            // A reachable static query/tag collection can retain an unwrapped
+            // node, so exclude such native roots before expanding the purge.
+            let mut retained_native_nodes = std::collections::HashSet::new();
+            for nodes in self.dom_query_lists.values() {
+                retained_native_nodes.extend(nodes.iter().copied());
+            }
+            for &(root, _) in self.dom_tag_collections.values() {
+                retained_native_nodes.insert(root);
+            }
+            let mut native_children: HashMap<usize, Vec<usize>> = HashMap::new();
+            for (&child, &parent) in &self.dom_pending_parents {
+                native_children.entry(parent).or_default().push(child);
+            }
+            for (&parent, children) in &self.dom_children {
+                native_children
+                    .entry(parent)
+                    .or_default()
+                    .extend(children.iter().copied());
+            }
+            let mut pending_native = forgotten_nodes.iter().copied().collect::<Vec<_>>();
+            while let Some(parent) = pending_native.pop() {
+                if let Some(children) = native_children.get(&parent) {
+                    for &child in children {
+                        if !self.dom_attached.contains(&child)
+                            && !live_dom_nodes.contains(&child)
+                            && !retained_native_nodes.contains(&child)
+                            && forgotten_nodes.insert(child)
+                        {
+                            pending_native.push(child);
+                        }
+                    }
+                }
+            }
+        }
         self.dom_node_objects.retain(|_, id| marked_owner(id));
         // Detachment only disconnects the JS wrapper from the document; the
         // host snapshot also owns strings, attributes and tree-link maps.
@@ -8972,6 +9025,131 @@ mod tests {
     }
 
     #[test]
+    fn g3_detached_subtree_reclaims_never_wrapped_native_descendants() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "host".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.sync_dom_tag(1, "div".into());
+        vm.eval_script("var parent=document.createElement('section');document.getElementById('host').appendChild(parent);")
+            .unwrap();
+        let root = match vm.global("parent").unwrap() {
+            JsValue::Object(id) => match vm.object(*id).unwrap().kind {
+                ObjectKind::DomElement(node) => node,
+                _ => panic!("expected element"),
+            },
+            _ => panic!("expected DOM object"),
+        };
+        let text_node = 777;
+        let nested_node = 778;
+        vm.sync_dom_text_node(text_node, Some(root), "orphan text data".into());
+        vm.sync_dom_tag(nested_node, "strong".into());
+        vm.sync_dom_existing_node(
+            nested_node,
+            Some(root),
+            vec![("title".into(), "orphan".into())],
+        );
+        vm.sync_dom_children(root, vec![text_node, nested_node]);
+        assert!(!vm.dom_node_objects.contains_key(&text_node));
+        assert!(!vm.dom_node_objects.contains_key(&nested_node));
+        vm.eval_script("parent.remove();parent=null;").unwrap();
+        vm.take_dom_operations();
+        assert!(!vm.dom_attached.contains(&text_node));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        for node in [root, text_node, nested_node] {
+            assert!(!vm.dom_text.contains_key(&node), "stale text for {node}");
+            assert!(
+                !vm.dom_attributes.contains_key(&node),
+                "stale attributes for {node}"
+            );
+            assert!(!vm.dom_tags.contains_key(&node), "stale tag for {node}");
+            assert!(
+                !vm.dom_pending_parents.contains_key(&node),
+                "stale parent for {node}"
+            );
+            assert!(!vm.dom_attached.contains(&node));
+        }
+        assert!(!vm.dom_text_nodes.contains(&text_node));
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_static_query_result_retains_unwrapped_child_and_native_parent() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "host".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.sync_dom_tag(1, "div".into());
+        vm.eval_script("var parent=document.createElement('section');document.getElementById('host').appendChild(parent);")
+            .unwrap();
+        let root = match vm.global("parent").unwrap() {
+            JsValue::Object(id) => match vm.object(*id).unwrap().kind {
+                ObjectKind::DomElement(node) => node,
+                _ => panic!("expected element"),
+            },
+            _ => panic!("expected DOM object"),
+        };
+        vm.sync_dom_tag(root, "section".into());
+        vm.sync_dom_tag(778, "span".into());
+        vm.sync_dom_existing_node(778, Some(root), vec![]);
+        vm.sync_dom_children(root, vec![778]);
+        vm.eval_script("var keptList=parent.querySelectorAll('span');parent.remove();parent=null;")
+            .unwrap();
+        vm.take_dom_operations();
+        assert!(!vm.dom_node_objects.contains_key(&778));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.dom_tags.contains_key(&778));
+        assert!(vm.dom_tags.contains_key(&root));
+        vm.eval_script("var keptChild=keptList.item(0);var good=keptChild.tagName==='SPAN'&&keptChild.parentNode.tagName==='SECTION';")
+            .unwrap();
+        assert_eq!(vm.global("good"), Some(&JsValue::Boolean(true)));
+        vm.eval_script("keptList=null;keptChild=null;").unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(!vm.dom_tags.contains_key(&778));
+    }
+
+    #[test]
+    fn g3_retained_detached_subtree_preserves_unwrapped_native_children() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "host".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script("var parent=document.createElement('section');document.getElementById('host').appendChild(parent);")
+            .unwrap();
+        let root = match vm.global("parent").unwrap() {
+            JsValue::Object(id) => match vm.object(*id).unwrap().kind {
+                ObjectKind::DomElement(node) => node,
+                _ => panic!("expected element"),
+            },
+            _ => panic!("expected DOM object"),
+        };
+        vm.sync_dom_text_node(777, Some(root), "retained text".into());
+        vm.sync_dom_children(root, vec![777]);
+        vm.eval_script("parent.remove();").unwrap();
+        vm.take_dom_operations();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert_eq!(
+            vm.dom_text.get(&777).map(String::as_str),
+            Some("retained text")
+        );
+        vm.eval_script("var stable=parent.firstChild.textContent==='retained text';")
+            .unwrap();
+        assert_eq!(vm.global("stable"), Some(&JsValue::Boolean(true)));
+        vm.eval_script("parent=null;").unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(!vm.dom_text.contains_key(&777));
+    }
+
+    #[test]
     fn g3_detached_dom_listener_cycle_and_views_are_collectible() {
         let mut vm = JsRuntime::new();
         vm.install_dom_snapshot([DomElementSnapshot {
@@ -10781,6 +10959,85 @@ mod tests {
         )
         .unwrap();
         assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn g3_dispatched_fetch_preserves_callbacks_across_gc_then_reclaims_them() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"var fetchState='pending';
+               function start(){
+                  var ctrl=new AbortController();
+                  fetch('payload.txt',{signal:ctrl.signal})
+                    .then(function(response){return response.text();})
+                    .then(function(body){fetchState=body;});
+               }
+               start();"#,
+        )
+        .unwrap();
+        let requests = vm.take_text_requests();
+        assert_eq!(requests.len(), 1);
+        let id = requests[0].id;
+        let callback = vm.text_callbacks.get(&id).cloned().unwrap();
+        let signal = vm.text_request_signals[&id];
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.get_property(&callback, "length").is_ok());
+        assert!(vm.object(signal).is_ok());
+        assert!(!vm.complete_text_request(id, Ok("safe after GC".into())));
+        assert_eq!(
+            vm.global("fetchState"),
+            Some(&JsValue::String("safe after GC".into()))
+        );
+        assert!(vm.text_callbacks.is_empty());
+        assert!(vm.text_request_signals.is_empty());
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        let JsValue::Object(callback_id) = callback else {
+            panic!("expected callback");
+        };
+        assert!(vm.object(callback_id).is_err());
+        assert!(vm.object(signal).is_err());
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_cancelled_inflight_fetch_frees_callback_before_stale_reply() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"var ctrl=new AbortController();
+               var fetchState='pending';
+               fetch('payload.txt',{signal:ctrl.signal})
+                 .then(function(){fetchState='BAD';},
+                       function(reason){fetchState=reason;});"#,
+        )
+        .unwrap();
+        let requests = vm.take_text_requests();
+        assert_eq!(requests.len(), 1);
+        let id = requests[0].id;
+        let callback = vm.text_callbacks[&id].clone();
+        let signal = vm.text_request_signals[&id];
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("ctrl.abort('cancelled');ctrl=null;")
+            .unwrap();
+        assert_eq!(
+            vm.global("fetchState"),
+            Some(&JsValue::String("cancelled".into()))
+        );
+        assert!(!vm.text_callbacks.contains_key(&id));
+        assert!(!vm.text_request_signals.contains_key(&id));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        let JsValue::Object(callback_id) = callback else {
+            panic!("expected callback");
+        };
+        assert!(vm.object(callback_id).is_err());
+        assert!(vm.object(signal).is_err());
+        assert!(!vm.complete_text_request(id, Ok("stale payload".into())));
+        assert_eq!(
+            vm.global("fetchState"),
+            Some(&JsValue::String("cancelled".into()))
+        );
+        assert!(vm.trace_heap_reachability().is_ok());
     }
 
     #[test]

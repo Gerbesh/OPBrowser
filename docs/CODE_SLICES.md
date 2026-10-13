@@ -16,6 +16,15 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S66 - Unwrapped native DOM descendants and fetch GC (G3 partial)
+
+Detached node -> idle GC -> native parent/child edges -> orphan text/tag/
+attribute metadata pruned, even without JavaScript child wrappers.
+A live static query result instead traces a retained native ancestor.
+Pending fetch -> callback/signal roots -> native completion or abort ->
+release host roots -> GC -> late replies ignored. Five new regressions;
+30-minute process-memory and broader native-host tests still outstanding.
+
 ## S65 - Detached DOM GC lifetime slice (G3 partial)
 
 Script creates/attaches/removes a node -> idle GC marks live attached and JS/
