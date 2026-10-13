@@ -1,5 +1,16 @@
 # Original JS VM garbage collector: implementation plan
 
+## G3 partial: EventTarget-owned lifecycle and AbortSignal listeners
+
+Lifecycle listener/options maps trace callback objects, captured environments
+and option AbortSignals only when their EventTarget receiver is reachable.
+Global window/document targets are already roots. An orphan AbortSignal with
+a callback closing over itself can now be reclaimed instead of being pinned
+by its host listener metadata. Validated sweeps prune dead listener lists,
+options and onabort registration-order metadata before slot reuse. Three VM
+regressions cover orphan cycles, live callbacks and option-signal retention. Other DOM/fetch
+ownership and the 30-minute process-memory plateau remain open.
+
 ## G3 partial: AbortSignal.any lifetime and measurable browser memory
 
 A live composite AbortSignal now traces the reverse follower graph back to its sources, including nested composites. The map is no longer an unconditional root: orphan composites/sources are collected and metadata pruned before slot reuse. When a composite aborts, connections to *other* sources are unlinked because its reason cannot change. Two G3 tests cover orphan graph reclamation and nested abort propagation through a sweep.

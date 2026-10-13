@@ -16,6 +16,15 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G3 partial: EventTarget-owned listener GC edges
+
+JsRuntime::trace_heap_marks indexes lifecycle listeners and options by
+receiver. Only a reachable EventTarget marks its callback objects, captured
+environments and option AbortSignals. Window/document remain ordinary
+global roots. collect_garbage_with_roots prunes dead receiver listener lists,
+options and weak lifecycle_property_registration keys before recycling slots.
+No new crate or third-party JavaScript runtime is involved.
+
 ## G3 partial: reverse AbortSignal retention and browser GC telemetry
 
 AbortSignal.any composite -> source edges are traced through reverse lookup during marking; the source-to-follower host map itself does not act as a strong root. Successful sweeps purge links to dead composites; aborted composites detach from other sources. Engine::active_script_gc_telemetry bridges JS VM GC diagnostics to the native page worker. The `gc_stress_probe` binary drives real timer checkpoints and samples operating-system process working set. No new engine crates or external JavaScript runtime are involved.

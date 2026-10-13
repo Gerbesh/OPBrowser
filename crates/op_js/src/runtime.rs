@@ -4100,7 +4100,6 @@ impl JsRuntime {
             .values()
             .chain(self.dom_click_capture_listeners.values())
             .chain(self.dom_typed_listeners.values())
-            .chain(self.lifecycle_listeners.values())
         {
             for value in listeners {
                 trace_js_value(&mut pending, value);
@@ -4120,15 +4119,22 @@ impl JsRuntime {
                 pending.push(TraceWork::Object(signal));
             }
         }
-        for (&(receiver, _, _, callback), options) in &self.lifecycle_listener_options {
-            pending.push(TraceWork::Object(receiver));
-            pending.push(TraceWork::Object(callback));
-            if let Some(signal) = options.signal {
-                pending.push(TraceWork::Object(signal));
+        // Lifecycle/AbortSignal listeners belong to their EventTarget.
+        // Otherwise orphan signals with a listener capturing that signal
+        // would be pinned forever by these host-side listener tables.
+        let mut lifecycle_edges: HashMap<ObjectId, Vec<TraceWork>> = HashMap::new();
+        for (&(receiver, _, _), listeners) in &self.lifecycle_listeners {
+            let edges = lifecycle_edges.entry(receiver).or_default();
+            for listener in listeners {
+                trace_js_value(edges, listener);
             }
         }
-        for &(receiver, _) in self.lifecycle_property_registration.keys() {
-            pending.push(TraceWork::Object(receiver));
+        for (&(receiver, _, _, callback), options) in &self.lifecycle_listener_options {
+            let edges = lifecycle_edges.entry(receiver).or_default();
+            edges.push(TraceWork::Object(callback));
+            if let Some(signal) = options.signal {
+                edges.push(TraceWork::Object(signal));
+            }
         }
         for (&event, targets) in &self.event_paths {
             pending.push(TraceWork::Object(event));
@@ -4178,6 +4184,9 @@ impl JsRuntime {
                         continue;
                     }
                     object_marks[id.slot()] = true;
+                    if let Some(edges) = lifecycle_edges.get(&id) {
+                        pending.extend(edges.iter().copied());
+                    }
                     if let Some(sources) = abort_sources_by_follower.get(&id) {
                         for &source in sources {
                             pending.push(TraceWork::Object(source));
@@ -4247,6 +4256,20 @@ impl JsRuntime {
         self.dom_query_lists.retain(|id, _| marked_owner(id));
         self.header_values.retain(|id, _| marked_owner(id));
         self.boxed_values.retain(|id, _| marked_owner(id));
+        self.lifecycle_listeners.retain(|(owner, _, _), listeners| {
+            if !marked_owner(owner) {
+                return false;
+            }
+            listeners.retain(|value| match value {
+                JsValue::Object(id) => marked_owner(id),
+                _ => true,
+            });
+            !listeners.is_empty()
+        });
+        self.lifecycle_listener_options
+            .retain(|(owner, _, _, callback), _| marked_owner(owner) && marked_owner(callback));
+        self.lifecycle_property_registration
+            .retain(|(owner, _), _| marked_owner(owner));
         self.abort_followers.retain(|source, followers| {
             followers.retain(|follower| marked_owner(follower));
             marked_owner(source) && !followers.is_empty()
@@ -8750,6 +8773,119 @@ mod tests {
             vm.collect_garbage_with_roots(&[JsValue::Object(nested)])
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn g3_orphan_abort_target_listener_cycles_are_reclaimed() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"function abandon(){
+                var controller=new AbortController();
+                var signal=controller.signal;
+                var captured={signal:signal};
+                signal.addEventListener('abort',function(){return captured.signal.aborted;});
+                signal.onabort=function(){return captured;};
+            }
+            abandon();"#,
+        )
+        .unwrap();
+        let signal = vm.lifecycle_listeners.keys().next().unwrap().0;
+        let callback = match vm.lifecycle_listeners.values().next().unwrap()[0] {
+            JsValue::Object(id) => id,
+            _ => panic!("expected callback object"),
+        };
+        assert!(
+            vm.lifecycle_property_registration
+                .contains_key(&(signal, "onabort".into()))
+        );
+        let report = vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(report.freed_objects > 0);
+        assert!(
+            vm.object(signal).is_err(),
+            "orphan AbortSignal must be collected"
+        );
+        assert!(
+            vm.object(callback).is_err(),
+            "orphan handler must be collected"
+        );
+        assert!(vm.lifecycle_listeners.is_empty());
+        assert!(vm.lifecycle_listener_options.is_empty());
+        assert!(vm.lifecycle_property_registration.is_empty());
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_live_window_listener_option_retains_abort_signal_until_abort() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "sample".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"var delivered=0;
+               function register(){
+                   var controller=new AbortController();
+                   window.addEventListener('gc-option',function(){
+                       delivered=delivered+1;
+                   },{signal:controller.signal});
+               }
+               register();"#,
+        )
+        .unwrap();
+        let signal = vm
+            .lifecycle_listener_options
+            .values()
+            .find_map(|options| options.signal)
+            .expect("window listener must have AbortSignal option");
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(
+            vm.object(signal).is_ok(),
+            "live listener option owns signal"
+        );
+        vm.eval_script("window.dispatchEvent(new Event('gc-option'));")
+            .unwrap();
+        assert_eq!(vm.global("delivered"), Some(&JsValue::Number(1.0)));
+        vm.abort_signal(signal, JsValue::String("done".into()))
+            .unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.object(signal).is_err(), "aborted option can be freed");
+        vm.eval_script("window.dispatchEvent(new Event('gc-option'));")
+            .unwrap();
+        assert_eq!(vm.global("delivered"), Some(&JsValue::Number(1.0)));
+    }
+
+    #[test]
+    fn g3_live_abort_target_preserves_listener_closure_and_signal_options() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var controller=new AbortController();
+               var observed=0;
+               function install(){
+                   var captured={value:7};
+                   controller.signal.addEventListener('abort',function(){
+                       observed=observed+captured.value;
+                   },{once:true});
+               }
+               install();
+               var temporary={unused:true};
+               temporary=null;"#,
+        )
+        .unwrap();
+        let signal = vm.lifecycle_listeners.keys().next().unwrap().0;
+        let callback = match vm.lifecycle_listeners.values().next().unwrap()[0] {
+            JsValue::Object(id) => id,
+            _ => panic!("expected callback object"),
+        };
+        let report = vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(report.freed_objects > 0);
+        assert!(vm.object(signal).is_ok());
+        assert!(vm.object(callback).is_ok());
+        vm.eval_script("controller.abort('done');").unwrap();
+        assert_eq!(vm.global("observed"), Some(&JsValue::Number(7.0)));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.trace_heap_reachability().is_ok());
     }
 
     #[test]

@@ -646,9 +646,9 @@ op_js::allocate_environment
 op_engine::execute_retained
 ```
 
-- [`op_js::heap_usage`](../crates/op_js/src/runtime.rs#L4349)
+- [`op_js::heap_usage`](../crates/op_js/src/runtime.rs#L4372)
 - [`op_js::allocate_object_with_function`](../crates/op_js/src/runtime.rs#L906)
-- [`op_js::allocate_environment`](../crates/op_js/src/runtime.rs#L4608)
+- [`op_js::allocate_environment`](../crates/op_js/src/runtime.rs#L4631)
 - [`op_engine::execute_retained`](../crates/op_engine/src/scripts.rs#L704)
 
 Append-only arenas; diagnostic counts include unreachable slots; no collection, no long-session memory plateau.
@@ -747,7 +747,7 @@ op_paint::build_display_list
 - [`op_js::DomEventConstructor`](../crates/op_js/src/runtime.rs#L130)
 - [`op_js::dispatch_lifecycle_event`](../crates/op_js/src/runtime.rs#L2315)
 - [`op_js::dispatch_abort_signal_event`](../crates/op_js/src/runtime.rs#L2121)
-- [`op_js::set_property`](../crates/op_js/src/runtime.rs#L4454)
+- [`op_js::set_property`](../crates/op_js/src/runtime.rs#L4477)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1054,7 +1054,7 @@ op_paint::build_display_list
 - [`op_engine::instrument`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L32)
 - [`op_engine::run`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L101)
 - [`op_engine::set_html_page`](../crates/op_engine/src/lib.rs#L358)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4800)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4823)
 - [`op_js::elements_by_tag`](../crates/op_js/src/runtime.rs#L1412)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
@@ -1125,7 +1125,7 @@ op_paint::build_display_list
 
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L326)
 - [`op_js::get_property`](../crates/op_js/src/runtime.rs#L1935)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4800)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4823)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_dom::replace_child`](../crates/op_dom/src/lib.rs#L194)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L20)
@@ -1149,7 +1149,7 @@ op_paint::build_display_list
 ```
 
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L326)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4800)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4823)
 - [`op_js::take_dom_operations`](../crates/op_js/src/runtime.rs#L2721)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_dom::insert_before`](../crates/op_dom/src/lib.rs#L124)
@@ -1175,7 +1175,7 @@ op_paint::build_display_list
 ```
 
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L326)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4800)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4823)
 - [`op_js::take_dom_operations`](../crates/op_js/src/runtime.rs#L2721)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L219)
 - [`op_dom::append_child`](../crates/op_dom/src/lib.rs#L123)
@@ -1200,7 +1200,7 @@ op_paint::build_display_list
 
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L326)
 - [`op_js::install_standard_primitives`](../crates/op_js/src/runtime.rs#L814)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4800)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4823)
 - [`op_js::get_property`](../crates/op_js/src/runtime.rs#L1935)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L267)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
@@ -1227,7 +1227,7 @@ op_paint::build_display_list
 - [`op_js::compile_program`](../crates/op_js/src/bytecode.rs#L85)
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L326)
 - [`op_js::typeof_value`](../crates/op_js/src/runtime.rs#L1296)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4800)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L4823)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L267)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1252,7 +1252,7 @@ op_js::evaluate
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L326)
 - [`op_js::install_standard_primitives`](../crates/op_js/src/runtime.rs#L814)
 - [`op_js::box_primitive`](../crates/op_js/src/runtime.rs#L1244)
-- [`op_js::construct_value`](../crates/op_js/src/runtime.rs#L4575)
+- [`op_js::construct_value`](../crates/op_js/src/runtime.rs#L4598)
 - [`op_js::coerce_to_primitive`](../crates/op_js/src/runtime.rs#L1263)
 - [`op_js::binary_with_coercion`](../crates/op_js/src/runtime.rs#L1431)
 - [`op_js::apply_binary`](../crates/op_js/src/runtime.rs#L1507)

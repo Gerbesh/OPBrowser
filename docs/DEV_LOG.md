@@ -3487,6 +3487,12 @@ This file is append-only project history.
 - Initial Windows debug 12-second probe: 7,288 worker ticks, 817 collections, 0 failed, reserved 414 objects / 247 environments, worst pause 1,164 microseconds and ~10.6–10.9 MB working set. See docs/GC_STRESS_RESULTS.md; insufficient evidence for 30-minute plateau or real-site workloads.
 - Still P0 GC exclusively; next: complete host ownership audit and 30-minute resource/pause distribution measurements, including DOM and fetch/AbortSignal races.
 
+## 2026-10-13 - G3 partial: EventTarget-owned listener reachability
+
+- Reworked lifecycle listener/options marking: reachable EventTarget receiver -> callbacks, captured environments and options signals, rather than unconditional host listener-map roots. Global window/document retain handlers normally.
+- Validated sweep now prunes dead receiver listener arrays, callback options and onabort property registration metadata before generation-safe slot reuse. Orphan AbortSignal -> callback -> captured signal cycles are collectible.
+- Three VM regressions demonstrate orphan signal/callback reclamation, surviving live once-handler execution after a sweep, and window option-signal retention until abort. Other DOM/fetch root audits and 30-minute working-set proof remain open.
+
 
 
 
