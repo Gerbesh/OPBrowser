@@ -3472,6 +3472,14 @@ This file is append-only project history.
 - Four new JS runtime regressions prove orphan side-map reclamation, boxed child retention, idle pressure GC, no in-flight sweep, and preserved timer/event listener closure captures. A real engine parser regression checks two sequential scripts automatically recycle slots while retaining global state.
 - LIMITS: opaque host/AbortSignal/fetch root lifetime audits and failed-collection diagnostics remain; heap arena plateau in short tests does not prove 30-minute process RSS plateau or bounded pauses. Renderer work stays on hold.
 
+## 2026-10-13 - G2c partial: GC pause/failure telemetry and pending fetch roots
+
+- JsRuntime now exposes automatic_gc_failures and last_automatic_gc_report; failed checkpoint traces count errors without overwriting the last successful report or sweeping live objects.
+- Automatic checkpoint sweeps now time stop-the-world collection with Instant and expose last_automatic_gc_pause / max_automatic_gc_pause.
+- VM regressions verify successful collection metrics, blocked in-flight collection failure accounting, and pending network callbacks retaining captured environments until cancellation/removal.
+- LIMITS: this is per-VM instrumentation; no 30-minute browser process memory plateau, GC pause distribution or exhaustive asynchronous host-root audit has yet been completed.
+
+
 
 
 

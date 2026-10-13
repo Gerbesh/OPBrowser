@@ -87,6 +87,13 @@ track and diagnose failed automatic passes, add allocation-pressure recovery
 without collecting inside the interpreter, and measure sustained process
 working-set plateau and GC pauses. These are not claimed by the above tests.
 
+## G2c partial: automatic GC diagnostics and pending network callback ownership
+
+JsRuntime now exposes the number of failed automatic idle sweeps, the last successful JsGcReport, and last/maximum successful stop-the-world pause durations. Failed sweeps preserve the previous success report while incrementing the error count.
+A new isolated network callback regression shows that a pending host callback and captured environment survive mark/sweep until that callback is removed, after which the closure can be reclaimed.
+These measurements are per-VM instrumentation, not a complete fetch/AbortSignal audit or a 30-minute process working-set plateau.
+
+
 ## GC phase G1: safe non-destructive root tracing
 
 Implement an ownership-aware scanner that marks `ObjectId` and `EnvironmentId` reachable from the following roots:

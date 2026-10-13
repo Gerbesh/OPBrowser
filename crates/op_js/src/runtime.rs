@@ -411,6 +411,10 @@ pub struct JsRuntime {
     free_environments: Vec<usize>,
     next_gc_live_trigger: usize,
     automatic_gc_runs: usize,
+    automatic_gc_failures: usize,
+    last_gc_report: Option<JsGcReport>,
+    last_gc_pause: Option<Duration>,
+    max_gc_pause: Duration,
     global_env: EnvironmentId,
     object_prototype: ObjectId,
     function_prototype: ObjectId,
@@ -547,6 +551,10 @@ impl Default for JsRuntime {
             free_environments: Vec::new(),
             next_gc_live_trigger: 512,
             automatic_gc_runs: 0,
+            automatic_gc_failures: 0,
+            last_gc_report: None,
+            last_gc_pause: None,
+            max_gc_pause: Duration::ZERO,
             global_env,
             object_prototype,
             function_prototype,
@@ -4257,8 +4265,19 @@ impl JsRuntime {
         if live < self.next_gc_live_trigger {
             return Ok(None);
         }
-        let report = self.collect_garbage_with_roots(&[])?;
+        let started = Instant::now();
+        let report = match self.collect_garbage_with_roots(&[]) {
+            Ok(report) => report,
+            Err(error) => {
+                self.automatic_gc_failures = self.automatic_gc_failures.saturating_add(1);
+                return Err(error);
+            }
+        };
+        let pause = started.elapsed();
+        self.last_gc_pause = Some(pause);
+        self.max_gc_pause = self.max_gc_pause.max(pause);
         self.automatic_gc_runs = self.automatic_gc_runs.saturating_add(1);
+        self.last_gc_report = Some(report);
         let retained = report.live_objects.saturating_add(report.live_environments);
         self.next_gc_live_trigger = retained.saturating_mul(2).max(512);
         Ok(Some(report))
@@ -4266,6 +4285,23 @@ impl JsRuntime {
 
     pub fn automatic_gc_runs(&self) -> usize {
         self.automatic_gc_runs
+    }
+
+    /// Number of failed automatic idle collection attempts.
+    pub fn automatic_gc_failures(&self) -> usize {
+        self.automatic_gc_failures
+    }
+
+    pub fn last_automatic_gc_report(&self) -> Option<JsGcReport> {
+        self.last_gc_report
+    }
+
+    pub fn last_automatic_gc_pause(&self) -> Option<Duration> {
+        self.last_gc_pause
+    }
+
+    pub fn max_automatic_gc_pause(&self) -> Duration {
+        self.max_gc_pause
     }
 
     pub fn heap_usage(&self) -> JsHeapUsage {
@@ -8716,6 +8752,10 @@ mod tests {
             .expect("pressure must trigger automatic sweep");
         assert!(report.freed_objects > 100);
         assert_eq!(vm.automatic_gc_runs(), 1);
+        assert_eq!(vm.automatic_gc_failures(), 0);
+        assert_eq!(vm.last_automatic_gc_report(), Some(report));
+        let elapsed = vm.last_automatic_gc_pause().expect("GC pause recorded");
+        assert_eq!(vm.max_automatic_gc_pause(), elapsed);
         assert!(vm.collect_if_needed_at_idle().unwrap().is_none());
         assert_eq!(
             vm.get_property(&vm.global("keep").unwrap().clone(), "answer")
@@ -8744,7 +8784,11 @@ mod tests {
         }
         assert_eq!(vm.heap_usage(), before);
         assert_eq!(vm.automatic_gc_runs(), 0);
+        assert_eq!(vm.automatic_gc_failures(), 1);
+        assert_eq!(vm.last_automatic_gc_report(), None);
+        assert_eq!(vm.last_automatic_gc_pause(), None);
         assert!(vm.collect_if_needed_at_idle().unwrap().is_some());
+        assert_eq!(vm.automatic_gc_failures(), 1);
     }
 
     #[test]
@@ -8928,6 +8972,31 @@ mod tests {
         assert!(vm.trace_heap_reachability().is_err());
         vm.dom_programmatic_click_depth = 0;
         assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g2c_pending_network_callback_is_rooted_until_completion() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var result=0;function make(){var saved={answer:42};return function(){result=saved.answer;};}var task=make();",
+        ).unwrap();
+        let task = vm.global("task").cloned().unwrap();
+        vm.text_callbacks.insert(77, task.clone());
+        vm.eval_script("task=null;").unwrap();
+        let before = vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(before.live_objects > 0);
+        let JsValue::Object(id) = task else {
+            panic!("expected callable handle");
+        };
+        assert!(
+            vm.object(id).is_ok(),
+            "pending fetch callback must remain reachable"
+        );
+        // Removing the pending host callback makes its captured graph reclaimable.
+        vm.text_callbacks.remove(&77);
+        let after = vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(after.freed_environments > 0);
+        assert!(vm.object(id).is_err());
     }
 
     #[test]

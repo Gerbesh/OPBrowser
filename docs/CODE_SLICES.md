@@ -16,6 +16,11 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S61 - Automatic GC failure/pause telemetry and pending fetch-root regression (G2c partial)
+
+A browser-owned idle checkpoint measures each successful mark/sweep pause, retains its JsGcReport, and increments an error counter when tracing is rejected. A pending network callback keeps its captured JavaScript closure/environment graph alive, and releasing the pending host callback permits reclaiming it. Regression tests cover failure accounting and callback lifecycle without pretending to establish a long-session process working-set plateau.
+
+
 ## S60 - Browser-owned automatic idle JS GC and weak host metadata (G2b partial)
 
 After original JS VM script and DOM operations, op_engine::scripts requests

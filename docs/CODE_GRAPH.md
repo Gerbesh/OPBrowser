@@ -16,6 +16,11 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G2c partial: observable VM garbage collection
+
+Original JsRuntime now retains failure count, last successful sweep report, and last/maximum pause Duration for browser-owned automatic checkpoints. The report is preserved on rejected traces; a pending host-owned network callback is a strong root until removed. No new crate dependencies or automatic in-flight collection were introduced.
+
+
 ## G2b partial: automatic browser-owned idle GC
 
 op_js::JsRuntime::collect_if_needed_at_idle monitors live heap and lexical
