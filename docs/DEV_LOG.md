@@ -3456,6 +3456,15 @@ This file is append-only project history.
 - Three G1.1 tests cover nested/failed execution unwinding, escaped closure roots, dangling handles and programmatic-click refusal.
 - LIMITATIONS: current mark-only pass frees no objects or environments. G2 requires generation-safe recycling, side-map/root audit and real host root ownership; G3 must prove bounded memory plateau.
 
+## 2026-10-13 - G2a partial: explicit generational mark/sweep with arena recycling
+
+- Introduced generation-checked ObjectId and EnvironmentId, live/dead slot state and object/environment free lists in the original JS VM. Reuse increments generations and validates stale handles before property or lexical access.
+- Added idle-only collect_garbage_with_roots: validate VM and caller-provided roots, mark object/property/prototype/closure and environment graphs, then release unreachable maps/closure captures and lexical bindings including isolated cycles. Invalid roots or active execution abort before any sweep.
+- Added JsGcReport with reclaimed/live/reserved counts. Existing heap_usage remains a reserved-slot high-water counter; no automatic pressure collection or scheduling is enabled.
+- Five new G2a tests pass: orphan cycle collection, recycled object identity, recycled environment identity, external closure/lexical root retention, failed-trace atomicity, and 80 repeated manual GC cycles with bounded reserved arena sizes.
+- LIMITATIONS: caller must supply externally retained JS handles; conservative DOM/host side maps still pin their keys, async/abort/fetch/DOM lifetime audit incomplete. G3 requires automatic safe collection, 30-minute process working-set plateau and pause statistics. All other feature work remains deferred.
+
+
 
 
 

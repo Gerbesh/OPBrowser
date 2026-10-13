@@ -1,13 +1,13 @@
 # Original JS VM garbage collector: implementation plan
 
-Status: **G1.0 MARK-ONLY + G1.1 EXECUTION BARRIERS AND EXTERNAL TRACE ROOT INPUT IMPLEMENTED; RECLAMATION / GC NOT IMPLEMENTED** (2026-10-13). Both object and captured-environment arenas remain append-only. No memory is freed.
+Status: **G2a PARTIAL: EXPLICIT IDLE MARK-AND-SWEEP WITH GENERATION-VALIDATED SLOT REUSE IMPLEMENTED** (2026-10-13). Explicit invocation can reclaim unreachable objects and environments. Automatic GC and full host-root audit are still incomplete.
 
 ## Observed implementation
 
-- `JsRuntime.heap: Vec<JsObject>`; `ObjectId(usize)` directly indexes an object. `JsObject` owns dynamic `properties: HashMap<String, JsValue>`, `prototype: Option<ObjectId>`, and optional `FunctionObject` holding an `EnvironmentId` closure.
-- `JsRuntime.environments: Vec<Environment>`; each has a parent and variable bindings, including JS object references. Both vectors append until the page VM is discarded.
-- Default budgets are 100,000 objects and 100,000 environments, separately. Exhausting either returns a JS execution-limit error. These are resource caps, not collection.
-- `JsRuntime::heap_usage()` from M4.35 exposes allocated slot counts and budgets. Counters include unreachable allocations and are **not** live-memory measurements.
+- `JsRuntime.heap: Vec<JsObject>` stores reserved slots; `ObjectId(usize)` encodes an index plus generation. Recycled slots never validate an older handle.
+- `JsRuntime.environments: Vec<Environment>` uses the same generation and free-list protocol for captured lexical bindings and parent references. Explicit sweep releases owned maps, cycles and function captures.
+- Budgets remain 100,000 reserved object and environment slots each. Allocation reuses freed slots, but does NOT automatically trigger a collection at the limit.
+- `JsRuntime::heap_usage()` is the reserved high-water count, not the live heap size. Explicit `JsGcReport` returns freed/live and reserved counts; process memory and pauses have not been measured.
 - DOM event listeners, `onclick`, global/document listeners, AbortSignal follower graph, timers, microtasks, pending fetch callbacks, active composedPath, DOM node/object caches, Headers and boxed primitive side maps all hold handles which the collector must account for.
 - The stack/activation frames are currently recursive native interpreter calls with `EnvironmentId`, `JsValue` temporaries and synchronous nested event dispatch. Collecting in the middle of such a call before roots are explicit risks a use-after-free or wrong-object alias.
 
@@ -42,10 +42,24 @@ handles to trace_heap_reachability_with_roots(&[JsValue]) for one snapshot.
 Three regressions test nested/error barriers, host closure and environment
 reachability, and programmatic DOM dispatch.
 
-Remaining G1 audit: all native callback entry paths, persistent escaping host
-handles and root ownership beyond single diagnostic snapshots. G2 needs
-generation-safe recyclable slots before any memory can be reclaimed.
-No slot reuse, sweeping, GC pauses or memory plateau have been implemented.
+## G2a partial: explicit generation-safe mark-and-sweep
+
+The nonmoving arenas now encode slot index and generation in ObjectId and
+EnvironmentId. Both types track alive/generation per slot; validation rejects
+stale recycled handles. The idle-only collect_garbage_with_roots API traces
+all conservative VM/DOM/task roots plus caller-supplied host handles. If root
+validation fails, no sweep occurs. Otherwise it releases unreachable object
+properties, function captures and environment bindings, breaks cycles, and
+increments generations before placing slots on free lists. Allocation reuses
+these slots without growing the reserved arena high-water size; exhausted
+generation counters permanently retire their slot to avoid ABA aliasing.
+Five tests check cycles, stale identities, preserved closure environments,
+failed-pass atomicity, and 80 manual collection cycles with bounded slots.
+
+Remaining: audit EVERY opaque host root/side map and async callback; prove
+DOM/timer/AbortSignal/Promise/fetch identity across sweeps; schedule GC at
+safe task checkpoints and on allocation pressure. No automatic collection,
+real process working-set plateau or GC pause distribution is yet measured.
 
 ## GC phase G1: safe non-destructive root tracing
 
@@ -76,4 +90,4 @@ Mark-only telemetry must report retained vs unreachable slots and avoid modifyin
 
 ## Current measurable baseline / next action
 
-M4.35 demonstrates transient allocation growth. G1.0 detects unreachable allocations, and G1.1 partial now fences native recursive calls and accepts explicit ephemeral host roots for idle trace. Both are **diagnostic only**, not a memory fix. Finish permanent escaped-host-root ownership and all callback audits; then implement generation-safe G2 mark/sweep with slot reuse and follow with G3 long-session plateau verification. All renderer and unrelated work is deferred until GC is safe and effective.
+G1 mark-only diagnostics and G2a explicit generation-safe reclamation now coexist. Five targeted G2a tests pass, including 80 manual sweep/reuse cycles with stable reserved slots, but this is NOT an automatic browser GC or a measured 30-minute working-set plateau. Next GC-only work: complete host/async root audit, add persistent host ownership and task-safe triggering, then verify real memory growth, pauses, and pinned compat suites before returning to UI work.

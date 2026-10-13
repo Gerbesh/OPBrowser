@@ -16,6 +16,20 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S59 - Explicit original VM mark/sweep with safe identities (G2a partial)
+
+At an idle Rust host checkpoint, collect_garbage_with_roots validates every
+VM/DOM/async and caller-supplied JS root and walks object properties,
+prototypes, closures, parent environments and bindings. If validation fails
+it leaves the two arenas unchanged. Otherwise unreachable cycles are
+released; object and environment free lists recycle indexed slots with
+generation-checked identities. The caller gets a JsGcReport with live/freed
+counts. Five VM regressions cover stale-ID rejection, preserved captured
+closure roots, environment reuse, failed-pass atomicity and 80 manual
+collection cycles with bounded reserved slots.
+Not yet automatic; opaque host roots, task checkpoint scheduling and
+real process-memory plateau still require G2b/G3 work.
+
 ## S58 - GC safe-checkpoint barrier and external root diagnostic (G1.1 partial)
 
 JsRuntime::run_code and call_value acquire RAII native execution barriers

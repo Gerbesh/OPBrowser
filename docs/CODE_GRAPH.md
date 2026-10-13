@@ -16,6 +16,21 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G2a partial: generation-safe heap and lexical environment recycling
+
+op_js::value::ObjectId encodes slot index plus generation in its usize handle.
+op_js::runtime::EnvironmentId uses the same scheme. The original JsRuntime
+retains Vec<JsObject>/Vec<Environment> but adds alive/generation metadata
+and free lists. Recycled slots bump generation; stale object() / object_mut()
+and environment lookups fail closed. Existing host-held map keys keep their
+generations, preserving identity across safe sweeps.
+JsRuntime::trace_heap_marks returns validated object+environment bitsets to
+both the existing mark-only diagnostic and the explicit idle
+collect_garbage_with_roots API. A validated pass frees owned property
+maps, function closures and lexical bindings before returning slots to
+the allocator. JsGcReport exposes freed/live/reserved slot counts.
+No automatic GC or host-wide root lifetime registration exists yet.
+
 ## G1.1 partial: native JS execution barrier and host roots
 
 op_js::JsRuntime now owns active_execution_depth: Arc<AtomicUsize> and

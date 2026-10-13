@@ -31,6 +31,24 @@ const MAX_HTTP_HEADER_BYTES: usize = 8192;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct EnvironmentId(usize);
 
+impl EnvironmentId {
+    const INDEX_BITS: u32 = usize::BITS / 2;
+    const INDEX_MASK: usize = (1usize << Self::INDEX_BITS) - 1;
+
+    fn new(slot: usize, generation: usize) -> Self {
+        assert!(slot <= Self::INDEX_MASK && generation <= Self::INDEX_MASK);
+        Self((generation << Self::INDEX_BITS) | slot)
+    }
+
+    fn slot(self) -> usize {
+        self.0 & Self::INDEX_MASK
+    }
+
+    fn generation(self) -> usize {
+        self.0 >> Self::INDEX_BITS
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EnvironmentKind {
     Global,
@@ -50,6 +68,8 @@ struct Environment {
     parent: Option<EnvironmentId>,
     kind: EnvironmentKind,
     bindings: HashMap<String, Binding>,
+    alive: bool,
+    generation: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,6 +207,8 @@ struct JsObject {
     prototype: Option<ObjectId>,
     kind: ObjectKind,
     function: Option<FunctionObject>,
+    alive: bool,
+    generation: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -339,6 +361,18 @@ pub struct JsHeapReachability {
     pub unreachable_environments: usize,
 }
 
+/// Results of an explicit idle mark-and-sweep pass. Reserved arena slots are
+/// the high-water mark, not the count of live JS allocations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsGcReport {
+    pub freed_objects: usize,
+    pub freed_environments: usize,
+    pub live_objects: usize,
+    pub live_environments: usize,
+    pub reserved_object_slots: usize,
+    pub reserved_environment_slots: usize,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum TraceWork {
     Object(ObjectId),
@@ -373,6 +407,8 @@ impl Drop for ActiveExecutionGuard {
 pub struct JsRuntime {
     heap: Vec<JsObject>,
     environments: Vec<Environment>,
+    free_objects: Vec<usize>,
+    free_environments: Vec<usize>,
     global_env: EnvironmentId,
     object_prototype: ObjectId,
     function_prototype: ObjectId,
@@ -459,6 +495,8 @@ impl Default for JsRuntime {
             prototype,
             kind: ObjectKind::Ordinary,
             function: None,
+            alive: true,
+            generation: 0,
         };
 
         let mut error_properties = HashMap::new();
@@ -496,11 +534,15 @@ impl Default for JsRuntime {
             parent: None,
             kind: EnvironmentKind::Global,
             bindings: HashMap::new(),
+            alive: true,
+            generation: 0,
         }];
 
         let mut runtime = Self {
             heap,
             environments,
+            free_objects: Vec::new(),
+            free_environments: Vec::new(),
             global_env,
             object_prototype,
             function_prototype,
@@ -2517,7 +2559,7 @@ impl JsRuntime {
         }
         if let Some(&object) = self.dom_node_objects.get(&virtual_node) {
             self.dom_node_objects.insert(physical_node, object);
-            self.heap[object.0].kind = match self.heap[object.0].kind {
+            self.heap[object.slot()].kind = match self.heap[object.slot()].kind {
                 ObjectKind::DomElement(_) => ObjectKind::DomElement(physical_node),
                 ObjectKind::DomText(_) => ObjectKind::DomText(physical_node),
                 kind => kind,
@@ -2525,7 +2567,7 @@ impl JsRuntime {
         }
         if let Some(list) = self.dom_node_lists.remove(&virtual_node) {
             self.dom_node_lists.insert(physical_node, list);
-            self.heap[list.0].kind = ObjectKind::DomNodeList(physical_node);
+            self.heap[list.slot()].kind = ObjectKind::DomNodeList(physical_node);
         }
         for nodes in self.dom_query_lists.values_mut() {
             for node in nodes {
@@ -2536,15 +2578,15 @@ impl JsRuntime {
         }
         if let Some(collection) = self.dom_html_collections.remove(&virtual_node) {
             self.dom_html_collections.insert(physical_node, collection);
-            self.heap[collection.0].kind = ObjectKind::DomHtmlCollection(physical_node);
+            self.heap[collection.slot()].kind = ObjectKind::DomHtmlCollection(physical_node);
         }
         if let Some(list) = self.dom_class_lists.remove(&virtual_node) {
             self.dom_class_lists.insert(physical_node, list);
-            self.heap[list.0].kind = ObjectKind::DomClassList(physical_node);
+            self.heap[list.slot()].kind = ObjectKind::DomClassList(physical_node);
         }
         if let Some(style) = self.dom_styles.remove(&virtual_node) {
             self.dom_styles.insert(physical_node, style);
-            self.heap[style.0].kind = ObjectKind::DomStyle(physical_node);
+            self.heap[style.slot()].kind = ObjectKind::DomStyle(physical_node);
         }
         if let Some(children) = self.dom_children.remove(&virtual_node) {
             self.dom_children.insert(physical_node, children);
@@ -3965,6 +4007,22 @@ impl JsRuntime {
         &self,
         host_roots: &[JsValue],
     ) -> Result<JsHeapReachability, JsError> {
+        let (object_marks, environment_marks) = self.trace_heap_marks(host_roots)?;
+        let reachable_objects = object_marks.iter().filter(|&&marked| marked).count();
+        let reachable_environments = environment_marks.iter().filter(|&&marked| marked).count();
+        Ok(JsHeapReachability {
+            object_slots: self.heap.len(),
+            reachable_objects,
+            unreachable_objects: self.heap.iter().filter(|o| o.alive).count() - reachable_objects,
+            environment_slots: self.environments.len(),
+            reachable_environments,
+            unreachable_environments: self.environments.iter().filter(|e| e.alive).count()
+                - reachable_environments,
+        })
+    }
+
+    /// Validates every retained reference before permitting a sweep.
+    fn trace_heap_marks(&self, host_roots: &[JsValue]) -> Result<(Vec<bool>, Vec<bool>), JsError> {
         if self.dom_dispatch_depth != 0
             || self.dom_programmatic_click_depth != 0
             || self.active_execution_depth.load(Ordering::Relaxed) != 0
@@ -4084,13 +4142,18 @@ impl JsRuntime {
         while let Some(work) = pending.pop() {
             match work {
                 TraceWork::Object(id) => {
-                    let object = self.heap.get(id.0).ok_or_else(|| {
+                    let object = self.heap.get(id.slot()).ok_or_else(|| {
                         JsError::type_error("heap trace detected a dangling object handle")
                     })?;
-                    if object_marks[id.0] {
+                    if !object.alive || object.generation != id.generation() {
+                        return Err(JsError::type_error(
+                            "heap trace detected a stale object handle",
+                        ));
+                    }
+                    if object_marks[id.slot()] {
                         continue;
                     }
-                    object_marks[id.0] = true;
+                    object_marks[id.slot()] = true;
                     if let Some(parent) = object.prototype {
                         pending.push(TraceWork::Object(parent));
                     }
@@ -4105,13 +4168,18 @@ impl JsRuntime {
                     }
                 }
                 TraceWork::Environment(id) => {
-                    let environment = self.environments.get(id.0).ok_or_else(|| {
+                    let environment = self.environments.get(id.slot()).ok_or_else(|| {
                         JsError::type_error("heap trace detected a dangling environment handle")
                     })?;
-                    if environment_marks[id.0] {
+                    if !environment.alive || environment.generation != id.generation() {
+                        return Err(JsError::type_error(
+                            "heap trace detected a stale environment",
+                        ));
+                    }
+                    if environment_marks[id.slot()] {
                         continue;
                     }
-                    environment_marks[id.0] = true;
+                    environment_marks[id.slot()] = true;
                     if let Some(parent) = environment.parent {
                         pending.push(TraceWork::Environment(parent));
                     }
@@ -4121,15 +4189,55 @@ impl JsRuntime {
                 }
             }
         }
-        let reachable_objects = object_marks.iter().filter(|&&marked| marked).count();
-        let reachable_environments = environment_marks.iter().filter(|&&marked| marked).count();
-        Ok(JsHeapReachability {
-            object_slots: self.heap.len(),
-            reachable_objects,
-            unreachable_objects: self.heap.len() - reachable_objects,
-            environment_slots: self.environments.len(),
-            reachable_environments,
-            unreachable_environments: self.environments.len() - reachable_environments,
+        Ok((object_marks, environment_marks))
+    }
+
+    /// Explicit stop-the-world GC at an idle host checkpoint. The host MUST
+    /// supply every externally held JS object/function value in `host_roots`.
+    /// No automatic collection occurs until host lifetime ownership is audited.
+    /// A failed trace does not modify either arena.
+    pub fn collect_garbage_with_roots(
+        &mut self,
+        host_roots: &[JsValue],
+    ) -> Result<JsGcReport, JsError> {
+        let (object_marks, environment_marks) = self.trace_heap_marks(host_roots)?;
+        let mut freed_objects = 0;
+        let mut freed_environments = 0;
+        for (index, object) in self.heap.iter_mut().enumerate() {
+            if !object.alive || object_marks[index] {
+                continue;
+            }
+            // Replace, rather than clear, to actually release hashmap buckets.
+            object.properties = HashMap::new();
+            object.prototype = None;
+            object.function = None;
+            object.alive = false;
+            freed_objects += 1;
+            if object.generation < ObjectId::INDEX_MASK {
+                object.generation += 1;
+                self.free_objects.push(index);
+            }
+        }
+        for (index, environment) in self.environments.iter_mut().enumerate() {
+            if !environment.alive || environment_marks[index] {
+                continue;
+            }
+            environment.bindings = HashMap::new();
+            environment.parent = None;
+            environment.alive = false;
+            freed_environments += 1;
+            if environment.generation < EnvironmentId::INDEX_MASK {
+                environment.generation += 1;
+                self.free_environments.push(index);
+            }
+        }
+        Ok(JsGcReport {
+            freed_objects,
+            freed_environments,
+            live_objects: self.heap.iter().filter(|o| o.alive).count(),
+            live_environments: self.environments.iter().filter(|e| e.alive).count(),
+            reserved_object_slots: self.heap.len(),
+            reserved_environment_slots: self.environments.len(),
         })
     }
 
@@ -4493,7 +4601,7 @@ impl JsRuntime {
         {
             let catch_env = self.allocate_environment(Some(env), EnvironmentKind::Block)?;
             if let Some(param) = &template.catch_param {
-                self.environments[catch_env.0].bindings.insert(
+                self.environments[catch_env.slot()].bindings.insert(
                     param.clone(),
                     Binding {
                         value,
@@ -4599,7 +4707,7 @@ impl JsRuntime {
     ) -> Result<CallOutcome, JsError> {
         let function_env = self.allocate_environment(Some(closure), EnvironmentKind::Function)?;
 
-        self.environments[function_env.0].bindings.insert(
+        self.environments[function_env.slot()].bindings.insert(
             "this".into(),
             Binding {
                 value: this_value,
@@ -4609,7 +4717,7 @@ impl JsRuntime {
         );
 
         let arguments_object = self.allocate_arguments_object(&arguments)?;
-        self.environments[function_env.0].bindings.insert(
+        self.environments[function_env.slot()].bindings.insert(
             "arguments".into(),
             Binding {
                 value: JsValue::Object(arguments_object),
@@ -4619,7 +4727,7 @@ impl JsRuntime {
         );
 
         if let Some(name) = &template.name {
-            self.environments[function_env.0].bindings.insert(
+            self.environments[function_env.slot()].bindings.insert(
                 name.clone(),
                 Binding {
                     value: JsValue::Object(function_id),
@@ -4631,7 +4739,7 @@ impl JsRuntime {
 
         for (index, parameter) in template.params.iter().enumerate() {
             let value = arguments.get(index).cloned().unwrap_or(JsValue::Undefined);
-            self.environments[function_env.0].bindings.insert(
+            self.environments[function_env.slot()].bindings.insert(
                 parameter.clone(),
                 Binding {
                     value,
@@ -6748,7 +6856,7 @@ impl JsRuntime {
 
     pub fn global(&self, name: &str) -> Option<&JsValue> {
         Some(
-            &self.environments[self.global_env.0]
+            &self.environments[self.global_env.slot()]
                 .bindings
                 .get(name)?
                 .value,
@@ -6759,7 +6867,7 @@ impl JsRuntime {
         let environment = self
             .find_binding_environment(start, name)
             .ok_or_else(|| JsError::reference(format!("{name} is not defined")))?;
-        Ok(&self.environments[environment.0].bindings[name].value)
+        Ok(&self.environments[environment.slot()].bindings[name].value)
     }
 
     fn assign_binding(
@@ -6777,7 +6885,7 @@ impl JsRuntime {
             self.install_global_binding(name, value, true, VariableKind::Var);
             return Ok(());
         };
-        let binding = self.environments[environment.0]
+        let binding = self.environments[environment.slot()]
             .bindings
             .get_mut(name)
             .expect("resolved environment must contain binding");
@@ -6804,7 +6912,7 @@ impl JsRuntime {
             current
         };
 
-        if let Some(existing) = self.environments[target.0].bindings.get_mut(name) {
+        if let Some(existing) = self.environments[target.slot()].bindings.get_mut(name) {
             if kind == VariableKind::Var && existing.declaration_kind == VariableKind::Var {
                 if has_initializer {
                     existing.value = value;
@@ -6817,7 +6925,7 @@ impl JsRuntime {
             ));
         }
 
-        self.environments[target.0].bindings.insert(
+        self.environments[target.slot()].bindings.insert(
             name.to_owned(),
             Binding {
                 value,
@@ -6836,7 +6944,10 @@ impl JsRuntime {
                 return None;
             }
             remaining -= 1;
-            let environment = self.environments.get(id.0)?;
+            let environment = self
+                .environments
+                .get(id.slot())
+                .filter(|env| env.alive && env.generation == id.generation())?;
             if environment.bindings.contains_key(name) {
                 return Some(id);
             }
@@ -6855,7 +6966,8 @@ impl JsRuntime {
             remaining -= 1;
             let environment = self
                 .environments
-                .get(id.0)
+                .get(id.slot())
+                .filter(|env| env.alive && env.generation == id.generation())
                 .ok_or_else(|| JsError::type_error("invalid lexical environment"))?;
             if matches!(
                 environment.kind,
@@ -6873,29 +6985,50 @@ impl JsRuntime {
         parent: Option<EnvironmentId>,
         kind: EnvironmentKind,
     ) -> Result<EnvironmentId, JsError> {
-        if self.environments.len() >= self.environment_budget {
+        if self.environments.len() >= self.environment_budget && self.free_environments.is_empty() {
             return Err(JsError::execution_limit(format!(
                 "runtime exceeded lexical environment budget of {}",
                 self.environment_budget
             )));
         }
         if let Some(parent) = parent
-            && self.environments.get(parent.0).is_none()
+            && !self.environment_is_live(parent)
         {
             return Err(JsError::type_error("invalid parent lexical environment"));
         }
-        let id = EnvironmentId(self.environments.len());
-        self.environments.push(Environment {
-            parent,
-            kind,
-            bindings: HashMap::new(),
-        });
-        Ok(id)
+        if let Some(slot) = self.free_environments.pop() {
+            let generation = self.environments[slot].generation;
+            self.environments[slot] = Environment {
+                parent,
+                kind,
+                bindings: HashMap::new(),
+                alive: true,
+                generation,
+            };
+            Ok(EnvironmentId::new(slot, generation))
+        } else {
+            let slot = self.environments.len();
+            self.environments.push(Environment {
+                parent,
+                kind,
+                bindings: HashMap::new(),
+                alive: true,
+                generation: 0,
+            });
+            Ok(EnvironmentId::new(slot, 0))
+        }
+    }
+
+    fn environment_is_live(&self, id: EnvironmentId) -> bool {
+        self.environments
+            .get(id.slot())
+            .is_some_and(|env| env.alive && env.generation == id.generation())
     }
 
     fn parent_environment(&self, id: EnvironmentId) -> Result<EnvironmentId, JsError> {
         self.environments
-            .get(id.0)
+            .get(id.slot())
+            .filter(|env| env.alive && env.generation == id.generation())
             .and_then(|environment| environment.parent)
             .ok_or_else(|| JsError::type_error("cannot exit root lexical environment"))
     }
@@ -7595,7 +7728,7 @@ impl JsRuntime {
         template: Arc<FunctionTemplate>,
         closure: EnvironmentId,
     ) -> Result<ObjectId, JsError> {
-        if self.environments.get(closure.0).is_none() {
+        if self.environments.get(closure.slot()).is_none() {
             return Err(JsError::type_error("invalid function closure environment"));
         }
         let mut properties = HashMap::new();
@@ -7649,7 +7782,7 @@ impl JsRuntime {
         mutable: bool,
         declaration_kind: VariableKind,
     ) {
-        self.environments[self.global_env.0].bindings.insert(
+        self.environments[self.global_env.slot()].bindings.insert(
             name.to_owned(),
             Binding {
                 value: value.clone(),
@@ -7657,7 +7790,7 @@ impl JsRuntime {
                 declaration_kind,
             },
         );
-        self.heap[self.global_object.0]
+        self.heap[self.global_object.slot()]
             .properties
             .insert(name.to_owned(), value);
     }
@@ -7754,7 +7887,7 @@ impl JsRuntime {
         properties: HashMap<String, JsValue>,
         function: Option<FunctionObject>,
     ) -> Result<ObjectId, JsError> {
-        if self.heap.len() >= self.object_budget {
+        if self.heap.len() >= self.object_budget && self.free_objects.is_empty() {
             return Err(JsError::execution_limit(format!(
                 "runtime exceeded object budget of {}",
                 self.object_budget
@@ -7763,29 +7896,41 @@ impl JsRuntime {
         if let Some(prototype) = prototype {
             self.object(prototype)?;
         }
-        let id = ObjectId(self.heap.len());
-        self.heap.push(JsObject {
+        let prototype = if kind == ObjectKind::Function {
+            Some(self.function_prototype)
+        } else {
+            prototype
+        };
+        let new_object = |generation| JsObject {
             properties,
-            prototype: if kind == ObjectKind::Function {
-                Some(self.function_prototype)
-            } else {
-                prototype
-            },
+            prototype,
             kind,
             function,
-        });
-        Ok(id)
+            alive: true,
+            generation,
+        };
+        if let Some(slot) = self.free_objects.pop() {
+            let generation = self.heap[slot].generation;
+            self.heap[slot] = new_object(generation);
+            Ok(ObjectId::new(slot, generation))
+        } else {
+            let slot = self.heap.len();
+            self.heap.push(new_object(0));
+            Ok(ObjectId::new(slot, 0))
+        }
     }
 
     fn object(&self, id: ObjectId) -> Result<&JsObject, JsError> {
         self.heap
-            .get(id.0)
+            .get(id.slot())
+            .filter(|obj| obj.alive && obj.generation == id.generation())
             .ok_or_else(|| JsError::type_error("invalid object reference"))
     }
 
     fn object_mut(&mut self, id: ObjectId) -> Result<&mut JsObject, JsError> {
         self.heap
-            .get_mut(id.0)
+            .get_mut(id.slot())
+            .filter(|obj| obj.alive && obj.generation == id.generation())
             .ok_or_else(|| JsError::type_error("invalid object reference"))
     }
 }
@@ -8435,6 +8580,116 @@ mod tests {
         vm.eval_script("c.abort();").unwrap();
         let after = vm.trace_heap_reachability().unwrap();
         assert_eq!(after.object_slots, vm.heap_usage().object_slots);
+    }
+
+    #[test]
+    fn g2a_sweeps_cyclic_objects_and_reuses_slots_without_stale_identity_aliases() {
+        let mut vm = JsRuntime::new();
+        let old = vm
+            .eval_script("var abandoned={payload:42}; abandoned.self=abandoned; abandoned;")
+            .unwrap();
+        let JsValue::Object(old_id) = old.clone() else {
+            panic!("expected an object");
+        };
+        vm.eval_script("abandoned=null;").unwrap();
+        let before = vm.trace_heap_reachability().unwrap();
+        assert!(before.unreachable_objects > 0);
+        let report = vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(report.freed_objects > 0);
+        assert_eq!(vm.heap_usage().object_slots, report.reserved_object_slots);
+        assert!(vm.object(old_id).is_err(), "swept handle must be invalid");
+        let replacement = vm.eval_script("({fresh:7});").unwrap();
+        let JsValue::Object(new_id) = replacement else {
+            panic!("expected replacement object");
+        };
+        assert_eq!(
+            old_id.slot(),
+            new_id.slot(),
+            "free-list must recycle memory"
+        );
+        assert_ne!(
+            old_id, new_id,
+            "generation must distinguish old and new objects"
+        );
+        assert!(
+            vm.get_property(&old, "payload").is_err(),
+            "stale object access must fail"
+        );
+        assert_eq!(
+            vm.get_property(&JsValue::Object(new_id), "fresh").unwrap(),
+            JsValue::Number(7.0)
+        );
+        assert!(vm.trace_heap_reachability_with_roots(&[old]).is_err());
+    }
+
+    #[test]
+    fn g2a_sweeps_environment_cycles_without_recycling_stale_lexical_handles() {
+        let mut vm = JsRuntime::new();
+        let previous = vm
+            .allocate_environment(Some(vm.global_env), EnvironmentKind::Block)
+            .unwrap();
+        assert!(vm.environment_is_live(previous));
+        let report = vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(report.freed_environments > 0);
+        assert!(!vm.environment_is_live(previous));
+        let recycled = vm
+            .allocate_environment(Some(vm.global_env), EnvironmentKind::Block)
+            .unwrap();
+        assert_eq!(recycled.slot(), previous.slot());
+        assert_ne!(recycled, previous);
+        assert!(vm.environment_is_live(recycled));
+        assert!(vm.parent_environment(previous).is_err());
+    }
+
+    #[test]
+    fn g2a_host_root_preserves_escaped_closure_and_captured_environment() {
+        let mut vm = JsRuntime::new();
+        let escaped = vm.eval_script(
+            "function make(){var payload={value:42}; return function(){return payload.value;};} var held=make(); held;"
+        ).unwrap();
+        vm.eval_script("held=null;").unwrap();
+        let before = vm
+            .trace_heap_reachability_with_roots(std::slice::from_ref(&escaped))
+            .unwrap();
+        let report = vm
+            .collect_garbage_with_roots(std::slice::from_ref(&escaped))
+            .unwrap();
+        assert_eq!(report.live_objects, before.reachable_objects);
+        assert_eq!(report.live_environments, before.reachable_environments);
+        vm.install_global_binding("hostCallback", escaped, true, VariableKind::Var);
+        vm.eval_script("var result=hostCallback();").unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Number(42.0)));
+    }
+
+    #[test]
+    fn g2a_bounded_explicit_collection_reuses_object_and_environment_arenas() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script("function churn(){ var a={x:1}; var b={target:a}; b.self=b; return 1; }")
+            .unwrap();
+        let baseline = vm.heap_usage();
+        for _ in 0..80 {
+            vm.eval_script("churn();").unwrap();
+            let report = vm.collect_garbage_with_roots(&[]).unwrap();
+            assert!(report.freed_objects > 0);
+            assert!(report.freed_environments > 0);
+        }
+        assert!(vm.heap_usage().object_slots <= baseline.object_slots + 5);
+        assert!(vm.heap_usage().environment_slots <= baseline.environment_slots + 2);
+        assert_eq!(vm.eval_script("churn();").unwrap(), JsValue::Number(1.0));
+    }
+
+    #[test]
+    fn g2a_failing_root_validation_leaves_arenas_unchanged() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script("var garbage={x:1};garbage=null;").unwrap();
+        let before = vm.heap_usage();
+        let bad = JsValue::Object(ObjectId(vm.heap.len()));
+        assert!(vm.collect_garbage_with_roots(&[bad]).is_err());
+        assert_eq!(vm.heap_usage(), before);
+        assert!(vm.free_objects.is_empty());
+        let _barrier = ActiveExecutionGuard::enter(Arc::clone(&vm.active_execution_depth));
+        assert!(vm.collect_garbage_with_roots(&[]).is_err());
+        assert_eq!(vm.heap_usage(), before);
     }
 
     #[test]

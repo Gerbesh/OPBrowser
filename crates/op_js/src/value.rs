@@ -1,6 +1,30 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ObjectId(pub(crate) usize);
 
+// A generation in the high half of the handle prevents recycled slot aliasing.
+// VM budgets are well below the low-half index capacity on supported targets.
+impl ObjectId {
+    const INDEX_BITS: u32 = usize::BITS / 2;
+    pub(crate) const INDEX_MASK: usize = (1usize << Self::INDEX_BITS) - 1;
+
+    pub(crate) fn new(index: usize, generation: usize) -> Self {
+        assert!(index <= Self::INDEX_MASK, "JS object arena index overflow");
+        assert!(
+            generation <= Self::INDEX_MASK,
+            "JS object generation overflow"
+        );
+        Self((generation << Self::INDEX_BITS) | index)
+    }
+
+    pub(crate) fn slot(self) -> usize {
+        self.0 & Self::INDEX_MASK
+    }
+
+    pub(crate) fn generation(self) -> usize {
+        self.0 >> Self::INDEX_BITS
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsValue {
     Undefined,
