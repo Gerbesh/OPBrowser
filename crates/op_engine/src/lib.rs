@@ -2,12 +2,12 @@ use op_css::{
     ComputedStyleMap, StyleCollection, StyleError, StyleMap, collect_author_styles,
     collect_author_styles_with_linked, compute_styles,
 };
-#[cfg(test)]
-use op_layout::layout_document_with_backgrounds_and_resources;
 use op_layout::{
-    ImageResources, layout_document_with_computed_styles_and_viewport_metrics,
-    layout_document_with_scrolling,
+    ImageResources, layout_document_with_axis_scrolling,
+    layout_document_with_computed_styles_and_viewport_metrics,
 };
+#[cfg(test)]
+use op_layout::{layout_document_with_backgrounds_and_resources, layout_document_with_scrolling};
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link, resolve_script_source};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
@@ -130,6 +130,7 @@ struct PreparedDocument {
     runtime: Option<op_js::JsRuntime>,
     // Native documents without page JavaScript remain scrollable.
     scroll_offsets: std::collections::HashMap<usize, i32>,
+    scroll_left_offsets: std::collections::HashMap<usize, i32>,
 }
 
 impl PreparedDocument {
@@ -165,13 +166,17 @@ impl PreparedDocument {
     }
 
     fn render(&mut self, width: i32, height: i32) -> RenderedPage {
-        let layout = layout_document_with_scrolling(
+        let layout = layout_document_with_axis_scrolling(
             &self.document,
             width,
             height,
             (&self.images.elements, &self.images.backgrounds),
             &self.images.generated,
-            (&self.computed_styles, self.current_scroll_offsets()),
+            (
+                &self.computed_styles,
+                self.current_scroll_offsets(),
+                &self.scroll_left_offsets,
+            ),
             &mut text::Measurer::new(),
         );
         let scroll_limits: std::collections::HashMap<usize, i32> = layout
@@ -187,6 +192,15 @@ impl PreparedDocument {
                 *top > 0
             });
         }
+        let horizontal_limits: std::collections::HashMap<usize, i32> = layout
+            .scroll_containers
+            .iter()
+            .map(|r| (r.node.index(), r.max_scroll_left))
+            .collect();
+        self.scroll_left_offsets.retain(|node, left| {
+            *left = (*left).clamp(0, horizontal_limits.get(node).copied().unwrap_or(0));
+            *left > 0
+        });
         RenderedPage {
             address: self.address.clone(),
             mime_type: self.mime_type.clone(),
@@ -347,6 +361,7 @@ impl Engine {
             scripts: script_report,
             runtime,
             scroll_offsets: std::collections::HashMap::new(),
+            scroll_left_offsets: std::collections::HashMap::new(),
         };
         let page = prepared.render(width, height);
         self.generation = self.generation.wrapping_add(1);
@@ -365,13 +380,17 @@ impl Engine {
         let Some(prepared) = self.active_document.as_ref() else {
             return false;
         };
-        let layout = layout_document_with_scrolling(
+        let layout = layout_document_with_axis_scrolling(
             &prepared.document,
             width,
             height,
             (&prepared.images.elements, &prepared.images.backgrounds),
             &prepared.images.generated,
-            (&prepared.computed_styles, prepared.current_scroll_offsets()),
+            (
+                &prepared.computed_styles,
+                prepared.current_scroll_offsets(),
+                &prepared.scroll_left_offsets,
+            ),
             &mut text::Measurer::new(),
         );
         self.scrollbar_drag = layout
@@ -400,13 +419,17 @@ impl Engine {
     ) -> Option<RenderedPage> {
         let drag = self.scrollbar_drag?;
         let prepared = self.active_document.as_mut()?;
-        let layout = layout_document_with_scrolling(
+        let layout = layout_document_with_axis_scrolling(
             &prepared.document,
             width,
             height,
             (&prepared.images.elements, &prepared.images.backgrounds),
             &prepared.images.generated,
-            (&prepared.computed_styles, prepared.current_scroll_offsets()),
+            (
+                &prepared.computed_styles,
+                prepared.current_scroll_offsets(),
+                &prepared.scroll_left_offsets,
+            ),
             &mut text::Measurer::new(),
         );
         let region = layout
@@ -436,17 +459,39 @@ impl Engine {
     /// Coordinates are document pixels (already adjusted for toolbar/scroll).
     pub fn click_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<RenderedPage> {
         let prepared = self.active_document.as_mut()?;
-        let layout = layout_document_with_scrolling(
+        let layout = layout_document_with_axis_scrolling(
             &prepared.document,
             width,
             height,
             (&prepared.images.elements, &prepared.images.backgrounds),
             &prepared.images.generated,
-            (&prepared.computed_styles, prepared.current_scroll_offsets()),
+            (
+                &prepared.computed_styles,
+                prepared.current_scroll_offsets(),
+                &prepared.scroll_left_offsets,
+            ),
             &mut text::Measurer::new(),
         );
         // Scrollbars are native page chrome, not DOM click targets. Their
         // overlay takes precedence over a link or event handler underneath.
+        if let Some((node, left)) = layout
+            .scroll_containers
+            .iter()
+            .filter_map(|region| {
+                region
+                    .scroll_left_at_track_point(x, y)
+                    .map(|left| (region, left))
+            })
+            .min_by_key(|(region, _)| i64::from(region.rect.width) * i64::from(region.rect.height))
+            .map(|(region, left)| (region.node.index(), left))
+        {
+            if left == 0 {
+                prepared.scroll_left_offsets.remove(&node);
+            } else {
+                prepared.scroll_left_offsets.insert(node, left);
+            }
+            return Some(prepared.render(width, height));
+        }
         if let Some((node, top)) = layout
             .scroll_containers
             .iter()
@@ -509,13 +554,17 @@ impl Engine {
             return None;
         }
         let prepared = self.active_document.as_mut()?;
-        let layout = layout_document_with_scrolling(
+        let layout = layout_document_with_axis_scrolling(
             &prepared.document,
             width,
             height,
             (&prepared.images.elements, &prepared.images.backgrounds),
             &prepared.images.generated,
-            (&prepared.computed_styles, prepared.current_scroll_offsets()),
+            (
+                &prepared.computed_styles,
+                prepared.current_scroll_offsets(),
+                &prepared.scroll_left_offsets,
+            ),
             &mut text::Measurer::new(),
         );
         let region = layout
@@ -550,6 +599,64 @@ impl Engine {
             runtime.take_scroll_dirty();
         } else {
             prepared.scroll_offsets.insert(region.node.index(), next);
+        }
+        Some(prepared.render(width, height))
+    }
+
+    /// WM_MOUSEHWHEEL/Shift+wheel scrolling. Horizontal ranges are layout-owned,
+    /// independent of vertical scrollTop; nested containers chain at edges.
+    pub fn scroll_horizontal_at(
+        &mut self,
+        x: i32,
+        y: i32,
+        delta_x: i32,
+        width: i32,
+        height: i32,
+    ) -> Option<RenderedPage> {
+        if delta_x == 0 {
+            return None;
+        }
+        let prepared = self.active_document.as_mut()?;
+        let layout = layout_document_with_axis_scrolling(
+            &prepared.document,
+            width,
+            height,
+            (&prepared.images.elements, &prepared.images.backgrounds),
+            &prepared.images.generated,
+            (
+                &prepared.computed_styles,
+                prepared.current_scroll_offsets(),
+                &prepared.scroll_left_offsets,
+            ),
+            &mut text::Measurer::new(),
+        );
+        let region = layout
+            .scroll_containers
+            .iter()
+            .filter(|region| {
+                region.horizontal_scrollable
+                    && region.visible_at(x, y)
+                    && region.max_scroll_left > 0
+                    && x >= region.rect.x
+                    && x < region.rect.x.saturating_add(region.rect.width)
+                    && y >= region.rect.y
+                    && y < region.rect.y.saturating_add(region.rect.height)
+                    && region
+                        .scroll_left
+                        .saturating_add(delta_x)
+                        .clamp(0, region.max_scroll_left)
+                        != region.scroll_left
+            })
+            .min_by_key(|region| i64::from(region.rect.width) * i64::from(region.rect.height))?;
+        let next = region
+            .scroll_left
+            .saturating_add(delta_x)
+            .clamp(0, region.max_scroll_left);
+        let node = region.node.index();
+        if next == 0 {
+            prepared.scroll_left_offsets.remove(&node);
+        } else {
+            prepared.scroll_left_offsets.insert(node, next);
         }
         Some(prepared.render(width, height))
     }
@@ -832,6 +939,7 @@ impl Engine {
             scripts: script_report,
             runtime,
             scroll_offsets: std::collections::HashMap::new(),
+            scroll_left_offsets: std::collections::HashMap::new(),
         })
     }
 }
@@ -1302,6 +1410,84 @@ mod tests {
             })
             .expect("overflow scroll retains its visible inactive track");
         assert_eq!(track.height, thumb.height);
+    }
+
+    #[test]
+    fn r12e_horizontal_wheel_and_track_click_shift_real_painted_children() {
+        let mut engine = Engine::new();
+        let first = engine.set_html_page(
+            concat!(
+                "<body><div id='pane' style='width:120px;height:60px;overflow-x:auto;overflow-y:hidden'>",
+                "<div id='wide' style='width:300px;height:40px;background:red'>",
+                "<div id='marker' style='width:35px;height:28px;margin-left:200px;background:blue'></div>",
+                "</div></div></body>"
+            ),
+            500, 350,
+        );
+        let bar = first
+            .commands
+            .iter()
+            .find_map(|cmd| {
+                if let op_paint::PaintCommand::HorizontalScrollbar { track, thumb } = cmd {
+                    Some((*track, *thumb))
+                } else {
+                    None
+                }
+            })
+            .expect("real horizontal excess should paint an overlay track");
+        assert!(bar.1.width < bar.0.width);
+        let painted_blue_x = |list: &op_paint::DisplayList| {
+            list.commands
+                .iter()
+                .find_map(|cmd| match cmd {
+                    op_paint::PaintCommand::Clipped { command, .. } => match command.as_ref() {
+                        op_paint::PaintCommand::FillRect { x, color, .. }
+                            if color.b == 255 && color.r == 0 =>
+                        {
+                            Some(*x)
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .expect("blue marker retains clipped paint geometry")
+        };
+        let before_x = painted_blue_x(&first);
+        let after = engine
+            .scroll_horizontal_at(bar.0.x + 15, bar.0.y - 15, 72, 500, 350)
+            .unwrap();
+        assert_eq!(painted_blue_x(&after.display_list), before_x - 72);
+        let page = engine.active_document.as_ref().unwrap();
+        let node = page
+            .scroll_left_offsets
+            .iter()
+            .next()
+            .map(|(node, _)| *node)
+            .unwrap();
+        assert_eq!(page.scroll_left_offsets[&node], 72);
+        let new_bar = after
+            .display_list
+            .commands
+            .iter()
+            .find_map(|cmd| {
+                if let op_paint::PaintCommand::HorizontalScrollbar { track, thumb } = cmd {
+                    Some((*track, *thumb))
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert!(new_bar.1.x > bar.1.x);
+        engine
+            .click_at(new_bar.0.x + new_bar.0.width - 2, new_bar.0.y + 5, 500, 350)
+            .expect("track click must update scroll and repaint");
+        let page = engine.active_document.as_ref().unwrap();
+        assert!(page.scroll_left_offsets[&node] > 72);
+        assert!(
+            engine
+                .scroll_horizontal_at(new_bar.0.x - 40, new_bar.0.y, 72, 500, 350)
+                .is_none()
+        );
     }
 
     #[test]

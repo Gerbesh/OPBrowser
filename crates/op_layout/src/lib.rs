@@ -229,6 +229,10 @@ pub struct ScrollContainer {
     pub clip: Option<ClipRect>,
     pub scroll_top: i32,
     pub max_scroll_top: i32,
+    pub scroll_left: i32,
+    pub max_scroll_left: i32,
+    pub horizontal_scrollable: bool,
+    pub horizontal_scrollbar_always_visible: bool,
     /// Hidden overflow permits script scrolling but not wheel input.
     pub wheel_scrollable: bool,
     /// CSS overflow:scroll paints a track even with no vertical excess.
@@ -291,6 +295,76 @@ impl ScrollContainer {
                 height: thumb_height,
             },
         })
+    }
+
+    /// Horizontal overlay geometry; never reserves layout space.
+    pub fn horizontal_scrollbar_geometry(&self) -> Option<ScrollbarGeometry> {
+        if !self.horizontal_scrollable
+            || (self.max_scroll_left == 0 && !self.horizontal_scrollbar_always_visible)
+            || self.rect.width < 12
+            || self.rect.height < 12
+        {
+            return None;
+        }
+        let track = ClipRect {
+            x: self.rect.x,
+            y: self
+                .rect
+                .y
+                .saturating_add(self.rect.height)
+                .saturating_sub(10),
+            width: self.rect.width,
+            height: 10,
+        };
+        let width = i64::from(track.width);
+        let content = width + i64::from(self.max_scroll_left);
+        let thumb_width = ((width * width / content).max(16) as i32).min(track.width);
+        let travel = track.width - thumb_width;
+        let left = if self.max_scroll_left > 0 {
+            (i64::from(travel) * i64::from(self.scroll_left.clamp(0, self.max_scroll_left))
+                / i64::from(self.max_scroll_left)) as i32
+        } else {
+            0
+        };
+        Some(ScrollbarGeometry {
+            track,
+            thumb: ClipRect {
+                x: track.x.saturating_add(left),
+                y: track.y + 1,
+                width: thumb_width,
+                height: track.height - 2,
+            },
+        })
+    }
+
+    /// Clicking the horizontal track moves directly toward that position.
+    pub fn scroll_left_at_track_point(&self, x: i32, y: i32) -> Option<i32> {
+        if !self.visible_at(x, y) {
+            return None;
+        }
+        let geometry = self.horizontal_scrollbar_geometry()?;
+        let track = geometry.track;
+        if x < track.x
+            || x >= track.x.saturating_add(track.width)
+            || y < track.y
+            || y >= track.y.saturating_add(track.height)
+        {
+            return None;
+        }
+        if x >= geometry.thumb.x && x < geometry.thumb.x.saturating_add(geometry.thumb.width) {
+            return Some(self.scroll_left);
+        }
+        let travel = track.width.saturating_sub(geometry.thumb.width);
+        if travel <= 0 {
+            return Some(0);
+        }
+        let centered = x
+            .saturating_sub(track.x)
+            .saturating_sub(geometry.thumb.width / 2);
+        Some(
+            ((i64::from(centered.clamp(0, travel)) * i64::from(self.max_scroll_left))
+                / i64::from(travel)) as i32,
+        )
     }
 
     /// Pointer capture starts only on the painted thumb, not the track.
@@ -513,6 +587,35 @@ pub fn layout_document_with_scrolling(
     images_and_backgrounds: (&ImageResources, &ImageResources),
     generated_images: &GeneratedImageResources,
     styles_and_scroll: (&ComputedStyleMap, &std::collections::HashMap<usize, i32>),
+    measurer: &mut dyn TextMeasurer,
+) -> LayoutTree {
+    layout_document_with_axis_scrolling(
+        document,
+        viewport_width,
+        viewport_height,
+        images_and_backgrounds,
+        generated_images,
+        (
+            styles_and_scroll.0,
+            styles_and_scroll.1,
+            &std::collections::HashMap::new(),
+        ),
+        measurer,
+    )
+}
+
+/// Independent vertical/horizontal scroll positions for native page reflow.
+pub fn layout_document_with_axis_scrolling(
+    document: &Document,
+    viewport_width: i32,
+    viewport_height: i32,
+    images_and_backgrounds: (&ImageResources, &ImageResources),
+    generated_images: &GeneratedImageResources,
+    styles_and_scroll: (
+        &ComputedStyleMap,
+        &std::collections::HashMap<usize, i32>,
+        &std::collections::HashMap<usize, i32>,
+    ),
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
     flow::layout(

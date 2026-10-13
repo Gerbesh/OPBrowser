@@ -192,6 +192,7 @@ fn main() {
                 NavigationEvent::Resize
                     | NavigationEvent::Click { .. }
                     | NavigationEvent::Scroll { .. }
+                    | NavigationEvent::HorizontalScroll { .. }
                     | NavigationEvent::ScrollbarDragStart { .. }
                     | NavigationEvent::ScrollbarDragMove { .. }
                     | NavigationEvent::ScrollbarDragEnd
@@ -215,6 +216,9 @@ fn main() {
                         fallback_scroll = Some(delta_y);
                     }
                     Ok(page)
+                }
+                NavigationEvent::HorizontalScroll { x, y, delta_x } => {
+                    Ok(engine.scroll_horizontal_at(x, y, delta_x, width, height))
                 }
                 NavigationEvent::ScrollbarDragStart { x, y } => {
                     engine.start_scrollbar_drag_at(x, y, width, height);
@@ -430,6 +434,7 @@ fn main() {
                 event,
                 NavigationEvent::Resize | NavigationEvent::Click { .. }
                     | NavigationEvent::Scroll { .. }
+                    | NavigationEvent::HorizontalScroll { .. }
                     | NavigationEvent::ScrollbarDragStart { .. }
                     | NavigationEvent::ScrollbarDragMove { .. }
                     | NavigationEvent::ScrollbarDragEnd

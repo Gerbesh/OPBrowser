@@ -19,7 +19,7 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetCapture, GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_CONTROL, VK_F5,
-    VK_L, VK_RETURN,
+    VK_L, VK_RETURN, VK_SHIFT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -53,6 +53,7 @@ pub enum NavigationEvent {
     FollowLink(String),
     Click { x: i32, y: i32 },
     Scroll { x: i32, y: i32, delta_y: i32 },
+    HorizontalScroll { x: i32, y: i32, delta_x: i32 },
     ScrollbarDragStart { x: i32, y: i32 },
     ScrollbarDragMove { y: i32 },
     ScrollbarDragEnd,
@@ -450,7 +451,7 @@ impl NativeBrowserWindow {
                         })
                 }
             }
-            WM_MOUSEWHEEL if message.hwnd == self.hwnd => {
+            WM_MOUSEWHEEL | WM_MOUSEHWHEEL if message.hwnd == self.hwnd => {
                 let mut point = POINT {
                     x: (message.lParam as u16 as i16) as i32,
                     y: ((message.lParam >> 16) as u16 as i16) as i32,
@@ -464,15 +465,30 @@ impl NativeBrowserWindow {
                 }
                 let delta = ((message.wParam >> 16) as u16 as i16) as i32;
                 let delta_y = -(delta / 120) * 72;
+                let horizontal = message.message == WM_MOUSEHWHEEL
+                    || unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
+                let distance = if message.message == WM_MOUSEHWHEEL {
+                    -delta_y
+                } else {
+                    delta_y
+                };
                 (delta_y != 0
                     && point.x >= 0
                     && point.x < client.right
                     && point.y >= TOOLBAR_HEIGHT
                     && point.y < client.bottom)
-                    .then_some(NavigationEvent::Scroll {
-                        x: point.x,
-                        y: point.y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst),
-                        delta_y,
+                    .then_some(if horizontal {
+                        NavigationEvent::HorizontalScroll {
+                            x: point.x,
+                            y: point.y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst),
+                            delta_x: distance,
+                        }
+                    } else {
+                        NavigationEvent::Scroll {
+                            x: point.x,
+                            y: point.y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst),
+                            delta_y,
+                        }
                     })
             }
             WM_KEYDOWN
@@ -598,6 +614,12 @@ fn scrollbar_hit(command: &PaintCommand, x: i32, y: i32, thumb_only: bool) -> bo
                 && x < rect.x.saturating_add(rect.width)
                 && y >= rect.y
                 && y < rect.y.saturating_add(rect.height)
+        }
+        PaintCommand::HorizontalScrollbar { track, .. } if !thumb_only => {
+            x >= track.x
+                && x < track.x.saturating_add(track.width)
+                && y >= track.y
+                && y < track.y.saturating_add(track.height)
         }
         _ => false,
     }
@@ -988,7 +1010,8 @@ fn composite_layer(
 
 fn paint_command(hdc: *mut c_void, command: &PaintCommand, link_regions: &mut Vec<LinkRegion>) {
     match command {
-        PaintCommand::Scrollbar { track, thumb } => {
+        PaintCommand::Scrollbar { track, thumb }
+        | PaintCommand::HorizontalScrollbar { track, thumb } => {
             for (rect, color) in [
                 (
                     *track,
@@ -1348,6 +1371,51 @@ fn wide(value: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn r12e_horizontal_scrollbar_paints_real_gdi_track_and_thumb() {
+        let bar = PaintCommand::HorizontalScrollbar {
+            track: op_paint::ClipRect {
+                x: 12,
+                y: 48,
+                width: 90,
+                height: 10,
+            },
+            thumb: op_paint::ClipRect {
+                x: 35,
+                y: 49,
+                width: 26,
+                height: 8,
+            },
+        };
+        assert!(scrollbar_hit(&bar, 40, 52, false));
+        assert!(!scrollbar_hit(&bar, 40, 52, true));
+        let width = 120usize;
+        let pixels = render_display_list_to_bgra(
+            &DisplayList {
+                commands: vec![
+                    PaintCommand::FillRect {
+                        x: 0,
+                        y: 0,
+                        width: 120,
+                        height: 70,
+                        color: Color::WHITE,
+                    },
+                    bar,
+                ],
+            },
+            120,
+            70,
+        )
+        .unwrap();
+        let sample = |x: usize, y: usize| {
+            let offset = (y * width + x) * 4;
+            &pixels[offset..offset + 3]
+        };
+        assert_eq!(sample(45, 53), &[144, 130, 120]);
+        assert_eq!(sample(84, 53), &[241, 237, 234]);
+        assert_eq!(sample(84, 63), &[255, 255, 255]);
+    }
 
     #[test]
     fn r12d_clipped_scrollbar_paints_only_visible_pixels_and_rejects_hidden_hits() {

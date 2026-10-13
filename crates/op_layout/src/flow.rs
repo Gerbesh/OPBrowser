@@ -18,10 +18,14 @@ pub(super) fn layout(
     viewport_height: i32,
     images_and_backgrounds: (&ImageResources, &ImageResources),
     generated_images: &GeneratedImageResources,
-    styles_and_scroll: (&ComputedStyleMap, &HashMap<usize, i32>),
+    styles_and_scroll: (
+        &ComputedStyleMap,
+        &HashMap<usize, i32>,
+        &HashMap<usize, i32>,
+    ),
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
-    let (computed_styles, scroll_offsets) = styles_and_scroll;
+    let (computed_styles, scroll_offsets, scroll_left_offsets) = styles_and_scroll;
     let (images, backgrounds) = images_and_backgrounds;
     let viewport_width = viewport_width.max(240);
     let viewport_height = viewport_height.max(1);
@@ -51,6 +55,7 @@ pub(super) fn layout(
         computed_styles,
         measurer,
         scroll_offsets,
+        scroll_left_offsets,
         dom_order: &dom_order,
         inline_boxes: InlineBoxes::default(),
         viewport_width,
@@ -207,6 +212,7 @@ struct Context<'a, 'm> {
     computed_styles: &'a ComputedStyleMap,
     measurer: &'m mut dyn TextMeasurer,
     scroll_offsets: &'a HashMap<usize, i32>,
+    scroll_left_offsets: &'a HashMap<usize, i32>,
     dom_order: &'m HashMap<NodeId, usize>,
     inline_boxes: InlineBoxes,
     viewport_width: i32,
@@ -364,7 +370,8 @@ struct Style {
     border_spacing: BorderSpacing,
     table_layout: TableLayout,
     caption_side: CaptionSide,
-    overflow: Overflow,
+    overflow_x: Overflow,
+    overflow_y: Overflow,
 }
 
 /// An atomic flex item retains its element source so growth can reflow
@@ -1296,14 +1303,59 @@ impl<'a> Context<'a, '_> {
         );
         // Scroll offset moves only descendant ink/hit regions, not the
         // box's own background or its ordinary document flow height.
-        let is_scroll_container = matches!(
-            style.overflow,
+        let vertical_scrollable = matches!(
+            style.overflow_y,
             Overflow::Auto | Overflow::Scroll | Overflow::Hidden
         );
+        let horizontal_scrollable = matches!(
+            style.overflow_x,
+            Overflow::Auto | Overflow::Scroll | Overflow::Hidden
+        );
+        let is_scroll_container = vertical_scrollable || horizontal_scrollable;
+        // Measure child ink extents before scroll translation.
+        let content_right = content_x.saturating_add(content_width);
+        let furthest_right = self.decorations[child_decoration_start..]
+            .iter()
+            .map(|box_| box_.x.saturating_add(box_.width))
+            .chain(
+                self.text[child_text_start..]
+                    .iter()
+                    .map(|box_| box_.x.saturating_add(box_.width)),
+            )
+            .chain(
+                self.images_out[child_image_start..]
+                    .iter()
+                    .map(|box_| box_.x.saturating_add(box_.width)),
+            )
+            .chain(
+                self.click_regions[child_click_start..]
+                    .iter()
+                    .map(|box_| box_.x.saturating_add(box_.width)),
+            )
+            .max()
+            .unwrap_or(content_right);
+        let max_scroll_left = if horizontal_scrollable {
+            furthest_right.saturating_sub(content_right).max(0)
+        } else {
+            0
+        };
+        let scroll_left = if horizontal_scrollable {
+            match content {
+                BlockContent::Element(node) => self
+                    .scroll_left_offsets
+                    .get(&node.index())
+                    .copied()
+                    .unwrap_or(0)
+                    .clamp(0, max_scroll_left),
+                _ => 0,
+            }
+        } else {
+            0
+        };
         let max_scroll_top = natural_content_height
             .saturating_sub(target_content_height)
             .max(0);
-        let scroll_top = if is_scroll_container {
+        let scroll_top = if vertical_scrollable {
             match content {
                 BlockContent::Element(node) => self
                     .scroll_offsets
@@ -1316,15 +1368,18 @@ impl<'a> Context<'a, '_> {
         } else {
             0
         };
-        if scroll_top != 0 {
-            self.translate_outputs_since(child_output_start, 0, -scroll_top);
+        if scroll_top != 0 || scroll_left != 0 {
+            self.translate_outputs_since(child_output_start, -scroll_left, -scroll_top);
             for region in &mut self.click_regions[child_click_start..] {
+                region.x = region.x.saturating_sub(scroll_left);
                 region.y = region.y.saturating_sub(scroll_top);
             }
             for scope in &mut self.overflow_scopes[child_scope_start..] {
+                scope.rect.x = scope.rect.x.saturating_sub(scroll_left);
                 scope.rect.y = scope.rect.y.saturating_sub(scroll_top);
             }
             for nested in &mut self.scroll_containers[child_scroll_start..] {
+                nested.rect.x = nested.rect.x.saturating_sub(scroll_left);
                 nested.rect.y = nested.rect.y.saturating_sub(scroll_top);
             }
         }
@@ -1347,7 +1402,7 @@ impl<'a> Context<'a, '_> {
         }
         self.pending_margin = Some(margin_bottom);
 
-        if style.overflow.clips() {
+        if style.overflow_x.clips() || style.overflow_y.clips() {
             let rect = ClipRect {
                 x: border_x.saturating_add(used.border.left.width),
                 y: border_y.saturating_add(used.border.top.width),
@@ -1374,8 +1429,13 @@ impl<'a> Context<'a, '_> {
             self.scroll_containers.push(ScrollContainer {
                 node,
                 clip: None,
-                wheel_scrollable: matches!(style.overflow, Overflow::Auto | Overflow::Scroll),
-                scrollbar_always_visible: style.overflow == Overflow::Scroll,
+                wheel_scrollable: matches!(style.overflow_y, Overflow::Auto | Overflow::Scroll),
+                scrollbar_always_visible: style.overflow_y == Overflow::Scroll,
+                horizontal_scrollable: matches!(
+                    style.overflow_x,
+                    Overflow::Auto | Overflow::Scroll
+                ),
+                horizontal_scrollbar_always_visible: style.overflow_x == Overflow::Scroll,
                 rect: ClipRect {
                     x: border_x.saturating_add(used.border.left.width),
                     y: border_y.saturating_add(used.border.top.width),
@@ -1391,6 +1451,8 @@ impl<'a> Context<'a, '_> {
                 },
                 scroll_top,
                 max_scroll_top,
+                scroll_left,
+                max_scroll_left,
             });
         }
 
@@ -1512,6 +1574,7 @@ impl<'a> Context<'a, '_> {
             computed_styles,
             measurer: &mut *self.measurer,
             scroll_offsets: self.scroll_offsets,
+            scroll_left_offsets: self.scroll_left_offsets,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -1605,6 +1668,7 @@ impl<'a> Context<'a, '_> {
             computed_styles,
             measurer: &mut *self.measurer,
             scroll_offsets: self.scroll_offsets,
+            scroll_left_offsets: self.scroll_left_offsets,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -1699,6 +1763,7 @@ impl<'a> Context<'a, '_> {
             computed_styles,
             measurer: &mut *self.measurer,
             scroll_offsets: self.scroll_offsets,
+            scroll_left_offsets: self.scroll_left_offsets,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -2179,6 +2244,7 @@ impl<'a> Context<'a, '_> {
             computed_styles,
             measurer: &mut *self.measurer,
             scroll_offsets: self.scroll_offsets,
+            scroll_left_offsets: self.scroll_left_offsets,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -6094,7 +6160,8 @@ fn computed_style(style: ComputedStyle) -> Style {
         border_spacing: style.border_spacing,
         table_layout: style.table_layout,
         caption_side: style.caption_side,
-        overflow: style.overflow,
+        overflow_x: style.overflow_x,
+        overflow_y: style.overflow_y,
     }
 }
 
@@ -6261,7 +6328,8 @@ fn default_style() -> Style {
         border_spacing: BorderSpacing::ZERO,
         table_layout: TableLayout::Auto,
         caption_side: CaptionSide::Top,
-        overflow: Overflow::Visible,
+        overflow_x: Overflow::Visible,
+        overflow_y: Overflow::Visible,
     }
 }
 
@@ -6313,7 +6381,8 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         border_collapse: inherited.border_collapse,
         table_layout: TableLayout::Auto,
         caption_side: inherited.caption_side,
-        overflow: Overflow::Visible,
+        overflow_x: Overflow::Visible,
+        overflow_y: Overflow::Visible,
         border_spacing: if tag == "table" {
             BorderSpacing {
                 horizontal_px: 2.0,

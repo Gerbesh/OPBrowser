@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>R1.2e horizontal overflow demo</title>
+<style>
+ body { font-family: Segoe UI, sans-serif; background: #f6f8fa; }
+ #pane { width: 210px; height: 85px; overflow-x: auto; overflow-y: hidden; border: 3px solid #2a547a; background: #e3f0ff; }
+ #wide { width: 490px; height: 64px; background: #e46b53; }
+ #mid { width: 90px; height: 48px; margin-left: 180px; background: #369d7b; }
+ #forced { width: 240px; height: 50px; overflow-x: scroll; overflow-y: hidden; border: 2px solid #704398; }
+</style>
+<body>
+<h2>Horizontal scrolling</h2>
+<p>Shift+mouse wheel or a horizontal mouse wheel scrolls the blue pane. Click the track to jump. It moves the green marker under the clip boundary.</p>
+<div id="pane"><div id="wide"><div id="mid">Green marker</div></div></div>
+<h3>Forced empty horizontal track</h3>
+<div id="forced"><p>No extra width; the track should still appear.</p></div>
+<p>Known limits: no thumb drag, no JavaScript scrollLeft, and no gutter reservation yet.</p>
+</body>
+</html>

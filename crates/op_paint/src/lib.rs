@@ -40,6 +40,10 @@ pub enum PaintCommand {
         track: ClipRect,
         thumb: ClipRect,
     },
+    HorizontalScrollbar {
+        track: ClipRect,
+        thumb: ClipRect,
+    },
     /// Limit an individual primitive to its ancestor overflow padding box.
     Clipped {
         rect: op_layout::ClipRect,
@@ -204,6 +208,20 @@ pub fn build_display_list(layout: &LayoutTree, viewport_height: i32) -> DisplayL
     for container in layout.scroll_containers.iter().rev() {
         if let Some(geometry) = container.scrollbar_geometry() {
             let scrollbar = PaintCommand::Scrollbar {
+                track: geometry.track,
+                thumb: geometry.thumb,
+            };
+            commands.push(if let Some(rect) = container.clip {
+                PaintCommand::Clipped {
+                    rect,
+                    command: Box::new(scrollbar),
+                }
+            } else {
+                scrollbar
+            });
+        }
+        if let Some(geometry) = container.horizontal_scrollbar_geometry() {
+            let scrollbar = PaintCommand::HorizontalScrollbar {
                 track: geometry.track,
                 thumb: geometry.thumb,
             };

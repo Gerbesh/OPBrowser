@@ -433,6 +433,8 @@ pub struct ComputedStyle {
     pub white_space: WhiteSpace,
     pub visibility: Visibility,
     pub overflow: Overflow,
+    pub overflow_x: Overflow,
+    pub overflow_y: Overflow,
     pub text_decoration_line: TextDecorationLine,
     pub letter_spacing_px: f32,
     pub word_spacing_px: f32,
@@ -562,6 +564,8 @@ impl ComputedStyle {
             white_space: WhiteSpace::Normal,
             visibility: Visibility::Visible,
             overflow: Overflow::Visible,
+            overflow_x: Overflow::Visible,
+            overflow_y: Overflow::Visible,
             text_decoration_line: TextDecorationLine::NONE,
             letter_spacing_px: 0.0,
             word_spacing_px: 0.0,
@@ -1609,6 +1613,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             white_space: parent.white_space,
             visibility: parent.visibility,
             overflow: initial.overflow,
+            overflow_x: initial.overflow_x,
+            overflow_y: initial.overflow_y,
             text_decoration_line: parent.text_decoration_line,
             letter_spacing_px: parent.letter_spacing_px,
             word_spacing_px: parent.word_spacing_px,
@@ -1969,12 +1975,42 @@ fn apply_author_declarations(
             Visibility::Visible,
         );
     }
-    if let Some((_, value)) = winning_value(declarations, "overflow", parse_overflow) {
+    let shorthand_overflow = winning_value(declarations, "overflow", parse_overflow);
+    if let Some((_, value)) = shorthand_overflow {
         style.overflow = resolve_non_inherited(
             value,
             parent_style.map(|parent| parent.overflow),
             Overflow::Visible,
         );
+    }
+    for (axis, target) in [
+        ("overflow-x", &mut style.overflow_x),
+        ("overflow-y", &mut style.overflow_y),
+    ] {
+        let longhand = winning_value(declarations, axis, parse_overflow);
+        let winner = match (shorthand_overflow, longhand) {
+            (Some(short), Some(long)) => Some(if cascade_key(long.0) >= cascade_key(short.0) {
+                long
+            } else {
+                short
+            }),
+            (Some(short), None) => Some(short),
+            (None, Some(long)) => Some(long),
+            (None, None) => None,
+        };
+        if let Some((_, value)) = winner {
+            *target = resolve_non_inherited(
+                value,
+                parent_style.map(|parent| {
+                    if axis == "overflow-x" {
+                        parent.overflow_x
+                    } else {
+                        parent.overflow_y
+                    }
+                }),
+                Overflow::Visible,
+            );
+        }
     }
     if let Some((_, value)) = winning_text_decoration(declarations) {
         style.text_decoration_line = resolve_inherited(
@@ -4654,6 +4690,39 @@ mod tests {
         assert_eq!(value("clip"), Overflow::Clip);
         assert_eq!(value("priority"), Overflow::Hidden);
         assert_eq!(value("invalid"), Overflow::Visible);
+    }
+
+    #[test]
+    fn r12e_overflow_axes_cascade_independently_against_shorthand() {
+        let document = parse_document(concat!(
+            "<div id='a' style='overflow:hidden;overflow-x:auto'></div>",
+            "<div id='b' style='overflow-x:scroll;overflow:hidden'></div>",
+            "<div id='c' style='overflow:hidden!important;overflow-x:auto'></div>",
+            "<div id='d' style='overflow-x:scroll;overflow-y:clip'></div>",
+            "<div id='parent' style='overflow-x:scroll'>",
+            "<div id='inherit' style='overflow-x:inherit'></div>",
+            "<div id='plain'></div></div>"
+        ));
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let style = |id| *computed.style_for(find_by_id(&document, id)).unwrap();
+        assert_eq!(
+            (style("a").overflow_x, style("a").overflow_y),
+            (Overflow::Auto, Overflow::Hidden)
+        );
+        assert_eq!(
+            (style("b").overflow_x, style("b").overflow_y),
+            (Overflow::Hidden, Overflow::Hidden)
+        );
+        assert_eq!(
+            (style("c").overflow_x, style("c").overflow_y),
+            (Overflow::Hidden, Overflow::Hidden)
+        );
+        assert_eq!(
+            (style("d").overflow_x, style("d").overflow_y),
+            (Overflow::Scroll, Overflow::Clip)
+        );
+        assert_eq!(style("inherit").overflow_x, Overflow::Scroll);
+        assert_eq!(style("plain").overflow_x, Overflow::Visible);
     }
 
     #[test]

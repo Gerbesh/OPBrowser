@@ -16,6 +16,22 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S57 - Horizontal CSS overflow to native wheel and GDI pixels (R1.2e partial)
+
+ComputedStyle resolves overflow-x/y longhands against the one-value overflow
+shorthand using normal cascade precedence. op_layout derives bounded horizontal
+extents from emitted children and keeps horizontal offsets separate from
+vertical scrollTop. ScrollContainer exposes overlay horizontal track geometry;
+op_paint, original Win32 GDI and native track hit tests share that geometry.
+WM_MOUSEHWHEEL and Shift+wheel route into Engine::scroll_horizontal_at.
+Track clicks reposition horizontal content. CSS, engine display-list and
+native GDI bitmap tests cover the bounded slice.
+Fixture: examples/css/horizontal-scroll.html.
+
+Missing: horizontal thumb drag, JavaScript scrollLeft, general scrollWidth,
+two-value overflow shorthand, complex axis computed-value interactions,
+RTL and positioned clipping, independent WPT Overflow selection.
+
 ## S56 - Ancestor-clipped nested scrollbar paint and input (R1.2d partial)
 
 Original op_layout::flow::OverflowScope tracks scrollbar ranges as well as

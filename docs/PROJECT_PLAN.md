@@ -12,7 +12,7 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 
 | Priority | Workstream | Current reality | Next deliverable and exit gate |
 | --- | --- | --- | --- |
-| **P0-A** | **Usable rendering and scrolling** | **R1.0–R1.2c vertical DONE (bounded); R1.2d partial:** nested vertical scrollbar overlays obey ancestor clips in native paint and hit testing. | **R1.2d NEXT:** horizontal overflow-x/y, complex positioned clipping and independent WPT Overflow/real-page comparisons. |
+| **P0-A** | **Usable rendering and scrolling** | **R1.0–R1.2c vertical DONE (bounded); R1.2d–e partial:** ancestor-clipped nested scrollbars, independent horizontal CSS overflow-x/y, native horizontal wheel/track interaction and GDI pixels. | **NEXT:** horizontal thumb drag and JS scrollLeft, overflow edge cases, positioned clipping, independent WPT Overflow and real-page comparisons. |
 | **P0-B** | **Memory safety / original VM GC** | **G1.0 DONE:** conservative idle-checkpoint reachability scan counts reachable/unreachable objects and captured environments. Append-only arenas still retain everything. **No GC yet.** | G1.1: verify/register all native call-frame/operand roots. G2: generation-safe reclaim of both arenas and cycles. G3: automatic bounded GC, 30-minute plateau and stress tests. See [GC_IMPLEMENTATION.md](GC_IMPLEMENTATION.md). |
 | **P1-C** | **Flexbox with multiple lines** | **R2a–R2c partial DONE:** row wrapping/gap, proportional grow/shrink, flex basis/shorthand and six `justify-content` values, measured in original GDI pixels. | **R2d NEXT:** cross-axis `align-items`, flex direction/order and full min-content sizing, followed by explicit real-page visual comparison; current subset is not full Flexbox. |
 | **P1-D** | **CSS Grid foundation** | Table grid track sizing exists; it is **not** CSS Grid Layout. | R3: explicit/auto tracks, fraction units, item placement and basic gap, then implicit tracks and minmax. Screenshot+geometry tests. |
@@ -45,7 +45,7 @@ P0-A and P0-B are **both mandatory**; a renderer that cannot scroll or that exha
 ## Immediate implementation sequence
 
 - R1.0–R1.1 DONE: block clipping and vertical JS/native scrolling with original GDI pixel and hit-target checks; retain pinned WPT baselines.
-- R1.2a–R1.2c DONE (bounded vertical): clamped JS scrollTop, native track click and captured thumb drag. R1.2d partial: ancestor-clipped nested scrollbar overlays reject hidden pointer/wheel hits, verified with native pixels. Horizontal axes, positioned clipping and real-page comparisons remain pending.
+- R1.2a–R1.2c DONE (bounded vertical); R1.2d partial ancestor clips; R1.2e partial: one-value overflow-x/y longhands and cascade, bounded horizontal child extents and offsets, Shift/horizontal wheel, native track clicks and GDI. Next: JS scrollLeft, thumb dragging, positioned clips and real-page comparisons.
 - G1.0 DONE: mark-only idle root tracing with no reclamation. G1.1 NEXT: complete native activation-frame, operand and host root coverage at safe checkpoints; G2: generation-safe object/environment slot reclamation, including cycles; G3: automatic bounded collections with performance baselines.
 - R2a–R2c partial DONE alongside P0: multiline row/gap, proportional growth/shrink, basis/shorthand and justification, each with native pixel or CSS regression. R2d next: cross-axis alignment/direction/order, independent visual pages. Horizontal overflow and GC still pending.
 

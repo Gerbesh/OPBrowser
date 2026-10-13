@@ -16,6 +16,21 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## R1.2e partial: horizontal scroll ownership and paint
+
+op_css::ComputedStyle computes overflow_x/y longhands with the existing
+shorthand cascade. op_layout::flow::Context accepts separate vertical and
+horizontal offset maps and shifts descendant ink, hit regions, nested
+scrollports and clips. ScrollContainer owns max_scroll_left/scroll_left and
+native horizontal track/thumb geometry. op_paint::HorizontalScrollbar
+reuses the original Win32 GDI paint path. op_engine::PreparedDocument owns
+horizontal offsets; Engine::scroll_horizontal_at handles bounded wheel
+input and engine click_at handles horizontal track input. The browser
+worker receives Win32 horizontal-wheel / Shift+wheel navigation events.
+
+The JS VM still provides only scrollTop, not scrollLeft; advanced CSS
+overflow and full real-site behavior are not claimed.
+
 ## R1.2d partial: nested scrollbar clip ownership
 
 op_layout::flow::OverflowScope now keeps descendant ScrollContainer ranges

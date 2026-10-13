@@ -3440,6 +3440,15 @@ This file is append-only project history.
 - Added nested engine and Win32 GDI bitmap/input regressions plus examples/css/nested-scrollbars.html.
 - LIMITS: horizontal scrolling or overflow-x/y, complex positioned-overflow behavior and broad upstream WPT/real-site coverage remain open. Frozen selections unchanged.
 
+## 2026-10-13 - R1.2e partial: horizontal overflow CSS to native pixels and input
+
+- Computed CSS now resolves one-value overflow-x/overflow-y longhands against shorthand with matching cascade priority, including !important and inherit/reset. Existing shorthand behavior remains.
+- Layout retains independent horizontal offsets for block scrollports, computes bounded child extent from emitted box/text/image/hit geometry and translates descendant pixels/hit bounds/nested clips without shifting the parent's own decoration.
+- Added original GDI horizontal overlay scrollbar track/thumb painting; native hit testing gives its track precedence over DOM links. Windows WM_MOUSEHWHEEL and Shift+wheel reach the worker's Engine::scroll_horizontal_at, with nested range clipping and track clicks.
+- Added CSS, engine image-coordinate/track and real native GDI pixel tests, plus examples/css/horizontal-scroll.html. Frozen WPT Static remains 194/200 and Positioning 54/100, zero render errors; no frozen manifest edits.
+- LIMITS: no horizontal thumb dragging, JavaScript scrollLeft/scrollWidth, full CSS two-value overflow shorthand, axis computed-value interaction, RTL rules, general positioned overflow, reserved gutters or independent WPT Overflow baseline. This is not production-site readiness.
+
+
 
 
 
