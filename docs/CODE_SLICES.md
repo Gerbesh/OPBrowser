@@ -16,6 +16,18 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S58 - GC safe-checkpoint barrier and external root diagnostic (G1.1 partial)
+
+JsRuntime::run_code and call_value acquire RAII native execution barriers
+tracking nested evaluator, built-in and async callback call chains.
+Idle heap tracing refuses when active native frames or DOM dispatch exists.
+Host code with returned JS handles can pass explicit roots into
+trace_heap_reachability_with_roots, which traces objects, closures and
+captured environments without mutating slots.
+Tests exercise nested unwind, failed scripts, closure escape and
+DOM programmatic dispatch. This is diagnostic safety only, not GC:
+no generation-safe slot reuse, sweep or memory plateau.
+
 ## S57 - Horizontal CSS overflow to native wheel and GDI pixels (R1.2e partial)
 
 ComputedStyle resolves overflow-x/y longhands against the one-value overflow

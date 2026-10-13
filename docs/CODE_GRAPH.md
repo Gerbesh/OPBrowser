@@ -16,6 +16,17 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G1.1 partial: native JS execution barrier and host roots
+
+op_js::JsRuntime now owns active_execution_depth: Arc<AtomicUsize> and
+ActiveExecutionGuard RAII tracks nested run_code and call_value execution.
+trace_heap_reachability rejects active Rust interpreter, DOM event, and
+programmatic-click phases; trace_heap_reachability_with_roots accepts explicit
+external JsValue references for one idle snapshot. The Arc preserves Send
+for the existing op_browser worker and Engine ownership.
+No slots are released or reused. Generation-safe object and environment
+ownership must precede actual GC.
+
 ## R1.2e partial: horizontal scroll ownership and paint
 
 op_css::ComputedStyle computes overflow_x/y longhands with the existing

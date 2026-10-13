@@ -6,7 +6,10 @@ use crate::{
 };
 use std::{
     collections::{HashMap, VecDeque},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -348,6 +351,24 @@ fn trace_js_value(work: &mut Vec<TraceWork>, value: &JsValue) {
     }
 }
 
+/// Barrier for recursive Rust interpreter and built-in callback frames.
+/// Refuse heap tracing while any local operand can be an unregistered root.
+struct ActiveExecutionGuard(Arc<AtomicUsize>);
+
+impl ActiveExecutionGuard {
+    fn enter(depth: Arc<AtomicUsize>) -> Self {
+        depth.fetch_add(1, Ordering::Relaxed);
+        Self(depth)
+    }
+}
+
+impl Drop for ActiveExecutionGuard {
+    fn drop(&mut self) {
+        let depth = self.0.fetch_sub(1, Ordering::Relaxed);
+        debug_assert!(depth > 0);
+    }
+}
+
 #[derive(Debug)]
 pub struct JsRuntime {
     heap: Vec<JsObject>,
@@ -366,6 +387,7 @@ pub struct JsRuntime {
     object_budget: usize,
     environment_budget: usize,
     call_depth_budget: usize,
+    active_execution_depth: Arc<AtomicUsize>,
     dom_ids: HashMap<String, usize>,
     dom_text: HashMap<usize, String>,
     dom_mutations: Vec<DomTextMutation>,
@@ -493,6 +515,7 @@ impl Default for JsRuntime {
             object_budget: DEFAULT_OBJECT_BUDGET,
             environment_budget: DEFAULT_ENVIRONMENT_BUDGET,
             call_depth_budget: DEFAULT_CALL_DEPTH_BUDGET,
+            active_execution_depth: Arc::new(AtomicUsize::new(0)),
             dom_ids: HashMap::new(),
             dom_text: HashMap::new(),
             dom_mutations: Vec::new(),
@@ -3930,15 +3953,30 @@ impl JsRuntime {
     /// Current allocated slots, including unreachable objects/environments.
     /// This is intentionally explicit about the absence of collection.
     /// Mark reachability from all retained VM/host roots. Only call after
-    /// page tasks return to Rust; native recursive execution frames do not
-    /// register their temporary values as roots yet. Never sweep from this.
+    /// page tasks return to Rust; recursive interpreter/built-in frames are
+    /// protected by a native execution barrier. Never sweep from this.
     pub fn trace_heap_reachability(&self) -> Result<JsHeapReachability, JsError> {
-        if self.dom_dispatch_depth != 0 {
+        self.trace_heap_reachability_with_roots(&[])
+    }
+
+    /// Include caller-owned temporary handles, such as values returned to Rust.
+    /// Caller-provided roots last only for this mark-only snapshot.
+    pub fn trace_heap_reachability_with_roots(
+        &self,
+        host_roots: &[JsValue],
+    ) -> Result<JsHeapReachability, JsError> {
+        if self.dom_dispatch_depth != 0
+            || self.dom_programmatic_click_depth != 0
+            || self.active_execution_depth.load(Ordering::Relaxed) != 0
+        {
             return Err(JsError::type_error(
                 "heap tracing requires an idle JavaScript task checkpoint",
             ));
         }
         let mut pending = Vec::new();
+        for root in host_roots {
+            trace_js_value(&mut pending, root);
+        }
         for id in [
             self.object_prototype,
             self.function_prototype,
@@ -4135,6 +4173,7 @@ impl JsRuntime {
         steps: &mut usize,
         call_depth: usize,
     ) -> Result<RunOutcome, JsError> {
+        let _execution = ActiveExecutionGuard::enter(Arc::clone(&self.active_execution_depth));
         let mut stack = Vec::new();
         let mut completion = JsValue::Undefined;
         let mut env = start_env;
@@ -4505,6 +4544,7 @@ impl JsRuntime {
         steps: &mut usize,
         call_depth: usize,
     ) -> Result<CallOutcome, JsError> {
+        let _execution = ActiveExecutionGuard::enter(Arc::clone(&self.active_execution_depth));
         if call_depth > self.call_depth_budget {
             return Err(JsError::execution_limit(format!(
                 "script exceeded call depth budget of {}",
@@ -8395,6 +8435,79 @@ mod tests {
         vm.eval_script("c.abort();").unwrap();
         let after = vm.trace_heap_reachability().unwrap();
         assert_eq!(after.object_slots, vm.heap_usage().object_slots);
+    }
+
+    #[test]
+    fn g11_native_call_frame_barrier_is_nested_and_unwinds_on_error() {
+        let mut vm = JsRuntime::new();
+        let barrier = Arc::clone(&vm.active_execution_depth);
+        assert_eq!(barrier.load(Ordering::Relaxed), 0);
+        {
+            let _outer = ActiveExecutionGuard::enter(Arc::clone(&barrier));
+            assert_eq!(barrier.load(Ordering::Relaxed), 1);
+            assert!(vm.trace_heap_reachability().is_err());
+            {
+                let _inner = ActiveExecutionGuard::enter(Arc::clone(&barrier));
+                assert_eq!(barrier.load(Ordering::Relaxed), 2);
+                assert!(vm.trace_heap_reachability_with_roots(&[]).is_err());
+            }
+            assert_eq!(barrier.load(Ordering::Relaxed), 1);
+        }
+        assert_eq!(barrier.load(Ordering::Relaxed), 0);
+        assert!(vm.trace_heap_reachability().is_ok());
+
+        vm.eval_script("function invoke(){return {x:1};} var kept=invoke();")
+            .unwrap();
+        assert_eq!(barrier.load(Ordering::Relaxed), 0);
+        assert!(
+            vm.eval_script("function bad(){ throw 'failure'; } bad();")
+                .is_err()
+        );
+        assert_eq!(
+            barrier.load(Ordering::Relaxed),
+            0,
+            "nested throw must unwind native roots"
+        );
+        assert!(vm.eval_script("missingIdentifier;").is_err());
+        assert_eq!(
+            barrier.load(Ordering::Relaxed),
+            0,
+            "early interpreter error must unwind barrier"
+        );
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g11_host_owned_temporary_closure_is_an_explicit_trace_root() {
+        let mut vm = JsRuntime::new();
+        let escaped = vm.eval_script(
+            "function maker(){var state={v:42}; return function(){return state.v;};} var retained=maker(); retained;"
+        ).unwrap();
+        assert!(matches!(escaped, JsValue::Object(_)));
+        vm.eval_script("retained=null;").unwrap();
+        let orphan = vm.trace_heap_reachability().unwrap();
+        let rooted = vm
+            .trace_heap_reachability_with_roots(std::slice::from_ref(&escaped))
+            .unwrap();
+        assert!(rooted.reachable_objects > orphan.reachable_objects);
+        assert!(rooted.reachable_environments > orphan.reachable_environments);
+        assert_eq!(rooted.object_slots, orphan.object_slots);
+        assert_eq!(rooted.environment_slots, orphan.environment_slots);
+        assert_eq!(vm.trace_heap_reachability().unwrap(), orphan);
+        assert!(
+            vm.trace_heap_reachability_with_roots(&[JsValue::Object(ObjectId(vm.heap.len()))])
+                .is_err(),
+            "invalid host root must not silently pass"
+        );
+    }
+
+    #[test]
+    fn g11_programmatic_dispatch_barrier_rejects_nested_checkpoint() {
+        let mut vm = JsRuntime::new();
+        vm.dom_programmatic_click_depth = 1;
+        assert!(vm.trace_heap_reachability().is_err());
+        vm.dom_programmatic_click_depth = 0;
+        assert!(vm.trace_heap_reachability().is_ok());
     }
 
     #[test]

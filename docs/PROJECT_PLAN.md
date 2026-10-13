@@ -12,15 +12,15 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 
 | Priority | Workstream | Current reality | Next deliverable and exit gate |
 | --- | --- | --- | --- |
-| **P0-A** | **Usable rendering and scrolling** | **R1.0–R1.2c vertical DONE (bounded); R1.2d–e partial:** ancestor-clipped nested scrollbars, independent horizontal CSS overflow-x/y, native horizontal wheel/track interaction and GDI pixels. | **NEXT:** horizontal thumb drag and JS scrollLeft, overflow edge cases, positioned clipping, independent WPT Overflow and real-page comparisons. |
-| **P0-B** | **Memory safety / original VM GC** | **G1.0 DONE:** conservative idle-checkpoint reachability scan counts reachable/unreachable objects and captured environments. Append-only arenas still retain everything. **No GC yet.** | G1.1: verify/register all native call-frame/operand roots. G2: generation-safe reclaim of both arenas and cycles. G3: automatic bounded GC, 30-minute plateau and stress tests. See [GC_IMPLEMENTATION.md](GC_IMPLEMENTATION.md). |
+| **P0-1 NOW** | **Original JS VM garbage collection** | **G1.0 mark-only + G1.1 partial DONE:** nested native execution barriers, idle-only trace and caller-owned diagnostic roots. **No reclamation yet.** | Audit all escaping host handles, then G2 generation-safe object/environment slot reuse and cycle sweep; G3 bounded automatic collection with 30-minute memory plateau. All other feature work is deferred. See [GC_IMPLEMENTATION.md](GC_IMPLEMENTATION.md). |
+| **P0-2 AFTER GC** | **Usable rendering and scrolling** | **R1.0–R1.2c vertical DONE (bounded); R1.2d–e partial:** ancestor-clipped nested scrollbars, horizontal overflow-x/y, native wheel/track interaction and GDI pixels. | Resume horizontal thumb drag, JS scrollLeft, complex clipping and WPT/real-page comparisons only after GC is safe and reclaiming. |
 | **P1-C** | **Flexbox with multiple lines** | **R2a–R2c partial DONE:** row wrapping/gap, proportional grow/shrink, flex basis/shorthand and six `justify-content` values, measured in original GDI pixels. | **R2d NEXT:** cross-axis `align-items`, flex direction/order and full min-content sizing, followed by explicit real-page visual comparison; current subset is not full Flexbox. |
 | **P1-D** | **CSS Grid foundation** | Table grid track sizing exists; it is **not** CSS Grid Layout. | R3: explicit/auto tracks, fraction units, item placement and basic gap, then implicit tracks and minmax. Screenshot+geometry tests. |
 | **P1-E** | **Backgrounds and typography** | URL image tiling for blocks/tables and GDI font measurement exist, but broad backgrounds, web fonts and modern shaping/fallback do not. | R4: repeat/size/position and clipping for image backgrounds; then DirectWrite shaping/fallback and real @font-face loading with origin/security controls. |
 | **P1-F** | **Forms and editing** | Some native/text/checkbox and selector subsets; not a usable complete form implementation. | R5: input/edit focus, keyboard text, caret/selection, submission semantics, accessibility names and persistent state; real click+typing integration. |
 | **P2** | **More JS syntax, WebIDL and broad Events conformance** | Original VM has Promise/partial fetch/EventTarget; many modern APIs missing. | Resume **after** R1 and GC safe reachability work. Fix only JS/DOM blockers needed for real sites until then. |
 
-P0-A and P0-B are **both mandatory**; a renderer that cannot scroll or that exhausts its heap during ordinary use is not ready. P1 features may be delivered in narrow, end-to-end, user-visible slices, but cannot displace either P0. Avoid another series of Events-only milestones.
+**Priority override 2026-10-13:** finish safe, reclaiming original JavaScript GC before resuming renderer/Flexbox/Grid/forms/API development. Existing rendering improvements remain frozen except for required GC regressions and integration fixes. Do not claim GC completion without live heap plateau and identity-safety proof.
 
 ## Engineering gates
 
@@ -44,9 +44,9 @@ P0-A and P0-B are **both mandatory**; a renderer that cannot scroll or that exha
 
 ## Immediate implementation sequence
 
+- G1.1 partial DONE: RAII native JS call barriers and explicit temporary host roots for idle mark snapshots. NEXT GC ONLY: host root ownership audit, G2 generation-safe mark/sweep/reuse of objects+environments, G3 bounded automatic collection and measured memory plateau.
 - R1.0–R1.1 DONE: block clipping and vertical JS/native scrolling with original GDI pixel and hit-target checks; retain pinned WPT baselines.
 - R1.2a–R1.2c DONE (bounded vertical); R1.2d partial ancestor clips; R1.2e partial: one-value overflow-x/y longhands and cascade, bounded horizontal child extents and offsets, Shift/horizontal wheel, native track clicks and GDI. Next: JS scrollLeft, thumb dragging, positioned clips and real-page comparisons.
-- G1.0 DONE: mark-only idle root tracing with no reclamation. G1.1 NEXT: complete native activation-frame, operand and host root coverage at safe checkpoints; G2: generation-safe object/environment slot reclamation, including cycles; G3: automatic bounded collections with performance baselines.
 - R2a–R2c partial DONE alongside P0: multiline row/gap, proportional growth/shrink, basis/shorthand and justification, each with native pixel or CSS regression. R2d next: cross-axis alignment/direction/order, independent visual pages. Horizontal overflow and GC still pending.
 
 ## Documentation ownership

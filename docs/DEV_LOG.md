@@ -3448,6 +3448,15 @@ This file is append-only project history.
 - Added CSS, engine image-coordinate/track and real native GDI pixel tests, plus examples/css/horizontal-scroll.html. Frozen WPT Static remains 194/200 and Positioning 54/100, zero render errors; no frozen manifest edits.
 - LIMITS: no horizontal thumb dragging, JavaScript scrollLeft/scrollWidth, full CSS two-value overflow shorthand, axis computed-value interaction, RTL rules, general positioned overflow, reserved gutters or independent WPT Overflow baseline. This is not production-site readiness.
 
+## 2026-10-13 - GC FIRST: G1.1 partial native execution barrier and host roots
+
+- Priority override: finish original JavaScript GC before continuing unrelated renderer or Web API features.
+- op_js::JsRuntime now counts nested run_code and call_value evaluation via RAII Arc<AtomicUsize>, retaining Send for the browser worker. Tracing refuses any active native execution, programmatic click or DOM event dispatch.
+- Added trace_heap_reachability_with_roots to mark caller-held temporary JavaScript values, including escaped closures and their captured environments at an idle checkpoint.
+- Three G1.1 tests cover nested/failed execution unwinding, escaped closure roots, dangling handles and programmatic-click refusal.
+- LIMITATIONS: current mark-only pass frees no objects or environments. G2 requires generation-safe recycling, side-map/root audit and real host root ownership; G3 must prove bounded memory plateau.
+
+
 
 
 

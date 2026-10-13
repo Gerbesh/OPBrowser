@@ -1,6 +1,6 @@
 # Original JS VM garbage collector: implementation plan
 
-Status: **G1.0 MARK-ONLY TRACE IMPLEMENTED; RECLAMATION / GC NOT IMPLEMENTED** (2026-10-11). Original Rust op_js. Both JS objects and captured environments still allocate into append-only arenas; this stage never frees memory.
+Status: **G1.0 MARK-ONLY + G1.1 EXECUTION BARRIERS AND EXTERNAL TRACE ROOT INPUT IMPLEMENTED; RECLAMATION / GC NOT IMPLEMENTED** (2026-10-13). Both object and captured-environment arenas remain append-only. No memory is freed.
 
 ## Observed implementation
 
@@ -30,11 +30,22 @@ a pure HTML page with no VM. Side maps are deliberately treated
 conservatively as roots, so the result is a tracing diagnostic,
 not the minimal possible live set.
 
-**Remaining G1 work:** register native interpreter call frames,
-operand temporaries, currently executing async callbacks and
-host-held object references explicitly before enabling tracing
-as an automatic safepoint. No sweeping, slot reuse, GC pauses or
-memory plateau have been implemented. G2/G3 remain blockers.
+## G1.1 partial: safe checkpoint barrier and caller-provided roots
+
+The original run_code and call_value functions now use a RAII
+ActiveExecutionGuard backed by Arc<AtomicUsize>; it preserves the browser's
+Send capability and tracks nested native interpreter/built-in execution.
+The guard unwinds on all error and early-return paths. Mark-only tracing
+refuses to run during a live JS call, DOM event dispatch or programmatic
+DOM click. Host code retaining a returned JsValue may pass its temporary
+handles to trace_heap_reachability_with_roots(&[JsValue]) for one snapshot.
+Three regressions test nested/error barriers, host closure and environment
+reachability, and programmatic DOM dispatch.
+
+Remaining G1 audit: all native callback entry paths, persistent escaping host
+handles and root ownership beyond single diagnostic snapshots. G2 needs
+generation-safe recyclable slots before any memory can be reclaimed.
+No slot reuse, sweeping, GC pauses or memory plateau have been implemented.
 
 ## GC phase G1: safe non-destructive root tracing
 
@@ -65,4 +76,4 @@ Mark-only telemetry must report retained vs unreachable slots and avoid modifyin
 
 ## Current measurable baseline / next action
 
-M4.35 demonstrates transient allocation growth, and G1.0 can now distinguish reachable from unreachable allocated slots without freeing either category. This is a diagnostic, **not** a memory fix. G1.1 must cover all native activation frames, operands and host-held references at safe checkpoints, then prove that tracing cannot miss live objects. Do not reclaim any slots until generation-safe handles and full root coverage are implemented and verified.
+M4.35 demonstrates transient allocation growth. G1.0 detects unreachable allocations, and G1.1 partial now fences native recursive calls and accepts explicit ephemeral host roots for idle trace. Both are **diagnostic only**, not a memory fix. Finish permanent escaped-host-root ownership and all callback audits; then implement generation-safe G2 mark/sweep with slot reuse and follow with G3 long-session plateau verification. All renderer and unrelated work is deferred until GC is safe and effective.
