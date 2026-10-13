@@ -1,5 +1,20 @@
 # Original JS VM garbage collector: implementation plan
 
+## G3 partial: weak AbortSignal.timeout deadlines with observer/fetch ownership
+
+Pending AbortSignal.timeout deadlines are no longer unconditional JS heap
+roots. During tracing, a pending timeout roots its signal only while an
+abort listener or onabort property handler is registered. Other live owners
+(global bindings, pending fetch signal maps, AbortSignal.any composites)
+mark the signal via their existing strong edges. After a validated mark,
+unreachable timeout metadata is pruned *before* generational object-slot
+recycling, restoring the 64-pending-timeout budget for new tasks. A live
+observer still receives TimeoutError on its scheduled deadline. Five new
+regressions cover 64 orphan deadlines, both handler types, removed listeners,
+pending host network roots and timeout -> composite abort propagation.
+No speculative mid-interpreter GC is introduced. Remaining: DOM host roots,
+complete fetch cancellation races, and a 30-minute process-memory plateau.
+
 ## G3 partial: EventTarget-owned lifecycle and AbortSignal listeners
 
 Lifecycle listener/options maps trace callback objects, captured environments

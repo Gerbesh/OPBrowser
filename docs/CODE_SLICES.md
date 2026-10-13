@@ -16,6 +16,16 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S64 - Weak AbortSignal.timeout queue with live observer roots (G3 partial)
+
+AbortSignal.timeout registers a deadline -> idle task checkpoint invokes
+JsRuntime GC -> trace roots and optional abort listeners/onabort handlers ->
+pending fetch or composite-to-source edges -> validated sweep drops orphan
+deadline records -> run_due_timers still dispatches live TimeoutError.
+Five regressions cover orphan budget recovery, active listener and onabort
+delivery, removed listener reclamation, request-host retention, and live
+composite timeout propagation. 30-minute RSS and broad DOM audits remain.
+
 ## S63 - EventTarget listener ownership through original JS GC (G3 partial)
 
 Mark roots -> reachable EventTarget -> lifecycle listener callbacks/options

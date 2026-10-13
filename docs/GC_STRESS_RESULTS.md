@@ -39,6 +39,16 @@ reserved arenas **414 object / 247 environment slots**; worst observed
 stop-the-world GC pause **1,164 µs**. Repeated short-run samples show bounded
 reserved arenas and a nearly flat working set after initial warmup.
 
+## G3 weak-timeout change: 5-second native-worker sanity probe
+
+Ran `cargo run -p op_engine --bin gc_stress_probe -- --seconds 5`
+after weakening orphan AbortSignal.timeout deadline ownership. Observed
+3,269 worker ticks, **356 successful collections, zero failed passes**,
+414 reserved object slots, 247 reserved environment slots and maximum
+GC pause **385 microseconds**. Five sampled working sets ranged from
+9,801,728 to 10,035,200 bytes. This validates the synthetic worker
+path only and is **not** a plateau proof or comparable throughput benchmark.
+
 ### Exit criteria still open
 
 A proper 1,800-second run on the same build must record the post-warmup

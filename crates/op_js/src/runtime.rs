@@ -4142,8 +4142,24 @@ impl JsRuntime {
                 pending.push(TraceWork::Object(target));
             }
         }
+        // An orphan timeout signal without an abort observer is weakly held.
+        // A registered observer keeps the signal alive until delivery;
+        // pending fetches and live composites trace their signals separately.
+        let mut observed_abort_signals = std::collections::HashSet::new();
+        for (&(owner, ref name, _), handlers) in &self.lifecycle_listeners {
+            if name == "abort" && !handlers.is_empty() {
+                observed_abort_signals.insert(owner);
+            }
+        }
+        for &(owner, ref name) in self.lifecycle_property_registration.keys() {
+            if name == "onabort" {
+                observed_abort_signals.insert(owner);
+            }
+        }
         for item in &self.abort_deadlines {
-            pending.push(TraceWork::Object(item.signal));
+            if observed_abort_signals.contains(&item.signal) {
+                pending.push(TraceWork::Object(item.signal));
+            }
         }
         // An AbortSignal.any() composite keeps its upstream sources alive.
         // The reverse is NOT true: sources alone must not pin abandoned
@@ -4270,6 +4286,8 @@ impl JsRuntime {
             .retain(|(owner, _, _, callback), _| marked_owner(owner) && marked_owner(callback));
         self.lifecycle_property_registration
             .retain(|(owner, _), _| marked_owner(owner));
+        self.abort_deadlines
+            .retain(|item| marked_owner(&item.signal));
         self.abort_followers.retain(|source, followers| {
             followers.retain(|follower| marked_owner(follower));
             marked_owner(source) && !followers.is_empty()
@@ -8773,6 +8791,123 @@ mod tests {
             vm.collect_garbage_with_roots(&[JsValue::Object(nested)])
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn g3_timeout_source_reachable_only_through_live_composite_still_fires() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var fired=0;
+               var composite=AbortSignal.any([AbortSignal.timeout(0)]);
+               composite.addEventListener('abort',function(){
+                   if(composite.reason.name==='TimeoutError')fired=fired+1;
+               });"#,
+        )
+        .unwrap();
+        let source = vm.abort_deadlines[0].signal;
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.object(source).is_ok());
+        assert_eq!(vm.abort_deadlines.len(), 1);
+        let tick = vm.run_due_timers(16);
+        assert_eq!(tick.failed, 0);
+        assert_eq!(tick.fired, 1);
+        assert_eq!(vm.global("fired"), Some(&JsValue::Number(1.0)));
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_removed_timeout_listener_no_longer_anchors_discarded_signal() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"function install(){
+                   var signal=AbortSignal.timeout(60000);
+                   function unused(){}
+                   signal.addEventListener('abort',unused);
+                   signal.removeEventListener('abort',unused);
+               }
+               install();"#,
+        )
+        .unwrap();
+        let id = vm.abort_deadlines[0].signal;
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.object(id).is_err());
+        assert!(vm.abort_deadlines.is_empty());
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_orphan_timeout_deadlines_are_weak_and_reopen_timeout_budget() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script("for(var i=0;i<64;i=i+1){AbortSignal.timeout(60000);}")
+            .unwrap();
+        let orphan = vm.abort_deadlines[0].signal;
+        assert_eq!(vm.abort_deadlines.len(), 64);
+        let report = vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(report.freed_objects > 64);
+        assert!(
+            vm.abort_deadlines.is_empty(),
+            "orphan timeouts must be pruned"
+        );
+        assert!(vm.object(orphan).is_err());
+        assert_eq!(vm.next_timer_wait(), None);
+        vm.eval_script("var next=AbortSignal.timeout(60000);")
+            .unwrap();
+        assert_eq!(vm.abort_deadlines.len(), 1, "budget must be reusable");
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_observed_timeout_survives_sweep_and_fires_both_abort_handlers() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var fired=0;
+               function install(){
+                   var signal=AbortSignal.timeout(0);
+                   signal.addEventListener('abort',function(e){
+                       if(e.target.reason.name==='TimeoutError')fired=fired+1;
+                   });
+                   var other=AbortSignal.timeout(0);
+                   other.onabort=function(){fired=fired+10;};
+               }
+               install();"#,
+        )
+        .unwrap();
+        assert_eq!(vm.abort_deadlines.len(), 2);
+        let handles = vm
+            .abort_deadlines
+            .iter()
+            .map(|d| d.signal)
+            .collect::<Vec<_>>();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        for handle in handles {
+            assert!(
+                vm.object(handle).is_ok(),
+                "active abort observer keeps signal"
+            );
+        }
+        assert_eq!(vm.abort_deadlines.len(), 2);
+        let report = vm.run_due_timers(16);
+        assert_eq!(report.failed, 0);
+        assert_eq!(report.fired, 2);
+        assert_eq!(vm.global("fired"), Some(&JsValue::Number(11.0)));
+        assert!(vm.abort_deadlines.is_empty());
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_pending_network_signal_preserves_unobserved_timeout_until_request_ends() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script("AbortSignal.timeout(60000);").unwrap();
+        let signal = vm.abort_deadlines[0].signal;
+        vm.text_request_signals.insert(123, signal);
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.object(signal).is_ok());
+        assert_eq!(vm.abort_deadlines.len(), 1);
+        vm.text_request_signals.remove(&123);
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.object(signal).is_err());
+        assert!(vm.abort_deadlines.is_empty());
     }
 
     #[test]

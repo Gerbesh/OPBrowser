@@ -16,6 +16,17 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G3 partial: weak timeout queue ownership
+
+JsRuntime::trace_heap_marks treats abort_deadlines as conditional roots:
+only entries with a live abort listener or onabort registration directly
+keep their signal alive. Other roots (global JS bindings, pending fetch
+text_request_signals and AbortSignal.any reverse follower traversal) also
+preserve timeout signals. A successful collect_garbage_with_roots pass prunes
+deadline records whose signal was not marked before slot generations change.
+This prevents orphan timeouts from exhausting the fixed 64-entry deadline
+queue across repeated idle checkpoints. No new crate edges are introduced.
+
 ## G3 partial: EventTarget-owned listener GC edges
 
 JsRuntime::trace_heap_marks indexes lifecycle listeners and options by

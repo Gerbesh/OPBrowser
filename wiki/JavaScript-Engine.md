@@ -9,6 +9,10 @@ The VM uses generation-safe mark/sweep at idle browser checkpoints. Live
 EventTargets preserve their callbacks and listener AbortSignals, while an
 orphan AbortSignal's listener metadata no longer roots its entire cycle.
 AbortSignal.any follower metadata also has weak lifetime ownership.
+Timeout deadlines are weak unless an abort handler is registered; a reachable
+global, pending fetch or composite signal also keeps its deadline valid.
+Orphan deadlines are pruned after successful GC and their fixed 64-slot
+pending budget becomes reusable. Live listeners still receive TimeoutError.
 Other DOM/fetch host roots and a 30-minute memory plateau remain unverified.
 Older milestones below describe their historical state.
 

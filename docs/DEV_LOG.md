@@ -3493,6 +3493,13 @@ This file is append-only project history.
 - Validated sweep now prunes dead receiver listener arrays, callback options and onabort property registration metadata before generation-safe slot reuse. Orphan AbortSignal -> callback -> captured signal cycles are collectible.
 - Three VM regressions demonstrate orphan signal/callback reclamation, surviving live once-handler execution after a sweep, and window option-signal retention until abort. Other DOM/fetch root audits and 30-minute working-set proof remain open.
 
+## 2026-10-13 - G3 partial: reclaim orphan AbortSignal.timeout deadlines
+
+- Made abort_deadlines a conditional root rather than an unconditional one: registered abort/onabort observers keep their signal until timeout delivery; pending text-request signals and reachable AbortSignal.any composites retain their sources via preexisting edges.
+- A validated GC pass removes deadlines whose signals are unreachable before recycled object slots can alias stale handles, allowing the 64-entry timeout quota to be reused during long sessions.
+- Five new VM regressions cover 64 orphan timeouts and budget recovery, both abort observer types, listener removal, pending network host root, and nested composite propagation after a sweep. No full-process 30-minute plateau has been measured; DOM root audit and fetch races remain open.
+- Post-change five-second original native worker probe: 3,269 ticks, 356 successful GC passes, zero failures, 414 object/247 environment reserved slots, max pause 385 microseconds. Logged in GC_STRESS_RESULTS.md. This is a smoke probe, not a long-session plateau.
+
 
 
 
