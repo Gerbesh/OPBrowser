@@ -1,5 +1,37 @@
 # Original JavaScript GC stress: repeatable browser-owner probe
 
+## 30-minute Windows Release DOM/JS GC gate (2026-10-14)
+
+On source commit `c281d39`, the optimized `gc_stress_probe --seconds 1800
+--workload dom` completed **1,161,484 worker ticks, 80,939 JS GC and
+80,939 native GC passes, zero GC/JS callback errors**, and reclaimed
+**323,854 native DOM nodes**. The 1,800 CSV samples cover seconds 0..1799.
+Native DOM arena reserved slots grew only from 11 to **21** while live
+nodes finished at 13; JS reserved objects/environments finished at 730/416.
+All 80,939 automatic JS pause samples match successful collections.
+
+| Diagnostic | Result |
+| --- | ---: |
+| JS GC p50 / p95 / p99 bucket upper bounds | 132 / 132 / 525 us |
+| Worst JS / native mark-sweep wall pause | 273,375 / 1,001 us |
+| Process working set, whole run min / max | 3,981,312 / 10,457,088 bytes |
+| Post-warmup (60..1799) RSS slope | -4,072.14 bytes/s |
+| First ten minutes (60..599) RSS slope | +218.83 bytes/s |
+| GC or callback failures | 0 |
+
+Windows trimmed the process working set in the last third of the run;
+negative RSS slope does not imply the collector alone reclaimed that memory.
+No sustained process working-set rise was observed. The native arena did
+not leak under this workload. Rare **273 ms JS pause outlier** requires
+targeted profiling; elapsed wall-clock pauses include OS scheduling.
+Only this synthetic single-page DOM workload passes the 30-minute gate.
+Private committed bytes, whole host checkpoint timing, fetch/Promise
+and real-page/multi-tab browsing remain unverified.
+
+Raw [1,800-row Windows CSV](gc/2026-10-14-windows-native-dom-1800s.csv),
+[final log](gc/2026-10-14-windows-native-dom-1800s.log) and
+[source/binary manifest](gc/2026-10-14-windows-native-dom-1800s-manifest.json).
+
 ## Native Windows DOM regression: 15-second debug run (2026-10-14)
 
 Validated current upstream commit `6e00f76` on Windows 11 with

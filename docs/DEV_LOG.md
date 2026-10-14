@@ -3561,3 +3561,11 @@ This file is append-only project history.
 - Windows 11 / Rust 1.99.0: full Rust workspace tests, strict all-target Clippy, Rustfmt, Win32 smoke and code-intelligence checks pass.
 - A saved 15-second debug DOM worker run completed 9,941 ticks, 702 JS/native GC passes, zero GC/callback failures and 2,804 native nodes reclaimed. Final native arena 15 slots / 13 live, JS arenas 397 objects / 167 environments; histogram p50/p95/p99 upper bounds 263/525/525 us, maximum JS/native pauses 977/143 us. Raw CSV/log, commit and binary/source SHA-256 are in docs/gc; the 30-minute Windows/real-site gate is still outstanding.
 
+## 2026-10-14 - G3: complete 30-minute Windows Release DOM stress validation
+
+- Compiled the optimized gc_stress_probe with Rust 1.99.0 on Windows 11 and ran exactly `--seconds 1800 --workload dom` against source `c281d39`. The full CSV contains 1,800 records (seconds 0..1799), plus a final stderr summary and SHA-256 manifest.
+- Completed 1,161,484 timer worker cycles, 80,939 JS/native sweeps with zero failed collections or JS callbacks, and reclaimed 323,854 native DOM nodes. Native reserved arena bounded to 21 slots; JS arenas reached 730 object and 416 environment slots.
+- Histogram counts match all successful automatic JS collections; p50/p95/p99 bucket upper bounds were 132/132/525 us. Worst observed JS wall pause was 273,375 us and native pause 1,001 us, warranting profiler investigation.
+- Windows process Working Set ranged 3,981,312..10,457,088 bytes overall; samples after 60 seconds show negative OLS slope (-4,072.14 bytes/s) primarily reflecting OS working-set trimming, not collector-only memory reclamation. The first-ten-minute post-warmup slope was +218.83 bytes/s and native slots remained in the low tens. No persistent RSS rise was observed.
+- This closes the 30-minute synthetic DOM/JS/native-GC stability gate only. Fetch/Promise, real navigation/multi-tab, private bytes and total host checkpoint pause distributions remain open.
+
