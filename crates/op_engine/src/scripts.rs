@@ -221,13 +221,13 @@ pub(crate) fn apply_dom_operations(document: &mut Document, runtime: &mut JsRunt
     for op in runtime.take_dom_operations() {
         match op {
             DomOperation::CreateText { node, text } => {
-                if document.len() < MAX_NODES {
+                if document.allocation_headroom(MAX_NODES) > 0 {
                     let real = document.create_text(text);
                     runtime.bind_dom_node(node, real.index());
                 }
             }
             DomOperation::CreateElement { node, tag } => {
-                if document.len() >= MAX_NODES {
+                if document.allocation_headroom(MAX_NODES) == 0 {
                     continue;
                 }
                 let actual = document.create_element(tag);
@@ -322,10 +322,19 @@ pub(crate) fn apply_dom_operations(document: &mut Document, runtime: &mut JsRunt
             }
             DomOperation::SetText(mutation) => {
                 if let Some(node) = document.node_id(runtime.resolve_dom_node(mutation.node))
-                    && (document.set_text_content(node, &mutation.text_content)
-                        || document.set_text_node_content(node, &mutation.text_content))
+                    && (mutation.text_content.is_empty()
+                        || document.element(node).is_none()
+                        || document.allocation_headroom(MAX_NODES) > 0)
                 {
-                    changed += 1;
+                    let old_children = document.children(node).to_vec();
+                    if document.set_text_content(node, &mutation.text_content)
+                        || document.set_text_node_content(node, &mutation.text_content)
+                    {
+                        for child in old_children {
+                            let _ = runtime.sync_dom_detached_node(child.index());
+                        }
+                        changed += 1;
+                    }
                 }
             }
         }
@@ -334,6 +343,24 @@ pub(crate) fn apply_dom_operations(document: &mut Document, runtime: &mut JsRunt
         sync_dom_tree(document, runtime);
     }
     changed
+}
+
+/// Native collection is prohibited while the parser owns open-element and
+/// deferred-script handles. Other browser task boundaries can sweep after JS
+/// roots validate and ordered host operations have been committed.
+pub(super) fn collect_at_idle(document: &mut Document, runtime: &mut JsRuntime, force: bool) {
+    let native_pressure = document.allocation_headroom(MAX_NODES) <= MAX_NODES / 8;
+    if !matches!(
+        runtime.collect_if_needed_at_idle_with_host_pressure(force || native_pressure),
+        Ok(Some(_))
+    ) {
+        return;
+    }
+    let roots = runtime.native_dom_roots();
+    if let Ok(freed) = document.collect_garbage(&roots) {
+        let handles = freed.iter().map(|node| node.index()).collect::<Vec<_>>();
+        runtime.forget_collected_native_nodes(&handles);
+    }
 }
 
 /// Execute blocking scripts at tree-builder pauses. External async/defer
@@ -361,7 +388,7 @@ pub(crate) fn parse_and_execute(
         ready_state: "loading",
     };
 
-    let document = std::thread::scope(|scope| {
+    let mut document = std::thread::scope(|scope| {
         let (sender, receiver) = std::sync::mpsc::channel::<CompletedScript>();
         let mut document = op_html::parse_document_with_script_hook(html, |document, script| {
             runner.drain_ready(document, &receiver);
@@ -433,6 +460,9 @@ pub(crate) fn parse_and_execute(
         }
         document
     });
+    if let Some(runtime) = runner.runtime.as_mut() {
+        collect_at_idle(&mut document, runtime, true);
+    }
     (document, runner.report, runner.runtime)
 }
 
@@ -779,6 +809,7 @@ pub(crate) fn execute_retained(
         report.mutations += apply_dom_operations(document, &mut runtime);
         let _ = runtime.collect_if_needed_at_idle();
     }
+    collect_at_idle(document, &mut runtime, true);
     (report, Some(runtime))
 }
 
@@ -807,7 +838,7 @@ pub(crate) fn dispatch_click(
     }
     let handled = runtime.dispatch_dom_click_path(&path).unwrap_or(false);
     let changed = apply_dom_operations(document, runtime);
-    let _ = runtime.collect_if_needed_at_idle();
+    collect_at_idle(document, runtime, false);
     (handled, changed)
 }
 

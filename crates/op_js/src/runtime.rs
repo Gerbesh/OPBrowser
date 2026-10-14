@@ -2624,6 +2624,14 @@ impl JsRuntime {
         self.dom_children.insert(node, children);
     }
 
+    /// Native textContent replacement detaches old children even when no
+    /// removeChild operation was staged by the VM. Update weak snapshot roots
+    /// before the next idle GC; retained descendants keep their own linkage.
+    pub fn sync_dom_detached_node(&mut self, node: usize) -> Result<(), JsError> {
+        self.dom_pending_parents.remove(&node);
+        self.detach_dom_subtree(node)
+    }
+
     pub fn sync_dom_text_node(&mut self, node: usize, parent: Option<usize>, value: String) {
         self.dom_text_nodes.insert(node);
         self.dom_text.insert(node, value);
@@ -2805,6 +2813,66 @@ impl JsRuntime {
         let node = usize::MAX - self.next_virtual_dom_node;
         self.next_virtual_dom_node += 1;
         Ok(node)
+    }
+
+    /// Native roots after a validated JS sweep. Views and static queries may
+    /// own native nodes which have never acquired a JavaScript wrapper.
+    pub fn native_dom_roots(&self) -> Vec<usize> {
+        self.dom_node_objects
+            .keys()
+            .copied()
+            .chain(self.dom_query_lists.values().flatten().copied())
+            .chain(self.dom_tag_collections.values().map(|(root, _)| *root))
+            .chain(self.dom_class_lists.keys().copied())
+            .chain(self.dom_styles.keys().copied())
+            .chain(self.dom_node_lists.keys().copied())
+            .chain(self.dom_html_collections.keys().copied())
+            .map(|node| self.resolve_dom_node(node))
+            .filter(|node| *node <= usize::MAX / 2)
+            .collect()
+    }
+
+    /// Release weak snapshots of native nodes reclaimed by the page host.
+    /// The host must preserve all native_dom_roots and their tree components.
+    pub fn forget_collected_native_nodes(&mut self, nodes: &[usize]) {
+        let forgotten_nodes = nodes.iter().copied().collect();
+        self.prune_native_dom_metadata(&forgotten_nodes);
+    }
+
+    fn prune_native_dom_metadata(&mut self, forgotten_nodes: &std::collections::HashSet<usize>) {
+        if !forgotten_nodes.is_empty() {
+            self.dom_node_aliases.retain(|from, to| {
+                !forgotten_nodes.contains(from) && !forgotten_nodes.contains(to)
+            });
+            self.dom_ids
+                .retain(|_, node| !forgotten_nodes.contains(node));
+            self.dom_pending_ids
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_pending_parents.retain(|node, parent| {
+                !forgotten_nodes.contains(node) && !forgotten_nodes.contains(parent)
+            });
+            self.dom_children.retain(|node, children| {
+                if forgotten_nodes.contains(node) {
+                    return false;
+                }
+                children.retain(|child| !forgotten_nodes.contains(child));
+                true
+            });
+            self.dom_text
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_attributes
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_tags
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_text_nodes
+                .retain(|node| !forgotten_nodes.contains(node));
+            self.dom_attached
+                .retain(|node| !forgotten_nodes.contains(node));
+            self.dom_scroll_tops
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_scroll_limits
+                .retain(|node, _| !forgotten_nodes.contains(node));
+        }
     }
 
     pub fn take_dom_operations(&mut self) -> Vec<DomOperation> {
@@ -4188,15 +4256,43 @@ impl JsRuntime {
         let mut dom_edges: HashMap<ObjectId, Vec<TraceWork>> = HashMap::new();
         for (&node, &owner) in &self.dom_node_objects {
             let edges = dom_edges.entry(owner).or_default();
-            if let Some(parent) = self.dom_pending_parents.get(&node)
-                && let Some(&id) = self.dom_node_objects.get(parent)
-            {
-                edges.push(TraceWork::Object(id));
+            let mut ancestor = self.dom_pending_parents.get(&node).copied();
+            let mut remaining = 20_000;
+            while let Some(parent) = ancestor {
+                if remaining == 0 {
+                    return Err(JsError::execution_limit(
+                        "native DOM ancestor trace limit exceeded",
+                    ));
+                }
+                remaining -= 1;
+                if let Some(&id) = self.dom_node_objects.get(&parent) {
+                    edges.push(TraceWork::Object(id));
+                    break;
+                }
+                ancestor = self.dom_pending_parents.get(&parent).copied();
             }
             if let Some(children) = self.dom_children.get(&node) {
-                for child in children {
-                    if let Some(&id) = self.dom_node_objects.get(child) {
+                let has_native_edges = |child: &usize| {
+                    self.dom_node_objects.contains_key(child)
+                        || self.dom_children.contains_key(child)
+                };
+                let mut descendants = children
+                    .iter()
+                    .copied()
+                    .filter(has_native_edges)
+                    .collect::<Vec<_>>();
+                let mut remaining = 20_000;
+                while let Some(child) = descendants.pop() {
+                    if remaining == 0 {
+                        return Err(JsError::execution_limit(
+                            "native DOM descendant trace limit exceeded",
+                        ));
+                    }
+                    remaining -= 1;
+                    if let Some(&id) = self.dom_node_objects.get(&child) {
                         edges.push(TraceWork::Object(id));
+                    } else if let Some(children) = self.dom_children.get(&child) {
+                        descendants.extend(children.iter().copied().filter(has_native_edges));
                     }
                 }
             }
@@ -4490,42 +4586,6 @@ impl JsRuntime {
             }
         }
         self.dom_node_objects.retain(|_, id| marked_owner(id));
-        // Detachment only disconnects the JS wrapper from the document; the
-        // host snapshot also owns strings, attributes and tree-link maps.
-        // Release these records when no JavaScript view can access the node.
-        if !forgotten_nodes.is_empty() {
-            self.dom_node_aliases.retain(|from, to| {
-                !forgotten_nodes.contains(from) && !forgotten_nodes.contains(to)
-            });
-            self.dom_ids
-                .retain(|_, node| !forgotten_nodes.contains(node));
-            self.dom_pending_ids
-                .retain(|node, _| !forgotten_nodes.contains(node));
-            self.dom_pending_parents.retain(|node, parent| {
-                !forgotten_nodes.contains(node) && !forgotten_nodes.contains(parent)
-            });
-            self.dom_children.retain(|node, children| {
-                if forgotten_nodes.contains(node) {
-                    return false;
-                }
-                children.retain(|child| !forgotten_nodes.contains(child));
-                true
-            });
-            self.dom_text
-                .retain(|node, _| !forgotten_nodes.contains(node));
-            self.dom_attributes
-                .retain(|node, _| !forgotten_nodes.contains(node));
-            self.dom_tags
-                .retain(|node, _| !forgotten_nodes.contains(node));
-            self.dom_text_nodes
-                .retain(|node| !forgotten_nodes.contains(node));
-            self.dom_attached
-                .retain(|node| !forgotten_nodes.contains(node));
-            self.dom_scroll_tops
-                .retain(|node, _| !forgotten_nodes.contains(node));
-            self.dom_scroll_limits
-                .retain(|node, _| !forgotten_nodes.contains(node));
-        }
         for map in [
             &mut self.dom_class_lists,
             &mut self.dom_node_lists,
@@ -4570,6 +4630,10 @@ impl JsRuntime {
             followers.retain(|follower| marked_owner(follower));
             marked_owner(source) && !followers.is_empty()
         });
+        // Detachment only disconnects the JS wrapper from the document; the
+        // host snapshot also owns strings, attributes and tree-link maps.
+        // Release these records when no JavaScript view can access the node.
+        self.prune_native_dom_metadata(&forgotten_nodes);
         let mut freed_objects = 0;
         let mut freed_environments = 0;
         for (index, object) in self.heap.iter_mut().enumerate() {
@@ -4615,6 +4679,15 @@ impl JsRuntime {
     /// DOM operation queues are drained, and no JsValue escaped to Rust.
     /// Generic embedders must use collect_garbage_with_roots instead.
     pub fn collect_if_needed_at_idle(&mut self) -> Result<Option<JsGcReport>, JsError> {
+        self.collect_if_needed_at_idle_with_host_pressure(false)
+    }
+
+    /// The native page host may force a validated pass for native allocation
+    /// pressure or after its parser has released all temporary tree handles.
+    pub fn collect_if_needed_at_idle_with_host_pressure(
+        &mut self,
+        host_pressure: bool,
+    ) -> Result<Option<JsGcReport>, JsError> {
         let live = self.heap.iter().filter(|o| o.alive).count()
             + self.environments.iter().filter(|e| e.alive).count();
         // A pending script can need multiple allocations before its next
@@ -4626,7 +4699,11 @@ impl JsRuntime {
         let environment_pressure = self.environments.len()
             >= self.environment_budget.saturating_sub(environment_headroom)
             && self.free_environments.len() <= environment_headroom;
-        if live < self.next_gc_live_trigger && !object_pressure && !environment_pressure {
+        if live < self.next_gc_live_trigger
+            && !object_pressure
+            && !environment_pressure
+            && !host_pressure
+        {
             return Ok(None);
         }
         let started = Instant::now();
@@ -9816,6 +9893,42 @@ mod tests {
             vm.allocate_environment(Some(vm.global_env), EnvironmentKind::Block)
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn g3_live_detached_tree_traces_wrappers_across_unwrapped_native_nodes() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([
+            DomElementSnapshot {
+                node: 1,
+                id: "root".into(),
+                text_content: String::new(),
+            },
+            DomElementSnapshot {
+                node: 3,
+                id: "leaf".into(),
+                text_content: String::new(),
+            },
+        ])
+        .unwrap();
+        vm.sync_dom_existing_node(2, Some(1), vec![]);
+        vm.sync_dom_tag(2, "div".into());
+        vm.sync_dom_children(1, vec![2]);
+        vm.sync_dom_existing_node(3, Some(2), vec![("id".into(), "leaf".into())]);
+        vm.sync_dom_tag(3, "button".into());
+        vm.sync_dom_children(2, vec![3]);
+        vm.eval_script("var root=document.getElementById('root');var leaf=document.getElementById('leaf');var hits=0;leaf.addEventListener('click',function(){hits=hits+1;});leaf=null;").unwrap();
+        assert!(!vm.dom_node_objects.contains_key(&2));
+        vm.detach_dom_subtree(1).unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(vm.dom_node_objects.contains_key(&3));
+        vm.eval_script("var kept=root.firstChild.firstChild;kept.click();root=null;")
+            .unwrap();
+        assert_eq!(vm.global("hits"), Some(&JsValue::Number(1.0)));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("kept.parentNode.parentNode.firstChild.firstChild.click();")
+            .unwrap();
+        assert_eq!(vm.global("hits"), Some(&JsValue::Number(2.0)));
     }
 
     #[test]

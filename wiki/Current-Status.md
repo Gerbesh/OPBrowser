@@ -3,6 +3,17 @@
 Last reviewed: **9 October 2026**. The [published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki) tracks the main repository's `wiki/` sources. This is a development snapshot, not a
 claim that OPBrowser is ready for everyday browsing.
 
+## Native DOM reclamation (14 October 2026)
+
+Native Document now collects orphan node components and reuses slots with
+generation-checked identities. Live detached nodes, views, queries and pending
+callbacks preserve their native ancestors/descendants. Sweeps wait for parser
+completion and validated JS idle checkpoints; weak image/stylesheet/scroll
+cache keys are removed, and native allocation headroom can trigger collection.
+Native pauses and arena live/reserved counters are measured separately.
+The 30-minute Windows and broad navigation/network stability gates remain open.
+See [GC stress results](../docs/GC_STRESS_RESULTS.md).
+
 ## GC measurement update (14 October 2026)
 
 Native DOM binding now preserves detachment instead of re-rooting orphan

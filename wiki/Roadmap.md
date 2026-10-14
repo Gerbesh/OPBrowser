@@ -10,7 +10,18 @@ OPBrowser aims to be an independent Windows browser with an original Rust web/Ja
 
 **G3 budget-pressure checkpoint:** automatic idle GC now observes object and lexical-environment arena headroom as well as live allocations. Three regressions pass for low-budget and repeated allocation bursts; long-run RSS remains pending.
 
-## Current priorities (13 October 2026)
+## Native DOM checkpoint (14 October 2026)
+
+Native Document now collects orphan node components and reuses slots with
+generation-checked identities. Live detached nodes, views, queries and pending
+callbacks preserve their native ancestors/descendants. Sweeps wait for parser
+completion and validated JS idle checkpoints; weak image/stylesheet/scroll
+cache keys are removed, and native allocation headroom can trigger collection.
+Native pauses and arena live/reserved counters are measured separately.
+The 30-minute Windows and broad navigation/network stability gates remain open.
+See [GC stress results](../docs/GC_STRESS_RESULTS.md).
+
+## Current priorities (14 October 2026)
 
 1. **P0-1 NOW: original JavaScript GC only.** G1/G2/G3 partial now provides browser-owned automatic mark/sweep, generation-safe slot reuse, weak AbortSignal.any follower ownership and GC pause/failure telemetry. A repeatable Windows native-engine timer probe measured 817 successful collections in 12 seconds with zero GC errors and bounded object/environment arenas. **Not a 30-minute memory proof.** Next: sustained RSS/pause measurement and remaining fetch/DOM/abort root audits. See [GC implementation design](https://github.com/Gerbesh/OPBrowser/blob/main/docs/GC_IMPLEMENTATION.md) and [stress procedure](https://github.com/Gerbesh/OPBrowser/blob/main/docs/GC_STRESS_RESULTS.md).
 2. **P0-2 AFTER GC: rendering and scrolling.** Existing vertical and bounded horizontal overflow, partial Flexbox and native GDI tests stay intact. Horizontal thumb dragging, JS scrollLeft, positioned clips, Grid and real-page visual comparison resume only after GC passes safety and stability gates.

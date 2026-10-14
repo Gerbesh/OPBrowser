@@ -16,6 +16,10 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G3 partial: generational native DOM arena and host coordination
+
+`op_dom::NodeId` encodes a slot and generation; index() is an opaque handle, never an arena subscript. Document owns optional NodeSlots, a free list and live/reserved/GC counters; retired generations never recycle. Native GC validates all roots and keeps connected nodes and complete native components of JS wrappers/views/queries/callbacks. `scripts::collect_at_idle` runs JS validation followed by native sweep outside parser ownership, then prunes VM metadata. Text replacement synchronizes old child detachment. PreparedDocument removes dead image/stylesheet/scroll cache keys; style snapshots refresh on actual DOM mutations. Engine and probe export DomGcTelemetry, including native-only pause statistics. No new crate/dependency.
+
 ## G3 partial: native binding connectivity and recoverable staging quota
 
 `bind_dom_node` preserves the virtual node's connection state, moves it to the physical ID and canonicalizes both ends of parent/child edges. Binding a detached node no longer creates a false GC root, and detaching a previously bound node cannot leave a connected virtual alias. `allocate_virtual_dom_node` shares a 256-outstanding-unbound-node/operation guard between element and text creation; monotonic IDs never recycle or enter the physical ID range. Committed or collected nodes stop consuming that staging quota. The authoritative 20,000-node host arena limit remains.

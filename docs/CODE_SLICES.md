@@ -16,6 +16,10 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S70 - Native DOM reachability, reclamation and generation-safe reuse (G3 partial)
+
+Parser completes or browser callback batch finishes -> commit DOM writes and detach old text children -> successful JS mark/sweep -> native roots for surviving wrappers/views/queries -> native parent/child component marking -> orphan slots dropped and generations advanced -> VM snapshots and weak page resources pruned -> later native allocations reuse slots with new opaque IDs. Native arena headroom can force an otherwise idle JS pass. Ten regressions cover stale handles, atomic failure, retirement, native tree identity/resources, parser ownership, timer roots, text churn and bridged wrapper edges. The 30-minute Windows/full-browsing gate remains open.
+
 ## S69 - Native DOM binding without false roots or lifetime quota (G3 partial)
 
 VM create/append/remove -> engine commits queued operations -> `bind_dom_node` preserves connectivity and canonical tree links -> idle GC reclaims orphan JS node/listener cycles. The staging allocator limits pending operations and unbound live nodes instead of lifetime creation count. Three VM regressions cover connected-to-detached roots, retained detached subtree identity/edits and quota recovery without ID reuse. The timer-based DOM probe now survives thousands of creations; native document slots still accumulate.

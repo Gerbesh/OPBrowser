@@ -1,5 +1,15 @@
 # Original JS VM garbage collector: implementation plan
 
+## G3 native arena collection and ownership boundary
+
+Native Document now stores optional NodeSlots and generation-checked NodeIds with a reusable free list. On x86_64 the handle uses 32 slot bits and 31 generation bits; the upper bit stays clear to avoid the VM synthetic-ID range. Exhausted generations retire rather than wrap. Document::len reports live native nodes, reserved_slots reports the arena high-water mark, and allocation_headroom includes freed slots. All native node reads/mutations validate generation.
+
+The engine requests native sweeping only after JS roots validate at a browser-owned idle boundary. Native host roots include surviving wrappers, static query backing nodes and DOM view/collection backing nodes; pending JS callbacks retain wrappers through normal closure tracing. Document keeps each retained node's ancestors, siblings and descendants. The VM also traces wrapper ancestors/descendants across unwrapped intermediates. Invalid roots abort native sweeping before any node is destroyed and increment failure telemetry.
+
+No native sweep occurs while the parser holds open-element or deferred-script NodeIds. A forced validated checkpoint after parsing releases orphan parser-created subtrees. Timer/network/native-click boundaries collect on JS pressure or native arena headroom, after host writes commit. textContent replacements clear old child connectivity in VM metadata at commit, and respect native allocation headroom. Weak node-keyed image, generated/background image, linked stylesheet and scroll caches drop dead identities; live detached resources survive. Page-level bounded color profiles retain their existing lifetime.
+
+Native mark/sweep last/max pauses are separate from the JS histogram; their measurements exclude subsequent VM metadata/page-cache pruning. Neither histogram nor native pause maximum proves a bounded total host checkpoint. Native component safety and bounded short-run native arena reuse are verified; the 30-minute Windows and real navigation/fetch/Promise stress gates remain open.
+
 ## G3 host fix: binding and staging-budget recovery
 
 A real DOM timer workload exposed two host boundary bugs: native binding unconditionally added detached nodes to `dom_attached`, and `next_virtual_dom_node > 256` exhausted a page-lifetime quota despite collection. Binding now transfers the actual connectivity state only to the canonical physical ID and remaps native parent/child edges, preserving later detached subtree edits. The shared element/text allocator bounds 256 outstanding unbound wrappers and queued operations while retaining monotonic, non-recycled synthetic IDs. Three VM regressions check these ownership/budget rules. Native `Document` storage is still not collected.
@@ -8,7 +18,7 @@ A real DOM timer workload exposed two host boundary bugs: native binding uncondi
 
 Each successful automatic idle collection records a pause in a bounded, 64-bucket power-of-two nanosecond histogram. Percentiles are nearest-rank bucket upper bounds, not exact durations; explicit sweeps and failed attempts are excluded. The probe reports the histogram sample count so it can be compared with successful collections.
 
-`--workload dom` creates/removes native element/text subtrees and orphan listener cycles while retaining a separate detached subtree and listener to verify identity after GC. `Engine::active_document_node_slots()` measures `op_dom::Document::len()`, including detached nodes. The authoritative native arena is still append-only: pruning VM-side tags/attributes/wrappers does not reclaim its nodes. Native document reclamation must preserve live detached handles and node identity, and coordinate with style/image/host caches; it is a prerequisite to the full DOM memory gate.
+`--workload dom` creates/removes native element/text subtrees and orphan listener cycles while retaining a separate detached subtree and listener to verify identity after GC. `Engine::active_document_node_slots()` now measures reserved_slots, including reusable arena capacity; native live_nodes is reported separately. The 17439ec baseline exposed append-only native storage despite VM wrapper cleanup; generation-safe native sweeping and weak host-cache cleanup now address that retention. The full 30-minute/browsing gate remains open.
 
 ## G3 partial: idle GC on arena allocation headroom
 
@@ -86,14 +96,14 @@ A live composite AbortSignal now traces the reverse follower graph back to its s
 The browser now exposes `active_script_gc_telemetry()` (live/reserved slots, success/failure counts, latest sweep report and pauses). The standalone `gc_stress_probe` executes a scripted page timer on the browser-owned worker and samples Windows process working set each second. A 12-second DEBUG trial had 817 successful passes, zero GC failures, stable reserved arenas of 414 object / 247 environment slots, and a worst pause of 1,164 microseconds. Detailed reproduction and limitations: [GC_STRESS_RESULTS.md](GC_STRESS_RESULTS.md). A 30-minute steady-state proof is still pending.
 
 
-Status: **G3 PARTIAL: SAFE AUTOMATIC GC, WEAK ABORT COMPOSITES AND NATIVE PROCESS RSS PROBE** (2026-10-13). G2a generation-safe sweeping is retained. GC runs after script/DOM/click/timer/network tasks when live slot pressure crosses a bounded trigger, but complete host-root audits and a long-session memory plateau are still outstanding.
+Status: **G3 PARTIAL: SAFE AUTOMATIC JS/NATIVE DOM GC AND MEASURABLE HOST OWNERSHIP** (2026-10-14). G2a generation-safe sweeping is retained. GC runs after script/DOM/click/timer/network tasks when live slot pressure crosses a bounded trigger, but complete host-root audits and a long-session memory plateau are still outstanding.
 
 ## Observed implementation
 
 - `JsRuntime.heap: Vec<JsObject>` stores reserved slots; `ObjectId(usize)` encodes an index plus generation. Recycled slots never validate an older handle.
 - `JsRuntime.environments: Vec<Environment>` uses the same generation and free-list protocol for captured lexical bindings and parent references. Explicit sweep releases owned maps, cycles and function captures.
 - Budgets remain 100,000 reserved object and environment slots each. Allocation reuses freed slots, but does NOT automatically trigger a collection at the limit.
-- `JsRuntime::heap_usage()` is the reserved high-water count, not the live heap size. Explicit `JsGcReport` returns freed/live and reserved counts; process memory and pauses have not been measured.
+- `JsRuntime::heap_usage()` is the reserved high-water count, not the live heap size. Explicit `JsGcReport` returns freed/live and reserved counts; short process-memory and pause measurements are recorded in GC_STRESS_RESULTS.md; long-session gates remain open.
 - DOM event listeners, `onclick`, global/document listeners, AbortSignal follower graph, timers, microtasks, pending fetch callbacks, active composedPath, DOM node/object caches, Headers and boxed primitive side maps all hold handles which the collector must account for.
 - The stack/activation frames are currently recursive native interpreter calls with `EnvironmentId`, `JsValue` temporaries and synchronous nested event dispatch. Collecting in the middle of such a call before roots are explicit risks a use-after-free or wrong-object alias.
 
@@ -209,4 +219,9 @@ Mark-only telemetry must report retained vs unreachable slots and avoid modifyin
 
 ## Current measurable baseline / next action
 
-G2b enables browser-owned automatic idle collection at live allocation pressure, in addition to explicit G2a sweeping. Tests prove two real page scripts reuse object slots, and pending timer/listener callbacks survive a sweep. Next: complete opaque host/fetch/AbortSignal roots, report failed GC passes, profile pauses and process working set under a fixed 30-minute workload. Long-session memory stability is NOT established, so unrelated renderer work remains deferred.
+Automatic JS and native DOM sweeping now recycles slots while preserving live
+node/view/query/callback identities, including native components without wrappers.
+Short synthetic DOM churn crosses the former 20,000 lifetime native-node limit
+while using a bounded reserved arena. Next: the 30-minute Windows memory/pause
+gate, wider native host ownership and fetch/Promise/navigation race matrix.
+Renderer work remains deferred until those gates pass.

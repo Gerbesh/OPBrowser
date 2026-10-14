@@ -1,7 +1,7 @@
 {
   "date": "2026-10-14",
   "base_commit": "7f20c5e682f567ac14039745e9905b1f79bf5673",
-  "source": "release implementation and embedded workload fixtures in the accompanying commit",
+  "source": "historical 60-second profiles measured before native DOM arena reclamation, at commit 17439ec",
   "rustc": "1.99.0 (b940084d7 2026-09-28)",
   "target": "x86_64-unknown-linux-gnu",
   "profile": "release",
@@ -60,5 +60,6 @@
         "max_pause_us": 9994
       }
     }
-  }
+  },
+  "source_commit": "17439ec7f08b74a0fa450e6fef985d35947b6ed1"
 }

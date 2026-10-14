@@ -1,5 +1,50 @@
 # Original JavaScript GC stress: repeatable browser-owner probe
 
+## Native DOM arena sweep: 180-second Linux profile (2026-10-14)
+
+Native Document now releases orphan strings/attributes/tree links and reuses
+slots with checked generations. Connected nodes and complete components owned
+by live JS nodes/views/queries/callbacks survive. Native GC waits until parsing
+is finished and the JS root pass succeeds; native allocation pressure can
+force a validated checkpoint. Text replacement also clears old child roots.
+Weak page image/stylesheet/scroll resources drop dead node identities.
+
+On the final release build, `--seconds 180 --workload dom` completed with zero
+JS, JS-GC and native-GC failures. Source is the accompanying commit based on
+`17439ec`; [manifest](gc/2026-10-14-linux-native-dom-manifest.json) pins source
+file and binary hashes. The shared cloud executor also ran cross-Clippy and
+documentation checks; timing is diagnostic rather than an isolated benchmark.
+
+| Counter | Result |
+| --- | ---: |
+| JS collections / histogram samples | 8,385 / 8,385 |
+| Native collections / reclaimed nodes | 8,385 / 33,544 |
+| Final JS reserved objects / environments | 508 / 250 |
+| Final native reserved slots / live nodes | 17 / 11 |
+| Native slots, samples 10..179 | 15..17 |
+| Native live nodes, samples 10..179 | 11..13 |
+| RSS min / max, samples 10..179 | 3,526,656 / 3,616,768 bytes |
+| RSS OLS slope, samples 10..179 | 537.96 bytes/s |
+| JS p50 / p95 / p99 upper bounds | 66 / 263 / 525 us |
+| Maximum JS / native mark-sweep wall pause | 2,691 / 1,565 us |
+
+Raw [CSV](gc/2026-10-14-linux-native-dom-180s.csv) and
+[final log](gc/2026-10-14-linux-native-dom-180s.log). More than 20,000 native
+nodes were reclaimed without exhausting the host arena. This verifies bounded native arena reuse for the specified workload.
+The 30-minute Windows and real-site gates remain open.
+Native timings exclude the later VM metadata and page-resource pruning;
+total host checkpoint pause distribution remains to be measured.
+
+Four native arena tests and six VM/engine ownership tests cover stale-handle
+rejection, invalid-root atomicity, generation retirement, repeated reuse,
+retained query trees/resources, parser ownership, timer roots, native pressure,
+text replacement churn and wrapper tracing across unwrapped native nodes.
+All 771 executable portable Rust tests pass (five previously verified
+Windows-dependent cases excluded on Linux); Windows-target strict workspace
+Clippy and code intelligence pass. Native Win32 and compatibility validation
+run in Windows CI after publication. Larger live heaps, oversized single tasks,
+fetch/Promise/navigation matrices and sustained Windows memory remain open.
+
 ## G3 host-boundary fixes and 60-second Linux profiles (2026-10-14)
 
 The DOM profile initially failed within two seconds: native binding re-rooted
@@ -20,8 +65,7 @@ detached nodes. `rss_bytes=0` means the platform measurement is unavailable.
 Rust 1.99.0, release, Linux x86_64, two independent processes in a shared cloud
 executor. The profiles and Cargo checks ran concurrently; wall-clock pauses
 include scheduling delays, so these are diagnostic results, not isolated
-performance benchmarks. Source is the accompanying commit, based on
-`7f20c5e`. The [manifest](gc/2026-10-14-linux-manifest.json) includes the binary
+performance benchmarks. Historical source is `17439ec`, based on `7f20c5e`. The [manifest](gc/2026-10-14-linux-manifest.json) includes the binary
 hash, method, raw CSV paths and final counters from stderr.
 
 | Final 60-second counter | Timer | DOM/listeners |
@@ -41,7 +85,7 @@ Raw [timer CSV](gc/2026-10-14-linux-timer-60s.csv) and
 [DOM log](gc/2026-10-14-linux-dom-60s.log). CSV samples end at second 59;
 final counters cover the full requested 60 seconds.
 
-**Open blocker:** native `op_dom::Document` still retains detached nodes.
+**Blocker at 17439ec (now addressed by native sweeping):** native `op_dom::Document` retained detached nodes.
 DOM RSS and native slot counts grow despite recycled JS arenas. The host
 creation limit is 20,000 native slots; the DOM probe stops with a failure if
 that limit is reached. A short successful run does not assert a plateau.

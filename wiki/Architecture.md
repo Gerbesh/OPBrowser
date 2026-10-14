@@ -195,3 +195,17 @@ The first op_js execution slice is deliberately independent of DOM scripting: le
 For text, ADR-0003 permits DirectWrite as a focused Windows shaping/raster infrastructure
 service behind the platform-neutral text interface. OPBrowser still owns CSS font policy,
 line breaking, layout and paint semantics.
+
+## Native DOM ownership and reclamation
+
+Native Document uses generation-checked NodeIds and recycled optional slots.
+`NodeId::index()` is an opaque handle, not an array subscript; callers validate
+raw handles with `Document::node_id`. `Document::len` counts live nodes, while
+`reserved_slots` measures retained arena capacity. Explicit collection requires
+roots for all caller-held nodes. The engine validates JS roots before native
+sweeping, retains complete native components for surviving wrappers/views/queries
+and pending callbacks, waits for parser ownership to end, and clears weak
+node-keyed image/stylesheet/scroll caches after reclamation. Native-only pauses
+are measured separately from JS GC.
+See [GC design](../docs/GC_IMPLEMENTATION.md) and
+[stress results](../docs/GC_STRESS_RESULTS.md).

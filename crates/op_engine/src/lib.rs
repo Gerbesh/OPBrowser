@@ -165,6 +165,27 @@ impl PreparedDocument {
         self.computed_styles = compute_styles(&self.document, &self.style_collection.styles);
     }
 
+    fn prune_native_resources(&mut self) {
+        let document = &self.document;
+        self.linked_stylesheet_texts
+            .retain(|id, _| document.node(*id).is_some());
+        self.stylesheet_addresses
+            .retain(|id, _| document.node(*id).is_some());
+        self.images
+            .elements
+            .retain(|id, _| document.node(*id).is_some());
+        self.images
+            .backgrounds
+            .retain(|id, _| document.node(*id).is_some());
+        self.images
+            .generated
+            .retain(|(id, _, _), _| document.node(*id).is_some());
+        self.scroll_offsets
+            .retain(|id, _| document.node_id(*id).is_some());
+        self.scroll_left_offsets
+            .retain(|id, _| document.node_id(*id).is_some());
+    }
+
     fn render(&mut self, width: i32, height: i32) -> RenderedPage {
         let layout = layout_document_with_axis_scrolling(
             &self.document,
@@ -273,7 +294,11 @@ impl Engine {
     /// Native DOM arena occupancy, including detached nodes. This is separate
     /// from JS wrappers and VM-side DOM metadata collected by the JS GC.
     pub fn active_document_node_slots(&self) -> Option<usize> {
-        Some(self.active_document.as_ref()?.document.len())
+        Some(self.active_document.as_ref()?.document.reserved_slots())
+    }
+
+    pub fn active_document_gc_telemetry(&self) -> Option<op_dom::DomGcTelemetry> {
+        Some(self.active_document.as_ref()?.document.gc_telemetry())
     }
 
     /// Snapshot of browser-owned JS GC counters and arena occupancy.
@@ -545,6 +570,7 @@ impl Engine {
             .map(|region| region.node)?;
         let runtime = prepared.runtime.as_mut()?;
         let (handled, changes) = scripts::dispatch_click(&mut prepared.document, runtime, target);
+        prepared.prune_native_resources();
         if !handled && changes == 0 {
             return None;
         }
@@ -807,8 +833,9 @@ impl Engine {
         let changes = scripts::apply_dom_operations(&mut prepared.document, runtime);
         // Network/timer callbacks completed and native DOM mutations are
         // committed before the browser-owned automatic GC checkpoint.
-        let _ = runtime.collect_if_needed_at_idle();
+        scripts::collect_at_idle(&mut prepared.document, runtime, false);
         let scroll_changed = runtime.take_scroll_dirty();
+        prepared.prune_native_resources();
         if changes == 0 && !scroll_changed {
             return None;
         }
@@ -974,6 +1001,140 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn g3_text_content_churn_recycles_unwrapped_nodes_and_preserves_held_text() {
+        let mut engine = Engine::new();
+        engine.set_html_page("<body><p id='target'>before</p><script>var target=document.getElementById('target');var held=target.firstChild;</script></body>", 640, 480);
+        let prepared = engine.active_document.as_mut().unwrap();
+        let runtime = prepared.runtime.as_mut().unwrap();
+        for _ in 0..500 {
+            runtime.eval_script("target.textContent='next';").unwrap();
+            scripts::apply_dom_operations(&mut prepared.document, runtime);
+            runtime.eval_script("if(held.data!=='before' || held.parentNode!==null)throw new Error('held text identity lost');").unwrap();
+            scripts::collect_at_idle(&mut prepared.document, runtime, true);
+        }
+        assert!(prepared.document.reserved_slots() < 20);
+        assert!(prepared.document.gc_telemetry().reclaimed >= 499);
+        assert_eq!(prepared.document.gc_telemetry().failed, 0);
+    }
+
+    #[test]
+    fn g3_native_pressure_collects_unwrapped_garbage_without_js_heap_pressure() {
+        let mut engine = Engine::new();
+        engine.set_html_page("<body><script>var keep=42;</script></body>", 640, 480);
+        let prepared = engine.active_document.as_mut().unwrap();
+        let baseline = prepared.document.len();
+        for _ in 0..17_501 {
+            prepared.document.create_text("native-only orphan");
+        }
+        let runtime = prepared.runtime.as_mut().unwrap();
+        let before = runtime.automatic_gc_runs();
+        scripts::collect_at_idle(&mut prepared.document, runtime, false);
+        assert_eq!(runtime.automatic_gc_runs(), before + 1);
+        assert_eq!(prepared.document.len(), baseline);
+        assert_eq!(prepared.document.gc_telemetry().reclaimed, 17_501);
+        assert_eq!(
+            prepared.document.allocation_headroom(20_000),
+            20_000 - baseline
+        );
+    }
+
+    #[test]
+    fn g3_pending_timer_owns_native_detached_node_until_cancellation() {
+        let mut engine = Engine::new();
+        engine.set_html_page("<body><script>var tid;function stage(){var node=document.createElement('div');tid=setTimeout(function(){document.body.appendChild(node);},60000);}stage();</script></body>", 640, 480);
+        let prepared = engine.active_document.as_mut().unwrap();
+        let before = prepared.document.len();
+        let runtime = prepared.runtime.as_mut().unwrap();
+        scripts::collect_at_idle(&mut prepared.document, runtime, true);
+        assert_eq!(prepared.document.len(), before);
+        runtime.eval_script("clearTimeout(tid);").unwrap();
+        scripts::collect_at_idle(&mut prepared.document, runtime, true);
+        assert_eq!(prepared.document.len(), before - 1);
+        assert_eq!(prepared.document.gc_telemetry().failed, 0);
+    }
+
+    #[test]
+    fn g3_native_gc_keeps_query_backing_tree_then_releases_it_and_weak_resources() {
+        let mut engine = Engine::new();
+        engine.set_html_page("<body><section id='gone'><span id='leaf'>retained</span></section><script>var list=document.getElementById('gone').querySelectorAll('span');</script></body>", 640, 480);
+        let prepared = engine.active_document.as_mut().unwrap();
+        let parent = prepared
+            .document
+            .children(prepared.document.root())
+            .iter()
+            .copied()
+            .flat_map(|html| prepared.document.children(html).iter().copied())
+            .flat_map(|body| prepared.document.children(body).iter().copied())
+            .find(|id| {
+                prepared
+                    .document
+                    .element(*id)
+                    .is_some_and(|el| el.tag_name == "section")
+            })
+            .unwrap();
+        prepared
+            .linked_stylesheet_texts
+            .insert(parent, "section{color:red}".into());
+        prepared
+            .stylesheet_addresses
+            .insert(parent, "file:retained.css".into());
+        let image = std::sync::Arc::new(
+            op_image::RasterImage::from_premultiplied_bgra(1, 1, vec![0, 0, 255, 255]).unwrap(),
+        );
+        prepared.images.elements.insert(parent, image.clone());
+        prepared.images.backgrounds.insert(parent, image.clone());
+        prepared
+            .images
+            .generated
+            .insert((parent, op_css::PseudoElement::Before, 0), image);
+        prepared.scroll_offsets.insert(parent.index(), 10);
+        prepared.scroll_left_offsets.insert(parent.index(), 20);
+        let runtime = prepared.runtime.as_mut().unwrap();
+        runtime
+            .eval_script("document.getElementById('gone').remove();")
+            .unwrap();
+        scripts::apply_dom_operations(&mut prepared.document, runtime);
+        scripts::collect_at_idle(&mut prepared.document, runtime, true);
+        assert!(prepared.document.node(parent).is_some());
+        runtime.eval_script("var leaf=list[0];var parent=leaf.parentNode;document.body.appendChild(parent);if(document.getElementById('leaf')!==leaf)throw new Error('query identity lost');parent.remove();list=null;leaf=null;parent=null;").unwrap();
+        scripts::apply_dom_operations(&mut prepared.document, runtime);
+        scripts::collect_at_idle(&mut prepared.document, runtime, true);
+        prepared.prune_native_resources();
+        prepared.refresh_styles();
+        assert!(prepared.document.node(parent).is_none());
+        assert!(!prepared.linked_stylesheet_texts.contains_key(&parent));
+        assert!(!prepared.stylesheet_addresses.contains_key(&parent));
+        assert!(!prepared.images.elements.contains_key(&parent));
+        assert!(!prepared.images.backgrounds.contains_key(&parent));
+        assert!(!prepared.images.generated.contains_key(&(
+            parent,
+            op_css::PseudoElement::Before,
+            0
+        )));
+        assert!(!prepared.scroll_offsets.contains_key(&parent.index()));
+        assert!(!prepared.scroll_left_offsets.contains_key(&parent.index()));
+        assert!(prepared.computed_styles.style_for(parent).is_none());
+        assert_eq!(prepared.document.gc_telemetry().failed, 0);
+    }
+
+    #[test]
+    fn g3_native_gc_waits_until_parser_releases_open_element_handles() {
+        let mut engine = Engine::new();
+        engine.set_html_page("<body><section id='removed'><script>document.getElementById('removed').remove();for(var i=0;i<300;i=i+1){var garbage={index:i};}garbage=null;</script><p>Parser still uses the detached section</p></section><p id='kept'>Connected</p></body>", 640, 480);
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let prepared = engine.active_document.as_ref().unwrap();
+        assert_eq!(prepared.document.gc_telemetry().failed, 0);
+        assert!(prepared.document.gc_telemetry().reclaimed > 0);
+        let mut stack = vec![prepared.document.root()];
+        let mut connected = 0;
+        while let Some(id) = stack.pop() {
+            connected += 1;
+            stack.extend(prepared.document.children(id).iter().copied());
+        }
+        assert_eq!(prepared.document.len(), connected);
+    }
 
     #[test]
     fn click_schedules_timer_then_tick_repaints_page() {
@@ -1168,7 +1329,7 @@ mod tests {
     }
 
     #[test]
-    fn g10_engine_reports_idle_page_heap_reachability_without_a_gc() {
+    fn g3_engine_reports_live_reachability_after_the_post_parser_gc() {
         let mut engine = Engine::new();
         engine.set_html_page(
             "<body><script>var keep={};keep.self=keep;var lost={};lost.self=lost;lost=null;</script></body>",
@@ -1176,13 +1337,17 @@ mod tests {
         );
         let report = engine.active_script_heap_reachability().unwrap().unwrap();
         assert!(report.reachable_objects > 0);
-        assert!(report.unreachable_objects > 0);
         assert_eq!(
-            report.object_slots,
+            report.unreachable_objects, 0,
+            "post-parser checkpoint swept orphans"
+        );
+        let telemetry = engine.active_script_gc_telemetry().unwrap();
+        assert_eq!(
+            telemetry.live_objects,
             report.reachable_objects + report.unreachable_objects
         );
         assert_eq!(
-            report.environment_slots,
+            telemetry.live_environments,
             report.reachable_environments + report.unreachable_environments
         );
 

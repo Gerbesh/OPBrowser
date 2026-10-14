@@ -38,14 +38,15 @@ directory remains the canonical source for the
 Use `python tools/publish_wiki.py --target WIKI_CHECKOUT --write` to
 synchronize after documentation updates.
 
-**G1.0 memory work:** the original VM now has a non-destructive
-mark-only reachability scanner for JS objects and captured lexical
-environments. It distinguishes retained closure/cyclic references
-from orphan allocations and exposes statistics through the page
-engine at idle checkpoints. VM and host integration tests pass.
-**No garbage collection occurs yet:** no sweeping or released
-slots, no memory plateau claim. Native interpreter frame roots,
-generation-safe reclamation and long-session collection are next.
+**G3 native memory work:** the original JS VM and native DOM now use
+idle-only generation-safe mark/sweep with slot reuse. Live detached nodes,
+queries, views and pending callbacks retain their native tree components;
+weak page image/stylesheet/scroll caches are cleaned after reclamation.
+Native sweeps wait until parsing is complete and JS roots have validated.
+The stress probe exposes live/reserved native nodes and separate native
+pause/failure counters alongside JS pause percentile bounds. Short synthetic
+profiles do not establish the full 30-minute Windows memory gate or
+representative site readiness. See [GC stress results](docs/GC_STRESS_RESULTS.md).
 
 **R2c shrink, basis and flex shorthand:** original CSS now resolves
 flex-shrink, flex-basis (auto/pixels/percentages) and common

@@ -141,7 +141,7 @@ fn main() {
     let mut ticks = 0u64;
     eprintln!("PROBE_START workload={workload} duration_s={seconds}");
     println!(
-        "seconds,ticks,gc_ok,gc_errors,objects_reserved,envs_reserved,objects_live,envs_live,rss_bytes,last_pause_us,max_pause_us,native_dom_slots,pause_samples,p50_upper_us,p95_upper_us,p99_upper_us"
+        "seconds,ticks,gc_ok,gc_errors,objects_reserved,envs_reserved,objects_live,envs_live,rss_bytes,last_pause_us,max_pause_us,native_dom_slots,pause_samples,p50_upper_us,p95_upper_us,p99_upper_us,native_dom_live,native_gc_ok,native_gc_errors,native_reclaimed,native_last_pause_us,native_max_pause_us"
     );
     loop {
         let now = Instant::now();
@@ -154,8 +154,9 @@ fn main() {
             let telemetry = engine
                 .active_script_gc_telemetry()
                 .expect("active scripted page");
+            let native = engine.active_document_gc_telemetry().expect("active page");
             println!(
-                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 now.duration_since(start).as_secs(),
                 ticks,
                 telemetry.successful,
@@ -171,8 +172,15 @@ fn main() {
                 telemetry.pause_histogram.samples,
                 percentile_us(&telemetry, 50),
                 percentile_us(&telemetry, 95),
-                percentile_us(&telemetry, 99)
+                percentile_us(&telemetry, 99),
+                native.live_nodes,
+                native.successful,
+                native.failed,
+                native.reclaimed,
+                native.last_pause.map_or(0, |p| p.as_micros()),
+                native.max_pause.as_micros()
             );
+            assert_eq!(native.failed, 0, "native GC root validation failed");
             assert_eq!(telemetry.failed, 0, "idle GC failed during workload");
             assert_eq!(
                 engine.active_script_report().expect("active page").failed,
@@ -192,8 +200,10 @@ fn main() {
     let telemetry = engine
         .active_script_gc_telemetry()
         .expect("active scripted page");
+    let native = engine.active_document_gc_telemetry().expect("active page");
+    assert_eq!(native.failed, 0, "native GC root validation failed");
     eprintln!(
-        "PROBE_RESULT workload={} duration_s={} ticks={} collections={} failures={} reserved_objects={} reserved_envs={} native_dom_slots={} pause_samples={} p50_upper_us={} p95_upper_us={} p99_upper_us={} max_pause_us={}",
+        "PROBE_RESULT workload={} duration_s={} ticks={} collections={} failures={} reserved_objects={} reserved_envs={} native_dom_slots={} pause_samples={} p50_upper_us={} p95_upper_us={} p99_upper_us={} max_pause_us={} native_dom_live={} native_gc_ok={} native_gc_errors={} native_reclaimed={} native_max_pause_us={}",
         workload,
         seconds,
         ticks,
@@ -206,7 +216,12 @@ fn main() {
         percentile_us(&telemetry, 50),
         percentile_us(&telemetry, 95),
         percentile_us(&telemetry, 99),
-        telemetry.max_pause.as_micros()
+        telemetry.max_pause.as_micros(),
+        native.live_nodes,
+        native.successful,
+        native.failed,
+        native.reclaimed,
+        native.max_pause.as_micros()
     );
     assert_eq!(
         telemetry.pause_histogram.samples as usize, telemetry.successful,
@@ -243,16 +258,23 @@ mod tests {
             let mut engine = Engine::new();
             engine.set_html_page(page, 640, 480);
             assert_eq!(engine.active_script_report().unwrap().failed, 0);
-            let stop = Instant::now() + Duration::from_millis(300);
-            while Instant::now() < stop {
+            let initial = engine.active_script_gc_telemetry().unwrap().successful;
+            let stop = Instant::now() + Duration::from_secs(3);
+            while Instant::now() < stop
+                && engine.active_script_gc_telemetry().unwrap().successful < initial + 2
+            {
                 let _ = engine.tick_timers(640, 480);
                 std::thread::sleep(Duration::from_millis(2));
             }
             assert_eq!(engine.active_script_report().unwrap().failed, 0);
             assert!(engine.active_event_listener_errors().unwrap().is_empty());
             let telemetry = engine.active_script_gc_telemetry().unwrap();
-            assert!(telemetry.successful > 0);
+            assert!(
+                telemetry.successful >= initial + 2,
+                "timer tasks must collect beyond startup GC"
+            );
             assert_eq!(telemetry.failed, 0);
+            assert_eq!(engine.active_document_gc_telemetry().unwrap().failed, 0);
             assert_eq!(
                 telemetry.pause_histogram.samples as usize,
                 telemetry.successful

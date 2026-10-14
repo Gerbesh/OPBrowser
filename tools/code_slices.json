@@ -944,6 +944,42 @@
         }
       ],
       "limitation": "Authoritative native Document storage remains append-only; staging quota recovery does not reclaim the native arena."
+    },
+    {
+      "id": "S70",
+      "title": "Native DOM tracing, generational recycling and weak cache cleanup",
+      "status": "G3 partial: JS-validated native tree sweeping with parser lifetime barrier",
+      "steps": [
+        {
+          "path": "crates/op_engine/src/scripts.rs",
+          "symbol": "apply_dom_operations"
+        },
+        {
+          "path": "crates/op_engine/src/scripts.rs",
+          "symbol": "collect_at_idle"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "native_dom_roots"
+        },
+        {
+          "path": "crates/op_dom/src/lib.rs",
+          "symbol": "collect_garbage"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "forget_collected_native_nodes"
+        },
+        {
+          "path": "crates/op_engine/src/lib.rs",
+          "symbol": "prune_native_resources"
+        },
+        {
+          "path": "crates/op_engine/src/bin/gc_stress_probe.rs",
+          "symbol": "main"
+        }
+      ],
+      "limitation": "Preserves complete retained native components; no mid-parser or in-flight native JS collection. Short synthetic Linux profile is not the 30-minute Windows/full browsing gate. Native pauses exclude subsequent metadata/cache pruning."
     }
   ]
 }

@@ -5,6 +5,15 @@ SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
 ## Current GC status (14 October 2026, G3 partial)
 
+Native Document now collects orphan node components and reuses slots with
+generation-checked identities. Live detached nodes, views, queries and pending
+callbacks preserve their native ancestors/descendants. Sweeps wait for parser
+completion and validated JS idle checkpoints; weak image/stylesheet/scroll
+cache keys are removed, and native allocation headroom can trigger collection.
+Native pauses and arena live/reserved counters are measured separately.
+The 30-minute Windows and broad navigation/network stability gates remain open.
+See [GC stress results](../docs/GC_STRESS_RESULTS.md).
+
 Native DOM binding now preserves detachment instead of re-rooting orphan
 wrappers. Element/text creation recovers its bounded staging quota after
 commit or collection; synthetic IDs are never reused. Native subtree links
@@ -12,9 +21,8 @@ are canonical after binding, so retained detached children remain editable.
 
 Automatic GC now records every successful pause in a fixed-size histogram,
 exporting p50/p95/p99 bucket upper bounds. The timer and detached-DOM probe
-profiles also report authoritative native DOM slots. Removed native document
-nodes still occupy the append-only `Document` arena; VM wrapper reclamation
-is insufficient for a DOM memory plateau. See
+profiles also report authoritative native DOM slots. Native slots now recycle safely; short profiles verify bounded arenas but
+do not establish the complete long-session gate. See
 [GC stress results](../docs/GC_STRESS_RESULTS.md) for reproduction and limits.
 
 The VM uses generation-safe mark/sweep at idle browser checkpoints. Live
