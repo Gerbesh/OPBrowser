@@ -1,5 +1,25 @@
 # Original JavaScript GC stress: repeatable browser-owner probe
 
+## Native Windows DOM regression: 15-second debug run (2026-10-14)
+
+Validated current upstream commit `6e00f76` on Windows 11 with
+`cargo run -q -p op_engine --bin gc_stress_probe -- --seconds 15 --workload dom`.
+Full workspace Rust tests, strict Clippy, browser startup smoke, and code
+intelligence passed on this Windows environment. The real page worker
+performed **9,941 ticks and 702 JavaScript GC passes** with zero GC or
+callback errors. Native GC completed 702 passes and reclaimed **2,804
+nodes**, with **15 native reserved slots / 13 live** at completion.
+JS reserved arenas were 397 objects / 167 environments. The measured
+JS pause histogram upper bounds were p50=263, p95=525, p99=525 us;
+maximum JS/native GC pauses were 977/143 us.
+The 14-second RSS sample was 10,407,936 bytes vs 9,981,952 bytes
+at startup. This is a short debug-build diagnostic, **not** a 30-minute
+Windows plateau or representative site compatibility test.
+Raw [CSV](gc/2026-10-14-windows-native-dom-15s.csv),
+[log](gc/2026-10-14-windows-native-dom-15s.log) and
+[build/source manifest](gc/2026-10-14-windows-native-dom-manifest.json)
+preserve provenance and exact counters.
+
 ## Native DOM arena sweep: 180-second Linux profile (2026-10-14)
 
 Native Document now releases orphan strings/attributes/tree links and reuses

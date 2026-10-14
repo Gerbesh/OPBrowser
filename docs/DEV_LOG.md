@@ -3554,3 +3554,10 @@ This file is append-only project history.
 - Final 180-second release Linux DOM probe completed with zero JavaScript/JS-GC/native-GC failures and a bounded 17-slot native arena after reclaiming more than 33,000 nodes. Source/binary hashes, raw CSV/log and exact RSS/pause counters are committed in docs/gc and GC_STRESS_RESULTS.md. This crosses the former 20,000 lifetime-node limit but does not establish the 30-minute Windows/full-browsing gate. Native timing excludes subsequent metadata/page-cache pruning.
 - Validation: 771 portable Rust tests pass with five previously reproduced Windows-dependent cases explicitly excluded; strict Windows-target workspace/all-target Clippy, Rustfmt, code intelligence and its nine Python tests pass. Win32/compatibility checks run in the existing Windows CI. No frozen compatibility manifest changed.
 - Remaining: wider host/fetch/Promise/navigation ownership matrices, larger live heap/single-task pressure, total host checkpoint pauses and sustained Windows process-memory proof. Renderer remains deferred.
+
+## 2026-10-14 - G3 Windows validation after parallel native DOM GC changes
+
+- The remote main advanced with host-boundary fixes and generational native DOM reclamation while a local overlapping fix was being prepared. Preserved local commit `23affd6` on branch `gc-dom-local-23affd6`; based Windows validation on the newer upstream `6e00f76`, avoiding conflict-prone duplicate GC logic.
+- Windows 11 / Rust 1.99.0: full Rust workspace tests, strict all-target Clippy, Rustfmt, Win32 smoke and code-intelligence checks pass.
+- A saved 15-second debug DOM worker run completed 9,941 ticks, 702 JS/native GC passes, zero GC/callback failures and 2,804 native nodes reclaimed. Final native arena 15 slots / 13 live, JS arenas 397 objects / 167 environments; histogram p50/p95/p99 upper bounds 263/525/525 us, maximum JS/native pauses 977/143 us. Raw CSV/log, commit and binary/source SHA-256 are in docs/gc; the 30-minute Windows/real-site gate is still outstanding.
+
