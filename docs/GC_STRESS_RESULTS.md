@@ -1,5 +1,68 @@
 # Original JavaScript GC stress: repeatable browser-owner probe
 
+## G3 host-boundary fixes and 60-second Linux profiles (2026-10-14)
+
+The DOM profile initially failed within two seconds: native binding re-rooted
+detached wrappers and the page exhausted its 256 lifetime synthetic-node
+quota. Binding now preserves actual connectivity and canonical parent/child
+IDs; the shared element/text allocator counts outstanding unbound nodes,
+retains the 256-operation guard and never reuses synthetic identities.
+Three VM regressions and both embedded workload identity checks pass.
+
+The probe now records **every successful automatic GC pause** in a fixed-size
+histogram, including collections between CSV samples. p50/p95/p99 are
+nearest-rank power-of-two nanosecond bucket **upper bounds**, rounded upward
+to microseconds for output. Failed attempts and explicit collections are
+excluded. `pause_samples` must equal successful automatic collections.
+`native_dom_slots` separately counts authoritative `Document` nodes, including
+detached nodes. `rss_bytes=0` means the platform measurement is unavailable.
+
+Rust 1.99.0, release, Linux x86_64, two independent processes in a shared cloud
+executor. The profiles and Cargo checks ran concurrently; wall-clock pauses
+include scheduling delays, so these are diagnostic results, not isolated
+performance benchmarks. Source is the accompanying commit, based on
+`7f20c5e`. The [manifest](gc/2026-10-14-linux-manifest.json) includes the binary
+hash, method, raw CSV paths and final counters from stderr.
+
+| Final 60-second counter | Timer | DOM/listeners |
+| --- | ---: | ---: |
+| Successful GC / pause samples | 4,169 | 2,678 |
+| GC failures / workload JS failures | 0 / 0 | 0 / 0 |
+| Reserved objects / environments | 556 / 411 | 508 / 250 |
+| Native DOM slots, start -> finish | 9 -> 9 | 11 -> 10,729 |
+| p50 / p95 / p99 upper bounds | 66 / 132 / 525 us | 66 / 263 / 525 us |
+| Maximum wall-clock pause | 131,519 us | 9,994 us |
+| RSS min / max, samples 10..59 | 3,371,008 / 3,371,008 bytes | 3,837,952 / 5,419,008 bytes |
+| RSS OLS growth, samples 10..59 | 0 bytes/s | 33,310.66 bytes/s |
+
+Raw [timer CSV](gc/2026-10-14-linux-timer-60s.csv) and
+[DOM CSV](gc/2026-10-14-linux-dom-60s.csv), with separate final
+[timer log](gc/2026-10-14-linux-timer-60s.log) and
+[DOM log](gc/2026-10-14-linux-dom-60s.log). CSV samples end at second 59;
+final counters cover the full requested 60 seconds.
+
+**Open blocker:** native `op_dom::Document` still retains detached nodes.
+DOM RSS and native slot counts grow despite recycled JS arenas. The host
+creation limit is 20,000 native slots; the DOM probe stops with a failure if
+that limit is reached. A short successful run does not assert a plateau.
+Native storage reclamation, bounded pause outliers and the 30-minute Windows
+gate remain outstanding, as do real-network/navigation workloads.
+
+Reproduce on Windows:
+
+```powershell
+cargo build -p op_engine --release --bin gc_stress_probe
+target\release\gc_stress_probe.exe --seconds 1800 --workload timer > gc-timer.csv
+target\release\gc_stress_probe.exe --seconds 1800 --workload dom > gc-dom.csv
+```
+
+On Linux, override the repository's Windows toolchain with
+`cargo +stable-x86_64-unknown-linux-gnu` and run
+`target/release/gc_stress_probe` with the same arguments. The DOM profile
+includes cyclic JS objects, orphan node/listener closures and a retained
+detached subtree/listener checked and edited after successive sweeps.
+It does not perform fetch or navigation.
+
 ## Procedure (Windows 11, 2026-10-13)
 
 Build and execute a synthetic DOM page in the original OPBrowser engine. It

@@ -892,6 +892,58 @@
         }
       ],
       "limitation": "Strict Static: 197/200; metadata-aware Static: 198/200; two Rec.2020 fixtures remain known mismatches."
+    },
+    {
+      "id": "S68",
+      "title": "All-collection GC pauses and native DOM stress",
+      "status": "G3 partial: bounded pause histogram, timer/DOM profiles, native arena occupancy",
+      "steps": [
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "collect_if_needed_at_idle"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "JsGcPauseHistogram"
+        },
+        {
+          "path": "crates/op_engine/src/lib.rs",
+          "symbol": "active_script_gc_telemetry"
+        },
+        {
+          "path": "crates/op_engine/src/lib.rs",
+          "symbol": "active_document_node_slots"
+        },
+        {
+          "path": "crates/op_engine/src/bin/gc_stress_probe.rs",
+          "symbol": "main"
+        }
+      ],
+      "limitation": "Percentiles are bucket upper bounds. Native Document nodes are not reclaimed; no 30-minute Windows plateau or real-network/navigation proof."
+    },
+    {
+      "id": "S69",
+      "title": "Native DOM binding and recoverable staging quota",
+      "status": "G3 partial: preserve connectivity, canonical native tree edges and bounded uncommitted identities",
+      "steps": [
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "allocate_virtual_dom_node"
+        },
+        {
+          "path": "crates/op_engine/src/scripts.rs",
+          "symbol": "apply_dom_operations"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "bind_dom_node"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "collect_if_needed_at_idle"
+        }
+      ],
+      "limitation": "Authoritative native Document storage remains append-only; staging quota recovery does not reclaim the native arena."
     }
   ]
 }

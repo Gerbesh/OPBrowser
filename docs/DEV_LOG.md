@@ -3533,3 +3533,14 @@ This file is append-only project history.
 
 
 
+
+## 2026-10-14 - G3 partial: real DOM churn fixes and all-collection pause distribution
+
+- A real page timer creating/removing element/text subtrees reproduced two host integration defects: bind_dom_node unconditionally marked detached nodes connected, retaining wrapper/listener cycles, and the 256 synthetic-node budget counted all creations since page load. The initial DOM probe failed in two seconds.
+- Binding now preserves actual connectivity only under the canonical physical ID, and canonicalizes parent/child edge values for detached trees. A bound connected node can later detach without a virtual alias remaining a false root. Retained detached children can still be removed/reinserted after native binding and GC.
+- Shared allocate_virtual_dom_node bounds 256 outstanding unbound wrappers and pending operations rather than lifetime creations. IDs remain monotonic, never reused and separated from physical IDs. Native Document's 20,000-slot creation limit remains unchanged.
+- Added three VM ownership/quota regressions, a histogram boundary/overflow test, and a browser-owner timer/DOM workload regression. Existing automatic-GC tests now check that successful passes contribute exactly one pause, and failed/no-op checkpoints contribute none.
+- JsGcPauseHistogram stores 64 counters (512 bytes plus count), records every successful automatic collection and reports nearest-rank percentile bucket upper bounds. Probe CSV now includes p50/p95/p99 bounds, sample counts and authoritative native DOM arena slots; timer and DOM profiles assert persistent object/subtree/listener identity.
+- Two concurrent release Linux 60-second probes completed without GC/JS failures: timer 4,169 collections; DOM 2,678. DOM native slots grew from 11 to 10,729 and post-warmup RSS slope was 33,310.66 bytes/s despite bounded JS arenas. Timer RSS was flat after warmup, but max wall-clock pause was 131,519 us under concurrent checks. Raw CSV/logs, binary hash and method are committed under docs/gc and summarized in GC_STRESS_RESULTS.md. These measurements do not establish bounded pauses or a 30-minute Windows plateau.
+- Validation: Rustfmt and strict Windows-target workspace/all-target Clippy pass; 761 executable Linux Rust tests pass after explicitly excluding op_browser and five Windows-dependent cases (WinHTTP transport, Windows font geometry or path semantics). All five failures were reproduced on pristine 7f20c5e. Code intelligence and its nine Python tests pass. Win32 startup/pixel and upstream compatibility suites cannot execute on this Linux host; no frozen manifest was modified.
+- Next blocker: safe reclamation of authoritative native Document storage with stable detached handles and coordinated host/style/image caches. Broader host/fetch roots, real-navigation/network stress, pause outliers and the 30-minute Windows gate remain open; renderer remains deferred.

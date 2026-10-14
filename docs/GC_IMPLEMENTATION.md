@@ -1,5 +1,15 @@
 # Original JS VM garbage collector: implementation plan
 
+## G3 host fix: binding and staging-budget recovery
+
+A real DOM timer workload exposed two host boundary bugs: native binding unconditionally added detached nodes to `dom_attached`, and `next_virtual_dom_node > 256` exhausted a page-lifetime quota despite collection. Binding now transfers the actual connectivity state only to the canonical physical ID and remaps native parent/child edges, preserving later detached subtree edits. The shared element/text allocator bounds 256 outstanding unbound wrappers and queued operations while retaining monotonic, non-recycled synthetic IDs. Three VM regressions check these ownership/budget rules. Native `Document` storage is still not collected.
+
+## G3 measurement: every automatic pause and authoritative DOM slots
+
+Each successful automatic idle collection records a pause in a bounded, 64-bucket power-of-two nanosecond histogram. Percentiles are nearest-rank bucket upper bounds, not exact durations; explicit sweeps and failed attempts are excluded. The probe reports the histogram sample count so it can be compared with successful collections.
+
+`--workload dom` creates/removes native element/text subtrees and orphan listener cycles while retaining a separate detached subtree and listener to verify identity after GC. `Engine::active_document_node_slots()` measures `op_dom::Document::len()`, including detached nodes. The authoritative native arena is still append-only: pruning VM-side tags/attributes/wrappers does not reclaim its nodes. Native document reclamation must preserve live detached handles and node identity, and coordinate with style/image/host caches; it is a prerequisite to the full DOM memory gate.
+
 ## G3 partial: idle GC on arena allocation headroom
 
 The automatic idle checkpoint now also checks object/environment arena

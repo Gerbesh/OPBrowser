@@ -373,6 +373,53 @@ pub struct JsGcReport {
     pub reserved_environment_slots: usize,
 }
 
+/// Fixed-size distribution of every successful automatic collection pause.
+/// Bucket bounds are powers of two nanoseconds; the final bucket is unbounded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JsGcPauseHistogram {
+    buckets: [u64; 64],
+    pub samples: u64,
+}
+
+impl Default for JsGcPauseHistogram {
+    fn default() -> Self {
+        Self {
+            buckets: [0; 64],
+            samples: 0,
+        }
+    }
+}
+
+impl JsGcPauseHistogram {
+    fn record(&mut self, pause: Duration) {
+        let nanos = pause.as_nanos().max(1);
+        let bucket = (128 - (nanos - 1).leading_zeros()).min(63) as usize;
+        self.buckets[bucket] = self.buckets[bucket].saturating_add(1);
+        self.samples = self.samples.saturating_add(1);
+    }
+
+    /// Upper bound of the nearest-rank percentile (1..=100), not an exact
+    /// duration. Returns None for an empty histogram or an invalid percentile.
+    pub fn percentile_upper_bound(&self, percentile: u8) -> Option<Duration> {
+        if self.samples == 0 || !(1..=100).contains(&percentile) {
+            return None;
+        }
+        let rank = (u128::from(self.samples) * u128::from(percentile)).div_ceil(100);
+        let mut cumulative = 0u128;
+        for (index, count) in self.buckets.iter().enumerate() {
+            cumulative += u128::from(*count);
+            if cumulative >= rank {
+                return Some(if index == 63 {
+                    Duration::MAX
+                } else {
+                    Duration::from_nanos(1u64 << index)
+                });
+            }
+        }
+        None
+    }
+}
+
 /// Browser-visible collection diagnostics and arena counters.
 /// Reserved slots are a high-water mark, not process memory usage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -382,6 +429,7 @@ pub struct JsGcTelemetry {
     pub last_report: Option<JsGcReport>,
     pub last_pause: Option<Duration>,
     pub max_pause: Duration,
+    pub pause_histogram: JsGcPauseHistogram,
     pub heap: JsHeapUsage,
     pub live_objects: usize,
     pub live_environments: usize,
@@ -429,6 +477,7 @@ pub struct JsRuntime {
     last_gc_report: Option<JsGcReport>,
     last_gc_pause: Option<Duration>,
     max_gc_pause: Duration,
+    gc_pause_histogram: JsGcPauseHistogram,
     global_env: EnvironmentId,
     object_prototype: ObjectId,
     function_prototype: ObjectId,
@@ -569,6 +618,7 @@ impl Default for JsRuntime {
             last_gc_report: None,
             last_gc_pause: None,
             max_gc_pause: Duration::ZERO,
+            gc_pause_histogram: JsGcPauseHistogram::default(),
             global_env,
             object_prototype,
             function_prototype,
@@ -2585,6 +2635,9 @@ impl JsRuntime {
     /// A host may associate a newly committed synthetic element with its
     /// physical NodeId. This preserves JS object identity across later reads.
     pub fn bind_dom_node(&mut self, virtual_node: usize, physical_node: usize) {
+        // Binding establishes native identity, not document connectivity.
+        // A node may already have been detached in the same script task.
+        let attached = self.dom_attached.remove(&virtual_node);
         self.dom_node_aliases.insert(virtual_node, physical_node);
         if let Some(top) = self.dom_scroll_tops.remove(&virtual_node) {
             self.dom_scroll_tops.insert(physical_node, top);
@@ -2626,6 +2679,20 @@ impl JsRuntime {
         if let Some(parent) = self.dom_pending_parents.remove(&virtual_node) {
             self.dom_pending_parents.insert(physical_node, parent);
         }
+        // Both ends of a staged native tree edge must use canonical IDs after
+        // binding, including detached trees excluded from parser snapshots.
+        for parent in self.dom_pending_parents.values_mut() {
+            if *parent == virtual_node {
+                *parent = physical_node;
+            }
+        }
+        for children in self.dom_children.values_mut() {
+            for child in children {
+                if *child == virtual_node {
+                    *child = physical_node;
+                }
+            }
+        }
         if let Some(attributes) = self.dom_attributes.remove(&virtual_node) {
             self.dom_attributes.insert(physical_node, attributes);
         }
@@ -2638,8 +2705,9 @@ impl JsRuntime {
         if self.dom_text_nodes.remove(&virtual_node) {
             self.dom_text_nodes.insert(physical_node);
         }
-        self.dom_attached.insert(virtual_node);
-        self.dom_attached.insert(physical_node);
+        if attached {
+            self.dom_attached.insert(physical_node);
+        }
         if let Some(mut listeners) = self.dom_click_listeners.remove(&virtual_node) {
             self.dom_click_listeners
                 .entry(physical_node)
@@ -2718,6 +2786,27 @@ impl JsRuntime {
     pub fn resolve_dom_node(&self, node: usize) -> usize {
         self.dom_node_aliases.get(&node).copied().unwrap_or(node)
     }
+
+    fn allocate_virtual_dom_node(&mut self) -> Result<usize, JsError> {
+        // Bound outstanding, uncommitted native identities, not the lifetime
+        // number of creations. Never recycle an ID still held by a host queue.
+        if self.dom_operations.len() >= 256
+            || self.next_virtual_dom_node >= usize::MAX / 2
+            || self
+                .dom_node_objects
+                .keys()
+                .filter(|node| **node > usize::MAX / 2 && !self.dom_node_aliases.contains_key(node))
+                .take(256)
+                .count()
+                >= 256
+        {
+            return Err(JsError::execution_limit("dynamic DOM node budget exceeded"));
+        }
+        let node = usize::MAX - self.next_virtual_dom_node;
+        self.next_virtual_dom_node += 1;
+        Ok(node)
+    }
+
     pub fn take_dom_operations(&mut self) -> Vec<DomOperation> {
         self.dom_mutations.clear();
         std::mem::take(&mut self.dom_operations)
@@ -4551,6 +4640,7 @@ impl JsRuntime {
         let pause = started.elapsed();
         self.last_gc_pause = Some(pause);
         self.max_gc_pause = self.max_gc_pause.max(pause);
+        self.gc_pause_histogram.record(pause);
         self.automatic_gc_runs = self.automatic_gc_runs.saturating_add(1);
         self.last_gc_report = Some(report);
         let retained = report.live_objects.saturating_add(report.live_environments);
@@ -4586,6 +4676,7 @@ impl JsRuntime {
             last_report: self.last_gc_report,
             last_pause: self.last_gc_pause,
             max_pause: self.max_gc_pause,
+            pause_histogram: self.gc_pause_histogram,
             heap: self.heap_usage(),
             live_objects: self.heap.iter().filter(|obj| obj.alive).count(),
             live_environments: self.environments.iter().filter(|env| env.alive).count(),
@@ -6020,11 +6111,7 @@ impl JsRuntime {
             {
                 return Err(JsError::type_error("invalid DOM tag name"));
             }
-            if self.next_virtual_dom_node > 256 || self.dom_operations.len() >= 256 {
-                return Err(JsError::execution_limit("dynamic DOM node budget exceeded"));
-            }
-            let virtual_node = usize::MAX - self.next_virtual_dom_node;
-            self.next_virtual_dom_node += 1;
+            let virtual_node = self.allocate_virtual_dom_node()?;
             self.dom_tags.insert(virtual_node, tag.clone());
             self.dom_operations.push(DomOperation::CreateElement {
                 node: virtual_node,
@@ -6043,14 +6130,10 @@ impl JsRuntime {
                 .first()
                 .unwrap_or(&JsValue::Undefined)
                 .to_js_string();
-            if text.len() > 64 * 1024
-                || self.next_virtual_dom_node > 256
-                || self.dom_operations.len() >= 256
-            {
+            if text.len() > 64 * 1024 {
                 return Err(JsError::execution_limit("createTextNode budget exceeded"));
             }
-            let node = usize::MAX - self.next_virtual_dom_node;
-            self.next_virtual_dom_node += 1;
+            let node = self.allocate_virtual_dom_node()?;
             self.dom_text.insert(node, text.clone());
             self.dom_text_nodes.insert(node);
             self.dom_operations.push(DomOperation::CreateText {
@@ -9736,6 +9819,148 @@ mod tests {
     }
 
     #[test]
+    fn g3_native_binding_preserves_detachment_and_canonical_subtree_edges() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "host".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            "var parent=document.createElement('div');var child=document.createTextNode('kept');\
+             parent.appendChild(child);document.getElementById('host').appendChild(parent);\
+             document.getElementById('host').removeChild(parent);",
+        )
+        .unwrap();
+        let parent = vm.global("parent").unwrap().clone();
+        let child = vm.global("child").unwrap().clone();
+        let operations = vm.take_dom_operations();
+        let virtual_parent = operations
+            .iter()
+            .find_map(|op| match op {
+                DomOperation::CreateElement { node, .. } => Some(*node),
+                _ => None,
+            })
+            .unwrap();
+        let virtual_child = operations
+            .iter()
+            .find_map(|op| match op {
+                DomOperation::CreateText { node, .. } => Some(*node),
+                _ => None,
+            })
+            .unwrap();
+        vm.bind_dom_node(virtual_parent, 10);
+        vm.bind_dom_node(virtual_child, 11);
+        for node in [virtual_parent, virtual_child, 10, 11] {
+            assert!(!vm.dom_attached.contains(&node));
+        }
+        assert_eq!(vm.dom_children.get(&10), Some(&vec![11]));
+        assert_eq!(vm.dom_pending_parents.get(&11), Some(&10));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert_eq!(vm.get_property(&parent, "firstChild").unwrap(), child);
+        assert_eq!(vm.get_property(&child, "parentNode").unwrap(), parent);
+        vm.eval_script(
+            "parent.removeChild(child);parent.appendChild(child);parent=null;child=null;",
+        )
+        .unwrap();
+        vm.take_dom_operations();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(!vm.dom_node_objects.contains_key(&10));
+        assert!(!vm.dom_node_objects.contains_key(&11));
+        assert!(vm.dom_node_aliases.is_empty());
+    }
+
+    #[test]
+    fn g3_bound_attached_node_can_detach_without_a_virtual_alias_root() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "host".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script("var node=document.createElement('div');document.getElementById('host').appendChild(node);")
+            .unwrap();
+        let virtual_node = vm
+            .take_dom_operations()
+            .into_iter()
+            .find_map(|op| match op {
+                DomOperation::CreateElement { node, .. } => Some(node),
+                _ => None,
+            })
+            .unwrap();
+        vm.bind_dom_node(virtual_node, 10);
+        assert!(!vm.dom_attached.contains(&virtual_node));
+        assert!(vm.dom_attached.contains(&10));
+        vm.eval_script("node=null;").unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(
+            vm.dom_node_objects.contains_key(&10),
+            "connected wrapper is a host root"
+        );
+        vm.eval_script(
+            "var host=document.getElementById('host');host.removeChild(host.firstChild);",
+        )
+        .unwrap();
+        vm.take_dom_operations();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(!vm.dom_node_objects.contains_key(&10));
+        assert!(!vm.dom_node_objects.contains_key(&virtual_node));
+    }
+
+    #[test]
+    fn g3_virtual_dom_budget_recovers_after_collection_without_id_reuse() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            "for(var i=0;i<128;i=i+1){document.createElement('div');document.createTextNode('x');}",
+        )
+        .unwrap();
+        vm.take_dom_operations();
+        assert!(vm.eval_script("document.createElement('div');").is_err());
+        assert!(vm.eval_script("document.createTextNode('x');").is_err());
+        let previous_identity = usize::MAX - (vm.next_virtual_dom_node - 1);
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("document.createElement('div');document.createTextNode('x');")
+            .unwrap();
+        let operations = vm.take_dom_operations();
+        for op in operations {
+            let node = match op {
+                DomOperation::CreateElement { node, .. }
+                | DomOperation::CreateText { node, .. } => node,
+                _ => panic!("unexpected operation"),
+            };
+            assert!(
+                node < previous_identity,
+                "synthetic IDs must never be reused"
+            );
+        }
+        vm.next_virtual_dom_node = usize::MAX / 2;
+        assert!(vm.eval_script("document.createElement('div');").is_err());
+    }
+
+    #[test]
+    fn g3_pause_histogram_covers_bucket_edges_percentiles_and_overflow() {
+        let mut histogram = JsGcPauseHistogram::default();
+        assert_eq!(histogram.percentile_upper_bound(50), None);
+        for nanos in [0, 1, 2, 3, 4, 5, 8, 9] {
+            histogram.record(Duration::from_nanos(nanos));
+        }
+        assert_eq!(histogram.samples, 8);
+        assert_eq!(histogram.percentile_upper_bound(0), None);
+        assert_eq!(histogram.percentile_upper_bound(101), None);
+        for (percentile, upper_nanos) in [(1, 1), (25, 1), (50, 4), (95, 16), (100, 16)] {
+            assert_eq!(
+                histogram.percentile_upper_bound(percentile),
+                Some(Duration::from_nanos(upper_nanos))
+            );
+        }
+        histogram.record(Duration::MAX);
+        assert_eq!(histogram.percentile_upper_bound(100), Some(Duration::MAX));
+    }
+
+    #[test]
     fn g2b_idle_pressure_auto_gc_reuses_arena_and_preserves_reachable_state() {
         let mut vm = JsRuntime::new();
         vm.next_gc_live_trigger = 64;
@@ -9753,7 +9978,11 @@ mod tests {
         assert_eq!(vm.last_automatic_gc_report(), Some(report));
         let elapsed = vm.last_automatic_gc_pause().expect("GC pause recorded");
         assert_eq!(vm.max_automatic_gc_pause(), elapsed);
+        let histogram = vm.gc_telemetry().pause_histogram;
+        assert_eq!(histogram.samples, 1);
+        assert!(histogram.percentile_upper_bound(100).unwrap() >= elapsed);
         assert!(vm.collect_if_needed_at_idle().unwrap().is_none());
+        assert_eq!(vm.gc_telemetry().pause_histogram, histogram);
         assert_eq!(
             vm.get_property(&vm.global("keep").unwrap().clone(), "answer")
                 .unwrap(),
@@ -9784,8 +10013,10 @@ mod tests {
         assert_eq!(vm.automatic_gc_failures(), 1);
         assert_eq!(vm.last_automatic_gc_report(), None);
         assert_eq!(vm.last_automatic_gc_pause(), None);
+        assert_eq!(vm.gc_telemetry().pause_histogram.samples, 0);
         assert!(vm.collect_if_needed_at_idle().unwrap().is_some());
         assert_eq!(vm.automatic_gc_failures(), 1);
+        assert_eq!(vm.gc_telemetry().pause_histogram.samples, 1);
     }
 
     #[test]

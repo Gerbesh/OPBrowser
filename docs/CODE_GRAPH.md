@@ -1,6 +1,6 @@
 # OPBrowser Code Graph
 
-Last updated: 2026-10-13
+Last updated: 2026-10-14
 
 This document is the maintained human-readable code/dependency graph. It is updated
 whenever crates, important types, or ownership boundaries change.
@@ -15,6 +15,14 @@ the generated graph describes **crate-level edges only**, not a call graph.
 See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
+
+## G3 partial: native binding connectivity and recoverable staging quota
+
+`bind_dom_node` preserves the virtual node's connection state, moves it to the physical ID and canonicalizes both ends of parent/child edges. Binding a detached node no longer creates a false GC root, and detaching a previously bound node cannot leave a connected virtual alias. `allocate_virtual_dom_node` shares a 256-outstanding-unbound-node/operation guard between element and text creation; monotonic IDs never recycle or enter the physical ID range. Committed or collected nodes stop consuming that staging quota. The authoritative 20,000-node host arena limit remains.
+
+## G3 partial: complete pause distribution and native DOM arena visibility
+
+JsRuntime owns a 64-counter `JsGcPauseHistogram` (512 bytes of buckets plus sample count). Successful automatic idle sweeps record one pause; rejected passes and explicit collections do not contribute. `JsGcTelemetry` exposes the histogram through `Engine::active_script_gc_telemetry`. `Engine::active_document_node_slots` reads authoritative `Document::len`, independently of JS wrapper occupancy. `gc_stress_probe` selects timer or detached-DOM/listener workloads and exports both counters and bounded percentile estimates. No new crate or dependency.
 
 ## G3 partial: heap arena headroom at browser idle checkpoints
 

@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-14",
+  "base_commit": "7f20c5e682f567ac14039745e9905b1f79bf5673",
+  "source": "release implementation and embedded workload fixtures in the accompanying commit",
+  "rustc": "1.99.0 (b940084d7 2026-09-28)",
+  "target": "x86_64-unknown-linux-gnu",
+  "profile": "release",
+  "binary_sha256": "bfddd53f531316becd6690d6921a21964e47b2619320e5bf123937c212f84f40",
+  "method": "Independent processes, concurrent 60-second timer and dom runs in the same cloud executor; Cargo tests/cross-Clippy also ran concurrently. CSV samples at integer seconds 0..59; final counters in stderr logs. RSS slope is ordinary least squares over samples 10..59. Pause estimates are power-of-two bucket upper bounds rounded upward to whole microseconds. This is not an isolated timing benchmark or a 30-minute Windows memory gate.",
+  "runs": {
+    "timer": {
+      "csv": "docs/gc/2026-10-14-linux-timer-60s.csv",
+      "samples": 60,
+      "post_warmup_seconds": [
+        10,
+        59
+      ],
+      "rss_min_bytes": 3371008,
+      "rss_max_bytes": 3371008,
+      "rss_ols_slope_bytes_per_second": 0.0,
+      "final": {
+        "workload": "timer",
+        "duration_s": 60,
+        "ticks": 48549,
+        "collections": 4169,
+        "failures": 0,
+        "reserved_objects": 556,
+        "reserved_envs": 411,
+        "native_dom_slots": 9,
+        "pause_samples": 4169,
+        "p50_upper_us": 66,
+        "p95_upper_us": 132,
+        "p99_upper_us": 525,
+        "max_pause_us": 131519
+      }
+    },
+    "dom": {
+      "csv": "docs/gc/2026-10-14-linux-dom-60s.csv",
+      "samples": 60,
+      "post_warmup_seconds": [
+        10,
+        59
+      ],
+      "rss_min_bytes": 3837952,
+      "rss_max_bytes": 5419008,
+      "rss_ols_slope_bytes_per_second": 33310.66,
+      "final": {
+        "workload": "dom",
+        "duration_s": 60,
+        "ticks": 49016,
+        "collections": 2678,
+        "failures": 0,
+        "reserved_objects": 508,
+        "reserved_envs": 250,
+        "native_dom_slots": 10729,
+        "pause_samples": 2678,
+        "p50_upper_us": 66,
+        "p95_upper_us": 263,
+        "p99_upper_us": 525,
+        "max_pause_us": 9994
+      }
+    }
+  }
+}

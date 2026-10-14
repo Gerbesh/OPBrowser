@@ -3,7 +3,19 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
-## Current GC status (13 October 2026, G3 partial)
+## Current GC status (14 October 2026, G3 partial)
+
+Native DOM binding now preserves detachment instead of re-rooting orphan
+wrappers. Element/text creation recovers its bounded staging quota after
+commit or collection; synthetic IDs are never reused. Native subtree links
+are canonical after binding, so retained detached children remain editable.
+
+Automatic GC now records every successful pause in a fixed-size histogram,
+exporting p50/p95/p99 bucket upper bounds. The timer and detached-DOM probe
+profiles also report authoritative native DOM slots. Removed native document
+nodes still occupy the append-only `Document` arena; VM wrapper reclamation
+is insufficient for a DOM memory plateau. See
+[GC stress results](../docs/GC_STRESS_RESULTS.md) for reproduction and limits.
 
 The VM uses generation-safe mark/sweep at idle browser checkpoints. Live
 EventTargets preserve their callbacks and listener AbortSignals, while an

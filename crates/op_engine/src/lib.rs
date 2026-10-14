@@ -270,6 +270,12 @@ impl Engine {
         Some(self.active_document.as_ref()?.scripts)
     }
 
+    /// Native DOM arena occupancy, including detached nodes. This is separate
+    /// from JS wrappers and VM-side DOM metadata collected by the JS GC.
+    pub fn active_document_node_slots(&self) -> Option<usize> {
+        Some(self.active_document.as_ref()?.document.len())
+    }
+
     /// Snapshot of browser-owned JS GC counters and arena occupancy.
     pub fn active_script_gc_telemetry(&self) -> Option<op_js::JsGcTelemetry> {
         Some(

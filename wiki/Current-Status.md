@@ -3,6 +3,20 @@
 Last reviewed: **9 October 2026**. The [published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki) tracks the main repository's `wiki/` sources. This is a development snapshot, not a
 claim that OPBrowser is ready for everyday browsing.
 
+## GC measurement update (14 October 2026)
+
+Native DOM binding now preserves detachment instead of re-rooting orphan
+wrappers. Element/text creation recovers its bounded staging quota after
+commit or collection; synthetic IDs are never reused. Native subtree links
+are canonical after binding, so retained detached children remain editable.
+
+GC pause distribution now counts every successful automatic pass, with bounded
+p50/p95/p99 estimates. The stress probe separates JS timer allocation churn
+from native DOM creation/removal and tracks native document arena slots.
+Authoritative removed DOM nodes are still retained; safe native reclamation
+and the 30-minute Windows memory gate remain outstanding.
+See [GC stress results](../docs/GC_STRESS_RESULTS.md).
+
 ## Working today
 
 - Native Windows 11 browser window with address field, navigation, back/forward,

@@ -1,6 +1,6 @@
 # OPBrowser Code Slices
 
-Last updated: 2026-10-13
+Last updated: 2026-10-14
 
 A code slice is an end-to-end path through the architecture that produces one
 observable capability. This prevents isolated subsystems from becoming impressive
@@ -15,6 +15,14 @@ current. The same validator runs in CI. This is a **source-anchor
 feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
+
+## S69 - Native DOM binding without false roots or lifetime quota (G3 partial)
+
+VM create/append/remove -> engine commits queued operations -> `bind_dom_node` preserves connectivity and canonical tree links -> idle GC reclaims orphan JS node/listener cycles. The staging allocator limits pending operations and unbound live nodes instead of lifetime creation count. Three VM regressions cover connected-to-detached roots, retained detached subtree identity/edits and quota recovery without ID reuse. The timer-based DOM probe now survives thousands of creations; native document slots still accumulate.
+
+## S68 - All-collection pause statistics and native DOM stress (G3 partial)
+
+Browser idle sweep -> fixed-size pause histogram -> Engine GC telemetry -> timer/DOM probe CSV and summary with p50/p95/p99 upper bounds. A separate authoritative DOM slot count exposes retained removed native nodes even while JS arenas recycle. Workload assertions check persistent object identity and retained detached subtree/listener behavior across sweeps. The DOM profile is a diagnostic, not a memory-plateau claim; native document reclamation and the 30-minute Windows gate remain open.
 
 ## S67 - Budget-pressure original JS GC checkpoint (G3 partial)
 

@@ -1,6 +1,6 @@
 # OPBrowser: active project plan
 
-Updated 2026-10-13. This file contains **decisions, priorities, acceptance gates and current status only**, not a running implementation diary. Completed M0-M4.35 milestone narratives remain recoverable from Git history and are tracked in [DEV_LOG.md](DEV_LOG.md). Measured test history is in [COMPATIBILITY.md](COMPATIBILITY.md).
+Updated 2026-10-14. This file contains **decisions, priorities, acceptance gates and current status only**, not a running implementation diary. Completed M0-M4.35 milestone narratives remain recoverable from Git history and are tracked in [DEV_LOG.md](DEV_LOG.md). Measured test history is in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Product goal and constraints
 
@@ -31,6 +31,10 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 **G3 follow-up (2026-10-14):** GC purges native descendants without JS wrappers; live static query results preserve backing ancestors. Five new tests include two fetch completion/cancellation races across GC. Full host-root audit and sustained native memory proof are still outstanding.
 
 **G3 allocation-pressure update:** browser idle GC now observes remaining object/environment budget headroom (including free slots), so low configured limits and allocation bursts are reclaimed before the next task. Three tests pass; oversized single tasks and extended navigation/RSS profiling remain outstanding.
+
+**G3 host boundary fix:** binding preserves actual connectivity and canonical subtree links; the 256-node staging quota now counts outstanding unbound nodes rather than all creations since page load. Real DOM timer churn passes while native `Document` storage still grows. Native reclamation must preserve detached identity and host caches.
+
+**G3 measurement update:** each successful automatic collection now contributes to a fixed-size pause histogram (p50/p95/p99 upper bounds), including passes between CSV samples. The probe separates timer allocation churn from detached DOM/listener churn and reports authoritative native DOM arena slots. `op_dom::Document` still retains removed nodes; VM-side reclamation alone cannot pass the DOM long-session gate. Native document ownership/reclamation is the next blocker; the 30-minute Windows gate remains open.
 
 ## Engineering gates
 
