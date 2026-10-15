@@ -128,6 +128,16 @@ are partial. On live YouTube the missing-`delete` error disappeared,
 **zero text** is still painted. Pikabu has 12 failures. The new settle
 window was 1300ms, versus 1000ms before, so this is diagnostic only.
 
+**P0 Image constructor (16 October 2026):** `new Image()` and
+`Image()` now produce browser-owned detached `img` nodes, reflecting
+`src`/`alt`/`width`/`height`. Script attachment paints actual PNG
+pixels in an engine integration regression. Real YouTube advances to
+**7 executed / 9 failed** scripts (previously 6/10) and its prior
+missing-`Image` diagnostic disappears, but it still paints **zero
+text**. Pikabu remains **12 failed**; neither page passes visual
+acceptance. Detached image network load/error events, natural dimensions,
+absolute URL reflection and full HTMLImageElement remain open.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

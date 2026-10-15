@@ -19,6 +19,14 @@ The 30-minute synthetic GC safety/memory gate passed, with long
 wall-time pause outliers still to diagnose using a real in-browser
 profiler. See the active project plan for current gates.
 
+## Image/real-site checkpoint (16 October 2026)
+
+Browser-owned `new Image()` now uses real DOM nodes and reaches native
+paint commands when inserted. YouTube's missing-`Image` error was
+removed but it still renders a skeleton without text. Next priority:
+the surviving real-site JS syntax errors, Pikabu's `location` binding,
+and interactive CPU/wall profiling rather than synthetic PASS inflation.
+
 ## Native DOM checkpoint (14 October 2026)
 
 Native Document now collects orphan node components and reuses slots with

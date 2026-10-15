@@ -130,6 +130,32 @@ fn local_images_and_fallback_text_reach_paint_and_image_link_navigation() {
 }
 
 #[test]
+fn javascript_image_constructor_attaches_pixels_through_native_dom() {
+    let payload = include_bytes!("../../../examples/images/colors.png")
+        .iter()
+        .map(|byte| format!("%{byte:02X}"))
+        .collect::<String>();
+    let html = format!(
+        "<body><script>var picture = new Image(24, 12); \
+         picture.src='data:image/png,{payload}'; picture.alt='script-created'; \
+         document.body.appendChild(picture);</script><p>Image tail</p></body>"
+    );
+    let encoded = html
+        .bytes()
+        .map(|b| format!("%{b:02X}"))
+        .collect::<String>();
+    let mut engine = Engine::new();
+    let page = engine
+        .navigate(&format!("data:text/html,{encoded}"), 800, 600)
+        .unwrap();
+    let report = engine.active_script_report().unwrap();
+    assert_eq!(report.failed, 0, "{:?}", engine.active_script_diagnostics());
+    assert_eq!(report.executed, 1);
+    assert_eq!(images(&page.display_list.commands).len(), 1);
+    assert!(painted_text(&page.display_list.commands).contains("Image tail"));
+}
+
+#[test]
 fn data_images_share_pixels_and_bound_node_count_without_failing_document_history() {
     let payload = include_bytes!("../../../examples/images/colors.png")
         .iter()

@@ -3660,3 +3660,9 @@ This file is append-only project history.
 - Added focused VM regressions. Rustfmt, strict Clippy and the second full workspace test pass; one timing-sensitive interval test failed on first run but passed alone and in the repeated full run. Release live-site probe built.
 - Under `artifacts/live_web/delete-2026-10-16/`, YouTube executed 6 scripts and failed 10 (previously 5/11). The missing-`delete` error vanished, but the screenshot still has zero text. Pikabu remains at 12 failures and malformed layout. The settle window changed from 1000 to 1300ms, so totals are diagnostic rather than controlled comparison.
 
+## 2026-10-16 - Browser-owned Image constructor and real-page follow-up
+
+- Implemented bounded classic-script `Image()`/`new Image(width,height)` by reusing original DOM element creation. `img.src`/`alt`/`width`/`height` now reflect staged attributes and authoritative DOM mutations; no embedded browser or third-party JS engine. Dimension checks run before allocating a DOM node. Image network events, natural dimensions and full URL reflection are not implemented.
+- Added VM tests for constructor identity, property/attribute consistency, insertion, GC retention and invalid arguments; Windows integration test verifies an actual PNG appears in the native display list after JS `appendChild`. Rustfmt, strict Clippy and full workspace tests passed, as did the Release live-site probe build.
+- Public HTTPS first-view recheck (`artifacts/live_web/image-2026-10-16/`): YouTube 7 scripts executed / 9 failed vs 6/10 in the preceding delete-only run; the previous `Image is not defined` failure is absent. Yet 0 text primitives are painted: still skeleton-only. Pikabu unchanged at 4 executed / 12 failed, layout remains malformed. Both new and previous runs used 1300 ms settling; counts are diagnostic, not a visual pass.
+

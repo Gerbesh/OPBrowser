@@ -167,6 +167,24 @@ no verified visual improvement. This run settled for 1300ms versus
 1000ms previously; do not attribute all count differences to the
 syntax patch or claim production compatibility.
 
+## 16 October 2026: native Image constructor, actual-pixel validation
+
+The original JS VM now creates detached DOM `img` nodes using
+`new Image()` and `Image()`, with bounded width/height and reflected
+`src` and `alt` attributes. A fully offline integration regression
+inserts a JS-created image and verifies **one actual PNG paint command**
+in the original Engine. Loading/error events for detached images and
+full HTMLImageElement compatibility are not provided.
+
+Focused live HTTPS screenshots at
+`artifacts/live_web/image-2026-10-16/` show:
+YouTube **7 executed / 9 failed**, versus 6/10 in the prior
+delete-only run. `Image is not defined` no longer appears,
+but YouTube still has **zero text** and renders skeleton cards.
+Pikabu remains **4 executed / 12 failed**, with broken layout.
+Both runs used the same 1300-ms settle budget; page/network changes
+still prevent turning an error-count change into a pass claim.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell

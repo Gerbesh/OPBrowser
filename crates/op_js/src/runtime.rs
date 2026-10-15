@@ -113,6 +113,7 @@ enum BuiltinFunction {
     DomHasAttribute,
     DomHasAttributes,
     DomCreateElement,
+    ImageConstructor,
     DomCreateTextNode,
     DomAppendChild,
     DomInsertBefore,
@@ -1056,6 +1057,13 @@ impl JsRuntime {
             ]),
         )?;
         self.dom_document = Some(document);
+        // Image() creates a real detached img node in the browser-owned DOM.
+        // Network completion and image load/error events are not simulated.
+        let image = self.allocate_lifecycle_method("Image", BuiltinFunction::ImageConstructor)?;
+        self.object_mut(image)?
+            .properties
+            .insert("length".into(), JsValue::Number(2.0));
+        self.install_global_binding("Image", JsValue::Object(image), false, VariableKind::Const);
         self.object_mut(self.global_object)?
             .properties
             .insert("addEventListener".into(), JsValue::Object(add_listener));
@@ -5401,6 +5409,37 @@ impl JsRuntime {
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
         match builtin {
+            BuiltinFunction::ImageConstructor => {
+                let Some(document) = self.dom_document else {
+                    return Err(JsError::type_error("Image requires a document"));
+                };
+                // Validate arguments before allocating a staged DOM node.
+                let mut dimensions = Vec::new();
+                for (index, attribute) in [(0, "width"), (1, "height")] {
+                    if let Some(dimension) = arguments.get(index) {
+                        let n = dimension.to_number();
+                        if !n.is_finite() || n < 0.0 || n > 8192.0 {
+                            return Err(JsError::type_error("invalid Image dimensions"));
+                        }
+                        dimensions.push((attribute, (n as u32).to_string()));
+                    }
+                }
+                let created = self.call_builtin(
+                    BuiltinFunction::DomCreateElement,
+                    JsValue::Object(document),
+                    vec![JsValue::String("img".into())],
+                )?;
+                let CallOutcome::Value(JsValue::Object(image)) = created else {
+                    unreachable!("createElement(img) produces a DOM image");
+                };
+                let ObjectKind::DomElement(node) = self.object(image)?.kind else {
+                    unreachable!("createElement(img) produces a DOM element");
+                };
+                for (attribute, value) in dimensions {
+                    self.stage_dom_attribute(node, attribute, value)?;
+                }
+                return Ok(CallOutcome::Value(JsValue::Object(image)));
+            }
             BuiltinFunction::PerformanceNow => {
                 let JsValue::Object(receiver) = this_value else {
                     return Err(JsError::type_error("illegal performance.now invocation"));
@@ -7379,6 +7418,7 @@ impl JsRuntime {
             | BuiltinFunction::AbortSignalAnyStatic
             | BuiltinFunction::DomExceptionConstructor
             | BuiltinFunction::DomExceptionToString
+            | BuiltinFunction::ImageConstructor
             | BuiltinFunction::SetTimeout
             | BuiltinFunction::ClearTimeout
             | BuiltinFunction::SetInterval
@@ -7915,6 +7955,22 @@ impl JsRuntime {
                         if key == "style" && matches!(kind, ObjectKind::DomElement(_)) {
                             return self.dom_style_object(node).map(JsValue::Object);
                         }
+                        if matches!(kind, ObjectKind::DomElement(_))
+                            && self.dom_tags.get(&node).is_some_and(|tag| tag == "img")
+                            && matches!(key, "src" | "alt" | "width" | "height")
+                        {
+                            let attribute = self
+                                .dom_attributes
+                                .get(&node)
+                                .and_then(|attrs| attrs.get(key))
+                                .map(String::as_str)
+                                .unwrap_or("");
+                            return if key == "width" || key == "height" {
+                                Ok(JsValue::Number(attribute.parse::<f64>().unwrap_or(0.0)))
+                            } else {
+                                Ok(JsValue::String(attribute.to_owned()))
+                            };
+                        }
                     }
                     ObjectKind::DomClassList(node) => {
                         let tokens = self.class_tokens(node);
@@ -8188,6 +8244,22 @@ impl JsRuntime {
             }
             let name = Self::style_property_name(key);
             self.set_dom_style_property(node, &name, Some(value.to_js_string()))?;
+            return Ok(());
+        }
+        if let ObjectKind::DomElement(node) = self.object(*id)?.kind
+            && self.dom_tags.get(&node).is_some_and(|tag| tag == "img")
+            && matches!(key, "src" | "alt" | "width" | "height")
+        {
+            let attribute_value = if key == "width" || key == "height" {
+                let n = value.to_number();
+                if !n.is_finite() || n < 0.0 || n > 8192.0 {
+                    return Err(JsError::type_error("invalid image dimension"));
+                }
+                (n as u32).to_string()
+            } else {
+                value.to_js_string()
+            };
+            self.stage_dom_attribute(node, key, attribute_value)?;
             return Ok(());
         }
         if key == "className"
@@ -8728,6 +8800,41 @@ mod tests {
         assert!(second >= first + 1.0, "monotonic performance clock stalled");
         assert!(vm.eval_script("performance.now.call({})").is_err());
         assert!(vm.eval_script("new performance.now()").is_err());
+    }
+
+    #[test]
+    fn real_web_image_constructor_creates_native_img_and_reflects_attributes() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        for source in [
+            "typeof Image === 'function' && Image.length === 2 && window.Image === Image",
+            "var img = new Image(30, 12); img.tagName === 'IMG' && img.nodeType === 1 && img.width === 30 && img.height === 12 && img.getAttribute('width') === '30'",
+            "img.src='data:image/png,abc'; img.alt='sample'; img.getAttribute('src') === img.src && img.getAttribute('alt') === 'sample'",
+            "img.setAttribute('src','test.png'); img.src === 'test.png'",
+            "img.width = 64; img.height = 24; img.getAttribute('width') === '64' && img.height === 24",
+            "var plain = Image(); plain.tagName === 'IMG' && plain.src === '' && plain.width === 0",
+            "var normal = document.createElement('img'); normal.src='x.png'; normal.getAttribute('src') === 'x.png'",
+            "var parent = document.createElement('div'); parent.appendChild(img) === img && img.parentNode === parent",
+        ] {
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::Boolean(true),
+                "{source}"
+            );
+        }
+        let operations = vm.take_dom_operations();
+        assert!(operations.iter().any(|op| matches!(
+            op, DomOperation::SetAttribute { name, value, .. } if name == "src" && value == "test.png"
+        )));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert_eq!(
+            vm.eval_script("img.src").unwrap(),
+            JsValue::String("test.png".into())
+        );
+        for source in ["new Image(-1)", "new Image(9000)", "new Image(4, -3)"] {
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
     }
 
     #[test]

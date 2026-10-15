@@ -13,6 +13,16 @@ page still paints **no text**. Pikabu remains visually malformed.
 The 30-minute synthetic GC safety and private-memory checks passed,
 while rare long wall-time GC pauses still need investigation.
 
+## Script-created images (16 October 2026)
+
+The original JS runtime now exposes a bounded `Image()` constructor
+that creates genuine detached DOM `img` nodes, reflects basic source
+and dimension properties, and paints actual image pixels when inserted
+into a page. The recorded YouTube `Image is not defined` failure
+disappeared; YouTube still renders no text (9 remaining JS failures).
+Image loading events and a full HTMLImageElement implementation remain
+outstanding. No modern website is yet verified usable.
+
 ## Native DOM reclamation (14 October 2026)
 
 Native Document now collects orphan node components and reuses slots with

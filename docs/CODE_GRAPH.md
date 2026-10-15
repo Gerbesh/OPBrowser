@@ -16,6 +16,18 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## Browser-owned Image constructor and host attribute reflection (16 October 2026)
+
+`op_js::JsRuntime::install_dom_snapshot` registers a native `Image`
+constructor on the global/window object. Its built-in reuses the
+`document.createElement('img')` path, stages width/height attributes
+and produces the same identity and DOM operations as authored nodes.
+Image `src`/`alt`/`width`/`height` properties reflect the VM's staged
+attributes and feed `op_engine::scripts::apply_dom_operations`.
+The native image loader and display-list painter consume attached
+`img` elements without a new dependency. Off-document network load
+events and absolute `src` URL reflection remain unimplemented.
+
 ## Delete syntax from original JS lexer to VM (16 October 2026)
 
 `op_js::lexer` reserves `delete` as a unary keyword. Parser emits

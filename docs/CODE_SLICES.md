@@ -16,6 +16,16 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S80 - Script-created Image to native pixels
+
+Real YouTube scripts request `new Image()` -> original VM built-in
+creates a detached native `img` through `createElement` -> staged
+`src` and size mutations -> authoritative DOM insert via
+`appendChild` -> original page image decoder -> real image paint
+command in Windows integration test. A live HTTPS YouTube recheck
+removes `Image is not defined`, but the viewport still paints no
+text and remains unsupported.
+
 ## S79 - Live YouTube delete diagnostics through native rendering
 
 YouTube script reports `delete is not defined` -> lexical `delete`
