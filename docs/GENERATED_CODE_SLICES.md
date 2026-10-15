@@ -1027,7 +1027,7 @@ op_dom::append_child
 op_paint::build_display_list
 ```
 
-- [`op_js::comparison`](../crates/op_js/src/parser.rs#L836)
+- [`op_js::comparison`](../crates/op_js/src/parser.rs#L908)
 - [`op_js::binary_with_coercion`](../crates/op_js/src/runtime.rs#L1537)
 - [`op_js::query_descendants`](../crates/op_js/src/runtime.rs#L3671)
 - [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L2944)
@@ -1222,9 +1222,9 @@ op_dom::set_text_content
 op_paint::build_display_list
 ```
 
-- [`op_js::tokenize`](../crates/op_js/src/lexer.rs#L86)
-- [`op_js::conditional`](../crates/op_js/src/parser.rs#L735)
-- [`op_js::compile_program`](../crates/op_js/src/bytecode.rs#L85)
+- [`op_js::tokenize`](../crates/op_js/src/lexer.rs#L87)
+- [`op_js::conditional`](../crates/op_js/src/parser.rs#L807)
+- [`op_js::compile_program`](../crates/op_js/src/bytecode.rs#L86)
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L422)
 - [`op_js::typeof_value`](../crates/op_js/src/runtime.rs#L1402)
 - [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L5287)
@@ -1376,9 +1376,9 @@ op_js::apply_binary
 - [`op_engine::ParserScriptRunner`](../crates/op_engine/src/scripts.rs#L399)
 - [`op_engine::active_script_diagnostics`](../crates/op_engine/src/lib.rs#L349)
 - [`op_browser::script_diag_`](../crates/op_browser/src/bin/live_site_probe.rs#L184)
-- [`op_js::Caret`](../crates/op_js/src/lexer.rs#L70)
-- [`op_js::bitwise_xor`](../crates/op_js/src/parser.rs#L797)
-- [`op_js::to_int32`](../crates/op_js/src/runtime.rs#L8569)
+- [`op_js::Caret`](../crates/op_js/src/lexer.rs#L71)
+- [`op_js::bitwise_xor`](../crates/op_js/src/parser.rs#L869)
+- [`op_js::to_int32`](../crates/op_js/src/runtime.rs#L8579)
 - [`op_js::apply_binary`](../crates/op_js/src/runtime.rs#L1613)
 
 Only initial parser-script diagnostics are enumerated; callbacks/timers require broader tracing. Successful parsing of individual bitwise operators does not imply the modern Google/Pikabu scripts now work.

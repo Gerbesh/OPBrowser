@@ -16,6 +16,18 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S78 - Real-web arrow syntax through lexical VM functions
+
+Public-site arrow syntax -> Rust lexer `Arrow` token -> parser
+lookahead for simple parameters -> `Expression::Arrow` with
+expression or block body -> bytecode `FunctionTemplate::is_arrow`
+-> VM function allocation without own prototype -> caller
+skips call-time `this` and `arguments` shadow bindings, preserving
+outer lexical environment -> closure survives a GC sweep ->
+real HTTPS five-site recheck. Construction is explicitly rejected;
+async/default/rest/destructured arrow variants remain unsupported.
+No page is declared functional on a changed error count alone.
+
 ## S77 - Modern template syntax to original VM execution
 
 Live webpage with backtick content -> lexer scans cooked quasis while

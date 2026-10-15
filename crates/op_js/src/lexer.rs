@@ -55,6 +55,7 @@ pub enum TokenKind {
     Percent,
     Bang,
     Equal,
+    Arrow,
     EqualEqual,
     EqualEqualEqual,
     BangEqual,
@@ -257,6 +258,7 @@ impl<'a> Lexer<'a> {
             b'|' => TokenKind::Pipe,
             b'^' => TokenKind::Caret,
             b'~' => TokenKind::Tilde,
+            b'=' if self.take(b'>') => TokenKind::Arrow,
             b'=' if self.take(b'=') => {
                 if self.take(b'=') {
                     TokenKind::EqualEqualEqual

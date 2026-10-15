@@ -111,6 +111,10 @@ pub enum Expression {
         quasis: Vec<String>,
         expressions: Vec<Expression>,
     },
+    Arrow {
+        params: Vec<String>,
+        body: Vec<Statement>,
+    },
     Identifier(String),
     This,
     ObjectLiteral(Vec<ObjectProperty>),
@@ -731,7 +735,75 @@ impl Parser {
         Ok(declarations)
     }
 
+    /// Only plain identifiers are accepted as arrow parameters for now.
+    /// Lookahead leaves grouped expressions unchanged unless => follows.
+    fn arrow_parameters(&self) -> Option<(Vec<String>, usize)> {
+        let start = self.index;
+        if let TokenKind::Identifier(name) = &self.tokens.get(start)?.kind
+            && matches!(self.tokens.get(start + 1)?.kind, TokenKind::Arrow)
+        {
+            return Some((vec![name.clone()], start + 2));
+        }
+        if !matches!(self.tokens.get(start)?.kind, TokenKind::LeftParen) {
+            return None;
+        }
+        let mut cursor = start + 1;
+        let mut params = Vec::new();
+        loop {
+            if matches!(self.tokens.get(cursor)?.kind, TokenKind::RightParen) {
+                cursor += 1;
+                break;
+            }
+            let TokenKind::Identifier(name) = &self.tokens.get(cursor)?.kind else {
+                return None;
+            };
+            params.push(name.clone());
+            if params.len() > 128 {
+                return None;
+            }
+            cursor += 1;
+            if matches!(self.tokens.get(cursor)?.kind, TokenKind::Comma) {
+                cursor += 1;
+            } else if matches!(self.tokens.get(cursor)?.kind, TokenKind::RightParen) {
+                cursor += 1;
+                break;
+            } else {
+                return None;
+            }
+        }
+        matches!(self.tokens.get(cursor)?.kind, TokenKind::Arrow).then_some((params, cursor + 1))
+    }
+
+    fn arrow_function(
+        &mut self,
+        params: Vec<String>,
+        body_start: usize,
+    ) -> Result<Expression, JsError> {
+        self.index = body_start;
+        let body = if self.take(&TokenKind::LeftBrace) {
+            let saved_loop = self.loop_depth;
+            let saved_breakable = self.breakable_depth;
+            self.loop_depth = 0;
+            self.breakable_depth = 0;
+            self.function_depth += 1;
+            let parsed = self.block_statement();
+            self.function_depth -= 1;
+            self.loop_depth = saved_loop;
+            self.breakable_depth = saved_breakable;
+            let Statement::Block(body) = parsed? else {
+                unreachable!("block parser returns a block");
+            };
+            body
+        } else {
+            vec![Statement::Return(Some(self.assignment()?))]
+        };
+        Ok(Expression::Arrow { params, body })
+    }
+
     fn assignment(&mut self) -> Result<Expression, JsError> {
+        if let Some((params, body_start)) = self.arrow_parameters() {
+            return self.arrow_function(params, body_start);
+        }
         let left = self.conditional()?;
         if !self.take(&TokenKind::Equal) {
             return Ok(left);

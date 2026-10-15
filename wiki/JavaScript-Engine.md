@@ -3,6 +3,18 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Basic arrow functions (15 October 2026)
+
+Original Rust lexer/parser/VM support `x => x + 1`,
+`(a, b) => a + b`, nested closures and block-bodied arrows.
+Arrows use lexical `this` and `arguments`, have no own
+`prototype`, and throw when used with `new`. A regression verifies
+that a captured value survives VM garbage collection. Async arrows
+and default/rest/destructured parameters are not implemented.
+A repeat live probe showed script error counts down from 12 to
+11 for YouTube and from 14 to 12 for Pikabu, but the pages
+remain skeleton-only and visibly malformed. Not a compatibility pass.
+
 ## Untagged template literal support (15 October 2026)
 
 The independent Rust lexer, parser, and bytecode interpreter now

@@ -5305,24 +5305,25 @@ impl JsRuntime {
     ) -> Result<CallOutcome, JsError> {
         let function_env = self.allocate_environment(Some(closure), EnvironmentKind::Function)?;
 
-        self.environments[function_env.slot()].bindings.insert(
-            "this".into(),
-            Binding {
-                value: this_value,
-                mutable: false,
-                declaration_kind: VariableKind::Const,
-            },
-        );
-
-        let arguments_object = self.allocate_arguments_object(&arguments)?;
-        self.environments[function_env.slot()].bindings.insert(
-            "arguments".into(),
-            Binding {
-                value: JsValue::Object(arguments_object),
-                mutable: true,
-                declaration_kind: VariableKind::Var,
-            },
-        );
+        if !template.is_arrow {
+            self.environments[function_env.slot()].bindings.insert(
+                "this".into(),
+                Binding {
+                    value: this_value,
+                    mutable: false,
+                    declaration_kind: VariableKind::Const,
+                },
+            );
+            let arguments_object = self.allocate_arguments_object(&arguments)?;
+            self.environments[function_env.slot()].bindings.insert(
+                "arguments".into(),
+                Binding {
+                    value: JsValue::Object(arguments_object),
+                    mutable: true,
+                    declaration_kind: VariableKind::Var,
+                },
+            );
+        }
 
         if let Some(name) = &template.name {
             self.environments[function_env.slot()].bindings.insert(
@@ -7398,6 +7399,11 @@ impl JsRuntime {
             .clone()
             .ok_or_else(|| JsError::type_error("value is not a constructor"))?;
 
+        if let FunctionImplementation::User { template, .. } = &function.implementation
+            && template.is_arrow
+        {
+            return Err(JsError::type_error("arrow functions are not constructors"));
+        }
         if let FunctionImplementation::Builtin(builtin) = function.implementation {
             if matches!(
                 builtin,
@@ -8343,6 +8349,7 @@ impl JsRuntime {
             "name".into(),
             JsValue::String(template.name.clone().unwrap_or_default()),
         );
+        let is_arrow = template.is_arrow;
         let function_id = self.allocate_object_with_function(
             ObjectKind::Function,
             Some(self.object_prototype),
@@ -8351,6 +8358,9 @@ impl JsRuntime {
                 implementation: FunctionImplementation::User { template, closure },
             }),
         )?;
+        if is_arrow {
+            return Ok(function_id);
+        }
 
         let mut prototype_properties = HashMap::new();
         prototype_properties.insert("constructor".into(), JsValue::Object(function_id));
@@ -8680,6 +8690,48 @@ mod tests {
         assert!(second >= first + 1.0, "monotonic performance clock stalled");
         assert!(vm.eval_script("performance.now.call({})").is_err());
         assert!(vm.eval_script("new performance.now()").is_err());
+    }
+
+    #[test]
+    fn real_web_arrow_functions_capture_this_arguments_and_closure() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        for source in [
+            "var twice = x => x * 2; twice(9) === 18 && twice.length === 1",
+            "var add = (a, b) => a + b; add(5, 7) === 12 && add.length === 2",
+            "var make = x => y => x + y; make(4)(8) === 12",
+            "var block = (x) => { var y = x + 1; return y * 2; }; block(6) === 14",
+            "var object = () => ({a: 9}); object().a === 9",
+            "var zero = () => 5; zero() === 5 && zero.prototype === undefined",
+            "var scope = { value: 11, make: function() { return () => this.value; } }; scope.make()() === 11",
+            "function outer(a) { return () => arguments[0]; } outer(23)(77) === 23",
+            "var holder = { value: 4, get: () => this }; holder.get() === window",
+            "var ordinary = function(x){ return x + 1; }; ordinary(3) === 4",
+            "(() => 'inline')() === 'inline'",
+            "((3 + 4) * 2) === 14",
+        ] {
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::Boolean(true),
+                "{source}"
+            );
+        }
+        vm.eval_script("var stable = ((secret) => () => secret)(91)")
+            .unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert_eq!(vm.eval_script("stable()").unwrap(), JsValue::Number(91.0));
+        for source in [
+            "new (() => 3)()",
+            "var fn = x => x; new fn(1)",
+            "var f = (a = 2) => a",
+            "var f = ({a}) => a",
+        ] {
+            assert!(
+                vm.eval_script(source).is_err(),
+                "unsupported/invalid arrow should fail: {source}"
+            );
+        }
     }
 
     #[test]

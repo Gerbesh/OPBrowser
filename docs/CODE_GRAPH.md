@@ -16,6 +16,19 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## Arrow functions, lexical host roots and call semantics (15 October 2026)
+
+`op_js::lexer` tokenizes `=>` separately from assignment and
+comparison. `op_js::parser::Parser::arrow_parameters` uses
+non-mutating lookahead to distinguish plain parameter lists from
+grouped expressions. `Expression::Arrow` lowers to an original
+`FunctionTemplate` with an `is_arrow` marker. VM allocation keeps
+arrow closure environment ownership but omits an own prototype;
+invocation inherits `this` and `arguments` from the closure instead
+of adding call-time bindings. `construct_value` rejects arrow
+constructors. Normal closure reachability/GC infrastructure is reused
+without new dependencies or alternative JS engines.
+
 ## Untagged template literals through the original JS stack (15 October 2026)
 
 `op_js::lexer` tracks template interpolation frames and nested

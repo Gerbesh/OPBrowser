@@ -137,6 +137,24 @@ but reports `expected expression` instead. The other four failures
 and the weak first-viewport results remain. Sites change over time;
 paint-count changes alone are not compatibility progress.
 
+## 15 October 2026: arrow-function VM and live rerun
+
+The independent parser/bytecode VM now implements plain-parameter
+arrow functions with expression or block bodies, closure retention,
+lexical `this`/`arguments` and non-constructibility. Async arrows,
+destructuring, default and rest parameters remain unsupported.
+
+Recheck using the same five anonymous HTTPS URLs, same window and
+settle settings, and real native pixels is in
+`artifacts/live_web/arrows-2026-10-15/`. Measured script failures:
+Google **2**, YouTube **11**, Reddit **1**, Pikabu **12**,
+DeviantArt **4**. In the immediately preceding run with templates
+only, the counts were 2, 12, 1, 14 and 4 respectively.
+YouTube remains skeleton-only, Reddit blank; Pikabu and
+DeviantArt remain broken/partial. The site content and network
+conditions are not frozen, so these changes are **diagnostic** and
+not proof of a correctly rendered or interactive website.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell

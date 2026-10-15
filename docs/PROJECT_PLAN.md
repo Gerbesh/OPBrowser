@@ -107,6 +107,18 @@ still have JS errors. No visually correct first viewport is certified.
 Tagged templates, full Unicode surrogate handling, arrow functions,
 and the opt-in interactive profiler remain pending.
 
+**P0 arrow-function follow-up (2026-10-15):** The original JS
+lexer/parser/bytecode/VM now support ordinary `x => expr`,
+`(x, y) => expr` and block-bodied arrow functions. Arrow calls
+capture lexical `this` and `arguments`, preserve closures across
+GC and cannot be constructed with `new`; there is no own
+`prototype`. Async arrows, default/rest/destructured parameters,
+and full ECMAScript validation remain open. On a repeat five-site
+live pass, YouTube script failures dropped 12 -> 11 and Pikabu
+14 -> 12 compared with the immediately preceding template-only
+run; Google/Reddit/DeviantArt remain at 2/1/4. No modern site is
+now visibly functional, and live content can change between runs.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

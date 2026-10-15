@@ -3646,3 +3646,11 @@ This file is append-only project history.
 - Opt-in native five-site recheck: Google 2 script failures, YouTube 12/skeleton-only, Reddit 1/blank, Pikabu 14/partial, DeviantArt 4/partial. DeviantArt's unsupported backtick diagnostic was replaced by a later syntax error; no page is certified functionally or visually correct. Saved output: `artifacts/live_web/templates-2026-10-15/`.
 - Continue with measured modern JS blockers and interactive phase tracing, while preserving the synthetic GC safety gates.
 
+## 2026-10-15 - P0 basic arrow functions with lexical closure semantics
+
+- Added `=>` lexical tokens and an unambiguous, bounded lookahead for ordinary single and parenthesized identifier parameter lists; arrow expression and block bodies lower to original user-function bytecode. Async/default/rest/destructuring syntax is deliberately not claimed.
+- Added `FunctionTemplate::is_arrow`: arrows have no own prototype and cannot be constructed; calls inherit lexical `this` and `arguments` from their closure instead of shadowing them at invocation time. Retained arrows use existing GC environment tracing, confirmed by a forced mark/sweep regression.
+- Added tests for concise/block bodies, nested closures, `this`, `arguments`, object returns, grouping, no prototype, construction rejection and unsupported parameter patterns. Full workspace tests and strict Clippy passed, as did Release live-probe compilation.
+- Opt-in same-five-site live rerun recorded Google 2 errors, YouTube 11, Reddit 1, Pikabu 12, DeviantArt 4. The immediately preceding template-only pass had 2/12/1/14/4 respectively; YouTube still renders no text and Reddit remains blank. Results are diagnostic, not a verified visual improvement. Raw JSON/screenshots in `artifacts/live_web/arrows-2026-10-15/`.
+- Next: prioritize the newly exposed syntax/runtime blockers and an opt-in interactive profiler, with screenshots and genuine page interaction as product gates.
+
