@@ -16,6 +16,17 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S77 - Modern template syntax to original VM execution
+
+Live webpage with backtick content -> lexer scans cooked quasis while
+tracking nested `${...}` brace frames -> parser constructs the
+template AST in source order -> bytecode concatenates with a string
+seed and existing VM Add/ToPrimitive semantics -> page scripts may
+progress to their next modern-JS blocker -> focused VM/lexer
+regressions and native five-site recheck. Tagged templates and
+unpaired UTF-16 surrogate escapes remain unsupported; no website
+receives a new functional-pass designation.
+
 ## S76 - Page time origin to real site JavaScript
 
 Original per-document VM creates paired monotonic/wall clock origin ->

@@ -11,6 +11,11 @@ pub struct Token {
 pub enum TokenKind {
     Number(f64),
     String(String),
+    TemplateNoSub(String),
+    TemplateHead(String),
+    TemplateMiddle(String),
+    TemplateTail(String),
+    TemplateExprEnd,
     Identifier(String),
     Let,
     Const,
@@ -86,6 +91,12 @@ struct Lexer<'a> {
     source: &'a str,
     bytes: &'a [u8],
     index: usize,
+    templates: Vec<TemplateFrame>,
+}
+
+struct TemplateFrame {
+    brace_depth: usize,
+    awaiting_chunk: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -94,17 +105,27 @@ impl<'a> Lexer<'a> {
             source,
             bytes: source.as_bytes(),
             index: 0,
+            templates: Vec::new(),
         }
     }
 
     fn tokenize(mut self) -> Result<Vec<Token>, JsError> {
         let mut tokens = Vec::new();
         while self.index < self.bytes.len() {
-            self.skip_space_and_comments()?;
+            if !self
+                .templates
+                .last()
+                .is_some_and(|frame| frame.awaiting_chunk)
+            {
+                self.skip_space_and_comments()?;
+            }
             if self.index >= self.bytes.len() {
                 break;
             }
             tokens.push(self.next_token()?);
+        }
+        if !self.templates.is_empty() {
+            return Err(JsError::syntax(self.index, "unterminated template literal"));
         }
         tokens.push(Token {
             kind: TokenKind::Eof,
@@ -156,8 +177,45 @@ impl<'a> Lexer<'a> {
     }
 
     fn next_token(&mut self) -> Result<Token, JsError> {
+        if self
+            .templates
+            .last()
+            .is_some_and(|frame| frame.awaiting_chunk)
+        {
+            return self.template_chunk(false);
+        }
         let start = self.index;
         let byte = self.bytes[start];
+        if byte == b'`' {
+            self.index += 1;
+            return self.template_chunk(true);
+        }
+        if byte == b'}'
+            && self
+                .templates
+                .last()
+                .is_some_and(|frame| frame.brace_depth == 0)
+        {
+            self.index += 1;
+            self.templates
+                .last_mut()
+                .expect("template frame exists")
+                .awaiting_chunk = true;
+            return Ok(Token {
+                kind: TokenKind::TemplateExprEnd,
+                start,
+                end: self.index,
+            });
+        }
+        if byte == b'{' {
+            if let Some(frame) = self.templates.last_mut() {
+                frame.brace_depth += 1;
+            }
+        } else if byte == b'}'
+            && let Some(frame) = self.templates.last_mut()
+        {
+            frame.brace_depth -= 1;
+        }
 
         if byte.is_ascii_digit()
             || (byte == b'.' && self.bytes.get(start + 1).is_some_and(u8::is_ascii_digit))
@@ -337,6 +395,154 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Scan either the opening quasi or the raw continuation after an
+    /// interpolation. A template frame stays active until its closing `.
+    fn template_chunk(&mut self, opening: bool) -> Result<Token, JsError> {
+        let start = if opening { self.index - 1 } else { self.index };
+        let mut cooked = String::new();
+        while let Some(&byte) = self.bytes.get(self.index) {
+            if byte == b'`' {
+                self.index += 1;
+                if !opening {
+                    self.templates.pop();
+                }
+                return Ok(Token {
+                    kind: if opening {
+                        TokenKind::TemplateNoSub(cooked)
+                    } else {
+                        TokenKind::TemplateTail(cooked)
+                    },
+                    start,
+                    end: self.index,
+                });
+            }
+            if byte == b'$' && self.bytes.get(self.index + 1) == Some(&b'{') {
+                self.index += 2;
+                if opening {
+                    if self.templates.len() >= 32 {
+                        return Err(JsError::syntax(start, "template nesting budget exceeded"));
+                    }
+                    self.templates.push(TemplateFrame {
+                        brace_depth: 0,
+                        awaiting_chunk: false,
+                    });
+                } else {
+                    self.templates
+                        .last_mut()
+                        .expect("template continuation frame")
+                        .awaiting_chunk = false;
+                }
+                return Ok(Token {
+                    kind: if opening {
+                        TokenKind::TemplateHead(cooked)
+                    } else {
+                        TokenKind::TemplateMiddle(cooked)
+                    },
+                    start,
+                    end: self.index,
+                });
+            }
+            if byte == b'\\' {
+                self.index += 1;
+                let Some(&escaped) = self.bytes.get(self.index) else {
+                    return Err(JsError::syntax(start, "unterminated template escape"));
+                };
+                self.index += 1;
+                match escaped {
+                    b'\n' => continue,
+                    b'\r' => {
+                        if self.bytes.get(self.index) == Some(&b'\n') {
+                            self.index += 1;
+                        }
+                        continue;
+                    }
+                    b'n' => cooked.push('\n'),
+                    b'r' => cooked.push('\r'),
+                    b't' => cooked.push('\t'),
+                    b'b' => cooked.push('\u{0008}'),
+                    b'f' => cooked.push('\u{000c}'),
+                    b'v' => cooked.push('\u{000b}'),
+                    b'0' => cooked.push('\0'),
+                    b'\\' => cooked.push('\\'),
+                    b'`' => cooked.push('`'),
+                    b'$' => cooked.push('$'),
+                    b'x' => cooked.push(self.template_hex_escape(2, start)?),
+                    b'u' => {
+                        if self.bytes.get(self.index) == Some(&b'{') {
+                            self.index += 1;
+                            let mut number = 0u32;
+                            let mut digits = 0;
+                            while self.bytes.get(self.index) != Some(&b'}') {
+                                let Some(&next) = self.bytes.get(self.index) else {
+                                    return Err(JsError::syntax(
+                                        start,
+                                        "unterminated unicode escape",
+                                    ));
+                                };
+                                let digit = (next as char).to_digit(16).ok_or_else(|| {
+                                    JsError::syntax(start, "invalid unicode escape")
+                                })?;
+                                number = number.saturating_mul(16).saturating_add(digit);
+                                digits += 1;
+                                if digits > 6 {
+                                    return Err(JsError::syntax(start, "unicode escape too long"));
+                                }
+                                self.index += 1;
+                            }
+                            if digits == 0 {
+                                return Err(JsError::syntax(start, "empty unicode escape"));
+                            }
+                            self.index += 1;
+                            cooked.push(
+                                char::from_u32(number).ok_or_else(|| {
+                                    JsError::syntax(start, "invalid unicode scalar")
+                                })?,
+                            );
+                        } else {
+                            cooked.push(self.template_hex_escape(4, start)?);
+                        }
+                    }
+                    b'1'..=b'9' => {
+                        return Err(JsError::syntax(start, "invalid template escape"));
+                    }
+                    other if other.is_ascii() => cooked.push(other as char),
+                    _ => return Err(JsError::syntax(start, "invalid template escape")),
+                }
+                continue;
+            }
+            if byte == b'\r' {
+                self.index += 1;
+                if self.bytes.get(self.index) == Some(&b'\n') {
+                    self.index += 1;
+                }
+                cooked.push('\n');
+                continue;
+            }
+            let ch = self.source[self.index..]
+                .chars()
+                .next()
+                .expect("valid UTF-8");
+            cooked.push(ch);
+            self.index += ch.len_utf8();
+        }
+        Err(JsError::syntax(start, "unterminated template literal"))
+    }
+
+    fn template_hex_escape(&mut self, digits: usize, start: usize) -> Result<char, JsError> {
+        let mut number = 0u32;
+        for _ in 0..digits {
+            let Some(&byte) = self.bytes.get(self.index) else {
+                return Err(JsError::syntax(start, "unterminated hex escape"));
+            };
+            let digit = (byte as char)
+                .to_digit(16)
+                .ok_or_else(|| JsError::syntax(start, "invalid hex escape"))?;
+            number = number * 16 + digit;
+            self.index += 1;
+        }
+        char::from_u32(number).ok_or_else(|| JsError::syntax(start, "invalid unicode scalar"))
+    }
+
     fn string(&mut self) -> Result<Token, JsError> {
         let start = self.index;
         let quote = self.bytes[self.index];
@@ -404,6 +610,76 @@ fn is_identifier_continue(byte: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn template_lexer_preserves_interpolation_braces_and_nested_templates() {
+        let tokens =
+            tokenize(r#"const x = `outer ${({a: [1, 2]}).a[0]} and ${`inner ${3}`}`;"#).unwrap();
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(&t.kind, TokenKind::TemplateHead(s) if s == "outer "))
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(&t.kind, TokenKind::TemplateMiddle(s) if s == " and "))
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(&t.kind, TokenKind::TemplateHead(s) if s == "inner "))
+        );
+        assert_eq!(
+            tokens
+                .iter()
+                .filter(|t| matches!(t.kind, TokenKind::TemplateExprEnd))
+                .count(),
+            3
+        );
+        assert_eq!(
+            tokens
+                .iter()
+                .filter(|t| matches!(t.kind, TokenKind::TemplateTail(_)))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn template_lexer_distinguishes_cooked_literal_text_from_js() {
+        let tokens = tokenize(
+            r#"`literal // text ${2}`
+            `one\n\r\t\``
+            `escaped \${notAnExpression}`"#,
+        )
+        .unwrap();
+        assert!(matches!(&tokens[0].kind, TokenKind::TemplateHead(s) if s == "literal // text "));
+        assert!(matches!(&tokens[2].kind, TokenKind::TemplateExprEnd));
+        assert!(matches!(&tokens[3].kind, TokenKind::TemplateTail(s) if s.is_empty()));
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(&t.kind, TokenKind::TemplateNoSub(s) if s == "one\n\r\t`"))
+        );
+        assert!(tokens.iter().any(
+            |t| matches!(&t.kind, TokenKind::TemplateNoSub(s) if s == "escaped ${notAnExpression}")
+        ));
+    }
+
+    #[test]
+    fn rejects_unterminated_template_and_bad_cooked_escapes() {
+        for source in [
+            r"`unclosed",
+            r"`${1",
+            r"`x \xQ1`",
+            r"`x \uD800`",
+            r"`x \u{}`",
+            r"`x \8`",
+        ] {
+            assert!(tokenize(source).is_err(), "{source}");
+        }
+    }
 
     #[test]
     fn tokenizes_comments_literals_and_operators() {

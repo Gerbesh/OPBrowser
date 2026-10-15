@@ -106,6 +106,11 @@ pub enum VariableKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Literal(JsValue),
+    /// Untagged template: cooked quasis and ordered substitution expressions.
+    Template {
+        quasis: Vec<String>,
+        expressions: Vec<Expression>,
+    },
     Identifier(String),
     This,
     ObjectLiteral(Vec<ObjectProperty>),
@@ -1012,6 +1017,15 @@ impl Parser {
                 continue;
             }
 
+            if self.check(&TokenKind::TemplateNoSub(String::new()))
+                || self.check(&TokenKind::TemplateHead(String::new()))
+            {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "tagged template literals are not supported",
+                ));
+            }
+
             let update = if self.take(&TokenKind::PlusPlus) {
                 Some(UpdateOp::Increment)
             } else if self.take(&TokenKind::MinusMinus) {
@@ -1036,7 +1050,44 @@ impl Parser {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Number(value) => Ok(Expression::Literal(JsValue::Number(value))),
-            TokenKind::String(value) => Ok(Expression::Literal(JsValue::String(value))),
+            TokenKind::String(value) | TokenKind::TemplateNoSub(value) => {
+                Ok(Expression::Literal(JsValue::String(value)))
+            }
+            TokenKind::TemplateHead(first) => {
+                let mut quasis = vec![first];
+                let mut expressions = Vec::new();
+                loop {
+                    if expressions.len() >= 128 {
+                        return Err(JsError::syntax(
+                            token.start,
+                            "template interpolation budget exceeded",
+                        ));
+                    }
+                    expressions.push(self.assignment()?);
+                    if !self.take(&TokenKind::TemplateExprEnd) {
+                        return Err(JsError::syntax(
+                            self.current().start,
+                            "expected '}' after template substitution",
+                        ));
+                    }
+                    match self.advance().kind.clone() {
+                        TokenKind::TemplateMiddle(value) => quasis.push(value),
+                        TokenKind::TemplateTail(value) => {
+                            quasis.push(value);
+                            return Ok(Expression::Template {
+                                quasis,
+                                expressions,
+                            });
+                        }
+                        _ => {
+                            return Err(JsError::syntax(
+                                self.previous().start,
+                                "expected template continuation",
+                            ));
+                        }
+                    }
+                }
+            }
             TokenKind::True => Ok(Expression::Literal(JsValue::Boolean(true))),
             TokenKind::False => Ok(Expression::Literal(JsValue::Boolean(false))),
             TokenKind::Null => Ok(Expression::Literal(JsValue::Null)),

@@ -525,6 +525,23 @@ impl Compiler {
     fn expression(&mut self, expression: &Expression) {
         match expression {
             Expression::Literal(value) => self.code.push(Instruction::Push(value.clone())),
+            Expression::Template {
+                quasis,
+                expressions,
+            } => {
+                // A string seed forces JS string concatenation for every
+                // substitution; evaluation remains left-to-right and ToPrimitive
+                // is handled by the existing original VM Add instruction.
+                self.code
+                    .push(Instruction::Push(JsValue::String(quasis[0].clone())));
+                for (expression, quasi) in expressions.iter().zip(quasis.iter().skip(1)) {
+                    self.expression(expression);
+                    self.code.push(Instruction::Binary(BinaryOp::Add));
+                    self.code
+                        .push(Instruction::Push(JsValue::String(quasi.clone())));
+                    self.code.push(Instruction::Binary(BinaryOp::Add));
+                }
+            }
             Expression::Identifier(name) => self.code.push(Instruction::Load(name.clone())),
             Expression::This => self.code.push(Instruction::Load("this".into())),
             Expression::ObjectLiteral(properties) => {

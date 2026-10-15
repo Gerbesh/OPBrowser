@@ -95,6 +95,18 @@ access; the former missing-`performance` error did not recur. No visual
 improvement is certified. Full Performance APIs and interactive profiling
 remain open.
 
+**P0 modern-JS syntax follow-up (2026-10-15):** Implemented original
+untagged JavaScript template literals: multiline cooked strings,
+`${expression}` substitutions, nested templates, escapes and ordered
+concatenation. Four focused regressions and full workspace verification
+pass. The five public priority URLs were rechecked with the same
+manifest: DeviantArt's original unsupported backtick changed into a
+later `expected expression` blocker, but the page still has four JS
+failures; YouTube and Reddit remain skeleton/blank, and Google/Pikabu
+still have JS errors. No visually correct first viewport is certified.
+Tagged templates, full Unicode surrogate handling, arrow functions,
+and the opt-in interactive profiler remain pending.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

@@ -3638,3 +3638,11 @@ This file is append-only project history.
 - Real HTTPS DeviantArt recheck: 15.05 seconds, 4 script failures and 7 skips, 2,506 native paint commands. Remaining causes include unsupported backticks, a non-callable value and null/undefined access. Previous missing-performance diagnostic absent; no new page compatibility or visual improvement is certified. The native screenshot and JSON remain locally in `artifacts/live_web/performance-2026-10-15/`.
 - Open P0: actual interactive load/JS/layout/paint/GC CPU versus wall profiling and the next empirically dominant modern syntax/DOM/layout blockers.
 
+## 2026-10-15 - P0 untagged template literal syntax and five real-page reruns
+
+- Implemented untagged JavaScript template literals without a dependency on any third-party JS engine. The original lexer retains nested interpolation/brace boundaries and cooked text with line normalization and escapes. The parser emits a Template AST; the bytecode generator lowers interpolations to string-first Add operations in source order.
+- New lexer/VM tests cover nested templates, objects within interpolations, evaluation order, Unicode and escapes, unterminated inputs and invalid escapes. Tagged templates, lone UTF-16 surrogate escapes, more modern JS syntax and complete language conformance are not claimed.
+- Full Rust workspace tests, strict all-target Clippy and release `live_site_probe` passed after four focused template regressions.
+- Opt-in native five-site recheck: Google 2 script failures, YouTube 12/skeleton-only, Reddit 1/blank, Pikabu 14/partial, DeviantArt 4/partial. DeviantArt's unsupported backtick diagnostic was replaced by a later syntax error; no page is certified functionally or visually correct. Saved output: `artifacts/live_web/templates-2026-10-15/`.
+- Continue with measured modern JS blockers and interactive phase tracing, while preserving the synthetic GC safety gates.
+

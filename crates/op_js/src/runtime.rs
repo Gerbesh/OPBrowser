@@ -8683,6 +8683,61 @@ mod tests {
     }
 
     #[test]
+    fn real_web_template_strings_interpolate_in_order_and_preserve_unicode() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("`Hello`", "Hello"),
+            ("`line\r\nnext`", "line\nnext"),
+            (
+                "`number ${42}, bool ${true}, missing ${undefined}, null ${null}`",
+                "number 42, bool true, missing undefined, null null",
+            ),
+            ("`${({a: [7, 8]}).a[0]} `", "7 "),
+            ("`nested ${`value ${3}`} end`", "nested value 3 end"),
+            (
+                r"`escaped \${nope}, backtick \`, euro €`",
+                "escaped ${nope}, backtick `, euro €",
+            ),
+            (r"`emoji \u{1f680} / hex \x41`", "emoji 🚀 / hex A"),
+            ("`a${1}b${2}c`", "a1b2c"),
+        ] {
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::String(expected.into()),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            vm.eval_script(
+                "var sequence=''; function step(n) { sequence = sequence + n; return n; } \
+                 var label = `${step('A')}${step('B')}`; sequence === 'AB' && label === 'AB'"
+            )
+            .unwrap(),
+            JsValue::Boolean(true)
+        );
+        assert!(
+            vm.eval_script("function tag(x) { return x; } tag`text`")
+                .is_err()
+        );
+        assert!(
+            vm.eval_script("function tag(x) { return x; } tag`a${1}`")
+                .is_err()
+        );
+        for source in [
+            r"`never closed",
+            r"`bad ${ 2",
+            r"`bad ${}`",
+            r"`bad \xZ0`",
+            r"`bad \uD800`",
+        ] {
+            assert!(
+                vm.eval_script(source).is_err(),
+                "expected template syntax error: {source}"
+            );
+        }
+    }
+
+    #[test]
     fn real_web_bitwise_and_or_xor_obey_js_precedence_and_to_int32() {
         let mut runtime = JsRuntime::new();
         for (source, expected) in [

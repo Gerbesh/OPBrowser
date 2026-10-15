@@ -3,6 +3,18 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Untagged template literal support (15 October 2026)
+
+The independent Rust lexer, parser, and bytecode interpreter now
+support multiline backtick strings, nested `${expression}` interpolation,
+common cooked escapes, and left-to-right value conversion. There are
+explicit nesting/substitution budgets and syntax tests for malformed
+literals. Tagged templates and arbitrary UTF-16 surrogate code units
+are not yet implemented. In the live DeviantArt probe, the former
+unsupported backtick error disappeared but another syntax failure
+followed, with four failed scripts still recorded. Google, YouTube,
+Pikabu and Reddit also remain incomplete.
+
 ## Page performance clock (15 October 2026)
 
 The original per-document VM exposes `window.performance.timeOrigin`

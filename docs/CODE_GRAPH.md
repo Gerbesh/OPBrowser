@@ -16,6 +16,18 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## Untagged template literals through the original JS stack (15 October 2026)
+
+`op_js::lexer` tracks template interpolation frames and nested
+brace depth, emitting head/middle/tail boundaries without tokenizing
+raw template text as JavaScript. `op_js::parser` creates
+`Expression::Template` with cooked quasis and ordered substitution
+expressions. `op_js::bytecode` lowers each part to existing
+string-seeded `BinaryOp::Add` instructions, retaining the VM's
+ToPrimitive conversion and execution order. This introduces no
+external JS engine or crate dependency; tagged templates remain
+unsupported and are not silently treated as valid expressions.
+
 ## Browser-owned page performance timing (15 October 2026)
 
 `op_js::JsRuntime` captures an `Instant` and `SystemTime` origin at VM

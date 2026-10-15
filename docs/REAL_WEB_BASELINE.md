@@ -118,6 +118,25 @@ visual or functional improvement**. The diagnostic JSON and native
 screenshot are saved locally under
 `artifacts/live_web/performance-2026-10-15/`.
 
+## 15 October 2026: real-site template-string rerun
+
+The original lexer/AST/bytecode VM now supports **untagged**
+backtick strings, including multiline content, nested `${...}`
+substitutions, common escapes, and left-to-right evaluation. Tagged
+templates, lone UTF-16 surrogates and several modern language features
+remain unsupported.
+
+The same five priority HTTPS URLs were rechecked with the native
+Release probe at `artifacts/live_web/templates-2026-10-15/` (real
+network and Windows pixel output). Recorded outcomes: Google 2 script
+failures/6 paint commands; YouTube 12 failures/130 commands and no
+visible text; Reddit 1 failure/1 command and a blank viewport; Pikabu
+14 failures/1,159 commands; DeviantArt 4 failures/913 commands.
+DeviantArt no longer reports the prior unsupported backtick character,
+but reports `expected expression` instead. The other four failures
+and the weak first-viewport results remain. Sites change over time;
+paint-count changes alone are not compatibility progress.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell
