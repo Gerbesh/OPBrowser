@@ -345,22 +345,45 @@ pub(crate) fn apply_dom_operations(document: &mut Document, runtime: &mut JsRunt
     changed
 }
 
+/// A successful browser-owned checkpoint, excluding later page resource cleanup.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct GcCheckpointPhases {
+    pub started: Instant,
+    pub js: Duration,
+    pub native: Duration,
+    pub metadata: Duration,
+}
+
 /// Native collection is prohibited while the parser owns open-element and
 /// deferred-script handles. Other browser task boundaries can sweep after JS
 /// roots validate and ordered host operations have been committed.
-pub(super) fn collect_at_idle(document: &mut Document, runtime: &mut JsRuntime, force: bool) {
+pub(super) fn collect_at_idle(
+    document: &mut Document,
+    runtime: &mut JsRuntime,
+    force: bool,
+) -> Option<GcCheckpointPhases> {
     let native_pressure = document.allocation_headroom(MAX_NODES) <= MAX_NODES / 8;
+    let started = Instant::now();
     if !matches!(
         runtime.collect_if_needed_at_idle_with_host_pressure(force || native_pressure),
         Ok(Some(_))
     ) {
-        return;
+        return None;
     }
+    let js = started.elapsed();
+    let native_started = Instant::now();
     let roots = runtime.native_dom_roots();
-    if let Ok(freed) = document.collect_garbage(&roots) {
-        let handles = freed.iter().map(|node| node.index()).collect::<Vec<_>>();
-        runtime.forget_collected_native_nodes(&handles);
-    }
+    let freed = document.collect_garbage(&roots).ok()?;
+    let native = native_started.elapsed();
+    let metadata_started = Instant::now();
+    let handles = freed.iter().map(|node| node.index()).collect::<Vec<_>>();
+    runtime.forget_collected_native_nodes(&handles);
+    Some(GcCheckpointPhases {
+        started,
+        js,
+        native,
+        metadata: metadata_started.elapsed(),
+    })
 }
 
 /// Execute blocking scripts at tree-builder pauses. External async/defer
@@ -818,9 +841,9 @@ pub(crate) fn dispatch_click(
     document: &mut Document,
     runtime: &mut JsRuntime,
     node: NodeId,
-) -> (bool, usize) {
+) -> (bool, usize, Option<GcCheckpointPhases>) {
     if document.element(node).is_none() {
-        return (false, 0);
+        return (false, 0, None);
     }
     let mut path = Vec::new();
     let mut current = Some(node);
@@ -834,12 +857,12 @@ pub(crate) fn dispatch_click(
         current = document.node(id).and_then(|n| n.parent);
     }
     if !runtime.has_dom_click_path_listener(&path) {
-        return (false, 0);
+        return (false, 0, None);
     }
     let handled = runtime.dispatch_dom_click_path(&path).unwrap_or(false);
     let changed = apply_dom_operations(document, runtime);
-    collect_at_idle(document, runtime, false);
-    (handled, changed)
+    let checkpoint = collect_at_idle(document, runtime, false);
+    (handled, changed, checkpoint)
 }
 
 #[cfg(test)]

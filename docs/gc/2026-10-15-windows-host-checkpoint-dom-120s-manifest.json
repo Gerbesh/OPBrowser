@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-15",
+  "platform": "Windows 11",
+  "rustc": "1.99.0 (2026-09-28)",
+  "base_commit": "7a24447",
+  "build": "cargo build --release -p op_engine --bin gc_stress_probe",
+  "command": "target/release/gc_stress_probe.exe --seconds 120 --workload dom",
+  "source_binary_sha256": "9d665bb9d632048dd35d22f3c9457b9490a97bd1a705dd1196ac2a767f4f4cdf",
+  "source_hashes_sha256": {
+    "crates/op_engine/src/bin/gc_stress_probe.rs": "105c1b1ebd76ba32c930f1ba94bb70ea6a2cd43d2bebb32de26078fd37baa463",
+    "crates/op_engine/src/lib.rs": "5711d5fcaba0e4836e9a8e81ec05bab769b80dcd0c9c1d9254d2627fc0f3a50b",
+    "crates/op_engine/src/scripts.rs": "89ba3a19b6e5436573c7132ce3ca11643d899a8c4b7d90aff88a105bd04fa3a8"
+  },
+  "csv": "docs/gc/2026-10-15-windows-host-checkpoint-dom-120s.csv",
+  "log": "docs/gc/2026-10-15-windows-host-checkpoint-dom-120s.log",
+  "csv_rows": 120,
+  "seconds": 120,
+  "final": {
+    "ticks": 81549,
+    "js_gc_success": 5596,
+    "native_gc_success": 5596,
+    "host_checkpoints_post_parser": 5595,
+    "failures": 0,
+    "native_reclaimed": 22380,
+    "native_reserved_slots": 15,
+    "native_live_slots": 13,
+    "host_max_pause_us": 368,
+    "worst_host_phase_us": {
+      "js": 360,
+      "native": 4,
+      "metadata": 2,
+      "resources": 0
+    },
+    "host_pauses_over_16ms": 0,
+    "host_pauses_over_50ms": 0,
+    "js_pause_upper_bound_us": {
+      "p50": 132,
+      "p95": 132,
+      "p99": 263
+    },
+    "working_set_min_bytes": 8282112,
+    "working_set_max_bytes": 8970240,
+    "working_set_last_sample_bytes": 8916992
+  },
+  "limit": "Synthetic post-parser page worker only; full host checkpoint excludes application script execution, parsing and paint. Wall time can include OS preemption, and working set is not private committed memory."
+}

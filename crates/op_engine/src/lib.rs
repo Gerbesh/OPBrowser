@@ -11,7 +11,7 @@ use op_layout::{layout_document_with_backgrounds_and_resources, layout_document_
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link, resolve_script_source};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 static ACTIVE_NETWORK_WORKERS: AtomicUsize = AtomicUsize::new(0);
 const MAX_NETWORK_WORKERS: usize = 16;
@@ -46,6 +46,43 @@ pub struct NavigationEntry {
     pub request: String,
     pub address: String,
     pub mime_type: String,
+}
+
+/// Browser-side GC checkpoint durations including native tree and page caches.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HostGcCheckpointPhases {
+    pub js: Duration,
+    pub native: Duration,
+    pub metadata: Duration,
+    pub resources: Duration,
+}
+
+/// Only counts successful idle JS+native GC checkpoints after page callbacks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HostGcCheckpointTelemetry {
+    pub samples: usize,
+    pub last_pause: Duration,
+    pub max_pause: Duration,
+    pub worst_phases: HostGcCheckpointPhases,
+    pub pauses_over_16ms: usize,
+    pub pauses_over_50ms: usize,
+}
+
+impl HostGcCheckpointTelemetry {
+    fn record(&mut self, elapsed: Duration, phases: HostGcCheckpointPhases) {
+        self.samples = self.samples.saturating_add(1);
+        self.last_pause = elapsed;
+        if elapsed > self.max_pause {
+            self.max_pause = elapsed;
+            self.worst_phases = phases;
+        }
+        if elapsed >= Duration::from_millis(16) {
+            self.pauses_over_16ms = self.pauses_over_16ms.saturating_add(1);
+        }
+        if elapsed >= Duration::from_millis(50) {
+            self.pauses_over_50ms = self.pauses_over_50ms.saturating_add(1);
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -128,6 +165,7 @@ struct PreparedDocument {
     color_profiles: std::collections::HashMap<String, Vec<u8>>,
     scripts: ScriptReport,
     runtime: Option<op_js::JsRuntime>,
+    gc_checkpoint: HostGcCheckpointTelemetry,
     // Native documents without page JavaScript remain scrollable.
     scroll_offsets: std::collections::HashMap<usize, i32>,
     scroll_left_offsets: std::collections::HashMap<usize, i32>,
@@ -163,6 +201,21 @@ impl PreparedDocument {
                 });
         }
         self.computed_styles = compute_styles(&self.document, &self.style_collection.styles);
+    }
+
+    fn finish_gc_checkpoint(&mut self, checkpoint: Option<scripts::GcCheckpointPhases>) {
+        let resources_started = Instant::now();
+        self.prune_native_resources();
+        if let Some(checkpoint) = checkpoint {
+            let phases = HostGcCheckpointPhases {
+                js: checkpoint.js,
+                native: checkpoint.native,
+                metadata: checkpoint.metadata,
+                resources: resources_started.elapsed(),
+            };
+            self.gc_checkpoint
+                .record(checkpoint.started.elapsed(), phases);
+        }
     }
 
     fn prune_native_resources(&mut self) {
@@ -301,6 +354,12 @@ impl Engine {
         Some(self.active_document.as_ref()?.document.gc_telemetry())
     }
 
+    /// Full browser-owned JS/native GC checkpoints, including page resource pruning.
+    /// Parser-internal checkpoints are not included in this per-page counter.
+    pub fn active_host_gc_checkpoint_telemetry(&self) -> Option<HostGcCheckpointTelemetry> {
+        Some(self.active_document.as_ref()?.gc_checkpoint)
+    }
+
     /// Snapshot of browser-owned JS GC counters and arena occupancy.
     pub fn active_script_gc_telemetry(&self) -> Option<op_js::JsGcTelemetry> {
         Some(
@@ -402,6 +461,7 @@ impl Engine {
             color_profiles: std::collections::HashMap::new(),
             scripts: script_report,
             runtime,
+            gc_checkpoint: HostGcCheckpointTelemetry::default(),
             scroll_offsets: std::collections::HashMap::new(),
             scroll_left_offsets: std::collections::HashMap::new(),
         };
@@ -569,8 +629,9 @@ impl Engine {
             .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
             .map(|region| region.node)?;
         let runtime = prepared.runtime.as_mut()?;
-        let (handled, changes) = scripts::dispatch_click(&mut prepared.document, runtime, target);
-        prepared.prune_native_resources();
+        let (handled, changes, checkpoint) =
+            scripts::dispatch_click(&mut prepared.document, runtime, target);
+        prepared.finish_gc_checkpoint(checkpoint);
         if !handled && changes == 0 {
             return None;
         }
@@ -833,9 +894,9 @@ impl Engine {
         let changes = scripts::apply_dom_operations(&mut prepared.document, runtime);
         // Network/timer callbacks completed and native DOM mutations are
         // committed before the browser-owned automatic GC checkpoint.
-        scripts::collect_at_idle(&mut prepared.document, runtime, false);
+        let checkpoint = scripts::collect_at_idle(&mut prepared.document, runtime, false);
         let scroll_changed = runtime.take_scroll_dirty();
-        prepared.prune_native_resources();
+        prepared.finish_gc_checkpoint(checkpoint);
         if changes == 0 && !scroll_changed {
             return None;
         }
@@ -985,6 +1046,7 @@ impl Engine {
             color_profiles: profiles,
             scripts: script_report,
             runtime,
+            gc_checkpoint: HostGcCheckpointTelemetry::default(),
             scroll_offsets: std::collections::HashMap::new(),
             scroll_left_offsets: std::collections::HashMap::new(),
         })
@@ -1001,6 +1063,118 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn g3_host_checkpoint_includes_native_and_page_cleanup_and_resets_on_navigation() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><script>setInterval(function(){for(var i=0;i<80;i=i+1){var x={a:i};x.self=x;}},4);</script></body>",
+            640,
+            480,
+        );
+        assert_eq!(
+            engine
+                .active_host_gc_checkpoint_telemetry()
+                .unwrap()
+                .samples,
+            0
+        );
+        for _ in 0..120 {
+            let _ = engine.tick_timers(640, 480);
+            std::thread::sleep(Duration::from_millis(4));
+        }
+        let gc = engine.active_host_gc_checkpoint_telemetry().unwrap();
+        assert!(gc.samples > 0);
+        let js = engine.active_script_gc_telemetry().unwrap();
+        let native = engine.active_document_gc_telemetry().unwrap();
+        assert_eq!(gc.samples, native.successful - 1); // Parser's initial native GC predates PreparedDocument.
+        assert_eq!(js.failed, 0);
+        assert_eq!(native.failed, 0);
+        assert!(
+            gc.worst_phases.js
+                + gc.worst_phases.native
+                + gc.worst_phases.metadata
+                + gc.worst_phases.resources
+                <= gc.max_pause
+        );
+        engine.set_html_page("<body><script>var next=42;</script></body>", 640, 480);
+        assert_eq!(
+            engine
+                .active_host_gc_checkpoint_telemetry()
+                .unwrap()
+                .samples,
+            0
+        );
+    }
+
+    #[test]
+    fn g3_stale_fetch_completion_cannot_cross_navigation_even_with_reused_request_id() {
+        let mut engine = Engine::new();
+        engine.set_html_page("<body><script>var old=42;</script></body>", 640, 480);
+        let previous_generation = engine.generation;
+        engine.set_html_page(
+            "<body><script>var status='waiting';fetch('payload.txt').then(function(r){return r.text();}).then(function(body){status=body;});</script></body>",
+            640,
+            480,
+        );
+        assert_ne!(previous_generation, engine.generation);
+        let request = engine
+            .active_document
+            .as_mut()
+            .unwrap()
+            .runtime
+            .as_mut()
+            .unwrap()
+            .take_text_requests();
+        assert_eq!(request.len(), 1);
+        let id = request[0].id;
+        let make_completion = |generation, text: &str| NetworkCompletion {
+            generation,
+            id,
+            include_http_errors: false,
+            result: Ok(op_net::LoadedTextResponse {
+                address: "https://test.invalid/payload.txt".into(),
+                text: text.into(),
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![],
+                redirected: false,
+            }),
+        };
+        engine
+            .network_completion_send
+            .send(make_completion(previous_generation, "STALE"))
+            .unwrap();
+        engine.tick_timers(640, 480);
+        let runtime = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .runtime
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            runtime.global("status"),
+            Some(&op_js::JsValue::String("waiting".into()))
+        );
+        engine
+            .network_completion_send
+            .send(make_completion(engine.generation, "CURRENT"))
+            .unwrap();
+        engine.tick_timers(640, 480);
+        let runtime = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .runtime
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            runtime.global("status"),
+            Some(&op_js::JsValue::String("CURRENT".into()))
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    }
 
     #[test]
     fn g3_text_content_churn_recycles_unwrapped_nodes_and_preserves_held_text() {

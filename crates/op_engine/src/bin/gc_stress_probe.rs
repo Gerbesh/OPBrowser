@@ -135,13 +135,17 @@ fn main() {
     );
     let report = engine.active_script_report().expect("active page");
     assert_eq!(report.failed, 0, "stress page JS must compile");
+    let parser_native_collections = engine
+        .active_document_gc_telemetry()
+        .expect("active page")
+        .successful;
     let start = Instant::now();
     let stop = start + Duration::from_secs(seconds);
     let mut next_sample = start;
     let mut ticks = 0u64;
     eprintln!("PROBE_START workload={workload} duration_s={seconds}");
     println!(
-        "seconds,ticks,gc_ok,gc_errors,objects_reserved,envs_reserved,objects_live,envs_live,rss_bytes,last_pause_us,max_pause_us,native_dom_slots,pause_samples,p50_upper_us,p95_upper_us,p99_upper_us,native_dom_live,native_gc_ok,native_gc_errors,native_reclaimed,native_last_pause_us,native_max_pause_us,pauses_over_16ms,pauses_over_50ms,worst_mark_us,worst_metadata_us,worst_sweep_us"
+        "seconds,ticks,gc_ok,gc_errors,objects_reserved,envs_reserved,objects_live,envs_live,rss_bytes,last_pause_us,max_pause_us,native_dom_slots,pause_samples,p50_upper_us,p95_upper_us,p99_upper_us,native_dom_live,native_gc_ok,native_gc_errors,native_reclaimed,native_last_pause_us,native_max_pause_us,pauses_over_16ms,pauses_over_50ms,worst_mark_us,worst_metadata_us,worst_sweep_us,host_gc_samples,host_last_us,host_max_us,host_over_16ms,host_over_50ms,worst_host_js_us,worst_host_native_us,worst_host_metadata_us,worst_host_resources_us"
     );
     loop {
         let now = Instant::now();
@@ -156,8 +160,11 @@ fn main() {
                 .expect("active scripted page");
             let native = engine.active_document_gc_telemetry().expect("active page");
             let slowest = telemetry.max_pause_phases.unwrap_or_default();
+            let host = engine
+                .active_host_gc_checkpoint_telemetry()
+                .expect("active page host");
             println!(
-                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 now.duration_since(start).as_secs(),
                 ticks,
                 telemetry.successful,
@@ -184,7 +191,16 @@ fn main() {
                 telemetry.pauses_over_50ms,
                 slowest.mark.as_micros(),
                 slowest.metadata.as_micros(),
-                slowest.sweep.as_micros()
+                slowest.sweep.as_micros(),
+                host.samples,
+                host.last_pause.as_micros(),
+                host.max_pause.as_micros(),
+                host.pauses_over_16ms,
+                host.pauses_over_50ms,
+                host.worst_phases.js.as_micros(),
+                host.worst_phases.native.as_micros(),
+                host.worst_phases.metadata.as_micros(),
+                host.worst_phases.resources.as_micros()
             );
             assert_eq!(native.failed, 0, "native GC root validation failed");
             assert_eq!(telemetry.failed, 0, "idle GC failed during workload");
@@ -207,9 +223,12 @@ fn main() {
         .active_script_gc_telemetry()
         .expect("active scripted page");
     let native = engine.active_document_gc_telemetry().expect("active page");
+    let host = engine
+        .active_host_gc_checkpoint_telemetry()
+        .expect("active page host");
     assert_eq!(native.failed, 0, "native GC root validation failed");
     eprintln!(
-        "PROBE_RESULT workload={} duration_s={} ticks={} collections={} failures={} reserved_objects={} reserved_envs={} native_dom_slots={} pause_samples={} p50_upper_us={} p95_upper_us={} p99_upper_us={} max_pause_us={} native_dom_live={} native_gc_ok={} native_gc_errors={} native_reclaimed={} native_max_pause_us={} pauses_over_16ms={} pauses_over_50ms={} worst_mark_us={} worst_metadata_us={} worst_sweep_us={}",
+        "PROBE_RESULT workload={} duration_s={} ticks={} collections={} failures={} reserved_objects={} reserved_envs={} native_dom_slots={} pause_samples={} p50_upper_us={} p95_upper_us={} p99_upper_us={} max_pause_us={} native_dom_live={} native_gc_ok={} native_gc_errors={} native_reclaimed={} native_max_pause_us={} pauses_over_16ms={} pauses_over_50ms={} worst_mark_us={} worst_metadata_us={} worst_sweep_us={} host_gc_samples={} host_max_us={} host_over_16ms={} host_over_50ms={} worst_host_js_us={} worst_host_native_us={} worst_host_metadata_us={} worst_host_resources_us={}",
         workload,
         seconds,
         ticks,
@@ -244,7 +263,20 @@ fn main() {
             .max_pause_phases
             .unwrap_or_default()
             .sweep
-            .as_micros()
+            .as_micros(),
+        host.samples,
+        host.max_pause.as_micros(),
+        host.pauses_over_16ms,
+        host.pauses_over_50ms,
+        host.worst_phases.js.as_micros(),
+        host.worst_phases.native.as_micros(),
+        host.worst_phases.metadata.as_micros(),
+        host.worst_phases.resources.as_micros()
+    );
+    assert_eq!(
+        host.samples + parser_native_collections,
+        native.successful,
+        "every post-parser native sweep in the event-loop workload must have a host checkpoint"
     );
     assert_eq!(
         telemetry.pause_histogram.samples as usize, telemetry.successful,

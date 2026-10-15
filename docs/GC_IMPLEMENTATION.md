@@ -1,5 +1,24 @@
 # Original JS VM garbage collector: implementation plan
 
+## G3 browser host checkpoint latency and navigation boundaries (2026-10-15)
+
+`scripts::collect_at_idle` reports phase timing only when both JS and
+native collections complete successfully. A `PreparedDocument` records
+complete post-callback GC stop-the-world wall time (JS + native +
+VM reclaimed-node metadata cleanup + per-page native-resource cache pruning)
+for timer/network and DOM click checkpoints. `Engine` exposes per-page
+samples, last/max pause, worst-pass phase breakdown, and >=16/50 ms counts.
+These counters reset whenever a new page is prepared and are distinct from
+parser-internal JS/native sweeps, script execution and layout/repaint costs.
+`gc_stress_probe` records the browser counters alongside separate VM
+and native timing; wall-clock still includes potential OS preemption.
+
+A deterministic engine regression sends an obsolete network completion
+after a new page has registered a `fetch` with the same request ID; the
+navigation generation must reject that stale result, and the current
+generation completes only its own Promise. This verifies ownership and
+routing without claiming live HTTP transport testing.
+
 ## G3 Windows pause attribution and composite-fetch regression (2026-10-15)
 
 The 30-minute Windows Release DOM test passed on 2026-10-14: 80,939

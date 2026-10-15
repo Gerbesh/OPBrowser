@@ -1,5 +1,47 @@
 # Original JavaScript GC stress: repeatable browser-owner probe
 
+## Windows complete host GC checkpoint: 120-second Release DOM run (2026-10-15)
+
+The browser page host now measures one complete post-callback GC checkpoint
+from the JS trigger through native `Document` reclaim, VM native metadata
+cleanup and pruning of weak image/stylesheet/scroll resources. Parser-internal
+GC is deliberately excluded from the per-page host counter. Windows 11
+Release run: `gc_stress_probe --seconds 120 --workload dom` with all 120
+one-second CSV samples.
+
+| Counter | Measured result |
+| --- | ---: |
+| Worker ticks | 81,549 |
+| Automatic JS / native sweeps | 5,596 / 5,596 |
+| Complete **post-parser host GC checkpoints** | 5,595 |
+| JavaScript, native-GC or callback errors | 0 |
+| Reclaimed native DOM nodes | 22,380 |
+| Reserved / live native DOM slots at end | 15 / 13 |
+| Max complete host GC pause | **368 microseconds** |
+| Same worst host checkpoint: JS / native / metadata / page resources | 360 / 4 / 2 / 0 microseconds |
+| Host checkpoints >=16 ms / >=50 ms | 0 / 0 |
+| JS GC p50 / p95 / p99 bucket upper bounds | 132 / 132 / 263 microseconds |
+| Working set min / max / last sample | 8,282,112 / 8,970,240 / 8,916,992 bytes |
+
+The final counters include the parser's initial JS/native collection, while
+per-page host instrumentation starts when the event loop is active. For each
+CSV sample, `host_gc_samples == native_gc_ok - 1` held. Max wall times of
+the independent JS/native collectors need not come from the worst complete
+host checkpoint. All wall times may include OS scheduling. This synthetic
+2-minute profile does not explain or disprove the historical 273 ms spike;
+real HTTP navigation, multi-tab workloads and private committed-memory
+measurement remain open.
+
+A deterministic engine regression injects an old-generation completion whose
+request ID matches a new page's pending `fetch`. The old response is rejected,
+the new-generation response fulfills the Promise, and no callback errors occur.
+A separate test checks that complete host GC telemetry includes phase timing
+and resets when a new page is loaded.
+
+Raw [CSV](gc/2026-10-15-windows-host-checkpoint-dom-120s.csv),
+[log](gc/2026-10-15-windows-host-checkpoint-dom-120s.log) and
+[reproduction manifest](gc/2026-10-15-windows-host-checkpoint-dom-120s-manifest.json).
+
 ## Windows phase-aware GC regression: 120-second Release DOM workload (2026-10-15)
 
 After instrumenting `op_js` collection phases and adding a composite-fetch GC

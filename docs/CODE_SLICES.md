@@ -16,6 +16,18 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S72 - Complete browser-task GC checkpoint and navigation isolation (G3 partial)
+
+Timer/network callback or click -> commit DOM mutations -> VM reachability
+and sweep -> native Document reclamation -> JS native-handle metadata cleanup
+-> prune dead page images/stylesheet/scroll entries -> sample wall-clock
+duration and four phases in PreparedDocument -> Engine telemetry -> per-second
+stress CSV. Only successful *post-parser* checkpoints contribute to this
+counter, which resets on navigation. A stale network reply with matching
+request ID but old generation is dropped without touching the current
+page's pending Promise; a matching current-generation reply completes it.
+Live network transport and multi-tab navigation remain to be profiled.
+
 ## S71 - Phase-aware stop-the-world GC diagnostics and composite fetch (G3 partial)
 
 Browser idle sweep -> validate mark roots -> track time in marking, weak native/JS

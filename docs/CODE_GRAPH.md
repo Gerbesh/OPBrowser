@@ -16,6 +16,20 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G3 host-side GC checkpoint wall time and navigation generation (15 October 2026)
+
+`scripts::collect_at_idle` returns phase timings for an actual successful
+page-owned idle collection (JS VM, native root tracing/sweep, reclaimed-node
+VM metadata). The `PreparedDocument::finish_gc_checkpoint` boundary includes
+weak page image/stylesheet/scroll-cache pruning, then records complete
+checkpoint wall time, breakdown of its single slowest pass and counts
+above 16/50 ms. `Engine::active_host_gc_checkpoint_telemetry` and
+`gc_stress_probe` expose these bounded per-page counters. Parser-internal
+collections remain separate. A test injects a stale network completion with
+a request ID reused after navigation: the generation guard rejects the old
+response and the current page callback receives only its own response.
+No crate/dependency changes.
+
 ## G3 pause attribution and composite-fetch roots (15 October 2026)
 
 The original `op_js::JsRuntime::collect_garbage_with_roots` times validated mark,

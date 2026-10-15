@@ -20,6 +20,14 @@ This does not validate real pages, network/navigation or multi-tab GC.
 Broad real-navigation, network and multi-tab stability gates remain open.
 See [GC stress results](../docs/GC_STRESS_RESULTS.md).
 
+The page host also measures the combined stop-the-world checkpoint:
+JS collection, native DOM reclaim, VM native metadata pruning and page
+image/stylesheet/scroll-cache cleanup. A separate Engine API and stress
+probe export its last/worst wall pause and four-phase breakdown; parser
+sweeps are not counted as event-loop checkpoints. Navigation generations
+reject stale network responses even if a later page reuses the request ID.
+These results do not yet establish full real-network/multi-tab stability.
+
 The JS GC now attributes the worst automatic wall pause to root marking,
 weak side-table cleanup and arena sweeping, with >=16 ms and >=50 ms
 outlier counts in `JsGcTelemetry` and the stress probe. Such measurements
