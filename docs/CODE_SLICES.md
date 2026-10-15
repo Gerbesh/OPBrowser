@@ -16,6 +16,18 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S73 - Windows committed-memory profile and real HTTP delayed reply (G3 partial)
+
+`gc_stress_probe` -> native Windows process status API -> extended private
+commit and ordinary working-set samples each second -> CSV -> independent
+analyzer validation and drift statistics. Private commit avoids mistaking
+OS working-set trimming for collector reclamation. Separately, real local
+HTTP page A loads and dispatches a slow `fetch` -> navigation loads page B
+and starts a new same-ID `fetch` -> first HTTP response arrives late ->
+generation guard discards it -> page B receives its own response and updates
+its native paint. Actual internet endpoints and cross-tab loads are not
+tested by this loopback fixture.
+
 ## S72 - Complete browser-task GC checkpoint and navigation isolation (G3 partial)
 
 Timer/network callback or click -> commit DOM mutations -> VM reachability

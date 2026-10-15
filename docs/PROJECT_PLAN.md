@@ -42,6 +42,8 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 
 **G3 full host checkpoint and navigation isolation (2026-10-15):** Added per-page timing for the entire callback-bound GC checkpoint through weak-resource cleanup, plus >=16/50 ms outlier counts. A regression verifies that a delayed old-generation response cannot fulfill a same-ID fetch in the new document; a matching current-generation result can. Longer phase-aware profiling, repeated real HTTP navigation, committed/private bytes and multi-tab memory remain open.
 
+**G3 private memory and loopback HTTP update (2026-10-15):** Added extended Windows per-process private-commit samples and an offline CSV validator that distinguishes PrivateUsage from OS-trimmable working set. A true localhost HTTP test navigates away while a fetch is in flight, then verifies the delayed previous response cannot corrupt the next page even under a reused request ID. Broad real-site/multi-tab workloads, GC CPU-time attribution and leak gates remain open.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

@@ -16,6 +16,24 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## G3 process-private commit and real HTTP navigation regression (15 October 2026)
+
+`gc_stress_probe` calls Windows `K32GetProcessMemoryInfo` with the extended
+`PROCESS_MEMORY_COUNTERS_EX` layout. The CSV now stores `PrivateUsage`
+(private committed bytes) alongside `WorkingSetSize` (resident working set)
+without exposing unrelated user telemetry. The optional metric is zero on
+platforms where it is not available, not a measured zero allocation. The
+standalone `tools/analyze_gc_probe.py` validates per-second counters and
+reports first/last, medians and ordinary least-squares byte trends, without
+automatically equating Windows trimming with garbage collection.
+
+A loopback HTTP integration test creates an old-page pending fetch, navigates
+to a second page with a reused request ID, and delivers the delayed old
+HTTP body before the current response. The engine generation gate prevents
+the old completion from mutating the new page; the correct new response still
+resolves its Promise. This verifies real `op_net` transport, not only
+injected `NetworkCompletion` instances. No engine dependency changed.
+
 ## G3 host-side GC checkpoint wall time and navigation generation (15 October 2026)
 
 `scripts::collect_at_idle` returns phase timings for an actual successful

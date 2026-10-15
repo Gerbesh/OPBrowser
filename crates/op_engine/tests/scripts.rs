@@ -3175,3 +3175,140 @@ fn late_completion_from_previous_navigation_is_discarded() {
     assert!(engine.next_timer_wait().is_none());
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+#[cfg(windows)]
+fn g3_real_http_navigation_discards_old_fetch_reply_when_request_ids_repeat() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let (old_request_tx, old_request_rx) = mpsc::channel();
+    let (old_replied_tx, old_replied_rx) = mpsc::channel();
+    let server = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let mut connections = Vec::new();
+        for _ in 0..4 {
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(Instant::now() < deadline, "missing HTTP navigation request");
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("accept failed: {error}"),
+                }
+            };
+            connections.push(std::thread::spawn({
+                let old_request_tx = old_request_tx.clone();
+                let old_replied_tx = old_replied_tx.clone();
+                move || {
+                    stream.set_read_timeout(Some(Duration::from_secs(4))).unwrap();
+                    let mut data = [0_u8; 8192];
+                    let size = stream.read(&mut data).unwrap();
+                    let request = String::from_utf8_lossy(&data[..size]);
+                    let (mime, body) = if request.starts_with("GET /old.html ") {
+                        ("text/html", concat!(
+                            "<p id='out'>OLD-PENDING</p><script>",
+                            "fetch('old.txt').then(function(r){return r.text();})",
+                            ".then(function(text){document.getElementById('out').textContent='OLD-'+text;});",
+                            "</script>"
+                        ))
+                    } else if request.starts_with("GET /new.html ") {
+                        ("text/html", concat!(
+                            "<p id='out'>NEW-PENDING</p><script>",
+                            "fetch('new.txt').then(function(r){return r.text();})",
+                            ".then(function(text){document.getElementById('out').textContent='NEW-'+text;});",
+                            "</script>"
+                        ))
+                    } else if request.starts_with("GET /old.txt ") {
+                        old_request_tx.send(()).unwrap();
+                        std::thread::sleep(Duration::from_millis(150));
+                        ("text/plain", "STALE")
+                    } else if request.starts_with("GET /new.txt ") {
+                        std::thread::sleep(Duration::from_millis(350));
+                        ("text/plain", "CURRENT")
+                    } else {
+                        panic!("unexpected HTTP request: {request:?}");
+                    };
+                    write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Type: {mime}; charset=UTF-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    ).unwrap();
+                    stream.flush().unwrap();
+                    if request.starts_with("GET /old.txt ") {
+                        old_replied_tx.send(()).unwrap();
+                    }
+                }
+            }));
+        }
+        for worker in connections {
+            worker.join().unwrap();
+        }
+    });
+
+    let mut engine = Engine::new();
+    let first = engine
+        .navigate(&format!("{origin}/old.html"), 800, 600)
+        .unwrap();
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    assert!(first.display_list.commands.iter().any(|cmd|
+        matches!(cmd, op_paint::PaintCommand::Text { text, .. } if text.contains("OLD-PENDING"))
+    ));
+    assert!(engine.tick_timers(800, 600).is_none());
+    old_request_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("old fetch must reach local server");
+
+    let second = engine
+        .navigate(&format!("{origin}/new.html"), 800, 600)
+        .unwrap();
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    assert!(second.display_list.commands.iter().any(|cmd|
+        matches!(cmd, op_paint::PaintCommand::Text { text, .. } if text.contains("NEW-PENDING"))
+    ));
+    assert!(engine.tick_timers(800, 600).is_none());
+
+    old_replied_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("old response must arrive");
+    let mut saw_new = false;
+    let deadline = Instant::now() + Duration::from_secs(6);
+    while Instant::now() < deadline {
+        let _ = engine.tick_timers(800, 600);
+        let page = engine.reflow(800, 600).unwrap();
+        let visible = page
+            .display_list
+            .commands
+            .iter()
+            .filter_map(|cmd| match cmd {
+                op_paint::PaintCommand::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            !visible
+                .iter()
+                .any(|s| s.contains("OLD-STALE") || s.contains("NEW-STALE")),
+            "stale reply from prior page must never update the current document: {visible:?}"
+        );
+        if visible.iter().any(|s| s.contains("NEW-CURRENT")) {
+            saw_new = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    server.join().unwrap();
+    assert!(
+        saw_new,
+        "new page fetch did not resolve over real localhost HTTP"
+    );
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    assert_eq!(engine.active_script_gc_telemetry().unwrap().failed, 0);
+    assert_eq!(engine.active_document_gc_telemetry().unwrap().failed, 0);
+}

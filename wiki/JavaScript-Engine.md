@@ -20,6 +20,14 @@ This does not validate real pages, network/navigation or multi-tab GC.
 Broad real-navigation, network and multi-tab stability gates remain open.
 See [GC stress results](../docs/GC_STRESS_RESULTS.md).
 
+Long-session diagnostics now include Windows private committed bytes
+(`PROCESS_MEMORY_COUNTERS_EX.PrivateUsage`) alongside the working set.
+A standalone CSV analyzer checks per-second counter consistency and
+reports warmup-filtered memory medians and slopes. This distinction matters:
+Windows can trim the working set without the collector freeing anything.
+A loopback HTTP regression also confirms a delayed response from an old
+page cannot settle the next page's `fetch`, even when request IDs match.
+
 The page host also measures the combined stop-the-world checkpoint:
 JS collection, native DOM reclaim, VM native metadata pruning and page
 image/stylesheet/scroll-cache cleanup. A separate Engine API and stress

@@ -63,40 +63,44 @@ fn percentile_us(telemetry: &op_js::JsGcTelemetry, percentile: u8) -> u128 {
         .map_or(0, |pause| pause.as_nanos().div_ceil(1000))
 }
 
+/// Returns (working set, private committed bytes); zero means unavailable.
 #[cfg(windows)]
-fn process_rss_bytes() -> Option<u64> {
+fn process_memory_bytes() -> Option<(u64, u64)> {
     use windows_sys::Win32::System::ProcessStatus::{
-        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+        K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
     };
     use windows_sys::Win32::System::Threading::GetCurrentProcess;
-    // SAFETY: the stack buffer matches the C structure and the pseudo-handle
-    // refers to this process for the duration of the call.
+    // SAFETY: the extended C struct begins with PROCESS_MEMORY_COUNTERS.
+    // cb specifies the extended allocation and the process pseudo-handle is live.
     unsafe {
-        let mut info: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
-        info.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
-        if K32GetProcessMemoryInfo(GetCurrentProcess(), &mut info, info.cb) == 0 {
+        let mut info: PROCESS_MEMORY_COUNTERS_EX = std::mem::zeroed();
+        info.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
+        let ptr = (&raw mut info).cast::<PROCESS_MEMORY_COUNTERS>();
+        if K32GetProcessMemoryInfo(GetCurrentProcess(), ptr, info.cb) == 0 {
             None
         } else {
-            Some(info.WorkingSetSize as u64)
+            Some((info.WorkingSetSize as u64, info.PrivateUsage as u64))
         }
     }
 }
 
 #[cfg(target_os = "linux")]
-fn process_rss_bytes() -> Option<u64> {
+fn process_memory_bytes() -> Option<(u64, u64)> {
     let status = std::fs::read_to_string("/proc/self/status").ok()?;
-    status.lines().find_map(|line| {
+    let rss = status.lines().find_map(|line| {
         let rest = line.strip_prefix("VmRSS:")?;
         rest.split_whitespace()
             .next()?
             .parse::<u64>()
             .ok()
             .map(|kb| kb * 1024)
-    })
+    })?;
+    // Linux VmRSS is measurable; this probe does not equate it with commit.
+    Some((rss, 0))
 }
 
 #[cfg(not(any(windows, target_os = "linux")))]
-fn process_rss_bytes() -> Option<u64> {
+fn process_memory_bytes() -> Option<(u64, u64)> {
     None
 }
 
@@ -145,7 +149,7 @@ fn main() {
     let mut ticks = 0u64;
     eprintln!("PROBE_START workload={workload} duration_s={seconds}");
     println!(
-        "seconds,ticks,gc_ok,gc_errors,objects_reserved,envs_reserved,objects_live,envs_live,rss_bytes,last_pause_us,max_pause_us,native_dom_slots,pause_samples,p50_upper_us,p95_upper_us,p99_upper_us,native_dom_live,native_gc_ok,native_gc_errors,native_reclaimed,native_last_pause_us,native_max_pause_us,pauses_over_16ms,pauses_over_50ms,worst_mark_us,worst_metadata_us,worst_sweep_us,host_gc_samples,host_last_us,host_max_us,host_over_16ms,host_over_50ms,worst_host_js_us,worst_host_native_us,worst_host_metadata_us,worst_host_resources_us"
+        "seconds,ticks,gc_ok,gc_errors,objects_reserved,envs_reserved,objects_live,envs_live,rss_bytes,last_pause_us,max_pause_us,native_dom_slots,pause_samples,p50_upper_us,p95_upper_us,p99_upper_us,native_dom_live,native_gc_ok,native_gc_errors,native_reclaimed,native_last_pause_us,native_max_pause_us,pauses_over_16ms,pauses_over_50ms,worst_mark_us,worst_metadata_us,worst_sweep_us,host_gc_samples,host_last_us,host_max_us,host_over_16ms,host_over_50ms,worst_host_js_us,worst_host_native_us,worst_host_metadata_us,worst_host_resources_us,private_commit_bytes"
     );
     loop {
         let now = Instant::now();
@@ -160,11 +164,12 @@ fn main() {
                 .expect("active scripted page");
             let native = engine.active_document_gc_telemetry().expect("active page");
             let slowest = telemetry.max_pause_phases.unwrap_or_default();
+            let (resident_bytes, private_commit_bytes) = process_memory_bytes().unwrap_or((0, 0));
             let host = engine
                 .active_host_gc_checkpoint_telemetry()
                 .expect("active page host");
             println!(
-                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 now.duration_since(start).as_secs(),
                 ticks,
                 telemetry.successful,
@@ -173,7 +178,7 @@ fn main() {
                 telemetry.heap.environment_slots,
                 telemetry.live_objects,
                 telemetry.live_environments,
-                process_rss_bytes().unwrap_or(0),
+                resident_bytes,
                 telemetry.last_pause.map_or(0, |p| p.as_micros()),
                 telemetry.max_pause.as_micros(),
                 engine.active_document_node_slots().expect("active page"),
@@ -200,7 +205,8 @@ fn main() {
                 host.worst_phases.js.as_micros(),
                 host.worst_phases.native.as_micros(),
                 host.worst_phases.metadata.as_micros(),
-                host.worst_phases.resources.as_micros()
+                host.worst_phases.resources.as_micros(),
+                private_commit_bytes
             );
             assert_eq!(native.failed, 0, "native GC root validation failed");
             assert_eq!(telemetry.failed, 0, "idle GC failed during workload");
@@ -227,8 +233,9 @@ fn main() {
         .active_host_gc_checkpoint_telemetry()
         .expect("active page host");
     assert_eq!(native.failed, 0, "native GC root validation failed");
+    let final_private_commit_bytes = process_memory_bytes().map_or(0, |(_, private)| private);
     eprintln!(
-        "PROBE_RESULT workload={} duration_s={} ticks={} collections={} failures={} reserved_objects={} reserved_envs={} native_dom_slots={} pause_samples={} p50_upper_us={} p95_upper_us={} p99_upper_us={} max_pause_us={} native_dom_live={} native_gc_ok={} native_gc_errors={} native_reclaimed={} native_max_pause_us={} pauses_over_16ms={} pauses_over_50ms={} worst_mark_us={} worst_metadata_us={} worst_sweep_us={} host_gc_samples={} host_max_us={} host_over_16ms={} host_over_50ms={} worst_host_js_us={} worst_host_native_us={} worst_host_metadata_us={} worst_host_resources_us={}",
+        "PROBE_RESULT workload={} duration_s={} ticks={} collections={} failures={} reserved_objects={} reserved_envs={} native_dom_slots={} pause_samples={} p50_upper_us={} p95_upper_us={} p99_upper_us={} max_pause_us={} native_dom_live={} native_gc_ok={} native_gc_errors={} native_reclaimed={} native_max_pause_us={} pauses_over_16ms={} pauses_over_50ms={} worst_mark_us={} worst_metadata_us={} worst_sweep_us={} host_gc_samples={} host_max_us={} host_over_16ms={} host_over_50ms={} worst_host_js_us={} worst_host_native_us={} worst_host_metadata_us={} worst_host_resources_us={} final_private_commit_bytes={}",
         workload,
         seconds,
         ticks,
@@ -271,7 +278,8 @@ fn main() {
         host.worst_phases.js.as_micros(),
         host.worst_phases.native.as_micros(),
         host.worst_phases.metadata.as_micros(),
-        host.worst_phases.resources.as_micros()
+        host.worst_phases.resources.as_micros(),
+        final_private_commit_bytes
     );
     assert_eq!(
         host.samples + parser_native_collections,

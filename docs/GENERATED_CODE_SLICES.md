@@ -1293,7 +1293,7 @@ op_engine::main
 - [`op_js::JsGcPauseHistogram`](../crates/op_js/src/runtime.rs#L379)
 - [`op_engine::active_script_gc_telemetry`](../crates/op_engine/src/lib.rs#L364)
 - [`op_engine::active_document_node_slots`](../crates/op_engine/src/lib.rs#L349)
-- [`op_engine::main`](../crates/op_engine/src/bin/gc_stress_probe.rs#L103)
+- [`op_engine::main`](../crates/op_engine/src/bin/gc_stress_probe.rs#L107)
 
 Percentiles are bucket upper bounds. Native Document nodes are not reclaimed; no 30-minute Windows plateau or real-network/navigation proof.
 
@@ -1335,7 +1335,7 @@ op_engine::main
 - [`op_dom::collect_garbage`](../crates/op_dom/src/lib.rs#L412)
 - [`op_js::forget_collected_native_nodes`](../crates/op_js/src/runtime.rs#L2859)
 - [`op_engine::prune_native_resources`](../crates/op_engine/src/lib.rs#L208)
-- [`op_engine::main`](../crates/op_engine/src/bin/gc_stress_probe.rs#L103)
+- [`op_engine::main`](../crates/op_engine/src/bin/gc_stress_probe.rs#L107)
 
 Preserves complete retained native components; no mid-parser or in-flight native JS collection. Short synthetic Linux profile is not the 30-minute Windows/full browsing gate. Native pauses exclude subsequent metadata/cache pruning.
 

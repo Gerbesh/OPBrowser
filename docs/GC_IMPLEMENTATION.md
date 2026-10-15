@@ -1,5 +1,25 @@
 # Original JS VM garbage collector: implementation plan
 
+## G3 Windows private commit and real loopback HTTP navigation (2026-10-15)
+
+The release `gc_stress_probe` samples `PROCESS_MEMORY_COUNTERS_EX.PrivateUsage`
+under Windows in the same API call as WorkingSetSize and writes it to a
+new trailing CSV column. PrivateUsage measures process private committed
+memory, including pages absent from the working set; it is not the count
+of reachable JavaScript objects. Linux and unsupported targets currently
+emit 0 for unavailable private commit, which must not be interpreted as
+an observed allocation size. `tools/analyze_gc_probe.py` validates
+monotonic GC counters and complete per-second timestamps, and summarizes
+warmup-filtered private commit and working-set slopes and medians. These
+statistics are diagnostic rather than formal leak proofs.
+
+A new Windows integration test uses an actual local HTTP server, two
+successive `Engine::navigate` calls and two real asynchronous `fetch`
+responses. The old response is deliberately delayed until after navigation
+while the newer page has a request with the same numeric ID. It must not
+update the new document, and the new response must still resolve. This
+extends prior synthetic completion tests to native network transport.
+
 ## G3 browser host checkpoint latency and navigation boundaries (2026-10-15)
 
 `scripts::collect_at_idle` reports phase timing only when both JS and
