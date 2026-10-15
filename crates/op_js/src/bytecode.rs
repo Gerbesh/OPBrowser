@@ -31,6 +31,8 @@ pub(crate) enum Instruction {
     Push(JsValue),
     Load(String),
     TypeofBinding(String),
+    DeleteBinding(String),
+    DeleteProperty,
     Declare {
         name: String,
         kind: VariableKind,
@@ -638,6 +640,24 @@ impl Compiler {
                     self.code.push(Instruction::Unary(UnaryOp::Typeof));
                 }
             }
+            Expression::Unary {
+                op: UnaryOp::Delete,
+                argument,
+            } => match argument.as_ref() {
+                Expression::Identifier(name) => {
+                    self.code.push(Instruction::DeleteBinding(name.clone()));
+                }
+                Expression::Member { object, property } => {
+                    self.expression(object);
+                    self.expression(property);
+                    self.code.push(Instruction::DeleteProperty);
+                }
+                _ => {
+                    // Non-references still evaluate side effects, then yield true.
+                    self.expression(argument);
+                    self.code.push(Instruction::Unary(UnaryOp::Delete));
+                }
+            },
             Expression::Unary { op, argument } => {
                 self.expression(argument);
                 self.code.push(Instruction::Unary(*op));

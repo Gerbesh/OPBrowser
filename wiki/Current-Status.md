@@ -1,7 +1,17 @@
 # Current Project Status
 
-Last reviewed: **9 October 2026**. The [published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki) tracks the main repository's `wiki/` sources. This is a development snapshot, not a
+Last reviewed: **16 October 2026**. The [published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki) tracks the main repository's `wiki/` sources. This is a development snapshot, not a
 claim that OPBrowser is ready for everyday browsing.
+
+## Modern-web readiness snapshot (16 October 2026)
+
+The 20-service live-network baseline has **zero verified functional
+sites**. Original Rust JS now supports partial arrows, templates,
+bitwise operations and the `delete` operator. In a new real YouTube
+test the former `delete is not defined` error disappears, but the
+page still paints **no text**. Pikabu remains visually malformed.
+The 30-minute synthetic GC safety and private-memory checks passed,
+while rare long wall-time GC pauses still need investigation.
 
 ## Native DOM reclamation (14 October 2026)
 

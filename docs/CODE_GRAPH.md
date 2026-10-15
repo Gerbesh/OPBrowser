@@ -16,6 +16,14 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## Delete syntax from original JS lexer to VM (16 October 2026)
+
+`op_js::lexer` reserves `delete` as a unary keyword. Parser emits
+`UnaryOp::Delete`; bytecode selects `DeleteBinding`, `DeleteProperty`
+or a side-effect-evaluating non-reference path. VM removes ordinary
+object/array own properties but keeps array length intact; DOM/host
+backing state is protected. No new crate dependency is introduced.
+
 ## Arrow functions, lexical host roots and call semantics (15 October 2026)
 
 `op_js::lexer` tokenizes `=>` separately from assignment and

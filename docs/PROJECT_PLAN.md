@@ -1,6 +1,6 @@
 # OPBrowser: active project plan
 
-Updated 2026-10-15. This file contains **decisions, priorities, acceptance gates and current status only**, not a running implementation diary. Completed M0-M4.35 milestone narratives remain recoverable from Git history and are tracked in [DEV_LOG.md](DEV_LOG.md). Measured test history is in [COMPATIBILITY.md](COMPATIBILITY.md).
+Updated 2026-10-16. This file contains **decisions, priorities, acceptance gates and current status only**, not a running implementation diary. Completed M0-M4.35 milestone narratives remain recoverable from Git history and are tracked in [DEV_LOG.md](DEV_LOG.md). Measured test history is in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Product goal and constraints
 
@@ -118,6 +118,15 @@ live pass, YouTube script failures dropped 12 -> 11 and Pikabu
 14 -> 12 compared with the immediately preceding template-only
 run; Google/Reddit/DeviantArt remain at 2/1/4. No modern site is
 now visibly functional, and live content can change between runs.
+
+**P0 JS delete operator (16 October 2026):** The original classic-script
+parser/compiler/VM now recognizes `delete`, preserves computed-member
+evaluation and deletes ordinary object/array fields without changing array
+length. Bound identifiers remain protected; host and descriptor edge cases
+are partial. On live YouTube the missing-`delete` error disappeared,
+6 scripts executed (previously 5) and 10 failed (previously 11), but
+**zero text** is still painted. Pikabu has 12 failures. The new settle
+window was 1300ms, versus 1000ms before, so this is diagnostic only.
 
 ## Engineering gates
 

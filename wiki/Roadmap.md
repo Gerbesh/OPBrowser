@@ -10,6 +10,15 @@ OPBrowser aims to be an independent Windows browser with an original Rust web/Ja
 
 **G3 budget-pressure checkpoint:** automatic idle GC now observes object and lexical-environment arena headroom as well as live allocations. Three regressions pass for low-budget and repeated allocation bursts; long-run RSS remains pending.
 
+## Active P0 priority (16 October 2026)
+
+Real-site usability takes precedence over synthetic-only optimization.
+The original VM now advances past YouTube's `delete` syntax blocker,
+yet YouTube still paints no text; Pikabu remains visually malformed.
+The 30-minute synthetic GC safety/memory gate passed, with long
+wall-time pause outliers still to diagnose using a real in-browser
+profiler. See the active project plan for current gates.
+
 ## Native DOM checkpoint (14 October 2026)
 
 Native Document now collects orphan node components and reuses slots with
@@ -21,7 +30,7 @@ Native pauses and arena live/reserved counters are measured separately.
 The 30-minute Windows and broad navigation/network stability gates remain open.
 See [GC stress results](../docs/GC_STRESS_RESULTS.md).
 
-## Current priorities (14 October 2026)
+## Historical priorities (14 October 2026, superseded above)
 
 1. **P0-1 NOW: original JavaScript GC only.** G1/G2/G3 partial now provides browser-owned automatic mark/sweep, generation-safe slot reuse, weak AbortSignal.any follower ownership and GC pause/failure telemetry. A repeatable Windows native-engine timer probe measured 817 successful collections in 12 seconds with zero GC errors and bounded object/environment arenas. **Not a 30-minute memory proof.** Next: sustained RSS/pause measurement and remaining fetch/DOM/abort root audits. See [GC implementation design](https://github.com/Gerbesh/OPBrowser/blob/main/docs/GC_IMPLEMENTATION.md) and [stress procedure](https://github.com/Gerbesh/OPBrowser/blob/main/docs/GC_STRESS_RESULTS.md).
 2. **P0-2 AFTER GC: rendering and scrolling.** Existing vertical and bounded horizontal overflow, partial Flexbox and native GDI tests stay intact. Horizontal thumb dragging, JS scrollLeft, positioned clips, Grid and real-page visual comparison resume only after GC passes safety and stability gates.

@@ -155,6 +155,18 @@ DeviantArt remain broken/partial. The site content and network
 conditions are not frozen, so these changes are **diagnostic** and
 not proof of a correctly rendered or interactive website.
 
+## 16 October 2026: delete operator, real HTTPS follow-up
+
+With reference-aware `delete` in the Rust VM, the focused native
+two-site run under `artifacts/live_web/delete-2026-10-16/` records
+YouTube **6 executed / 10 failed** versus **5 / 11** beforehand.
+The original `delete is not defined` failure no longer occurs.
+However YouTube still paints **zero text primitives** and is
+skeleton-only. Pikabu still records 12 failed scripts and has
+no verified visual improvement. This run settled for 1300ms versus
+1000ms previously; do not attribute all count differences to the
+syntax patch or claim production compatibility.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell

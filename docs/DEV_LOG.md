@@ -3654,3 +3654,9 @@ This file is append-only project history.
 - Opt-in same-five-site live rerun recorded Google 2 errors, YouTube 11, Reddit 1, Pikabu 12, DeviantArt 4. The immediately preceding template-only pass had 2/12/1/14/4 respectively; YouTube still renders no text and Reddit remains blank. Results are diagnostic, not a verified visual improvement. Raw JSON/screenshots in `artifacts/live_web/arrows-2026-10-15/`.
 - Next: prioritize the newly exposed syntax/runtime blockers and an opt-in interactive profiler, with screenshots and genuine page interaction as product gates.
 
+## 2026-10-16 - Original JS delete operator and real-site rerun
+
+- YouTube's real HTTPS diagnostics reported `delete is not defined`. Added lexer keyword, parser unary form, reference-aware bytecode and VM behavior for ordinary object/array deletion, missing/declared binding references and non-reference side effects. Array length remains unchanged; null/undefined property bases throw. Host properties and full ECMAScript descriptor behavior remain incomplete.
+- Added focused VM regressions. Rustfmt, strict Clippy and the second full workspace test pass; one timing-sensitive interval test failed on first run but passed alone and in the repeated full run. Release live-site probe built.
+- Under `artifacts/live_web/delete-2026-10-16/`, YouTube executed 6 scripts and failed 10 (previously 5/11). The missing-`delete` error vanished, but the screenshot still has zero text. Pikabu remains at 12 failures and malformed layout. The settle window changed from 1000 to 1300ms, so totals are diagnostic rather than controlled comparison.
+

@@ -16,6 +16,14 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S79 - Live YouTube delete diagnostics through native rendering
+
+YouTube script reports `delete is not defined` -> lexical `delete`
+token -> unary AST -> reference-aware bytecode -> original VM
+deletes ordinary JS own properties / protects host state -> Release
+native web probe. The recorded error disappears, but rendered YouTube
+still contains no text, so no page compatibility pass is claimed.
+
 ## S78 - Real-web arrow syntax through lexical VM functions
 
 Public-site arrow syntax -> Rust lexer `Arrow` token -> parser

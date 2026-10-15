@@ -5073,6 +5073,43 @@ impl JsRuntime {
                     };
                     stack.push(result);
                 }
+                Instruction::DeleteBinding(name) => {
+                    // An absent identifier is not a ReferenceError for delete.
+                    stack.push(JsValue::Boolean(
+                        self.find_binding_environment(env, name).is_none(),
+                    ));
+                }
+                Instruction::DeleteProperty => {
+                    let key = stack.pop().expect("compiler must push delete key");
+                    let target = stack.pop().expect("compiler must push delete target");
+                    let key = to_property_key(key);
+                    let deleted = match target {
+                        JsValue::Null | JsValue::Undefined => {
+                            return Err(JsError::type_error(
+                                "cannot delete properties of null or undefined",
+                            ));
+                        }
+                        JsValue::Object(id) => {
+                            let kind = self.object(id)?.kind;
+                            if id == self.global_object
+                                && self
+                                    .find_binding_environment(self.global_env, &key)
+                                    .is_some()
+                                || kind == ObjectKind::Array && key == "length"
+                            {
+                                false
+                            } else if matches!(kind, ObjectKind::Ordinary | ObjectKind::Array) {
+                                self.object_mut(id)?.properties.remove(&key);
+                                true
+                            } else {
+                                // Host/DOM objects have separate backing state.
+                                false
+                            }
+                        }
+                        _ => true,
+                    };
+                    stack.push(JsValue::Boolean(deleted));
+                }
                 Instruction::Binary(op) => {
                     let right = stack.pop().expect("compiler must push right operand");
                     let left = stack.pop().expect("compiler must push left operand");
@@ -8578,6 +8615,7 @@ fn apply_unary(op: UnaryOp, value: JsValue) -> JsValue {
         UnaryOp::Not => JsValue::Boolean(!value.is_truthy()),
         UnaryOp::BitwiseNot => JsValue::Number(f64::from(!to_int32(&value))),
         UnaryOp::Void => JsValue::Undefined,
+        UnaryOp::Delete => JsValue::Boolean(true),
         UnaryOp::Typeof => unreachable!("typeof needs runtime heap or missing name inspection"),
     }
 }
@@ -8787,6 +8825,35 @@ mod tests {
                 "expected template syntax error: {source}"
             );
         }
+    }
+
+    #[test]
+    fn real_web_delete_operator_evaluates_references_and_preserves_array_length() {
+        let mut runtime = JsRuntime::new();
+        runtime
+            .install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        for source in [
+            "var obj={x:4}; delete obj.x && obj.x === undefined",
+            "var obj={x:4}; delete obj['x'] && !('x' in obj)",
+            "var obj={x:4}; delete obj.absent",
+            "var obj={x:4}; var trace=''; delete obj[(trace=trace+'a')] && trace === 'a'",
+            "var array=[10,20,30]; delete array[1] && array.length === 3 && !(1 in array)",
+            "var array=[10]; !delete array.length && array.length === 1",
+            "var n=2; !delete n && n === 2",
+            "delete neverDeclared",
+            "delete (4 + 5)",
+            "var c=0; delete (c=c+1) && c===1",
+            "!delete window.Array && typeof Array === 'function'",
+        ] {
+            assert_eq!(
+                runtime.eval_script(source).unwrap(),
+                JsValue::Boolean(true),
+                "{source}"
+            );
+        }
+        assert!(runtime.eval_script("delete null.x").is_err());
+        assert!(runtime.eval_script("delete undefined['x']").is_err());
     }
 
     #[test]

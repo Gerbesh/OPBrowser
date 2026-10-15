@@ -179,6 +179,7 @@ pub enum UnaryOp {
     Not,
     BitwiseNot,
     Void,
+    Delete,
     Typeof,
 }
 
@@ -1034,6 +1035,8 @@ impl Parser {
             Some(UnaryOp::BitwiseNot)
         } else if self.take(&TokenKind::Void) {
             Some(UnaryOp::Void)
+        } else if self.take(&TokenKind::Delete) {
+            Some(UnaryOp::Delete)
         } else if self.take(&TokenKind::Typeof) {
             Some(UnaryOp::Typeof)
         } else {
@@ -1427,6 +1430,7 @@ fn identifier_name(kind: &TokenKind) -> Option<String> {
         TokenKind::Return => "return",
         TokenKind::This => "this",
         TokenKind::New => "new",
+        TokenKind::Delete => "delete",
         TokenKind::Throw => "throw",
         TokenKind::Try => "try",
         TokenKind::Catch => "catch",
