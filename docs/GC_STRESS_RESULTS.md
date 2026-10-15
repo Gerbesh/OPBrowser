@@ -1,5 +1,53 @@
 # Original JavaScript GC stress: repeatable browser-owner probe
 
+## 30-minute Windows Release GC with complete host pauses and private commit (2026-10-15)
+
+The completed `gc_stress_probe --seconds 1800 --workload dom` captured
+**1,800 one-second samples** on Windows 11, Rust 1.99.0. This is a
+single-page synthetic DOM/JavaScript workload. It measures Windows
+`PrivateUsage` (private committed bytes) separately from the OS-trimmable
+`WorkingSetSize`, plus whole post-parser host GC checkpoint wall time.
+
+| Measurement | Completed run |
+| --- | ---: |
+| Page task ticks | 1,225,904 |
+| Successful JS / native GC sweeps | 83,777 / 83,777 |
+| Full post-parser host GC checkpoints | 83,776 |
+| GC/JavaScript callback errors | 0 |
+| Reclaimed native DOM nodes | 335,126 |
+| Native arena reserved / live at end | 19 / 13 slots |
+| JS reserved object / environment slots at end | 619 / 333 |
+| JS pause histogram p50 / p95 / p99 bucket upper bounds | 132 / 132 / 263 us |
+| Worst whole-host GC checkpoint | **448,180 us (448.18 ms)** |
+| Host pauses >=16 ms / >=50 ms | **6 / 2** |
+| Worst host pause: JS / native / VM metadata / page resources | 448,158 / 14 / 6 / under 1 us |
+| Windows Private Commit min / max (after 60s warmup) | 2,150,400 / 2,473,984 bytes |
+| Private Commit first / last fifth medians (after warmup) | 2,334,720 / 2,404,352 bytes |
+| Change in Private Commit fifth medians | +69,632 bytes |
+| Private Commit least-squares trend after warmup | +3,695 bytes/min |
+| Working Set first / last fifth medians | 9,015,296 / 9,199,616 bytes |
+
+**Assessment:** PASS for 30-minute synthetic correctness and bounded native
+arena reuse. Process private commit is roughly flat after warmup, with
+no obvious runaway growth; a small upward drift remains and cannot prove
+absence of all leaks. The **tail-latency gate is NOT passed**: two
+host checkpoints exceeded 50 ms; the maximum 448 ms occurred around
+second 152. The recorded inner VM breakdown on the worst JS pause
+(mark 107,841 us; metadata 213,437 us; sweep 83 us) does not account
+for the entire 448 ms wall time. OS scheduling/preemption and unmeasured
+boundary overhead remain plausible, not confirmed. Other pauses over
+16 ms appeared around seconds 82-83, 836 and 1278. Real-site navigation,
+multi-tab memory, long HTTP/Promise churn, CPU-time attribution and
+repeatability under different scheduling conditions remain open.
+
+Reproduce using `target/release/gc_stress_probe.exe --seconds 1800
+--workload dom`; analyze with `python tools/analyze_gc_probe.py
+docs/gc/2026-10-15-windows-dom-host-private-1800s.csv --expected-seconds 1800`.
+
+Evidence: [raw CSV](gc/2026-10-15-windows-dom-host-private-1800s.csv),
+[stderr final counters](gc/2026-10-15-windows-dom-host-private-1800s.log),
+[SHA-256 and run manifest](gc/2026-10-15-windows-dom-host-private-1800s-manifest.json).
+
 ## Windows complete host GC checkpoint: 120-second Release DOM run (2026-10-15)
 
 The browser page host now measures one complete post-callback GC checkpoint

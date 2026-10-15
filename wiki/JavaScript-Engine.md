@@ -11,11 +11,14 @@ callbacks preserve their native ancestors/descendants. Sweeps wait for parser
 completion and validated JS idle checkpoints; weak image/stylesheet/scroll
 cache keys are removed, and native allocation headroom can trigger collection.
 Native pauses and arena live/reserved counters are measured separately.
-The 30-minute Windows Release synthetic DOM test now passes: 80,939
-successful JS/native collections, 323,854 native nodes reclaimed, zero
-GC/JavaScript callback failures, and 21 reserved native slots at exit.
-The working set did not show a sustained upward trend, although Windows
-trimmed it during the run. A rare 273 ms JS GC wall-time outlier remains.
+Two 30-minute Windows Release synthetic DOM runs passed their correctness
+gate. The latest completed 83,777 JS/native sweeps, reclaimed 335,126
+native nodes and ended with 19 reserved DOM slots and zero failures.
+Private Commit stayed near 2.4 MB after warmup, with a +69,632-byte
+change between the early and late medians, not a zero-leak proof.
+The interactive pause-tail gate is not passed: six checkpoints exceeded
+16 ms, two exceeded 50 ms, and the worst took 448.18 ms. OS scheduling
+versus collector CPU time remains undiagnosed.
 This does not validate real pages, network/navigation or multi-tab GC.
 Broad real-navigation, network and multi-tab stability gates remain open.
 See [GC stress results](../docs/GC_STRESS_RESULTS.md).
