@@ -1,6 +1,6 @@
 # OPBrowser Code Graph
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 This document is the maintained human-readable code/dependency graph. It is updated
 whenever crates, important types, or ownership boundaries change.
@@ -15,6 +15,19 @@ the generated graph describes **crate-level edges only**, not a call graph.
 See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
+
+## G3 pause attribution and composite-fetch roots (15 October 2026)
+
+The original `op_js::JsRuntime::collect_garbage_with_roots` times validated mark,
+host-side weak metadata pruning and generational arena sweep independently.
+`JsGcTelemetry` exposes `JsGcPhaseTimings` for the single worst automatic
+checkpoint, plus threshold counts at 16 and 50 milliseconds. The browser worker
+bridges these counters through `Engine::active_script_gc_telemetry`;
+`gc_stress_probe` records five additional CSV/summary columns. These are
+wall-clock diagnostic phases, not CPU sampling or total page-host checkpoint
+time. A pending fetch rooted by an `AbortSignal.any` composite remains
+alive through repeated idle sweeps and aborts once without delivering a stale
+reply. No crate dependencies changed.
 
 ## G3 partial: generational native DOM arena and host coordination
 

@@ -1,5 +1,37 @@
 # Original JavaScript GC stress: repeatable browser-owner probe
 
+## Windows phase-aware GC regression: 120-second Release DOM workload (2026-10-15)
+
+After instrumenting `op_js` collection phases and adding a composite-fetch GC
+regression, an optimized Windows 11 `gc_stress_probe --seconds 120 --workload dom`
+ran to completion on the browser-owned worker. **82,593 ticks, 5,588 JS
+collections and 5,588 native collections; no GC, callback or root failures.**
+Native sweep reclaimed **22,350** nodes, retained 17 reserved/13 live native
+slots, and JS arenas reserved 508 object/250 environment slots at exit.
+All 5,588 automatic pause samples matched successful collections.
+
+| Result | Measured value |
+| --- | ---: |
+| JS GC p50 / p95 / p99 bucket upper bounds | 132 / 132 / 263 us |
+| Worst JS GC wall pause | 4,671 us |
+| Breakdown of that same worst pass: mark / metadata / sweep | 4,353 / 22 / 293 us |
+| Pauses >=16 ms / >=50 ms | 0 / 0 |
+| Worst native GC wall pause | 154 us |
+| Working set min / max / last sample | 8,278,016 / 9,023,488 / 8,998,912 bytes |
+| Native reserved slots observed | 11..17 |
+
+Mark/metadata/sweep timings are wall-clock attribution for the *single worst
+successful automatic JS GC*; they do not exclude OS scheduling and do not
+include the later native collection or host metadata/cache cleanup. This run
+did not reproduce the historical 273,375-us outlier from the 30-minute run,
+so the latter's root cause is **not yet established**. A test also covers a
+fetch retained via `AbortSignal.any` over 16 intervening JS sweeps, abort
+delivery, eventual cleanup and ignoring a stale native reply.
+
+Raw [CSV](gc/2026-10-15-windows-dom-gc-phases-120s.csv),
+[log](gc/2026-10-15-windows-dom-gc-phases-120s.log) and
+[provenance manifest](gc/2026-10-15-windows-dom-gc-phases-120s-manifest.json).
+
 ## 30-minute Windows Release DOM/JS GC gate (2026-10-14)
 
 On source commit `c281d39`, the optimized `gc_stress_probe --seconds 1800

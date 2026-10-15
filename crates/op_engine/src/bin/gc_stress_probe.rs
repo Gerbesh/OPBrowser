@@ -141,7 +141,7 @@ fn main() {
     let mut ticks = 0u64;
     eprintln!("PROBE_START workload={workload} duration_s={seconds}");
     println!(
-        "seconds,ticks,gc_ok,gc_errors,objects_reserved,envs_reserved,objects_live,envs_live,rss_bytes,last_pause_us,max_pause_us,native_dom_slots,pause_samples,p50_upper_us,p95_upper_us,p99_upper_us,native_dom_live,native_gc_ok,native_gc_errors,native_reclaimed,native_last_pause_us,native_max_pause_us"
+        "seconds,ticks,gc_ok,gc_errors,objects_reserved,envs_reserved,objects_live,envs_live,rss_bytes,last_pause_us,max_pause_us,native_dom_slots,pause_samples,p50_upper_us,p95_upper_us,p99_upper_us,native_dom_live,native_gc_ok,native_gc_errors,native_reclaimed,native_last_pause_us,native_max_pause_us,pauses_over_16ms,pauses_over_50ms,worst_mark_us,worst_metadata_us,worst_sweep_us"
     );
     loop {
         let now = Instant::now();
@@ -155,8 +155,9 @@ fn main() {
                 .active_script_gc_telemetry()
                 .expect("active scripted page");
             let native = engine.active_document_gc_telemetry().expect("active page");
+            let slowest = telemetry.max_pause_phases.unwrap_or_default();
             println!(
-                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 now.duration_since(start).as_secs(),
                 ticks,
                 telemetry.successful,
@@ -178,7 +179,12 @@ fn main() {
                 native.failed,
                 native.reclaimed,
                 native.last_pause.map_or(0, |p| p.as_micros()),
-                native.max_pause.as_micros()
+                native.max_pause.as_micros(),
+                telemetry.pauses_over_16ms,
+                telemetry.pauses_over_50ms,
+                slowest.mark.as_micros(),
+                slowest.metadata.as_micros(),
+                slowest.sweep.as_micros()
             );
             assert_eq!(native.failed, 0, "native GC root validation failed");
             assert_eq!(telemetry.failed, 0, "idle GC failed during workload");
@@ -203,7 +209,7 @@ fn main() {
     let native = engine.active_document_gc_telemetry().expect("active page");
     assert_eq!(native.failed, 0, "native GC root validation failed");
     eprintln!(
-        "PROBE_RESULT workload={} duration_s={} ticks={} collections={} failures={} reserved_objects={} reserved_envs={} native_dom_slots={} pause_samples={} p50_upper_us={} p95_upper_us={} p99_upper_us={} max_pause_us={} native_dom_live={} native_gc_ok={} native_gc_errors={} native_reclaimed={} native_max_pause_us={}",
+        "PROBE_RESULT workload={} duration_s={} ticks={} collections={} failures={} reserved_objects={} reserved_envs={} native_dom_slots={} pause_samples={} p50_upper_us={} p95_upper_us={} p99_upper_us={} max_pause_us={} native_dom_live={} native_gc_ok={} native_gc_errors={} native_reclaimed={} native_max_pause_us={} pauses_over_16ms={} pauses_over_50ms={} worst_mark_us={} worst_metadata_us={} worst_sweep_us={}",
         workload,
         seconds,
         ticks,
@@ -221,7 +227,24 @@ fn main() {
         native.successful,
         native.failed,
         native.reclaimed,
-        native.max_pause.as_micros()
+        native.max_pause.as_micros(),
+        telemetry.pauses_over_16ms,
+        telemetry.pauses_over_50ms,
+        telemetry
+            .max_pause_phases
+            .unwrap_or_default()
+            .mark
+            .as_micros(),
+        telemetry
+            .max_pause_phases
+            .unwrap_or_default()
+            .metadata
+            .as_micros(),
+        telemetry
+            .max_pause_phases
+            .unwrap_or_default()
+            .sweep
+            .as_micros()
     );
     assert_eq!(
         telemetry.pause_histogram.samples as usize, telemetry.successful,

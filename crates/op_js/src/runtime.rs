@@ -422,6 +422,17 @@ impl JsGcPauseHistogram {
 
 /// Browser-visible collection diagnostics and arena counters.
 /// Reserved slots are a high-water mark, not process memory usage.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct JsGcPhaseTimings {
+    /// Validated root graph construction and reachability walk.
+    pub mark: Duration,
+    /// Weak host metadata pruning, including native DOM records.
+    pub metadata: Duration,
+    /// Returning dead object and environment slots to free lists.
+    pub sweep: Duration,
+}
+
+/// Timings use wall-clock time and can include operating-system preemption.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JsGcTelemetry {
     pub successful: usize,
@@ -430,6 +441,9 @@ pub struct JsGcTelemetry {
     pub last_pause: Option<Duration>,
     pub max_pause: Duration,
     pub pause_histogram: JsGcPauseHistogram,
+    pub max_pause_phases: Option<JsGcPhaseTimings>,
+    pub pauses_over_16ms: usize,
+    pub pauses_over_50ms: usize,
     pub heap: JsHeapUsage,
     pub live_objects: usize,
     pub live_environments: usize,
@@ -477,6 +491,10 @@ pub struct JsRuntime {
     last_gc_report: Option<JsGcReport>,
     last_gc_pause: Option<Duration>,
     max_gc_pause: Duration,
+    last_gc_phase_timings: JsGcPhaseTimings,
+    max_gc_pause_phases: Option<JsGcPhaseTimings>,
+    gc_pauses_over_16ms: usize,
+    gc_pauses_over_50ms: usize,
     gc_pause_histogram: JsGcPauseHistogram,
     global_env: EnvironmentId,
     object_prototype: ObjectId,
@@ -618,6 +636,10 @@ impl Default for JsRuntime {
             last_gc_report: None,
             last_gc_pause: None,
             max_gc_pause: Duration::ZERO,
+            last_gc_phase_timings: JsGcPhaseTimings::default(),
+            max_gc_pause_phases: None,
+            gc_pauses_over_16ms: 0,
+            gc_pauses_over_50ms: 0,
             gc_pause_histogram: JsGcPauseHistogram::default(),
             global_env,
             object_prototype,
@@ -4522,7 +4544,10 @@ impl JsRuntime {
         &mut self,
         host_roots: &[JsValue],
     ) -> Result<JsGcReport, JsError> {
+        let mark_started = Instant::now();
         let (object_marks, environment_marks) = self.trace_heap_marks(host_roots)?;
+        let mark = mark_started.elapsed();
+        let metadata_started = Instant::now();
         // These maps are weak-keyed metadata, not separate ownership roots.
         // Drop dead owners before returning slots to the allocator.
         let heap = &self.heap;
@@ -4634,6 +4659,8 @@ impl JsRuntime {
         // host snapshot also owns strings, attributes and tree-link maps.
         // Release these records when no JavaScript view can access the node.
         self.prune_native_dom_metadata(&forgotten_nodes);
+        let metadata = metadata_started.elapsed();
+        let sweep_started = Instant::now();
         let mut freed_objects = 0;
         let mut freed_environments = 0;
         for (index, object) in self.heap.iter_mut().enumerate() {
@@ -4664,6 +4691,12 @@ impl JsRuntime {
                 self.free_environments.push(index);
             }
         }
+        let sweep = sweep_started.elapsed();
+        self.last_gc_phase_timings = JsGcPhaseTimings {
+            mark,
+            metadata,
+            sweep,
+        };
         Ok(JsGcReport {
             freed_objects,
             freed_environments,
@@ -4716,7 +4749,16 @@ impl JsRuntime {
         };
         let pause = started.elapsed();
         self.last_gc_pause = Some(pause);
-        self.max_gc_pause = self.max_gc_pause.max(pause);
+        if pause > self.max_gc_pause {
+            self.max_gc_pause = pause;
+            self.max_gc_pause_phases = Some(self.last_gc_phase_timings);
+        }
+        if pause >= Duration::from_millis(16) {
+            self.gc_pauses_over_16ms = self.gc_pauses_over_16ms.saturating_add(1);
+        }
+        if pause >= Duration::from_millis(50) {
+            self.gc_pauses_over_50ms = self.gc_pauses_over_50ms.saturating_add(1);
+        }
         self.gc_pause_histogram.record(pause);
         self.automatic_gc_runs = self.automatic_gc_runs.saturating_add(1);
         self.last_gc_report = Some(report);
@@ -4754,6 +4796,9 @@ impl JsRuntime {
             last_pause: self.last_gc_pause,
             max_pause: self.max_gc_pause,
             pause_histogram: self.gc_pause_histogram,
+            max_pause_phases: self.max_gc_pause_phases,
+            pauses_over_16ms: self.gc_pauses_over_16ms,
+            pauses_over_50ms: self.gc_pauses_over_50ms,
             heap: self.heap_usage(),
             live_objects: self.heap.iter().filter(|obj| obj.alive).count(),
             live_environments: self.environments.iter().filter(|env| env.alive).count(),
@@ -10091,6 +10136,19 @@ mod tests {
         assert_eq!(vm.last_automatic_gc_report(), Some(report));
         let elapsed = vm.last_automatic_gc_pause().expect("GC pause recorded");
         assert_eq!(vm.max_automatic_gc_pause(), elapsed);
+        let diagnostics = vm.gc_telemetry();
+        let phases = diagnostics
+            .max_pause_phases
+            .expect("phase breakdown recorded");
+        assert!(phases.mark + phases.metadata + phases.sweep <= elapsed);
+        assert_eq!(
+            diagnostics.pauses_over_16ms,
+            usize::from(elapsed >= Duration::from_millis(16))
+        );
+        assert_eq!(
+            diagnostics.pauses_over_50ms,
+            usize::from(elapsed >= Duration::from_millis(50))
+        );
         let histogram = vm.gc_telemetry().pause_histogram;
         assert_eq!(histogram.samples, 1);
         assert!(histogram.percentile_upper_bound(100).unwrap() >= elapsed);
@@ -11427,6 +11485,50 @@ mod tests {
         };
         assert!(vm.object(callback_id).is_err());
         assert!(vm.object(signal).is_err());
+        assert!(vm.trace_heap_reachability().is_ok());
+    }
+
+    #[test]
+    fn g3_fetch_composite_abort_survives_repeated_idle_gc_after_dropping_js_signal() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"var source=new AbortController();
+               var state='pending';
+               var composite=AbortSignal.any([source.signal,AbortSignal.timeout(60000)]);
+               fetch('payload.txt',{signal:composite})
+                 .then(function(){state='BAD';},
+                       function(reason){state=reason;});
+               composite=null;"#,
+        )
+        .unwrap();
+        let requests = vm.take_text_requests();
+        assert_eq!(requests.len(), 1);
+        let id = requests[0].id;
+        let signal = vm.text_request_signals[&id];
+        for _ in 0..16 {
+            vm.eval_script("for(var i=0;i<24;i=i+1){var tmp={};tmp.self=tmp;}tmp=null;")
+                .unwrap();
+            vm.collect_garbage_with_roots(&[]).unwrap();
+            assert!(vm.object(signal).is_ok(), "in-flight composite signal lost");
+        }
+        vm.eval_script("source.abort('cancelled');source=null;")
+            .unwrap();
+        assert_eq!(
+            vm.global("state"),
+            Some(&JsValue::String("cancelled".into()))
+        );
+        assert!(!vm.text_callbacks.contains_key(&id));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(
+            vm.object(signal).is_err(),
+            "completed request must release signal"
+        );
+        assert!(!vm.complete_text_request(id, Ok("late reply".into())));
+        assert_eq!(
+            vm.global("state"),
+            Some(&JsValue::String("cancelled".into()))
+        );
         assert!(vm.trace_heap_reachability().is_ok());
     }
 

@@ -1,0 +1,2 @@
+PROBE_START workload=dom duration_s=120
+PROBE_RESULT workload=dom duration_s=120 ticks=82593 collections=5588 failures=0 reserved_objects=508 reserved_envs=250 native_dom_slots=17 pause_samples=5588 p50_upper_us=132 p95_upper_us=132 p99_upper_us=263 max_pause_us=4671 native_dom_live=13 native_gc_ok=5588 native_gc_errors=0 native_reclaimed=22350 native_max_pause_us=154 pauses_over_16ms=0 pauses_over_50ms=0 worst_mark_us=4353 worst_metadata_us=22 worst_sweep_us=293

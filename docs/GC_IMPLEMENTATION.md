@@ -1,5 +1,21 @@
 # Original JS VM garbage collector: implementation plan
 
+## G3 Windows pause attribution and composite-fetch regression (2026-10-15)
+
+The 30-minute Windows Release DOM test passed on 2026-10-14: 80,939
+successful JS/native collections, zero callback or collection failures and a
+bounded 21-slot native DOM arena. Its worst JS wall-clock pause was 273,375 us,
+but the historical probe had no timing breakdown. New `JsGcPhaseTimings`
+measures root marking, weak metadata cleanup and object/environment sweep.
+For the **slowest successful automatic** VM collection, `JsGcTelemetry`
+exposes each phase alongside counts of pauses >=16 ms and >=50 ms. Phase
+timings are nested inside the existing stop-the-world wall-clock pause.
+They may still include OS thread preemption; host/native page-resource
+cleanup is not part of this timing. The probe now exports five extra fields.
+A new `fetch` + `AbortSignal.any` regression verifies 16 repeated idle GC
+passes, cancellation and rejection of a stale network reply. These are not
+complete real-navigation/multi-tab or private-memory acceptance gates.
+
 ## G3 native arena collection and ownership boundary
 
 Native Document now stores optional NodeSlots and generation-checked NodeIds with a reusable free list. On x86_64 the handle uses 32 slot bits and 31 generation bits; the upper bit stays clear to avoid the VM synthetic-ID range. Exhausted generations retire rather than wrap. Document::len reports live native nodes, reserved_slots reports the arena high-water mark, and allocation_headroom includes freed slots. All native node reads/mutations validate generation.

@@ -38,6 +38,8 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 
 **G3 synthetic 30-minute Windows gate (2026-10-14): PASS for Release DOM workload only.** 1,800 per-second CSV samples, 80,939 JS/native sweeps with zero errors, 323,854 nodes reclaimed, 21 reserved native slots at finish; Working Set shows no sustained increase but was trimmed by the OS. The p99 JS pause bucket is <=525 us; one 273,375 us wall-time outlier needs diagnosis. Full browsing/host-memory acceptance remains open.
 
+**G3 pause attribution and fetch audit (2026-10-15):** The 273 ms historical outlier cannot be retrospectively assigned to a GC phase. The new probe captures worst-pass mark/metadata/sweep wall times and counts >=16/50 ms. A composite AbortSignal owning a pending fetch remains alive over 16 explicit sweeps, cancels correctly and discards stale completion. Reproduce a long-session outlier and profile thread scheduling, then broaden real-network/navigation and committed-memory gates.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

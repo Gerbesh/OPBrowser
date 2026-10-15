@@ -3,7 +3,7 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
-## Current GC status (14 October 2026, G3 partial)
+## Current GC status (15 October 2026, G3 partial)
 
 Native Document now collects orphan node components and reuses slots with
 generation-checked identities. Live detached nodes, views, queries and pending
@@ -19,6 +19,13 @@ trimmed it during the run. A rare 273 ms JS GC wall-time outlier remains.
 This does not validate real pages, network/navigation or multi-tab GC.
 Broad real-navigation, network and multi-tab stability gates remain open.
 See [GC stress results](../docs/GC_STRESS_RESULTS.md).
+
+The JS GC now attributes the worst automatic wall pause to root marking,
+weak side-table cleanup and arena sweeping, with >=16 ms and >=50 ms
+outlier counts in `JsGcTelemetry` and the stress probe. Such measurements
+cannot alone establish CPU cost versus Windows thread preemption.
+A composite `AbortSignal.any` owning a pending fetch survives 16
+intervening sweeps; abort frees its callback and rejects a late response.
 
 Native DOM binding now preserves detachment instead of re-rooting orphan
 wrappers. Element/text creation recovers its bounded staging quota after

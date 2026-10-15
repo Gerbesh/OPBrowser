@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-15",
+  "platform": "Windows 11",
+  "rustc": "1.99.0 (2026-09-28)",
+  "base_commit": "97d21b1",
+  "worktree_change": "Added JS GC phase attribution and composite-fetch ownership regression; worktree source was not yet committed when probe ran.",
+  "command": "target/release/gc_stress_probe.exe --seconds 120 --workload dom",
+  "duration_seconds": 120,
+  "csv_records": 120,
+  "csv": "docs/gc/2026-10-15-windows-dom-gc-phases-120s.csv",
+  "log": "docs/gc/2026-10-15-windows-dom-gc-phases-120s.log",
+  "run_binary_sha256": "783440bedc16d7fa675e62fd95a16606534636d1ef0f1e57234352150ece3910",
+  "final_rebuilt_binary_sha256": "4401b214468f36c95fb88af28e3c9aac76c26989d78a4b7f0b44dbdc2193387e",
+  "probe_source_sha256_final": "dc99dad249ef45465bc55343b735aff84e6344e2f3e102e203d3fd8219ef2931",
+  "runtime_source_sha256_final": "78e5b6bd88b1193b31ec72fa662cb79493df0be4ab4942f5a3ae969c3859a12b",
+  "ticks": 82593,
+  "js_gc_success": 5588,
+  "js_gc_errors": 0,
+  "native_gc_success": 5588,
+  "native_gc_errors": 0,
+  "native_nodes_reclaimed": 22350,
+  "native_reserved_slots_end": 17,
+  "native_live_nodes_end": 13,
+  "js_reserved_objects_end": 508,
+  "js_reserved_environments_end": 250,
+  "pause_histogram_samples": 5588,
+  "js_pause_percentile_upper_us": {
+    "p50": 132,
+    "p95": 132,
+    "p99": 263
+  },
+  "js_max_pause_us": 4671,
+  "worst_gc_phase_breakdown_us": {
+    "mark": 4353,
+    "metadata": 22,
+    "sweep": 293
+  },
+  "pauses_over_16ms": 0,
+  "pauses_over_50ms": 0,
+  "native_max_pause_us": 154,
+  "rss_bytes": {
+    "start": 8278016,
+    "min": 8278016,
+    "max": 9023488,
+    "last_sample": 8998912
+  },
+  "interpretation": "No rare 273.375ms Windows outlier reproduced. Worst mark phase 4.353ms may include OS scheduling. Does not measure total host checkpoint, CPU time, private commit or real multi-tab navigation."
+}

@@ -1,6 +1,6 @@
 # OPBrowser Code Slices
 
-Last updated: 2026-10-14
+Last updated: 2026-10-15
 
 A code slice is an end-to-end path through the architecture that produces one
 observable capability. This prevents isolated subsystems from becoming impressive
@@ -15,6 +15,18 @@ current. The same validator runs in CI. This is a **source-anchor
 feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
+
+## S71 - Phase-aware stop-the-world GC diagnostics and composite fetch (G3 partial)
+
+Browser idle sweep -> validate mark roots -> track time in marking, weak native/JS
+host metadata pruning and slot sweep -> expose phase breakdown for the worst
+successful automatic GC wall pause and counts of pauses >=16/50 ms ->
+Engine GC telemetry -> extended timer/DOM stress CSV/summary. Test coverage
+checks the three phases fit within the aggregate pause, and a pending
+`fetch` owned by an `AbortSignal.any` survives repeated VM sweeps,
+rejects once on abort and ignores a late native response. Wall-clock phase
+attribution can still include OS scheduling; real-page and total host pause
+profiling remain separate gates.
 
 ## S70 - Native DOM reachability, reclamation and generation-safe reuse (G3 partial)
 
