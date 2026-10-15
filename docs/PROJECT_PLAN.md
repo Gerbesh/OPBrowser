@@ -12,8 +12,9 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 
 | Priority | Workstream | Current reality | Next deliverable and exit gate |
 | --- | --- | --- | --- |
-| **P0-1 NOW** | **Original JS VM garbage collection** | **G1/G2/G3 partial:** two 30-minute Windows Release synthetic DOM stress passes, latest with 83,777 JS/native collections, zero failures, bounded 19-slot native arena and measured Private Commit drift +69,632 bytes between early/late medians. | NEXT: identify and eliminate rare 448 ms host GC wall-time stalls (6 >16 ms, 2 >50 ms), then real-site/repeated-navigation/multi-tab GC and private-memory stability. Synthetic correctness PASS, pause tail NOT PASS; renderer stays deferred. See [GC_IMPLEMENTATION.md](GC_IMPLEMENTATION.md) and [GC_STRESS_RESULTS.md](GC_STRESS_RESULTS.md). |
-| **P0-2 AFTER GC** | **Usable rendering and scrolling** | **R1.0–R1.2c vertical DONE (bounded); R1.2d–e partial:** ancestor-clipped nested scrollbars, horizontal overflow-x/y, native wheel/track interaction and GDI pixels. | Resume horizontal thumb drag, JS scrollLeft, complex clipping and WPT/real-page comparisons only after GC is safe and reclaiming. |
+| **P0-1 NOW** | **Modern web rendering and JS integration** | Live-network baseline: 20 services, zero verified fully functional pages; blank SPAs, JS errors, malformed rendering and HTTP blocks separated. | Repair first paint, prioritize actual JS/DOM blockers and visual layout differences, rerun the same public URLs and screenshots. See [REAL_WEB_BASELINE.md](REAL_WEB_BASELINE.md). |
+| **P0-2 NOW** | **Layout, scrolling and on-demand profiler** | Bounded nested scrolling and original Win32 paint exist, but modern Flex/Grid/forms are incomplete; GC has synthetic metrics but no interactive CPU/wall phase profiler. | Restore real-site layout/scrolling; add opt-in phase tracing for load, JS, DOM, style, layout, paint and GC during interactive browsing. |
+| **P0-GUARD** | **Original JS VM GC correctness/performance** | Two 30-minute synthetic stress runs passed safety; native DOM arena bounded, Private Commit near a plateau, but rare 448-ms wall GC pause remains unexplained. | Maintain GC correctness gates; investigate pause outliers on real browsing traces rather than blocking all rendering work. |
 | **P1-C** | **Flexbox with multiple lines** | **R2a–R2c partial DONE:** row wrapping/gap, proportional grow/shrink, flex basis/shorthand and six `justify-content` values, measured in original GDI pixels. | **R2d NEXT:** cross-axis `align-items`, flex direction/order and full min-content sizing, followed by explicit real-page visual comparison; current subset is not full Flexbox. |
 | **P1-D** | **CSS Grid foundation** | Table grid track sizing exists; it is **not** CSS Grid Layout. | R3: explicit/auto tracks, fraction units, item placement and basic gap, then implicit tracks and minmax. Screenshot+geometry tests. |
 | **P1-E** | **Backgrounds and typography** | URL image tiling for blocks/tables and GDI font measurement exist, but broad backgrounds, web fonts and modern shaping/fallback do not. | R4: repeat/size/position and clipping for image backgrounds; then DirectWrite shaping/fallback and real @font-face loading with origin/security controls. |
@@ -43,6 +44,18 @@ A green handpicked test fixture is **not** evidence of general website compatibi
 **G3 full host checkpoint and navigation isolation (2026-10-15):** Added per-page timing for the entire callback-bound GC checkpoint through weak-resource cleanup, plus >=16/50 ms outlier counts. A regression verifies that a delayed old-generation response cannot fulfill a same-ID fetch in the new document; a matching current-generation result can. Longer phase-aware profiling, repeated real HTTP navigation, committed/private bytes and multi-tab memory remain open.
 
 **G3 private memory and loopback HTTP update (2026-10-15):** Added extended Windows per-process private-commit samples and an offline CSV validator that distinguishes PrivateUsage from OS-trimmable working set. A true localhost HTTP test navigates away while a fetch is in flight, then verifies the delayed previous response cannot corrupt the next page even under a reused request ID. Broad real-site/multi-tab workloads, GC CPU-time attribution and leak gates remain open.
+
+**P0 real-web priority update (2026-10-15; supersedes the 2026-10-13 GC-first freeze):**
+The original GC passes extended synthetic correctness and private-memory
+plateau checks, although rare 448ms wall-time stalls remain under watch.
+Modern website functionality is now the first product gate: the 20 real
+public URLs in [REAL_WEB_BASELINE.md](REAL_WEB_BASELINE.md) gave 10
+JS-error partial pages, 2 skeletons, 3 blank viewports, 3 403/429 blocks,
+1 malformed/unverified render and 1 timeout. Prioritize JS/DOM blockers
+and practical CSS/layout/paint improvements that measurably change those
+screenshots. Integrate an on-demand interactive CPU/wall-time profiler
+for GC/performance diagnosis during real browsing; do not resume
+synthetic-only micro-optimization without an observed failure.
 
 ## Engineering gates
 

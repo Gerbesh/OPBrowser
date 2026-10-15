@@ -16,6 +16,20 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S74 - Live public-site navigation to native pixels (real-web baseline)
+
+Named anonymous HTTPS URL from versioned manifest -> isolated `live_site_probe`
+process -> `Engine::navigate` retrieves actual HTML, scripts, styles and
+images -> the original `op_js` VM executes only its currently implemented
+subset -> `Engine::tick_timers` drains bounded network/timer tasks ->
+`op_platform_win::render_display_list_to_bgra` renders the real display
+list -> BMP/PNG and counters -> `tools/live_web_suite.py` consolidates
+JSON and Markdown failure summaries. Twenty real sites produced 10 partial
+pages with JS failures, 2 skeleton-only, 3 blank, 3 HTTP 403/429, 1
+unverified malformed rendering and 1 timeout. This is **not** a 20-site
+compatibility PASS; it is the reproducible starting failure baseline.
+See [dated screenshots](live_web/2026-10-15/REPORT.md).
+
 ## S73 - Windows committed-memory profile and real HTTP delayed reply (G3 partial)
 
 `gc_stress_probe` -> native Windows process status API -> extended private

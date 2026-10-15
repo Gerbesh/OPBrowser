@@ -1,5 +1,20 @@
 # Development Workflow
 
+## Reproducible real-web baseline (2026-10-15)
+
+To reproduce the 20-site **unauthenticated live** compatibility report,
+build `cargo build -p op_browser --bin live_site_probe --release`, then
+run `python tools/live_web_suite.py --workers 2 --timeout-seconds 23`.
+The repository contains [the manifest](../tests/live_web_sites.json),
+[a dated 20-site report](../docs/live_web/2026-10-15/REPORT.md)
+and [the priority analysis](../docs/REAL_WEB_BASELINE.md).
+Site loading is **opt-in**, not a mandatory network dependency of CI.
+Each site runs in a separate subprocess through the original OPBrowser
+engine and produces a first-viewport PNG plus script/layout diagnostics;
+an HTTP block or skeleton page is not a success. Browser-interaction
+traces and reference-browser visual comparisons remain pending.
+
+
 Every coherent update follows the same loop:
 
 1. implement one bounded change;

@@ -45,6 +45,25 @@ but they are installed now for future native dependencies and graphics tooling.
 - op_paint: platform-neutral text/image display list
 - op_platform_win: Win32 platform integration
 
+## Real-world modern website baseline (opt-in; requires internet)
+
+The real-site test runner opens 20 named public URLs (YouTube, Google,
+Pikabu, Reddit, DeviantArt, GitHub, Twitch and others), each in a separate
+process using OPBrowser's original engine and native bitmap painter.
+It saves first-viewport screenshots and per-site diagnostic counters;
+it does NOT establish that the sites work. No login/bot workaround.
+
+```powershell
+cargo build -p op_browser --bin live_site_probe --release
+python tools/live_web_suite.py --output artifacts/live_web/manual --timeout-seconds 23
+python tools/live_web_suite.py --only google,youtube,pikabu,reddit,deviantart --output artifacts/live_web/focus
+```
+
+Live requests are never part of the required offline CI test suite.
+See [the live baseline](REAL_WEB_BASELINE.md), the 20-page manifest
+`tests/live_web_sites.json`, and dated `docs/live_web/2026-10-15/`
+diagnostics/screenshots. `artifacts/` is gitignored.
+
 ## Common commands
 
 Format:

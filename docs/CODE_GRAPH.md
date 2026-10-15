@@ -16,6 +16,21 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## Real live-web regression harness (15 October 2026)
+
+`tools/live_web_suite.py` consumes an explicit 20-site HTTPS manifest,
+spawns one isolated `op_browser::live_site_probe` per URL with a strict
+wall-time limit and captures diagnostics and first-viewport images.
+The probe invokes `Engine::navigate` and `Engine::tick_timers` using
+OPBrowser-owned HTML/DOM/CSS/JS processing, then rasterizes through
+`op_platform_win::render_display_list_to_bgra`. No browser engine
+substitution, virtual HTML fixture or new crate dependency is involved.
+The manifest, result JSON and PNG/BMP snapshots are separate from the
+synthetic GC and WPT test suites. The 20-site first baseline proves zero
+fully functional modern pages: missing JS support, blank SPA output and
+broken CSS, with HTTP 403/429 cases explicitly separated from engine bugs.
+See [real-web baseline](REAL_WEB_BASELINE.md).
+
 ## G3 process-private commit and real HTTP navigation regression (15 October 2026)
 
 `gc_stress_probe` calls Windows `K32GetProcessMemoryInfo` with the extended

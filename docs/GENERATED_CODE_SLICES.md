@@ -1339,4 +1339,24 @@ op_engine::main
 
 Preserves complete retained native components; no mid-parser or in-flight native JS collection. Short synthetic Linux profile is not the 30-minute Windows/full browsing gate. Native pauses exclude subsequent metadata/cache pruning.
 
+## S74 — Opt-in live public websites through original browser render path
+
+Status: **Diagnostics implemented, modern web conformance NOT established**.
+
+```text
+op_browser::run
+op_engine::navigate
+op_engine::tick_timers
+op_platform_win::render_display_list_to_bgra
+op_browser::bmp_from_bgra
+```
+
+- [`op_browser::run`](../crates/op_browser/src/bin/live_site_probe.rs#L97)
+- [`op_engine::navigate`](../crates/op_engine/src/lib.rs#L931)
+- [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L858)
+- [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L70)
+- [`op_browser::bmp_from_bgra`](../crates/op_browser/src/bin/live_site_probe.rs#L48)
+
+Only anonymous direct navigation, 1-second settles, screenshots and aggregate counters. Live-site content changes, sites may block automated loading, and this is not an interaction or visual-fidelity pass.
+
 See [CODE_SLICES.md](CODE_SLICES.md) for full engineering notes.

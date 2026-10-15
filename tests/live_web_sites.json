@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "purpose": "Opt-in direct navigation compatibility probes (no authentication, no browser-engine substitution).",
+  "sites": [
+    {
+      "id": "google",
+      "url": "https://www.google.com/search?q=rust+programming+language",
+      "category": "search"
+    },
+    {
+      "id": "youtube",
+      "url": "https://www.youtube.com/",
+      "category": "video_spa"
+    },
+    {
+      "id": "pikabu",
+      "url": "https://pikabu.ru/",
+      "category": "social_feed"
+    },
+    {
+      "id": "reddit",
+      "url": "https://www.reddit.com/r/programming/",
+      "category": "social_spa"
+    },
+    {
+      "id": "deviantart",
+      "url": "https://www.deviantart.com/",
+      "category": "art_spa"
+    },
+    {
+      "id": "github_explore",
+      "url": "https://github.com/explore",
+      "category": "code_portal"
+    },
+    {
+      "id": "stackoverflow",
+      "url": "https://stackoverflow.com/questions",
+      "category": "q_and_a"
+    },
+    {
+      "id": "twitch",
+      "url": "https://www.twitch.tv/directory",
+      "category": "streaming_spa"
+    },
+    {
+      "id": "discord",
+      "url": "https://discord.com/",
+      "category": "web_app"
+    },
+    {
+      "id": "instagram",
+      "url": "https://www.instagram.com/",
+      "category": "social_spa"
+    },
+    {
+      "id": "tiktok",
+      "url": "https://www.tiktok.com/explore",
+      "category": "video_spa"
+    },
+    {
+      "id": "x_explore",
+      "url": "https://x.com/explore",
+      "category": "social_spa"
+    },
+    {
+      "id": "figma",
+      "url": "https://www.figma.com/",
+      "category": "product_spa"
+    },
+    {
+      "id": "canva",
+      "url": "https://www.canva.com/",
+      "category": "product_spa"
+    },
+    {
+      "id": "notion",
+      "url": "https://www.notion.so/",
+      "category": "product_spa"
+    },
+    {
+      "id": "habr",
+      "url": "https://habr.com/ru/articles/",
+      "category": "news_feed"
+    },
+    {
+      "id": "wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+      "category": "content"
+    },
+    {
+      "id": "mdn",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+      "category": "docs"
+    },
+    {
+      "id": "hackernews",
+      "url": "https://news.ycombinator.com/",
+      "category": "content"
+    },
+    {
+      "id": "amazon",
+      "url": "https://www.amazon.com/",
+      "category": "ecommerce"
+    }
+  ]
+}

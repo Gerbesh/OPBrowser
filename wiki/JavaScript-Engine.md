@@ -3,6 +3,19 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Real-world JS compatibility baseline (15 October 2026)
+
+The 20-site anonymous HTTPS test exercises original OPBrowser navigation,
+JS execution, DOM updates and Windows rendering, not synthetic browser
+workloads. None is verified fully functional: ten render partial content
+with script errors, two show only uninitialized placeholders, three are
+blank, three are HTTP-blocked, one renders an unverified broken layout,
+and one times out. These measured failures should drive next VM/DOM
+priorities ahead of nonblocking EventTarget conformance work.
+See [real-web report](../docs/REAL_WEB_BASELINE.md) and
+[dated screenshots](../docs/live_web/2026-10-15/REPORT.md).
+The probe does not replace an interactive CPU/wall-time profiler.
+
 ## Current GC status (15 October 2026, G3 partial)
 
 Native Document now collects orphan node components and reuses slots with
