@@ -3605,3 +3605,29 @@ This file is append-only project history.
 - Screenshots show Google incomplete, YouTube only gray placeholder rows, Pikabu clipped/misplaced fragments, DeviantArt partial dark navigation/feed with missing imagery, Reddit blank, and GitHub overexpanded menu. Failures identify real rendering/VM priorities rather than an artificial WPT pass score.
 - Exported sanitized/reproducible metrics and the PNGs to `docs/live_web/2026-10-15/`, with explanation in `docs/REAL_WEB_BASELINE.md`. Added tests for manifest validation, blank/skeleton/error classification, false-positive rejection, and reporting; changed active project priority to real-site functionality plus in-app profiling, with GC as an observed safety/performance guard rather than a renderer blocker.
 
+## 2026-10-15 - P0 real-website goals and parser error feedback loop
+
+- Updated PROJECT_PLAN.md acceptance gates to center Google, YouTube,
+  Pikabu, Reddit and DeviantArt, while keeping the other 15 public
+  sites as the regression cohort. First real product gate: a coherent,
+  useful first viewport on at least two priority sites; no fabricated
+  pages, inflated PASS counts or synthetic-only blocker work.
+- ParserScriptRunner now retains at most 24 short causes per page,
+  including JsError kinds and categories for unsupported script types,
+  empty/oversize scripts, max script count, external script budgets and
+  download/source resolution failures. Engine exposes these notes,
+  which reset across navigation. live_site_probe emits them; the
+  Python runner groups categories into Markdown without saving the
+  original JavaScript or HTML.
+- First 5-site diagnostic pass pinpointed unsupported operators
+  & and ^ in Google, ~ in Pikabu, and Date/Image/performance
+  missing on other pages. Implemented conforming original-JS binary
+  &, |, ^ and unary ~ operators, including precedence and ToInt32
+  wrapping/NaN handling, with VM and browser diagnostic tests.
+- Live rechecks: previous Google &/^ errors no longer arise, but
+  Google still reports 2 JS failures (later unsupported syntax).
+  After ~ support, Pikabu's ~ error also advances to a later blocker,
+  while its total 14 failures persist; YouTube remains skeleton-only.
+  No site is claimed newly compatible. Next work: broadening JS/DOM
+  APIs based on recorded blockers plus genuine interactive profiling.
+

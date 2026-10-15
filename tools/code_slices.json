@@ -1008,6 +1008,42 @@
         }
       ],
       "limitation": "Only anonymous direct navigation, 1-second settles, screenshots and aggregate counters. Live-site content changes, sites may block automated loading, and this is not an interaction or visual-fidelity pass."
+    },
+    {
+      "id": "S75",
+      "title": "Public-site JavaScript diagnostics drive conforming bitwise operators",
+      "status": "Bounded per-page diagnostics implemented; bitwise expression subset tested, sites remain incomplete",
+      "steps": [
+        {
+          "path": "crates/op_engine/src/scripts.rs",
+          "symbol": "ParserScriptRunner"
+        },
+        {
+          "path": "crates/op_engine/src/lib.rs",
+          "symbol": "active_script_diagnostics"
+        },
+        {
+          "path": "crates/op_browser/src/bin/live_site_probe.rs",
+          "symbol": "script_diag_"
+        },
+        {
+          "path": "crates/op_js/src/lexer.rs",
+          "symbol": "Caret"
+        },
+        {
+          "path": "crates/op_js/src/parser.rs",
+          "symbol": "bitwise_xor"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "to_int32"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "apply_binary"
+        }
+      ],
+      "limitation": "Only initial parser-script diagnostics are enumerated; callbacks/timers require broader tracing. Successful parsing of individual bitwise operators does not imply the modern Google/Pikabu scripts now work."
     }
   ]
 }

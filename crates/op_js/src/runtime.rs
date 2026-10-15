@@ -8519,9 +8519,19 @@ fn apply_unary(op: UnaryOp, value: JsValue) -> JsValue {
         UnaryOp::Plus => JsValue::Number(value.to_number()),
         UnaryOp::Minus => JsValue::Number(-value.to_number()),
         UnaryOp::Not => JsValue::Boolean(!value.is_truthy()),
+        UnaryOp::BitwiseNot => JsValue::Number(f64::from(!to_int32(&value))),
         UnaryOp::Void => JsValue::Undefined,
         UnaryOp::Typeof => unreachable!("typeof needs runtime heap or missing name inspection"),
     }
+}
+
+/// ECMAScript ToInt32, including NaN/Infinity/negative zero and 2^32 wrap.
+fn to_int32(value: &JsValue) -> i32 {
+    let number = value.to_number();
+    if !number.is_finite() || number == 0.0 {
+        return 0;
+    }
+    number.trunc().rem_euclid(4_294_967_296.0) as u32 as i32
 }
 
 fn apply_binary(op: BinaryOp, left: JsValue, right: JsValue) -> JsValue {
@@ -8537,6 +8547,9 @@ fn apply_binary(op: BinaryOp, left: JsValue, right: JsValue) -> JsValue {
         BinaryOp::Multiply => JsValue::Number(left.to_number() * right.to_number()),
         BinaryOp::Divide => JsValue::Number(left.to_number() / right.to_number()),
         BinaryOp::Remainder => JsValue::Number(left.to_number() % right.to_number()),
+        BinaryOp::BitwiseAnd => JsValue::Number(f64::from(to_int32(&left) & to_int32(&right))),
+        BinaryOp::BitwiseXor => JsValue::Number(f64::from(to_int32(&left) ^ to_int32(&right))),
+        BinaryOp::BitwiseOr => JsValue::Number(f64::from(to_int32(&left) | to_int32(&right))),
         BinaryOp::StrictEqual => JsValue::Boolean(strict_equal(&left, &right)),
         BinaryOp::StrictNotEqual => JsValue::Boolean(!strict_equal(&left, &right)),
         BinaryOp::Equal => JsValue::Boolean(abstract_equal(&left, &right)),
@@ -8595,6 +8608,37 @@ fn compare(left: &JsValue, right: &JsValue, op: impl FnOnce(f64, f64) -> bool) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn real_web_bitwise_and_or_xor_obey_js_precedence_and_to_int32() {
+        let mut runtime = JsRuntime::new();
+        for (source, expected) in [
+            ("5 & 3", 1.0),
+            ("5 | 2", 7.0),
+            ("5 ^ 3", 6.0),
+            ("1 | 2 & 4 ^ 3", 3.0),
+            ("1 ^ 3 & 1", 0.0),
+            ("1 & 1 == 1", 1.0),
+            ("-1 & 5", 5.0),
+            ("4294967295 | 0", -1.0),
+            ("4294967296 ^ 7", 7.0),
+            ("2147483648 | 0", -2147483648.0),
+            ("void 0 | 4", 4.0),
+            ("0 / 0 | 6", 6.0),
+            ("true ^ 3", 2.0),
+            ("~0", -1.0),
+            ("~-1", 0.0),
+            ("~4294967295", 0.0),
+            ("~~3", 3.0),
+            ("~4 & 3", 3.0),
+        ] {
+            assert_eq!(
+                runtime.eval_script(source).unwrap(),
+                JsValue::Number(expected),
+                "{source}"
+            );
+        }
+    }
 
     #[test]
     fn evaluates_precedence_and_persistent_globals() {

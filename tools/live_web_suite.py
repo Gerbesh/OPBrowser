@@ -83,6 +83,23 @@ def probe(site, binary, output, timeout, settle_ms):
                 screenshot=screenshot, stderr_tail=stderr.strip()[-800:])
 
 
+def diagnostic_categories(metrics):
+    from collections import Counter
+
+    counts = Counter()
+    for key, text in metrics.items():
+        if not key.startswith("script_diag_"):
+            continue
+        if text.startswith("script:"):
+            category = ":".join(text.split(":", 2)[:2])
+        elif text.startswith("skip:"):
+            category = text
+        else:
+            category = "other_script_failure"
+        counts[category] += 1
+    return counts
+
+
 def markdown(report):
     lines = [
         "# OPBrowser real-web compatibility baseline", "",
@@ -99,6 +116,15 @@ def markdown(report):
         lines.append("| {} | {} | {} | {} | {} | {} |".format(
             item["id"], item["outcome"], m.get("load_ms", "-"),
             m.get("script_failed", "-"), m.get("paint_commands", "-"), image))
+    if any(diagnostic_categories(item["metrics"]) for item in report["results"]):
+        lines.extend(["", "## Bounded script diagnostic categories", "",
+                      "At most 24 parser/initial script diagnostics are retained per page.", "",
+                      "| Site | Observed failure categories |", "| --- | --- |"])
+        for item in report["results"]:
+            categories = diagnostic_categories(item["metrics"])
+            if categories:
+                labels = ", ".join(f"{name} x{count}" for name, count in categories.most_common(5))
+                lines.append(f"| {item['id']} | {labels} |")
     lines.extend(["", "## Limits", "",
                   "blank_viewport: white or effectively empty output, even if navigation succeeded.",
         "no_text_rendered: only skeleton/decorative paint commands; no text primitives.",

@@ -2,7 +2,7 @@
 //! detached DOM text mutations through OPBrowser's own JavaScript VM.
 //! This is intentionally not a complete HTML script-processing model.
 use op_dom::{Attribute, Document, NodeId, NodeKind};
-use op_js::{DomElementSnapshot, DomOperation, JsRuntime};
+use op_js::{DomElementSnapshot, DomOperation, JsError, JsRuntime};
 use op_net::{NetworkContext, resolve_script_source};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -11,6 +11,7 @@ const MAX_NODES: usize = 20_000;
 const MAX_ELEMENTS: usize = 4096;
 const MAX_SCRIPT_BYTES: usize = 128 * 1024;
 const MAX_SCRIPTS: usize = 16;
+const MAX_SCRIPT_DIAGNOSTICS: usize = 24;
 const MAX_SCRIPT_REQUESTS: usize = 8;
 const TOTAL_EXTERNAL_SCRIPT_BUDGET: usize = 512 * 1024;
 const SCRIPT_LOAD_DEADLINE: Duration = Duration::from_secs(10);
@@ -394,10 +395,11 @@ pub(crate) fn parse_and_execute(
     html: &str,
     network: Option<&NetworkContext>,
     page_base: Option<&str>,
-) -> (Document, ScriptReport, Option<JsRuntime>) {
+) -> (Document, ScriptReport, Option<JsRuntime>, Vec<String>) {
     let mut runner = ParserScriptRunner {
         runtime: None,
         report: ScriptReport::default(),
+        diagnostics: Vec::new(),
         accepted: 0,
         requests: 0,
         remaining_bytes: TOTAL_EXTERNAL_SCRIPT_BUDGET,
@@ -486,7 +488,7 @@ pub(crate) fn parse_and_execute(
     if let Some(runtime) = runner.runtime.as_mut() {
         collect_at_idle(&mut document, runtime, true);
     }
-    (document, runner.report, runner.runtime)
+    (document, runner.report, runner.runtime, runner.diagnostics)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -513,6 +515,7 @@ struct CompletedScript {
 struct ParserScriptRunner<'a> {
     runtime: Option<JsRuntime>,
     report: ScriptReport,
+    diagnostics: Vec<String>,
     accepted: usize,
     requests: usize,
     remaining_bytes: usize,
@@ -527,6 +530,25 @@ struct ParserScriptRunner<'a> {
 }
 
 impl ParserScriptRunner<'_> {
+    fn record_error(&mut self, stage: &str, error: &JsError) {
+        if self.diagnostics.len() < MAX_SCRIPT_DIAGNOSTICS {
+            let message = error
+                .message
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(160)
+                .collect::<String>();
+            self.diagnostics
+                .push(format!("{stage}:{:?}: {message}", error.kind));
+        }
+    }
+
+    fn record_failure(&mut self, stage: &str) {
+        if self.diagnostics.len() < MAX_SCRIPT_DIAGNOSTICS {
+            self.diagnostics.push(stage.to_owned());
+        }
+    }
+
     fn advance_state(&mut self, document: &mut Document, state: &'static str) {
         self.ready_state = state;
         if let Some(runtime) = self.runtime.as_mut() {
@@ -580,6 +602,13 @@ impl ParserScriptRunner<'_> {
             .is_none_or(|value| matches!(value, "" | "text/javascript" | "application/javascript"));
         if !classic || self.accepted >= MAX_SCRIPTS || (src.is_some() && has_integrity) {
             self.report.skipped += 1;
+            self.record_failure(if !classic {
+                "skip:unsupported_script_type"
+            } else if self.accepted >= MAX_SCRIPTS {
+                "skip:script_count_limit"
+            } else {
+                "skip:script_integrity_unsupported"
+            });
             return None;
         }
 
@@ -587,6 +616,7 @@ impl ParserScriptRunner<'_> {
         if let Some(src) = src {
             if src.trim().is_empty() {
                 self.report.skipped += 1;
+                self.record_failure("skip:empty_script_src");
                 return None;
             }
             self.accepted += 1;
@@ -629,6 +659,7 @@ impl ParserScriptRunner<'_> {
             let code = collect_text(document, script, MAX_SCRIPT_BYTES + 1);
             if code.is_empty() || code.len() > MAX_SCRIPT_BYTES {
                 self.report.skipped += 1;
+                self.record_failure("skip:empty_or_oversize_inline_script");
                 return None;
             }
             self.accepted += 1;
@@ -640,6 +671,7 @@ impl ParserScriptRunner<'_> {
     fn prepare_fetch(&mut self, src: &str, kind: ScriptTiming) -> Option<ScriptFetch> {
         let (Some(_network), Some(base)) = (self.network, self.page_base) else {
             self.report.skipped += 1;
+            self.record_failure("skip:no_external_script_context");
             return None;
         };
         if self.requests >= MAX_SCRIPT_REQUESTS
@@ -647,12 +679,14 @@ impl ParserScriptRunner<'_> {
             || self.started.elapsed() > SCRIPT_LOAD_DEADLINE
         {
             self.report.skipped += 1;
+            self.record_failure("skip:external_script_budget_or_deadline");
             return None;
         }
         let url = match resolve_script_source(base, src) {
             Ok(url) => url,
             Err(_) => {
                 self.report.failed += 1;
+                self.record_failure("external_script_url_resolution_failed");
                 return None;
             }
         };
@@ -705,7 +739,10 @@ impl ParserScriptRunner<'_> {
     ) {
         match result {
             Ok(code) => self.evaluate_code(document, &code),
-            Err(_) => self.report.failed += 1,
+            Err(_) => {
+                self.report.failed += 1;
+                self.record_failure("external_script_load_failed");
+            }
         }
     }
 
@@ -735,7 +772,10 @@ impl ParserScriptRunner<'_> {
         }
         match runtime.eval_script(code) {
             Ok(_) => self.report.executed += 1,
-            Err(_) => self.report.failed += 1,
+            Err(error) => {
+                self.report.failed += 1;
+                self.record_error("script", &error);
+            }
         }
         self.apply_mutations(document);
     }
@@ -883,7 +923,8 @@ mod tests {
             second=null;
             document.getElementById('content').textContent='Updated';
           </script>";
-        let (document, report, runtime) = parse_and_execute(html, None, None);
+        let (document, report, runtime, diagnostics) = parse_and_execute(html, None, None);
+        assert!(diagnostics.is_empty());
         assert_eq!(report.executed, 2);
         assert_eq!(report.failed, 0);
         assert!(!document.is_empty());

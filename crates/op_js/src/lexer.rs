@@ -60,6 +60,10 @@ pub enum TokenKind {
     GreaterEqual,
     AmpAmp,
     PipePipe,
+    Amp,
+    Pipe,
+    Caret,
+    Tilde,
     LeftParen,
     RightParen,
     LeftBrace,
@@ -190,7 +194,11 @@ impl<'a> Lexer<'a> {
             b';' => TokenKind::Semicolon,
             b',' => TokenKind::Comma,
             b'&' if self.take(b'&') => TokenKind::AmpAmp,
+            b'&' => TokenKind::Amp,
             b'|' if self.take(b'|') => TokenKind::PipePipe,
+            b'|' => TokenKind::Pipe,
+            b'^' => TokenKind::Caret,
+            b'~' => TokenKind::Tilde,
             b'=' if self.take(b'=') => {
                 if self.take(b'=') {
                     TokenKind::EqualEqualEqual

@@ -48,6 +48,29 @@ class LiveWebSuiteTests(unittest.TestCase):
         self.assertEqual(live_web_suite.classify({}, None, True), "timeout")
         self.assertEqual(live_web_suite.classify({}, 2, False), "probe_or_render_error")
 
+    def test_bounded_diagnostic_categories_are_reported_without_source(self):
+        metrics = {
+            "script_diag_0": "script:Syntax: unsupported character '^'",
+            "script_diag_1": "script:Syntax: expected expression",
+            "script_diag_2": "script:Reference: Date is not defined",
+            "script_diag_3": "skip:script_count_limit",
+            "script_diagnostics_count": "4",
+        }
+        counts = live_web_suite.diagnostic_categories(metrics)
+        self.assertEqual(counts["script:Syntax"], 2)
+        self.assertEqual(counts["script:Reference"], 1)
+        self.assertEqual(counts["skip:script_count_limit"], 1)
+        self.assertEqual(sum(counts.values()), 4)
+        report = live_web_suite.markdown({
+            "timestamp_utc": "2026-10-15T00:00:00Z",
+            "timeout_seconds": 25,
+            "results": [{"id": "youtube", "outcome": "no_text_rendered",
+                         "metrics": metrics, "screenshot": None}],
+        })
+        self.assertIn("script:Syntax x2", report)
+        self.assertIn("skip:script_count_limit x1", report)
+        self.assertNotIn("unsupported character", report)
+
     def test_diagnostic_markdown_does_not_claim_site_compatibility(self):
         out = live_web_suite.markdown({"timestamp_utc": "2026-10-15T00:00:00Z",
              "timeout_seconds": 20, "results": [{

@@ -16,6 +16,19 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## Real-site JS diagnostic feedback loop (15 October 2026)
+
+`ParserScriptRunner` keeps up to 24 bounded notes describing why initial
+page scripts failed or were skipped; `PreparedDocument` owns the notes
+per navigation and `Engine::active_script_diagnostics` exposes a read-only
+view. `live_site_probe` exports counts and note categories to the
+isolated live-web runner without retaining source HTML. Its Markdown
+report groups failure/skip categories for prioritization. First
+language blocker removed: `op_js` now parses and executes ECMAScript
+bitwise `&`, `|`, `^` and `~` via correctly ordered expression
+precedence and ToInt32 conversion. No crate-level dependency changed.
+Real sites remain far from fully supported.
+
 ## Real live-web regression harness (15 October 2026)
 
 `tools/live_web_suite.py` consumes an explicit 20-site HTTPS manifest,

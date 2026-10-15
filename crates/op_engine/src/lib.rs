@@ -165,6 +165,7 @@ struct PreparedDocument {
     color_profiles: std::collections::HashMap<String, Vec<u8>>,
     scripts: ScriptReport,
     runtime: Option<op_js::JsRuntime>,
+    script_diagnostics: Vec<String>,
     gc_checkpoint: HostGcCheckpointTelemetry,
     // Native documents without page JavaScript remain scrollable.
     scroll_offsets: std::collections::HashMap<usize, i32>,
@@ -344,6 +345,11 @@ impl Engine {
         Some(self.active_document.as_ref()?.scripts)
     }
 
+    /// Bounded parser and initial JS diagnostics, reset on navigation.
+    pub fn active_script_diagnostics(&self) -> Option<&[String]> {
+        Some(&self.active_document.as_ref()?.script_diagnostics)
+    }
+
     /// Native DOM arena occupancy, including detached nodes. This is separate
     /// from JS wrappers and VM-side DOM metadata collected by the JS GC.
     pub fn active_document_node_slots(&self) -> Option<usize> {
@@ -419,7 +425,8 @@ impl Engine {
         viewport_width: i32,
         viewport_height: i32,
     ) -> DisplayList {
-        let (document, _script_report, _runtime) = scripts::parse_and_execute(html, None, None);
+        let (document, _script_report, _runtime, _diagnostics) =
+            scripts::parse_and_execute(html, None, None);
         let style_collection = collect_author_styles(&document);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let layout = layout_document_with_computed_styles_and_viewport_metrics(
@@ -446,7 +453,8 @@ impl Engine {
 
     /// Initialize an in-memory page and an empty navigation history for startup.
     pub fn set_html_page(&mut self, html: &str, width: i32, height: i32) -> DisplayList {
-        let (document, script_report, runtime) = scripts::parse_and_execute(html, None, None);
+        let (document, script_report, runtime, diagnostics) =
+            scripts::parse_and_execute(html, None, None);
         let style_collection = collect_author_styles(&document);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let mut prepared = PreparedDocument {
@@ -461,6 +469,7 @@ impl Engine {
             color_profiles: std::collections::HashMap::new(),
             scripts: script_report,
             runtime,
+            script_diagnostics: diagnostics,
             gc_checkpoint: HostGcCheckpointTelemetry::default(),
             scroll_offsets: std::collections::HashMap::new(),
             scroll_left_offsets: std::collections::HashMap::new(),
@@ -999,7 +1008,7 @@ impl Engine {
 
     fn prepare_source(&self, source: &str) -> Result<PreparedDocument, LoadError> {
         let loaded: LoadedDocument = self.network.load_document(source)?;
-        let (document, script_report, runtime) =
+        let (document, script_report, runtime, diagnostics) =
             scripts::parse_and_execute(&loaded.text, Some(&self.network), Some(&loaded.address));
         let linked_stylesheets = styles::load(&self.network, &document, &loaded.address);
         let mut style_collection =
@@ -1046,6 +1055,7 @@ impl Engine {
             color_profiles: profiles,
             scripts: script_report,
             runtime,
+            script_diagnostics: diagnostics,
             gc_checkpoint: HostGcCheckpointTelemetry::default(),
             scroll_offsets: std::collections::HashMap::new(),
             scroll_left_offsets: std::collections::HashMap::new(),
@@ -1063,6 +1073,44 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn real_web_parser_diagnostics_capture_js_failure_and_skip_reasons() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><script>missingCallable();</script><script type='module'>export const x=1;</script></body>",
+            640,
+            480,
+        );
+        let report = engine.active_script_report().unwrap();
+        assert_eq!(report.failed, 1);
+        assert_eq!(report.skipped, 1);
+        let diagnostics = engine.active_script_diagnostics().unwrap();
+        assert!(
+            diagnostics.iter().any(|d| d.contains("script:Reference")),
+            "{diagnostics:?}"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d == "skip:unsupported_script_type"),
+            "{diagnostics:?}"
+        );
+        engine.set_html_page("<p>Clean next page</p>", 640, 480);
+        assert!(engine.active_script_diagnostics().unwrap().is_empty());
+    }
+
+    #[test]
+    fn real_web_parser_diagnostics_are_bounded_on_many_skipped_modules() {
+        let mut engine = Engine::new();
+        let html = format!(
+            "<body>{}</body>",
+            "<script type='module'>export const x=1;</script>".repeat(100)
+        );
+        engine.set_html_page(&html, 640, 480);
+        assert_eq!(engine.active_script_report().unwrap().skipped, 100);
+        assert!(engine.active_script_diagnostics().unwrap().len() <= 24);
+    }
 
     #[test]
     fn g3_host_checkpoint_includes_native_and_page_cleanup_and_resets_on_navigation() {

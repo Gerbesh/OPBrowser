@@ -16,6 +16,19 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S75 - Real-site JS failure diagnostics to language compatibility
+
+Public page -> parser script boundary -> bounded execution/error and
+skip-cause notes -> `PreparedDocument.script_diagnostics` ->
+`Engine::active_script_diagnostics` -> `live_site_probe` ->
+categorized failure evidence in `tools/live_web_suite.py` ->
+identify unsupported ECMAScript operators -> lexer token -> parser
+precedence -> bytecode `BinaryOp`/`UnaryOp` ->
+original VM ToInt32 and bitwise execution -> VM regressions ->
+revisit same live URLs. Passing one script no longer certifies
+whole-page interoperability; current Google/Pikabu still break on
+other features.
+
 ## S74 - Live public-site navigation to native pixels (real-web baseline)
 
 Named anonymous HTTPS URL from versioned manifest -> isolated `live_site_probe`

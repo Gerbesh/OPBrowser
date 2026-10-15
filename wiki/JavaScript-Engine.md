@@ -3,6 +3,19 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Current real-site blocker audit (15 October 2026)
+
+`Engine::active_script_diagnostics` exposes bounded, per-document
+initial JS failure types and script-skip reasons. Live compatibility
+runs categorize these findings rather than only adding up script
+failure totals. Google and Pikabu exposed missing bitwise operators;
+the original lexer/parser/VM now implement JS `&`, `|`, `^` and
+`~` with correct ToInt32/signed conversion and precedence. Those
+specific parse blockers no longer appear in the follow-up, but
+Google/Pikabu still have other JS errors and broken layouts.
+This is an implementation step, not a full-web compatibility claim.
+See [real-site priorities](../docs/REAL_WEB_BASELINE.md).
+
 ## Real-world JS compatibility baseline (15 October 2026)
 
 The 20-site anonymous HTTPS test exercises original OPBrowser navigation,

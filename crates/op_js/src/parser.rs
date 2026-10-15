@@ -168,6 +168,7 @@ pub enum UnaryOp {
     Plus,
     Minus,
     Not,
+    BitwiseNot,
     Void,
     Typeof,
 }
@@ -185,6 +186,9 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Remainder,
+    BitwiseAnd,
+    BitwiseXor,
+    BitwiseOr,
     Equal,
     NotEqual,
     StrictEqual,
@@ -772,12 +776,51 @@ impl Parser {
     }
 
     fn logical_and(&mut self) -> Result<Expression, JsError> {
-        let mut expression = self.equality()?;
+        let mut expression = self.bitwise_or()?;
         while self.take(&TokenKind::AmpAmp) {
-            let right = self.equality()?;
+            let right = self.bitwise_or()?;
             expression = Expression::Logical {
                 left: Box::new(expression),
                 op: LogicalOp::And,
+                right: Box::new(right),
+            };
+        }
+        Ok(expression)
+    }
+
+    fn bitwise_or(&mut self) -> Result<Expression, JsError> {
+        let mut expression = self.bitwise_xor()?;
+        while self.take(&TokenKind::Pipe) {
+            let right = self.bitwise_xor()?;
+            expression = Expression::Binary {
+                left: Box::new(expression),
+                op: BinaryOp::BitwiseOr,
+                right: Box::new(right),
+            };
+        }
+        Ok(expression)
+    }
+
+    fn bitwise_xor(&mut self) -> Result<Expression, JsError> {
+        let mut expression = self.bitwise_and()?;
+        while self.take(&TokenKind::Caret) {
+            let right = self.bitwise_and()?;
+            expression = Expression::Binary {
+                left: Box::new(expression),
+                op: BinaryOp::BitwiseXor,
+                right: Box::new(right),
+            };
+        }
+        Ok(expression)
+    }
+
+    fn bitwise_and(&mut self) -> Result<Expression, JsError> {
+        let mut expression = self.equality()?;
+        while self.take(&TokenKind::Amp) {
+            let right = self.equality()?;
+            expression = Expression::Binary {
+                left: Box::new(expression),
+                op: BinaryOp::BitwiseAnd,
                 right: Box::new(right),
             };
         }
@@ -910,6 +953,8 @@ impl Parser {
             Some(UnaryOp::Minus)
         } else if self.take(&TokenKind::Bang) {
             Some(UnaryOp::Not)
+        } else if self.take(&TokenKind::Tilde) {
+            Some(UnaryOp::BitwiseNot)
         } else if self.take(&TokenKind::Void) {
             Some(UnaryOp::Void)
         } else if self.take(&TokenKind::Typeof) {

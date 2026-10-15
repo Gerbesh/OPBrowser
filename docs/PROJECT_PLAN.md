@@ -1,6 +1,6 @@
 # OPBrowser: active project plan
 
-Updated 2026-10-14. This file contains **decisions, priorities, acceptance gates and current status only**, not a running implementation diary. Completed M0-M4.35 milestone narratives remain recoverable from Git history and are tracked in [DEV_LOG.md](DEV_LOG.md). Measured test history is in [COMPATIBILITY.md](COMPATIBILITY.md).
+Updated 2026-10-15. This file contains **decisions, priorities, acceptance gates and current status only**, not a running implementation diary. Completed M0-M4.35 milestone narratives remain recoverable from Git history and are tracked in [DEV_LOG.md](DEV_LOG.md). Measured test history is in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Product goal and constraints
 
@@ -56,6 +56,35 @@ and practical CSS/layout/paint improvements that measurably change those
 screenshots. Integrate an on-demand interactive CPU/wall-time profiler
 for GC/performance diagnosis during real browsing; do not resume
 synthetic-only micro-optimization without an observed failure.
+
+## Real-site development gates (15 October 2026)
+
+The next compatibility iteration is measured on **Google search, YouTube,
+Pikabu, Reddit and DeviantArt**, with the other fifteen public URLs retained
+as a regression/control cohort. Each run records real native pixels,
+first-page navigation outcome, bounded initial JS failure categories,
+skipped-script causes and runtime/GC failures. A changed screenshot is
+not automatically an improvement: compare the screenshot and actual visible
+content, then separately verify navigation, input and scrolling.
+
+1. **Immediate (JS blocker audit):** name the top syntax/runtime failure causes
+   from actual public pages rather than relying on the failure count alone.
+   Implement conforming language primitives with focused VM tests.
+2. **First visible milestone:** make at least two of the five priority pages
+   display a coherent, substantially correct first viewport (navigation
+   and primary content), not just isolated text or skeletons; record
+   explicit evidence and remaining unsupported features, with no baseline
+   regressions hidden by a changed URL or missing network response.
+3. **Functional milestone:** interact with a real page (click, scroll, text
+   entry where applicable), not simply finish a headless screenshot.
+4. **Profiling gate:** gather on-demand CPU-time vs elapsed-time traces
+   of navigation, script, DOM, layout, paint and GC inside the running browser;
+   pursue the old 448-ms GC wall-time spike only if reproduced or independently
+   explained. Synthetic-only microbenchmark improvement is not the product goal.
+5. **Integrity:** do not add Chromium/other JS engines, counterfeit web
+   responses, auth/captcha workarounds or unconditional caps increases just
+   to manipulate compatibility results. The public-site suite is opt-in;
+   offline CI and GC safety tests must remain green.
 
 ## Engineering gates
 

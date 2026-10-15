@@ -67,6 +67,40 @@ post fragments incorrectly;
 5. **Add visual comparison and interaction checks** only once pages
    render enough content; block/403 cases require independent verification.
 
+## 15 October 2026: diagnostic follow-up on the five priority sites
+
+The new browser-owned `ScriptRunner` now retains at most **24 concise
+reasons** per page, distinguishing actual JS errors from skipped scripts.
+The live-site runner reports each reason and aggregates counts by category
+without recording script source or page HTML.
+
+The focused *pre-fix* run identified these primary obstacles:
+
+| Site | Measured blockers | Render |
+| --- | --- | --- |
+| Google | unsupported bitwise `&` and `^` | incomplete text |
+| YouTube | syntax failures, absent `Date`/`Image`, script-count cap | skeleton only |
+| Reddit | expression/argument parsing failure | white viewport |
+| Pikabu | invalid syntax, missing `loadAsyncScript`/`location`, `~`, unsupported script types | broken fragments |
+| DeviantArt | missing `performance`, backtick syntax, null/undefined access, module skips | partial feed |
+
+As the first **actual language fix**, the Rust lexer, parser and VM now
+support JavaScript bitwise `&`, `|`, `^` and unary `~`, including
+ToInt32 conversion, signed 32-bit values and correct operator precedence.
+VM regression cases verify the semantics, including overflow/NaN cases.
+On new live requests, the original Google failures for `&`/`^`
+no longer appeared, but other syntax blockers did; **Google still had
+2 failed scripts**, and its page is not visually corrected. After unary
+`~` support, Pikabu's direct `~` parser failure disappeared, but a
+subsequent parse error appeared; its **14 failed scripts** remained.
+YouTube still had 12 failed scripts and a skeleton-only viewport.
+This confirms progress past specific syntax barriers, **not** proof
+that compatibility improved in the rendered experience.
+
+Next: use the captured bounded diagnostics to prioritize frequently
+missing Web APIs/syntax, then verify real first-view screenshots. The
+interactive browser CPU/wall profiler remains a separate milestone.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell

@@ -178,6 +178,12 @@ fn run() -> Result<(), String> {
         "script_skipped",
         engine.active_script_report().map_or(0, |r| r.skipped),
     );
+    if let Some(diagnostics) = engine.active_script_diagnostics() {
+        report("script_diagnostics_count", diagnostics.len());
+        for (index, diagnostic) in diagnostics.iter().enumerate() {
+            report(&format!("script_diag_{index}"), diagnostic);
+        }
+    }
     report(
         "dom_mutations",
         engine.active_script_report().map_or(0, |r| r.mutations),
@@ -190,6 +196,15 @@ fn run() -> Result<(), String> {
         "native_dom_slots",
         engine.active_document_node_slots().unwrap_or(0),
     );
+    if let Some(errors) = engine.active_event_listener_errors() {
+        report("event_listener_diagnostics_count", errors.len());
+        for (index, error) in errors.iter().take(16).enumerate() {
+            report(
+                &format!("event_listener_diag_{index}"),
+                error.chars().take(160).collect::<String>(),
+            );
+        }
+    }
     if let Some(gc) = engine.active_script_gc_telemetry() {
         report("js_gc_ok", gc.successful);
         report("js_gc_errors", gc.failed);
