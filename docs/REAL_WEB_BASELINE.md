@@ -101,6 +101,23 @@ Next: use the captured bounded diagnostics to prioritize frequently
 missing Web APIs/syntax, then verify real first-view screenshots. The
 interactive browser CPU/wall profiler remains a separate milestone.
 
+## 15 October 2026: page performance clock follow-up
+
+The original Rust page VM now exposes `window.performance.now()`
+(monotonic elapsed milliseconds) and `timeOrigin` (Unix epoch milliseconds).
+This is a small Web API subset, not the complete Performance API or the
+interactive CPU/wall-time profiler.
+
+An opt-in DeviantArt recheck at the same real HTTPS URL completed in
+15.05 seconds with **4 failed scripts**, 7 skipped scripts and 2,506
+native paint commands. Remaining diagnostics include unsupported
+backtick syntax, a non-callable value and null/undefined access.
+The earlier missing `performance` diagnostic no longer appears.
+Unchanged failure count and dynamic site content mean **no verified
+visual or functional improvement**. The diagnostic JSON and native
+screenshot are saved locally under
+`artifacts/live_web/performance-2026-10-15/`.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell

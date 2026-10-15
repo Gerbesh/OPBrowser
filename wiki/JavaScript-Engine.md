@@ -3,6 +3,16 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Page performance clock (15 October 2026)
+
+The original per-document VM exposes `window.performance.timeOrigin`
+(Unix epoch milliseconds) and `window.performance.now()` (elapsed
+monotonic milliseconds). The method rejects incorrect receivers and
+construction. A live DeviantArt recheck no longer reports the previously
+observed missing `performance` global, but still contains four script
+failures and incomplete rendering. Full Performance APIs and the
+interactive CPU/wall-time browser profiler remain open.
+
 ## Current real-site blocker audit (15 October 2026)
 
 `Engine::active_script_diagnostics` exposes bounded, per-document

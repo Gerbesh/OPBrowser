@@ -3631,3 +3631,10 @@ This file is append-only project history.
   No site is claimed newly compatible. Next work: broadening JS/DOM
   APIs based on recorded blockers plus genuine interactive profiling.
 
+## 2026-10-15 - P0 original page performance clock and live-site recheck
+
+- Added browser-owned `window.performance.now()` and `timeOrigin` to DOM-initialized original JS runtimes, using Rust Instant for monotonic elapsed time and SystemTime for the Unix-epoch origin. Branded calls and construction rejection are enforced without a third-party browser or JS engine.
+- Added an original VM regression for global identity, method shape, monotonic progression, origin and invalid invocation. Rustfmt, all-target strict Clippy, full workspace tests and the Release live-site probe build pass.
+- Real HTTPS DeviantArt recheck: 15.05 seconds, 4 script failures and 7 skips, 2,506 native paint commands. Remaining causes include unsupported backticks, a non-callable value and null/undefined access. Previous missing-performance diagnostic absent; no new page compatibility or visual improvement is certified. The native screenshot and JSON remain locally in `artifacts/live_web/performance-2026-10-15/`.
+- Open P0: actual interactive load/JS/layout/paint/GC CPU versus wall profiling and the next empirically dominant modern syntax/DOM/layout blockers.
+

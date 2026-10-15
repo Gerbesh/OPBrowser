@@ -16,6 +16,16 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## Browser-owned page performance timing (15 October 2026)
+
+`op_js::JsRuntime` captures an `Instant` and `SystemTime` origin at VM
+initialization. `install_dom_snapshot` installs `window.performance`
+and its `timeOrigin` and `now()` members. The
+`BuiltinFunction::PerformanceNow` dispatch validates
+`ObjectKind::Performance` and reports monotonic elapsed milliseconds.
+This per-document Web API is not the interactive phase profiler; no
+crate boundary or dependency changed.
+
 ## Real-site JS diagnostic feedback loop (15 October 2026)
 
 `ParserScriptRunner` keeps up to 24 bounded notes describing why initial

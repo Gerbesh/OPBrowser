@@ -86,6 +86,15 @@ content, then separately verify navigation, input and scrolling.
    to manipulate compatibility results. The public-site suite is opt-in;
    offline CI and GC safety tests must remain green.
 
+**P0 performance timing follow-up (2026-10-15):** The original page VM
+now provides a browser-owned `window.performance` object with monotonic
+`now()` and Unix-epoch `timeOrigin`. It rejects illegal method receivers
+and construction. The updated real DeviantArt run still reports four
+failed scripts, including unsupported backtick syntax and null/undefined
+access; the former missing-`performance` error did not recur. No visual
+improvement is certified. Full Performance APIs and interactive profiling
+remain open.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

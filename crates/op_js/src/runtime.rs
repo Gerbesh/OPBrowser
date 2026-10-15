@@ -10,7 +10,7 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const DEFAULT_INSTRUCTION_BUDGET: usize = 1_000_000;
@@ -91,6 +91,7 @@ enum ObjectKind {
     DomException,
     DomStyle(usize),
     Headers,
+    Performance,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,6 +177,7 @@ enum BuiltinFunction {
     StringConstructor,
     IsNaN,
     IsFinite,
+    PerformanceNow,
     ArrayIsArray,
     ArrayOf,
     NumberIsNaN,
@@ -506,6 +508,8 @@ pub struct JsRuntime {
     reference_error_prototype: ObjectId,
     syntax_error_prototype: ObjectId,
     global_object: ObjectId,
+    performance_origin: Instant,
+    performance_time_origin_ms: f64,
     instruction_budget: usize,
     object_budget: usize,
     environment_budget: usize,
@@ -567,6 +571,13 @@ pub struct JsRuntime {
 
 impl Default for JsRuntime {
     fn default() -> Self {
+        // Keep elapsed time monotonic even if the OS wall clock changes.
+        let performance_time_origin_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64()
+            * 1000.0;
+        let performance_origin = Instant::now();
         let object_prototype = ObjectId(0);
         let array_prototype = ObjectId(1);
         let error_prototype = ObjectId(2);
@@ -651,6 +662,8 @@ impl Default for JsRuntime {
             reference_error_prototype,
             syntax_error_prototype,
             global_object,
+            performance_origin,
+            performance_time_origin_ms,
             instruction_budget: DEFAULT_INSTRUCTION_BUDGET,
             object_budget: DEFAULT_OBJECT_BUDGET,
             environment_budget: DEFAULT_ENVIRONMENT_BUDGET,
@@ -1065,6 +1078,27 @@ impl JsRuntime {
         self.install_global_binding(
             "document",
             JsValue::Object(document),
+            false,
+            VariableKind::Const,
+        );
+        let now = self.allocate_lifecycle_method("now", BuiltinFunction::PerformanceNow)?;
+        self.object_mut(now)?
+            .properties
+            .insert("length".into(), JsValue::Number(0.0));
+        let performance = self.allocate_object(
+            ObjectKind::Performance,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("now".into(), JsValue::Object(now)),
+                (
+                    "timeOrigin".into(),
+                    JsValue::Number(self.performance_time_origin_ms),
+                ),
+            ]),
+        )?;
+        self.install_global_binding(
+            "performance",
+            JsValue::Object(performance),
             false,
             VariableKind::Const,
         );
@@ -5329,6 +5363,17 @@ impl JsRuntime {
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
         match builtin {
+            BuiltinFunction::PerformanceNow => {
+                let JsValue::Object(receiver) = this_value else {
+                    return Err(JsError::type_error("illegal performance.now invocation"));
+                };
+                if self.object(receiver)?.kind != ObjectKind::Performance {
+                    return Err(JsError::type_error("illegal performance.now invocation"));
+                }
+                return Ok(CallOutcome::Value(JsValue::Number(
+                    self.performance_origin.elapsed().as_secs_f64() * 1000.0,
+                )));
+            }
             BuiltinFunction::ObjectPrototypeValueOf => {
                 return Ok(CallOutcome::Value(this_value));
             }
@@ -7320,6 +7365,7 @@ impl JsRuntime {
             | BuiltinFunction::StringConstructor
             | BuiltinFunction::IsNaN
             | BuiltinFunction::IsFinite
+            | BuiltinFunction::PerformanceNow
             | BuiltinFunction::ArrayIsArray
             | BuiltinFunction::ArrayOf
             | BuiltinFunction::NumberIsNaN
@@ -7356,6 +7402,7 @@ impl JsRuntime {
             if matches!(
                 builtin,
                 BuiltinFunction::ArrayIsArray
+                    | BuiltinFunction::PerformanceNow
                     | BuiltinFunction::ArrayOf
                     | BuiltinFunction::StringCharAt
                     | BuiltinFunction::ArrayPush
@@ -8608,6 +8655,32 @@ fn compare(left: &JsValue, right: &JsValue, op: impl FnOnce(f64, f64) -> bool) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn real_web_performance_now_is_monotonic_and_has_a_stable_time_origin() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        assert_eq!(
+            vm.eval_script(
+                "typeof performance === 'object' && window.performance === performance && \
+                 typeof performance.now === 'function' && performance.now.length === 0 && \
+                 performance.timeOrigin > 1600000000000 && \
+                 performance.now() >= 0 && performance.now() < 60000"
+            )
+            .unwrap(),
+            JsValue::Boolean(true)
+        );
+        let first = vm.eval_script("performance.now()").unwrap();
+        std::thread::sleep(Duration::from_millis(2));
+        let second = vm.eval_script("performance.now()").unwrap();
+        let (JsValue::Number(first), JsValue::Number(second)) = (first, second) else {
+            panic!("performance.now must return numbers");
+        };
+        assert!(second >= first + 1.0, "monotonic performance clock stalled");
+        assert!(vm.eval_script("performance.now.call({})").is_err());
+        assert!(vm.eval_script("new performance.now()").is_err());
+    }
 
     #[test]
     fn real_web_bitwise_and_or_xor_obey_js_precedence_and_to_int32() {

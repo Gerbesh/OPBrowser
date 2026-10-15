@@ -16,6 +16,17 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S76 - Page time origin to real site JavaScript
+
+Original per-document VM creates paired monotonic/wall clock origin ->
+DOM snapshot installs `window.performance` with `timeOrigin` and
+`now()` -> branded original JS builtin returns elapsed monotonic
+milliseconds -> VM tests validate method identity, ordering and illegal
+receivers -> opt-in DeviantArt live native render rechecks the observed
+missing-global failure. PerformanceObserver/resource timing and an
+interactive CPU profiler remain unimplemented; DeviantArt still has
+other JavaScript errors.
+
 ## S75 - Real-site JS failure diagnostics to language compatibility
 
 Public page -> parser script boundary -> bounded execution/error and
