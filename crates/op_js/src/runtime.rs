@@ -154,6 +154,7 @@ enum BuiltinFunction {
     DomHasAttribute,
     DomHasAttributes,
     DomCreateElement,
+    DomCreateElementNS,
     ImageConstructor,
     DomCreateTextNode,
     DomAppendChild,
@@ -370,6 +371,11 @@ pub enum DomOperation {
     CreateElement {
         node: usize,
         tag: String,
+    },
+    CreateElementNS {
+        node: usize,
+        qualified_name: String,
+        namespace_uri: Option<String>,
     },
     CreateText {
         node: usize,
@@ -614,6 +620,7 @@ pub struct JsRuntime {
     dom_children: HashMap<usize, Vec<usize>>,
     dom_text_nodes: std::collections::HashSet<usize>,
     dom_tags: HashMap<usize, String>,
+    dom_namespaces: HashMap<usize, Option<String>>,
     dom_attached: std::collections::HashSet<usize>,
     next_virtual_dom_node: usize,
     dom_click_listeners: HashMap<usize, Vec<JsValue>>,
@@ -772,6 +779,7 @@ impl Default for JsRuntime {
             dom_children: HashMap::new(),
             dom_text_nodes: std::collections::HashSet::new(),
             dom_tags: HashMap::new(),
+            dom_namespaces: HashMap::new(),
             dom_attached: std::collections::HashSet::new(),
             next_virtual_dom_node: 1,
             dom_click_listeners: HashMap::new(),
@@ -1103,6 +1111,7 @@ impl JsRuntime {
         self.dom_children.clear();
         self.dom_text_nodes.clear();
         self.dom_tags.clear();
+        self.dom_namespaces.clear();
         self.dom_attached.clear();
         self.next_virtual_dom_node = 1;
         self.dom_click_listeners.clear();
@@ -1165,6 +1174,11 @@ impl JsRuntime {
             .insert("length".into(), JsValue::Number(1.0));
         let create =
             self.allocate_lifecycle_method("createElement", BuiltinFunction::DomCreateElement)?;
+        let create_ns =
+            self.allocate_lifecycle_method("createElementNS", BuiltinFunction::DomCreateElementNS)?;
+        self.object_mut(create_ns)?
+            .properties
+            .insert("length".into(), JsValue::Number(2.0));
         let create_event =
             self.allocate_lifecycle_method("createEvent", BuiltinFunction::DomCreateEvent)?;
         let create_text =
@@ -1188,6 +1202,7 @@ impl JsRuntime {
                 ("querySelector".into(), JsValue::Object(query)),
                 ("querySelectorAll".into(), JsValue::Object(query_all)),
                 ("createElement".into(), JsValue::Object(create)),
+                ("createElementNS".into(), JsValue::Object(create_ns)),
                 ("createTextNode".into(), JsValue::Object(create_text)),
                 ("createEvent".into(), JsValue::Object(create_event)),
                 ("dispatchEvent".into(), JsValue::Object(dispatch_listener)),
@@ -3104,6 +3119,15 @@ impl JsRuntime {
 
     pub fn sync_dom_tag(&mut self, node: usize, tag: String) {
         self.dom_tags.insert(node, tag);
+        // Legacy snapshots report HTML tags without namespaces.
+        // Explicit foreign namespaces still replace this fallback.
+        self.dom_namespaces
+            .entry(node)
+            .or_insert_with(|| Some("http://www.w3.org/1999/xhtml".to_owned()));
+    }
+
+    pub fn sync_dom_namespace(&mut self, node: usize, namespace_uri: Option<String>) {
+        self.dom_namespaces.insert(node, namespace_uri);
     }
 
     pub fn sync_dom_children(&mut self, node: usize, children: Vec<usize>) {
@@ -3192,6 +3216,9 @@ impl JsRuntime {
         }
         if let Some(tag) = self.dom_tags.remove(&virtual_node) {
             self.dom_tags.insert(physical_node, tag);
+        }
+        if let Some(namespace) = self.dom_namespaces.remove(&virtual_node) {
+            self.dom_namespaces.insert(physical_node, namespace);
         }
         if let Some(text) = self.dom_text.remove(&virtual_node) {
             self.dom_text.insert(physical_node, text);
@@ -3349,6 +3376,8 @@ impl JsRuntime {
             self.dom_attributes
                 .retain(|node, _| !forgotten_nodes.contains(node));
             self.dom_tags
+                .retain(|node, _| !forgotten_nodes.contains(node));
+            self.dom_namespaces
                 .retain(|node, _| !forgotten_nodes.contains(node));
             self.dom_text_nodes
                 .retain(|node| !forgotten_nodes.contains(node));
@@ -7563,6 +7592,69 @@ impl JsRuntime {
             let element = self.dom_element_object(node)?;
             return Ok(CallOutcome::Value(JsValue::Object(element)));
         }
+        if builtin == BuiltinFunction::DomCreateElementNS {
+            if !matches!(this_value, JsValue::Object(object) if Some(object) == self.dom_document) {
+                return Err(JsError::type_error(
+                    "createElementNS requires document receiver",
+                ));
+            }
+            let namespace = match arguments.first() {
+                None | Some(JsValue::Undefined | JsValue::Null) => None,
+                Some(value) => {
+                    let text = value.to_js_string();
+                    if text.is_empty() { None } else { Some(text) }
+                }
+            };
+            if namespace.as_ref().is_some_and(|ns| ns.len() > 512) {
+                return Err(JsError::execution_limit("DOM namespace length exceeded"));
+            }
+            let Some(name) = arguments.get(1) else {
+                return Err(JsError::type_error(
+                    "createElementNS requires qualified name",
+                ));
+            };
+            let qualified_name = name.to_js_string();
+            if qualified_name.is_empty() || qualified_name.len() > 128 {
+                return Err(JsError::type_error("invalid qualified DOM name"));
+            }
+            let parts = qualified_name.split(':').collect::<Vec<_>>();
+            let valid = (parts.len() == 1 || parts.len() == 2)
+                && parts.iter().all(|part| {
+                    let mut chars = part.chars();
+                    chars
+                        .next()
+                        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+                });
+            if !valid {
+                return Err(JsError::type_error("invalid qualified DOM name"));
+            }
+            let prefix = (parts.len() == 2).then_some(parts[0]);
+            let xml_uri = "http://www.w3.org/XML/1998/namespace";
+            let xmlns_uri = "http://www.w3.org/2000/xmlns/";
+            if prefix.is_some() && namespace.is_none()
+                || prefix == Some("xml") && namespace.as_deref() != Some(xml_uri)
+                || (prefix == Some("xmlns") || qualified_name == "xmlns")
+                    && namespace.as_deref() != Some(xmlns_uri)
+                || namespace.as_deref() == Some(xmlns_uri)
+                    && prefix != Some("xmlns")
+                    && qualified_name != "xmlns"
+            {
+                return Err(JsError::type_error(
+                    "invalid DOM namespace/prefix combination",
+                ));
+            }
+            let node = self.allocate_virtual_dom_node()?;
+            self.dom_tags.insert(node, qualified_name.clone());
+            self.dom_namespaces.insert(node, namespace.clone());
+            self.dom_operations.push(DomOperation::CreateElementNS {
+                node,
+                qualified_name,
+                namespace_uri: namespace,
+            });
+            let object = self.dom_element_object(node)?;
+            return Ok(CallOutcome::Value(JsValue::Object(object)));
+        }
         if builtin == BuiltinFunction::DomCreateElement {
             if !matches!(this_value,JsValue::Object(object) if Some(object)==self.dom_document) {
                 return Err(JsError::type_error(
@@ -7582,6 +7674,8 @@ impl JsRuntime {
             }
             let virtual_node = self.allocate_virtual_dom_node()?;
             self.dom_tags.insert(virtual_node, tag.clone());
+            self.dom_namespaces
+                .insert(virtual_node, Some("http://www.w3.org/1999/xhtml".into()));
             self.dom_operations.push(DomOperation::CreateElement {
                 node: virtual_node,
                 tag,
@@ -8599,6 +8693,7 @@ impl JsRuntime {
             | BuiltinFunction::DomHasAttribute
             | BuiltinFunction::DomHasAttributes
             | BuiltinFunction::DomCreateElement
+            | BuiltinFunction::DomCreateElementNS
             | BuiltinFunction::DomCreateTextNode
             | BuiltinFunction::DomAppendChild
             | BuiltinFunction::DomInsertBefore
@@ -9387,26 +9482,50 @@ impl JsRuntime {
                                 self.dom_scroll_tops.get(&node).copied().unwrap_or(0) as f64,
                             ));
                         }
-                        if key == "nodeName" {
-                            let name = if matches!(kind, ObjectKind::DomText(_)) {
-                                "#text".to_owned()
-                            } else {
-                                self.dom_tags
+                        if key == "namespaceURI" {
+                            return Ok(match kind {
+                                ObjectKind::DomElement(_) => self
+                                    .dom_namespaces
                                     .get(&node)
                                     .cloned()
-                                    .unwrap_or_default()
-                                    .to_ascii_uppercase()
-                            };
-                            return Ok(JsValue::String(name));
+                                    .flatten()
+                                    .map_or(JsValue::Null, JsValue::String),
+                                _ => JsValue::Null,
+                            });
                         }
-                        if key == "tagName" && matches!(kind, ObjectKind::DomElement(_)) {
-                            let tag = self
+                        if key == "localName" && matches!(kind, ObjectKind::DomElement(_)) {
+                            let local = self
                                 .dom_tags
                                 .get(&node)
-                                .cloned()
-                                .unwrap_or_default()
-                                .to_ascii_uppercase();
-                            return Ok(JsValue::String(tag));
+                                .map_or("", |tag| tag.rsplit(':').next().unwrap_or(""));
+                            return Ok(JsValue::String(local.to_owned()));
+                        }
+                        if key == "prefix" && matches!(kind, ObjectKind::DomElement(_)) {
+                            return Ok(self
+                                .dom_tags
+                                .get(&node)
+                                .and_then(|tag| tag.split_once(':'))
+                                .map_or(JsValue::Null, |(prefix, _)| {
+                                    JsValue::String(prefix.to_owned())
+                                }));
+                        }
+                        if matches!(key, "nodeName" | "tagName") {
+                            if matches!(kind, ObjectKind::DomText(_)) {
+                                return if key == "nodeName" {
+                                    Ok(JsValue::String("#text".into()))
+                                } else {
+                                    Ok(JsValue::Undefined)
+                                };
+                            }
+                            let name = self.dom_tags.get(&node).cloned().unwrap_or_default();
+                            let name = if self.dom_namespaces.get(&node).and_then(Option::as_deref)
+                                == Some("http://www.w3.org/1999/xhtml")
+                            {
+                                name.to_ascii_uppercase()
+                            } else {
+                                name
+                            };
+                            return Ok(JsValue::String(name));
                         }
                         if key == "isConnected" {
                             let mut cursor = Some(node);
@@ -9757,9 +9876,21 @@ impl JsRuntime {
                 };
                 self.get_object_property(prototype, key)
             }
-            JsValue::Null | JsValue::Undefined => Err(JsError::type_error(
-                "cannot read properties of null or undefined",
-            )),
+            JsValue::Null | JsValue::Undefined => {
+                let diagnostic = if std::env::var_os("OPBROWSER_JS_ERROR_CONTEXT").as_deref()
+                    == Some(std::ffi::OsStr::new("1"))
+                {
+                    let name = key
+                        .chars()
+                        .filter(|character| character.is_ascii_alphanumeric() || *character == '_')
+                        .take(48)
+                        .collect::<String>();
+                    format!("cannot read properties of null or undefined (property {name})")
+                } else {
+                    "cannot read properties of null or undefined".to_owned()
+                };
+                Err(JsError::type_error(diagnostic))
+            }
             _ => Ok(JsValue::Undefined),
         }
     }
@@ -10776,6 +10907,80 @@ mod tests {
         assert_eq!(
             vm.eval_script("owned.ref.value").unwrap(),
             JsValue::Number(137.0)
+        );
+    }
+
+    #[test]
+    fn create_element_ns_tracks_namespace_qualified_names_and_rejects_invalid_prefixes() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        for (script, expected) in [
+            (
+                "typeof document.createElementNS",
+                JsValue::String("function".into()),
+            ),
+            ("document.createElementNS.length", JsValue::Number(2.0)),
+            (
+                "var svg=document.createElementNS('http://www.w3.org/2000/svg','linearGradient'); svg.namespaceURI",
+                JsValue::String("http://www.w3.org/2000/svg".into()),
+            ),
+            ("svg.tagName", JsValue::String("linearGradient".into())),
+            ("svg.localName", JsValue::String("linearGradient".into())),
+            ("svg.nodeName", JsValue::String("linearGradient".into())),
+            ("svg.prefix", JsValue::Null),
+            (
+                "var use=document.createElementNS('http://www.w3.org/2000/svg','svg:use');use.prefix==='svg' && use.localName==='use' && use.tagName==='svg:use'",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var plain=document.createElementNS(null,'someTag');plain.namespaceURI===null&&plain.tagName==='someTag'&&plain.localName==='someTag'",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var html=document.createElement('div');html.namespaceURI==='http://www.w3.org/1999/xhtml'&&html.tagName==='DIV'",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var custom=document.createElementNS('http://www.w3.org/1999/xhtml','aBc');custom.localName==='aBc'&&custom.tagName==='ABC'",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var xml=document.createElementNS('http://www.w3.org/XML/1998/namespace','xml:lang');xml.prefix==='xml'",
+                JsValue::Boolean(true),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(script).unwrap(), expected, "{script}");
+        }
+        for script in [
+            "document.createElementNS(null,'x:y')",
+            "document.createElementNS('http://www.w3.org/2000/svg','x:')",
+            "document.createElementNS('http://www.w3.org/2000/svg',':x')",
+            "document.createElementNS('http://www.w3.org/2000/svg','x:y:z')",
+            "document.createElementNS('http://www.w3.org/2000/svg','two names')",
+            "document.createElementNS('http://www.w3.org/2000/svg','xml:foo')",
+            "document.createElementNS('http://www.w3.org/2000/xmlns/','svg')",
+            "document.createElementNS('http://www.w3.org/2000/svg','xmlns')",
+            "document.createElementNS('http://www.w3.org/2000/svg','1no')",
+            "document.createElementNS('http://www.w3.org/2000/svg')",
+            "var other={};other.createElementNS=document.createElementNS;other.createElementNS('http://www.w3.org/2000/svg','svg')",
+        ] {
+            assert!(vm.eval_script(script).is_err(), "{script}");
+        }
+        vm.eval_script(
+            "var detached=document.createElementNS('http://www.w3.org/2000/svg','svg');",
+        )
+        .unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert_eq!(
+            vm.eval_script("detached.namespaceURI").unwrap(),
+            JsValue::String("http://www.w3.org/2000/svg".into())
+        );
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        assert!(
+            vm.dom_namespaces.is_empty(),
+            "stale document namespace state"
         );
     }
 

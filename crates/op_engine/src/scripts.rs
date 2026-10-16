@@ -192,6 +192,7 @@ fn sync_dom_tree(document: &Document, runtime: &mut JsRuntime) {
         }
         if let Some(element) = document.element(node) {
             runtime.sync_dom_tag(node.index(), element.tag_name.clone());
+            runtime.sync_dom_namespace(node.index(), element.namespace_uri.clone());
         }
         if let Some(element) = document.element(node) {
             runtime.sync_dom_existing_node(
@@ -234,6 +235,21 @@ pub(crate) fn apply_dom_operations(document: &mut Document, runtime: &mut JsRunt
                 let actual = document.create_element(tag);
                 runtime.bind_dom_node(node, actual.index());
                 // Detached creation by itself does not change visible layout.
+            }
+            DomOperation::CreateElementNS {
+                node,
+                qualified_name,
+                namespace_uri,
+            } => {
+                if document.allocation_headroom(MAX_NODES) == 0 {
+                    continue;
+                }
+                let actual = document.create_element_with_namespace(
+                    qualified_name,
+                    namespace_uri,
+                    Vec::new(),
+                );
+                runtime.bind_dom_node(node, actual.index());
             }
             DomOperation::InsertBefore {
                 parent,

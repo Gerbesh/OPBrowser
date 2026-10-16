@@ -298,6 +298,30 @@ YouTube still renders zero text and Reddit is blank; there is no
 certified first viewport. Exact thrown-value semantics and full
 descriptors remain incomplete.
 
+## 17 October 2026: namespace-aware createElementNS
+
+OPBrowser's original VM now supports `document.createElementNS`
+with a bounded XML-qualified-name/prefix validation subset, storing the
+namespace on authoritative `op_dom` elements and moving metadata
+when synthetic IDs become native IDs. DOM getters expose the preserved
+namespace, local name, prefix and correct HTML/SVG name casing.
+The engine end-to-end fixture uses two scripts to create an SVG element,
+attach it to the real body, read it back by ID, and render native text.
+VM/GC/DOM/paint regressions and full Rust workspace tests pass.
+SVG rendering, general Unicode XML names, and HTML foreign-content
+namespace switching remain unsupported.
+
+Real YouTube release probe (1300 ms settle, ignored
+`artifacts/live_web/namespace-2026-10-17/`) no longer reports
+`createElementNS` as non-callable. There are still **4**
+JavaScript failures and **0 text**. New opt-in diagnostics identify
+properties `set`, `responseStart`, `prototype`, and
+`prototype` being read on null/undefined values. Other site
+results remain Google **2**, Pikabu **11**, Reddit **1**,
+DeviantArt **3** failed JS; Reddit's viewport stays blank.
+The script-count limit still skips most YouTube scripts,
+so these results do not establish general web compatibility.
+
 ## 17 October 2026: original Object.defineProperty and attributes
 
 `Object.defineProperty` now consumes original own data/accessor

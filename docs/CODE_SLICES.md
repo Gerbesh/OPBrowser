@@ -16,6 +16,24 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S91 - Native document.createElementNS, binding, GC and actual DOM pixels
+
+YouTube uses `document.createElementNS` -> original JS builtin
+validates an XML qualified name and namespace combination -> a virtual
+element receives an explicit namespace URI -> the browser replays a
+`DomOperation::CreateElementNS` to the authoritative
+`op_dom::Document` -> virtual/native binding preserves node identity
+and namespace metadata -> a later script finds the real element by ID
+and updates `textContent` -> original layout and Windows paint
+produce the expected test text. VM validation, detached GC, namespace
+retention, and HTML-to-paint regression tests pass.
+
+Live YouTube no longer fails calling createElementNS, but its initial
+script failures remain **4** due to null/undefined property reads.
+The optional diagnostic now reports `set`, `responseStart`, and
+`prototype` x2. YouTube paints **zero text**; SVG graphics support,
+full XML names and foreign parser namespaces remain open.
+
 ## S90 - YouTube Object.defineProperty through original VM and pixels
 
 Real YouTube advances to `Object.defineProperty` after

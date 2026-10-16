@@ -3,6 +3,22 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Namespace-aware DOM creation and YouTube diagnostics (17 October 2026)
+
+The original DOM and JS host now support
+`document.createElementNS(namespaceURI, qualifiedName)` with
+separate namespace metadata, preserved synthetic/native node identity,
+XML prefix validation and `namespaceURI`, `localName`, `prefix`,
+`tagName` and `nodeName` getters. HTML nodes retain the XHTML
+namespace. This is a bounded ASCII qualified-name subset, not an
+SVG rasterizer or a full foreign-content HTML parser.
+
+Opt-in `OPBROWSER_JS_ERROR_CONTEXT=1` now also adds sanitized
+property names to null/undefined dereference diagnostics. YouTube's
+`createElementNS` failure disappears, but four script failures
+remain: `set`, `responseStart`, `prototype` twice. YouTube
+still has no painted text, and Reddit remains blank.
+
 ## Property descriptors and Object.defineProperty (17 October 2026)
 
 The own JavaScript VM now supports `Object.defineProperty`

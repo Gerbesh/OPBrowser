@@ -3753,3 +3753,10 @@ This file is append-only project history.
 - Object.getOwnPropertyDescriptor now reflects own attributes, while ordinary writes and deletes, for-in and JSON.stringify observe the new flags. Existing GC traces property values and dedicated unit/integration regressions cover non-writable assignments, accessor dispatch, symbol keys, deletion, invalid redefinitions and retained descriptor-owned objects.
 - Release 1300ms five-site suite under ignored artifacts/live_web/define-property-2026-10-17: JS failures Google 2, YouTube 4 (from 5 immediately prior and 8 at start of turn), Pikabu 11, Reddit 1, DeviantArt 3. YouTube still has zero painted text and skips 19 scripts due to the test-script limit; Reddit remains blank. The next verified blockers are createElementNS and null/undefined property reads. This is not an actual YouTube page pass.
 
+
+## 2026-10-17 - Real SVG namespace identity and bounded null-property diagnostics
+
+- Added document.createElementNS with namespace and qualified-name validation, explicit namespace in op_dom::ElementData, staged JS-to-host CreateElementNS operations, and namespaceURI/localName/prefix/tagName/nodeName support. Rebinding synthetic IDs and GC cleanup preserve namespace metadata. Legacy manually synchronized HTML snapshots retain uppercase tag-name behavior.
+- VM tests cover SVG case preservation, reserved prefixes, invalid names and namespaces, host receiver checks and detached GC. Native op_dom and two-script HTML-to-original-paint integration tests pass. This does not implement SVG rasterization or full Unicode XML names / HTML parser foreign namespaces.
+- Native YouTube 1300 ms Release probe no longer reports missing createElementNS but remains at 4 failed initial scripts, 0 text primitives and 19 skipped scripts. Opt-in diagnostics reveal null/undefined reads of set, responseStart and prototype twice. Ignored artifact artifacts/live_web/namespace-2026-10-17. Other sites Google 2, Pikabu 11, Reddit 1, DeviantArt 3 JS failures. Real YouTube visual compatibility is not yet achieved.
+

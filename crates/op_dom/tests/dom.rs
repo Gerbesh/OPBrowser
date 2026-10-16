@@ -1,3 +1,27 @@
+#[test]
+fn created_svg_element_retains_namespace_and_case() {
+    let mut document = op_dom::Document::new();
+    let svg = document.create_element_with_namespace(
+        "linearGradient",
+        Some("http://www.w3.org/2000/svg".into()),
+        Vec::new(),
+    );
+    let node = document.element(svg).expect("SVG element");
+    assert_eq!(node.tag_name, "linearGradient");
+    assert_eq!(
+        node.namespace_uri.as_deref(),
+        Some("http://www.w3.org/2000/svg")
+    );
+
+    let html = document.create_element("span");
+    assert_eq!(
+        document.element(html).unwrap().namespace_uri.as_deref(),
+        Some("http://www.w3.org/1999/xhtml")
+    );
+    let no_namespace = document.create_element_with_namespace("custom", None, Vec::new());
+    assert_eq!(document.element(no_namespace).unwrap().namespace_uri, None);
+}
+
 use op_dom::{Document, DocumentTypeData, NodeKind};
 
 #[test]

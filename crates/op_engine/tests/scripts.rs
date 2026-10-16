@@ -2,6 +2,32 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn namespace_aware_svg_creation_survives_host_commit_and_native_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');",
+            "svg.setAttribute('id','new-svg');document.body.appendChild(svg);",
+            "</script><script>",
+            "var same=document.getElementById('new-svg')===svg;",
+            "document.getElementById('result').textContent=",
+            "same&&svg.namespaceURI==='http://www.w3.org/2000/svg'&&",
+            "svg.tagName==='svg'&&svg.localName==='svg'&&svg.prefix===null?",
+            "'NAMESPACE-PASS':'NAMESPACE-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("NAMESPACE-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn labeled_break_continue_through_finally_mutates_actual_document_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

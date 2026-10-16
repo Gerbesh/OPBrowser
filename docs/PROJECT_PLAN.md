@@ -261,6 +261,22 @@ null/undefined errors, missing async functions, dynamic JS,
 Web APIs and actual viewport rendering. Full descriptors
 and WebIDL semantics remain incomplete.
 
+**P0 namespace-aware DOM creation (17 October 2026):**
+Original JS `document.createElementNS` validates XML-qualified names
+and selected reserved namespace/prefix combinations. `op_dom` now
+stores each element namespace and supports native namespace-aware
+allocation. The host replays dedicated CreateElementNS operations and
+preserves metadata across synthetic/native identity binding,
+document reset and GC. Cross-script HTML-to-DOM-to-native-paint and
+VM/DOM tests pass, along with full workspace tests. Real YouTube
+no longer fails at createElementNS, but still reports **4**
+JS errors and zero painted text. Opt-in null-property diagnostics
+now reveal `set`, `responseStart`, `prototype` x2.
+NEXT: identify the missing receiver origins, improve native
+Performance Timing/JS object support without fabricated browser
+state, address async scripts/DOM, and actual modern layout.
+SVG drawing and foreign-content parser namespaces are NOT done.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

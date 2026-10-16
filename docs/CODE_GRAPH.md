@@ -57,6 +57,28 @@ Original-VM tests and an HTML -> DOM mutation -> paint regression
 exercise the entire path. General ECMAScript label/ASI coverage
 remains incomplete.
 
+## Namespace-aware DOM node creation and error diagnostics (17 October 2026)
+
+`op_dom::ElementData::namespace_uri: Option<String>` now survives
+authoritative DOM allocation; ordinary HTML element creation defaults to
+the XHTML namespace. The original JS VM implements
+`document.createElementNS(namespace, qualifiedName)` with bounded
+ASCII-qualified-name parsing, XML prefix/namespace validation, and a
+distinct staged `DomOperation::CreateElementNS`. The host resolves it to
+`Document::create_element_with_namespace` and binds synthetic to
+generation-checked native IDs, preserving the original JS element identity.
+`dom_namespaces` tracks per-element namespace and is synchronized for
+parser-owned nodes, transferred on binding, and removed on subtree cleanup
+or document reset. `namespaceURI`, `localName`, `prefix`, `nodeName`,
+and `tagName` respect HTML versus foreign namespace case behavior.
+
+`OPBROWSER_JS_ERROR_CONTEXT=1` additionally reports a sanitized,
+max-48-character member name on null/undefined property reads, and remains
+disabled by default. The real YouTube createElementNS TypeError disappears;
+four other TypeErrors remain (`set`, `responseStart`, `prototype` twice).
+This does not implement SVG graphics rendering, foreign-content HTML parser
+switching, Unicode-complete XML qualified names, or multimedia playback.
+
 ## Original Object.defineProperty with tracked descriptors (17 October 2026)
 
 `JsObject::attributes` lazily stores non-default

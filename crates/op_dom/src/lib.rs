@@ -37,6 +37,7 @@ pub struct Attribute {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ElementData {
     pub tag_name: String,
+    pub namespace_uri: Option<String>,
     pub attributes: Vec<Attribute>,
 }
 
@@ -158,8 +159,22 @@ impl Document {
         tag_name: impl Into<String>,
         attributes: Vec<Attribute>,
     ) -> NodeId {
+        self.create_element_with_namespace(
+            tag_name,
+            Some("http://www.w3.org/1999/xhtml".to_owned()),
+            attributes,
+        )
+    }
+
+    pub fn create_element_with_namespace(
+        &mut self,
+        tag_name: impl Into<String>,
+        namespace_uri: Option<String>,
+        attributes: Vec<Attribute>,
+    ) -> NodeId {
         self.push_node(NodeKind::Element(ElementData {
             tag_name: tag_name.into(),
+            namespace_uri,
             attributes,
         }))
     }
