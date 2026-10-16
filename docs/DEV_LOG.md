@@ -3728,3 +3728,14 @@ This file is append-only project history.
 - Added String.prototype.indexOf and includes via bounded UTF-16 code-unit searches, with length metadata and JS receiver validation. Fixed Function.prototype.call semantics so strict native builtins retain null/undefined receiver while sloppy user functions still substitute global this.
 - VM tests cover navigator, document reset, feature detection, UTF-16 surrogate-pair indexes, String search positions, native receiver errors and sloppy function.this. HTML script changes DOM and native paint text. Real Google/YouTube/Pikabu/Reddit/DeviantArt run with 1300 ms settle in gitignored artifacts/live_web/navigator-string-2026-10-17 has JS failures 2/8/11/1/3; YouTube navigator error advances to later TypeError, but YouTube paints no text and Reddit remains blank. Symbol still missing.
 
+
+## 2026-10-17 - Original Symbol primitive and symbol property storage
+
+- Added original JsValue::Symbol(JsSymbol) identity-bearing primitive, Symbol() unique allocation, Symbol.for/keyFor registry and selected well-known symbols. The existing VM owns dispatch and a bounded 1,000,000-symbol ID space without a third-party JS engine.
+- JsObject now stores symbol-keyed values separately from ordinary strings. Original bytecode handles read/write/delete/update and the in operator by symbol ID; prototype lookup, for-in omission and JSON omission have regressions. GC traces symbol property edges and object slot recycling initializes empty symbol property maps. Numeric symbol coercions fail closed.
+- Original JS VM tests cover uniqueness, registry, well-known symbols, prototype/in/delete/update, string-vs-symbol separation, JSON/for-in omission, TypeErrors and GC retention of an object only reachable through a symbol property. Inline HTML script reaches DOM text and native paint command.
+- Native Windows Release 1300 ms HTTPS probes in ignored artifacts/live_web/symbols-2026-10-17 still report failed scripts Google 2, YouTube 8, Pikabu 11, Reddit 1, DeviantArt 3. YouTube now advances beyond Symbol is not defined to a later callable TypeError but paints zero text; Reddit remains blank. This is not a live website compatibility pass. Full Symbol reflection/iterators remain open.
+
+
+- Follow-up within the same change: symbol-key maps are now lazily allocated as Option<Box<HashMap<..>>> per JsObject, avoiding an inlined HashMap header on the large majority of plain JS objects. Symbol properties remain strongly traced by GC and the optional map is released after its last symbol is deleted. The intentionally sparse boxed-table tradeoff is documented for strict Clippy. Full Rust workspace, Win32 smoke and Symbol regressions pass.
+

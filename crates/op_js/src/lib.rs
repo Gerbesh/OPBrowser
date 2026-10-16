@@ -22,6 +22,6 @@ pub use runtime::{
     DomElementSnapshot, DomOperation, DomTextMutation, JsGcPauseHistogram, JsGcPhaseTimings,
     JsGcReport, JsGcTelemetry, JsHeapReachability, JsHeapUsage, JsRuntime, TextResponse,
 };
-pub use value::{JsValue, ObjectId};
+pub use value::{JsSymbol, JsValue, ObjectId};
 
 pub use bytecode::{CompiledScript, compile_script};

@@ -25,6 +25,13 @@ impl ObjectId {
     }
 }
 
+/// Identity-bearing JS Symbol primitive; it is not a heap object or string key.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct JsSymbol {
+    pub(crate) id: u64,
+    pub(crate) description: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsValue {
     Undefined,
@@ -32,6 +39,7 @@ pub enum JsValue {
     Boolean(bool),
     Number(f64),
     String(String),
+    Symbol(JsSymbol),
     Object(ObjectId),
 }
 
@@ -56,7 +64,7 @@ impl JsValue {
             Self::Boolean(value) => *value,
             Self::Number(value) => *value != 0.0 && !value.is_nan(),
             Self::String(value) => !value.is_empty(),
-            Self::Object(_) => true,
+            Self::Symbol(_) | Self::Object(_) => true,
         }
     }
 
@@ -90,7 +98,7 @@ impl JsValue {
                     trimmed.parse().unwrap_or(f64::NAN)
                 }
             }
-            Self::Object(_) => f64::NAN,
+            Self::Symbol(_) | Self::Object(_) => f64::NAN,
         }
     }
 
@@ -105,6 +113,9 @@ impl JsValue {
             Self::Number(value) if value.fract() == 0.0 => format!("{value:.0}"),
             Self::Number(value) => value.to_string(),
             Self::String(value) => value.clone(),
+            Self::Symbol(symbol) => {
+                format!("Symbol({})", symbol.description.as_deref().unwrap_or(""))
+            }
             Self::Object(_) => "[object Object]".into(),
         }
     }

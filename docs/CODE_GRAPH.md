@@ -57,6 +57,29 @@ Original-VM tests and an HTML -> DOM mutation -> paint regression
 exercise the entire path. General ECMAScript label/ASI coverage
 remains incomplete.
 
+## Original Symbol primitive and GC-traced symbol properties (17 October 2026)
+
+`op_js::value::JsValue::Symbol(JsSymbol)` represents an original
+non-object, identity-bearing primitive with bounded unique IDs.
+`JsRuntime::install_standard_primitives` installs `Symbol()`,
+`Symbol.for`, `Symbol.keyFor`, and selected well-known symbols
+including `iterator`, `toStringTag` and `dispose`. VM
+`symbol_registry` holds the global per-runtime intern table.
+`JsObject::symbol_properties: Option<Box<HashMap<u64,JsValue>>>` lazily keeps
+symbol-keyed properties structurally separate from ordinary
+string keys. `Instruction::GetProperty`, `SetProperty`,
+`DeleteProperty`, `UpdateProperty` and `BinaryOp::In`
+route symbols through dedicated operations and prototype lookup;
+for-in and JSON ignore symbol keys. The original GC traces values
+in symbol-keyed properties and resets them on recycled object
+slots. Numeric symbol coercion fails explicitly.
+
+Original VM and HTML-to-native-paint tests pass. Descriptor
+reflection, Object.getOwnPropertySymbols, Reflect.ownKeys,
+Symbol.toPrimitive, custom iterator protocol, complete UTF-16
+and computed symbol keys inside object literals remain future
+work. The original ECMAScript engine is not replaced.
+
 ## Original navigator and UTF-16 String search (17 October 2026)
 
 `JsRuntime::install_dom_snapshot` creates a GC-traced `navigator`

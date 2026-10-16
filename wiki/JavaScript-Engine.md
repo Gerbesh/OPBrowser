@@ -3,6 +3,24 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Original Symbol primitive (17 October 2026)
+
+OPBrowser's own JS VM now supports genuine unique `Symbol()`
+primitives, `typeof === 'symbol'`, `Symbol.for()` and
+`Symbol.keyFor()`, and selected well-known symbols. Symbols
+are not strings: `obj[Symbol('x')]` uses a separate property
+map, can be inherited/deleted, and is ignored by `for...in`
+and JSON object serialization. These property values are
+GC-traced. Invalid implicit numeric conversions fail rather
+than silently producing NaN. VM and native HTML-to-paint
+regressions pass.
+
+This is a subset: computed symbol-key fields in object literals,
+own-symbol reflection APIs, protocol-driven iteration,
+`Symbol.toPrimitive` and full ECMAScript descriptors remain
+incomplete. YouTube's missing Symbol global has been removed,
+but eight scripts still fail and no text is painted.
+
 ## Navigator feature detection and String search (17 October 2026)
 
 Each document gets a minimal `navigator` also available at

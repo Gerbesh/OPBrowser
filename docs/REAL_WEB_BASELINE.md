@@ -298,6 +298,26 @@ YouTube still renders zero text and Reddit is blank; there is no
 certified first viewport. Exact thrown-value semantics and full
 descriptors remain incomplete.
 
+## 17 October 2026: native JS Symbol primitive and property keys
+
+The original VM implements real unique Symbol values, registry
+and selected well-known symbols. Object symbol properties have
+their own GC-traced storage, prototype/in/update/delete support,
+and remain absent from own string-key for-in enumeration
+and JSON object serialization. Deterministic VM and actual
+HTML-to-native-paint regressions pass, including a reachable
+object solely held behind a symbol surviving explicit GC.
+No ready-made JS engine is embedded.
+
+Live five-site 1300 ms run under ignored
+`artifacts/live_web/symbols-2026-10-17/`: failed JS Google **2**,
+YouTube **8**, Pikabu **11**, Reddit **1**, DeviantArt **3**.
+YouTube's former `Symbol is not defined` ReferenceError now
+advances to `Type: value is not callable`; YouTube still
+paints **0 text**, Reddit remains **blank**. This is semantic
+progress, not visual compatibility. Symbol descriptor reflection,
+full protocols and async functions remain open.
+
 ## 17 October 2026: navigator and UTF-16 String search
 
 Native browser JS exposes a conservative document-owned

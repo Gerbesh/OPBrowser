@@ -16,6 +16,20 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S88 - Original Symbol identity to native pixels and GC
+
+Public or inline JS invokes `Symbol('key')` ->
+original `BuiltinFunction::SymbolConstructor` produces distinct
+`JsValue::Symbol(JsSymbol)` -> `obj[symbol]` is lowered through
+normal member bytecode -> dedicated `JsObject::symbol_properties`
+storage, separate from UTF-16 string keys -> JS reads the same
+value by unique identity -> changes DOM `textContent` -> native
+paint text command. Inheritance, delete, `in`, `Symbol.for`,
+well-known names, JSON/for-in omissions, type errors and a
+GC reachability root test pass. Live YouTube no longer reports
+`Symbol is not defined`; the script reaches a later TypeError,
+with no visual compatibility success.
+
 ## S87 - Honest navigator feature detection to native pixels
 
 HTML inline JS -> original VM global `navigator` and `window`

@@ -26,6 +26,29 @@ fn labeled_break_continue_through_finally_mutates_actual_document_pixels() {
 }
 
 #[test]
+fn original_symbol_key_from_inline_script_reaches_native_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var key=Symbol('item');var data={};data[key]='ready';",
+            "var other=Symbol('item');",
+            "document.getElementById('result').textContent=",
+            "data[key]==='ready'&&data[other]===undefined&&",
+            "typeof key==='symbol'?'SYMBOL-PASS':'SYMBOL-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("SYMBOL-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn navigator_feature_detection_updates_real_dom_text() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

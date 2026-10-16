@@ -212,6 +212,22 @@ properties, async function syntax, dynamic scripts and
 actual viewport rendering. These cannot be replaced by
 optimistic fake globals.
 
+**P0 original Symbol semantics (17 October 2026):**
+`JsValue::Symbol` adds identity-bearing symbols;
+`Symbol()`, `Symbol.for`, `keyFor`, selected well-known names,
+symbol-keyed object maps and GC tracing now work in the
+original VM. `in`, property read/write/delete/update,
+prototype lookup and JSON/for-in omission have regressions,
+as do invalid numeric coercions and HTML-to-native-paint.
+Five public-site JS failures remain **2/8/11/1/3**
+(Google/YouTube/Pikabu/Reddit/DeviantArt); the native YouTube
+Symbol ReferenceError advances to a later TypeError. YouTube
+still has zero text and Reddit is blank. NEXT: diagnose
+non-callable global/WebIDL methods, real async functions,
+dynamic scripts, DOM APIs and layout. Full symbol reflection,
+computed object-literal symbol keys and custom iterators
+remain unsupported and must not be silently faked.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

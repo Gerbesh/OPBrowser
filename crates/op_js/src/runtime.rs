@@ -3,6 +3,7 @@ use crate::{
     UpdateOp, VariableKind,
     bytecode::{FunctionTemplate, Instruction, TryTemplate},
     compile_script,
+    value::JsSymbol,
 };
 use std::{
     collections::{HashMap, VecDeque},
@@ -132,6 +133,11 @@ enum BuiltinFunction {
     StringMatch,
     StringSplit,
     RegExpConstructor,
+    SymbolConstructor,
+    SymbolFor,
+    SymbolKeyFor,
+    SymbolToString,
+    SymbolValueOf,
     RegExpTest,
     RegExpExec,
     ArrayPush,
@@ -241,6 +247,10 @@ struct FunctionObject {
 #[derive(Debug, Clone)]
 struct JsObject {
     properties: HashMap<String, JsValue>,
+    // Sparse JS symbols: pay for a hash table only on first symbol property.
+    // This saves the inlined HashMap header for every ordinary object.
+    #[allow(clippy::box_collection)]
+    symbol_properties: Option<Box<HashMap<u64, JsValue>>>,
     prototype: Option<ObjectId>,
     kind: ObjectKind,
     function: Option<FunctionObject>,
@@ -601,6 +611,8 @@ pub struct JsRuntime {
     text_request_signals: HashMap<u32, ObjectId>,
     header_values: HashMap<ObjectId, HashMap<String, String>>,
     boxed_values: HashMap<ObjectId, JsValue>,
+    symbol_registry: HashMap<String, JsValue>,
+    next_symbol_id: u64,
     next_text_request_id: u32,
 }
 
@@ -625,6 +637,7 @@ impl Default for JsRuntime {
 
         let ordinary = |prototype, properties| JsObject {
             properties,
+            symbol_properties: None,
             prototype,
             kind: ObjectKind::Ordinary,
             function: None,
@@ -755,6 +768,8 @@ impl Default for JsRuntime {
             text_request_signals: HashMap::new(),
             header_values: HashMap::new(),
             boxed_values: HashMap::new(),
+            symbol_registry: HashMap::new(),
+            next_symbol_id: 16,
             next_text_request_id: 1,
         };
 
@@ -1572,6 +1587,65 @@ impl JsRuntime {
             .properties
             .insert("constructor".into(), JsValue::Object(regexp));
         self.install_global_binding("RegExp", JsValue::Object(regexp), true, VariableKind::Var);
+        let symbol_to_string =
+            self.allocate_lifecycle_method("toString", BuiltinFunction::SymbolToString)?;
+        let symbol_value_of =
+            self.allocate_lifecycle_method("valueOf", BuiltinFunction::SymbolValueOf)?;
+        let symbol_prototype = self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("toString".into(), JsValue::Object(symbol_to_string)),
+                ("valueOf".into(), JsValue::Object(symbol_value_of)),
+            ]),
+        )?;
+        let symbol_constructor =
+            self.allocate_lifecycle_method("Symbol", BuiltinFunction::SymbolConstructor)?;
+        self.object_mut(symbol_constructor)?.properties.extend([
+            ("length".into(), JsValue::Number(0.0)),
+            ("prototype".into(), JsValue::Object(symbol_prototype)),
+        ]);
+        self.object_mut(symbol_prototype)?
+            .properties
+            .insert("constructor".into(), JsValue::Object(symbol_constructor));
+        for (name, builtin) in [
+            ("for", BuiltinFunction::SymbolFor),
+            ("keyFor", BuiltinFunction::SymbolKeyFor),
+        ] {
+            let id = self.allocate_lifecycle_method(name, builtin)?;
+            self.object_mut(id)?
+                .properties
+                .insert("length".into(), JsValue::Number(1.0));
+            self.object_mut(symbol_constructor)?
+                .properties
+                .insert(name.into(), JsValue::Object(id));
+        }
+        for (id, name) in [
+            (1, "iterator"),
+            (2, "toStringTag"),
+            (3, "toPrimitive"),
+            (4, "match"),
+            (5, "replace"),
+            (6, "species"),
+            (7, "hasInstance"),
+            (8, "asyncIterator"),
+            (9, "dispose"),
+            (10, "asyncDispose"),
+        ] {
+            self.object_mut(symbol_constructor)?.properties.insert(
+                name.into(),
+                JsValue::Symbol(JsSymbol {
+                    id,
+                    description: Some(format!("Symbol.{name}")),
+                }),
+            );
+        }
+        self.install_global_binding(
+            "Symbol",
+            JsValue::Object(symbol_constructor),
+            true,
+            VariableKind::Var,
+        );
         self.install_global_binding("NaN", JsValue::Number(f64::NAN), false, VariableKind::Const);
         self.install_global_binding(
             "Infinity",
@@ -1580,6 +1654,17 @@ impl JsRuntime {
             VariableKind::Const,
         );
         Ok(())
+    }
+
+    fn next_symbol(&mut self, description: Option<String>) -> Result<JsValue, JsError> {
+        if self.next_symbol_id >= 1_000_000 {
+            return Err(JsError::execution_limit(
+                "Symbol allocation budget exceeded",
+            ));
+        }
+        let id = self.next_symbol_id;
+        self.next_symbol_id += 1;
+        Ok(JsValue::Symbol(JsSymbol { id, description }))
     }
 
     fn allocate_regexp_object(&mut self, pattern: &str, flags: &str) -> Result<ObjectId, JsError> {
@@ -1676,6 +1761,7 @@ impl JsRuntime {
             JsValue::Boolean(_) => "boolean",
             JsValue::Number(_) => "number",
             JsValue::String(_) => "string",
+            JsValue::Symbol(_) => "symbol",
             JsValue::Object(id) if self.object(*id)?.function.is_some() => "function",
             JsValue::Object(_) => "object",
         };
@@ -1816,11 +1902,13 @@ impl JsRuntime {
             let JsValue::Object(rhs) = right else {
                 return Err(JsError::type_error("right operand of in must be an object"));
             };
-            // Full ToPropertyKey on user-defined object keys remains future work.
-            let key = left.to_js_string();
-            return self
-                .has_property(rhs, &key)
-                .map(|exists| CallOutcome::Value(JsValue::Boolean(exists)));
+            // Symbol keys are stored separately, not converted to string names.
+            let exists = if let JsValue::Symbol(symbol) = &left {
+                self.has_symbol_property(rhs, symbol)?
+            } else {
+                self.has_property(rhs, &left.to_js_string())?
+            };
+            return Ok(CallOutcome::Value(JsValue::Boolean(exists)));
         }
         if op == BinaryOp::InstanceOf {
             let JsValue::Object(function_id) = right else {
@@ -1849,6 +1937,19 @@ impl JsRuntime {
                 false
             };
             return Ok(CallOutcome::Value(JsValue::Boolean(matches)));
+        }
+        if (matches!(&left, JsValue::Symbol(_)) || matches!(&right, JsValue::Symbol(_)))
+            && !matches!(
+                op,
+                BinaryOp::Equal
+                    | BinaryOp::NotEqual
+                    | BinaryOp::StrictEqual
+                    | BinaryOp::StrictNotEqual
+            )
+        {
+            return Err(JsError::type_error(
+                "cannot convert Symbol to a number or string",
+            ));
         }
         let needs_left = matches!(left, JsValue::Object(_));
         let needs_right = matches!(right, JsValue::Object(_));
@@ -1960,7 +2061,7 @@ impl JsRuntime {
             return Err("JSON nesting budget exceeded".into());
         }
         let result = match value {
-            JsValue::Undefined => return Ok(None),
+            JsValue::Undefined | JsValue::Symbol(_) => return Ok(None),
             JsValue::Null => "null".into(),
             JsValue::Boolean(flag) => flag.to_string(),
             JsValue::Number(number) if !number.is_finite() => "null".into(),
@@ -4808,6 +4909,11 @@ impl JsRuntime {
                     for value in object.properties.values() {
                         trace_js_value(&mut pending, value);
                     }
+                    if let Some(symbols) = &object.symbol_properties {
+                        for value in symbols.values() {
+                            trace_js_value(&mut pending, value);
+                        }
+                    }
                     if let Some(FunctionObject {
                         implementation: FunctionImplementation::User { closure, .. },
                     }) = &object.function
@@ -5198,6 +5304,9 @@ impl JsRuntime {
                 }
                 Instruction::UpdateBinding { name, op, prefix } => {
                     let previous = self.load_binding(env, name)?.clone();
+                    if matches!(previous, JsValue::Symbol(_)) {
+                        return Err(JsError::type_error("cannot convert Symbol to number"));
+                    }
                     let updated = apply_update(*op, &previous);
                     self.assign_binding(env, name, updated.clone())?;
                     stack.push(if *prefix { updated } else { previous });
@@ -5207,10 +5316,20 @@ impl JsRuntime {
                     let target = stack
                         .pop()
                         .expect("compiler must push update property target");
-                    let key = to_property_key(key);
-                    let previous = self.get_property(&target, &key)?;
+                    let previous = if let JsValue::Symbol(symbol) = &key {
+                        self.get_symbol_property(&target, symbol)?
+                    } else {
+                        self.get_property(&target, &to_property_key(key.clone()))?
+                    };
+                    if matches!(previous, JsValue::Symbol(_)) {
+                        return Err(JsError::type_error("cannot convert Symbol to number"));
+                    }
                     let updated = apply_update(*op, &previous);
-                    self.set_property(&target, &key, updated.clone())?;
+                    if let JsValue::Symbol(symbol) = key {
+                        self.set_symbol_property(&target, &symbol, updated.clone())?;
+                    } else {
+                        self.set_property(&target, &to_property_key(key), updated.clone())?;
+                    }
                     stack.push(if *prefix { updated } else { previous });
                 }
                 Instruction::CreateObject(property_kinds) => {
@@ -5404,8 +5523,12 @@ impl JsRuntime {
                         .pop()
                         .expect("compiler must push computed property key");
                     let target = stack.pop().expect("compiler must push property target");
-                    let key = to_property_key(key);
-                    stack.push(self.get_property(&target, &key)?);
+                    let result = if let JsValue::Symbol(symbol) = key {
+                        self.get_symbol_property(&target, &symbol)?
+                    } else {
+                        self.get_property(&target, &to_property_key(key))?
+                    };
+                    stack.push(result);
                 }
                 Instruction::SetProperty => {
                     let value = stack
@@ -5417,8 +5540,11 @@ impl JsRuntime {
                     let target = stack
                         .pop()
                         .expect("compiler must push property assignment target");
-                    let key = to_property_key(key);
-                    self.set_property(&target, &key, value.clone())?;
+                    if let JsValue::Symbol(symbol) = key {
+                        self.set_symbol_property(&target, &symbol, value.clone())?;
+                    } else {
+                        self.set_property(&target, &to_property_key(key), value.clone())?;
+                    }
                     stack.push(value);
                 }
                 Instruction::Call {
@@ -5465,6 +5591,11 @@ impl JsRuntime {
                 }
                 Instruction::Unary(op) => {
                     let value = stack.pop().expect("compiler must push unary operand");
+                    if matches!(value, JsValue::Symbol(_))
+                        && matches!(op, UnaryOp::Plus | UnaryOp::Minus | UnaryOp::BitwiseNot)
+                    {
+                        return Err(JsError::type_error("cannot convert Symbol to number"));
+                    }
                     let result = if *op == UnaryOp::Typeof {
                         self.typeof_value(&value)?
                     } else {
@@ -5481,6 +5612,37 @@ impl JsRuntime {
                 Instruction::DeleteProperty => {
                     let key = stack.pop().expect("compiler must push delete key");
                     let target = stack.pop().expect("compiler must push delete target");
+                    if let JsValue::Symbol(symbol) = key {
+                        let deleted = match target {
+                            JsValue::Null | JsValue::Undefined => {
+                                return Err(JsError::type_error(
+                                    "cannot delete properties of null or undefined",
+                                ));
+                            }
+                            JsValue::Object(id) => {
+                                let kind = self.object(id)?.kind;
+                                if matches!(
+                                    kind,
+                                    ObjectKind::Ordinary | ObjectKind::Array | ObjectKind::Function
+                                ) {
+                                    let object = self.object_mut(id)?;
+                                    if let Some(properties) = &mut object.symbol_properties {
+                                        properties.remove(&symbol.id);
+                                        if properties.is_empty() {
+                                            object.symbol_properties = None;
+                                        }
+                                    }
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            _ => true,
+                        };
+                        stack.push(JsValue::Boolean(deleted));
+                        ip = ip.saturating_add(1);
+                        continue;
+                    }
                     let key = to_property_key(key);
                     let deleted = match target {
                         JsValue::Null | JsValue::Undefined => {
@@ -5838,7 +6000,73 @@ impl JsRuntime {
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
         match builtin {
+            BuiltinFunction::SymbolConstructor => {
+                let description = match arguments.first() {
+                    None | Some(JsValue::Undefined) => None,
+                    Some(JsValue::Symbol(_)) => {
+                        return Err(JsError::type_error("cannot convert Symbol to string"));
+                    }
+                    Some(value) => Some(value.to_js_string()),
+                };
+                return Ok(CallOutcome::Value(self.next_symbol(description)?));
+            }
+            BuiltinFunction::SymbolFor => {
+                let Some(input) = arguments.first() else {
+                    let value = self.symbol_registry.get("undefined").cloned();
+                    if let Some(value) = value {
+                        return Ok(CallOutcome::Value(value));
+                    }
+                    let value = self.next_symbol(Some("undefined".into()))?;
+                    self.symbol_registry
+                        .insert("undefined".into(), value.clone());
+                    return Ok(CallOutcome::Value(value));
+                };
+                if matches!(input, JsValue::Symbol(_)) {
+                    return Err(JsError::type_error("cannot convert Symbol to registry key"));
+                }
+                let key = input.to_js_string();
+                if let Some(existing) = self.symbol_registry.get(&key) {
+                    return Ok(CallOutcome::Value(existing.clone()));
+                }
+                if self.symbol_registry.len() >= 4096 {
+                    return Err(JsError::execution_limit(
+                        "Symbol registry capacity exceeded",
+                    ));
+                }
+                let symbol = self.next_symbol(Some(key.clone()))?;
+                self.symbol_registry.insert(key, symbol.clone());
+                return Ok(CallOutcome::Value(symbol));
+            }
+            BuiltinFunction::SymbolKeyFor => {
+                let Some(JsValue::Symbol(symbol)) = arguments.first() else {
+                    return Err(JsError::type_error("Symbol.keyFor requires a Symbol"));
+                };
+                return Ok(CallOutcome::Value(
+                    self.symbol_registry.iter()
+                        .find(|(_, value)| matches!(value, JsValue::Symbol(candidate) if candidate.id == symbol.id))
+                        .map_or(JsValue::Undefined, |(key, _)| JsValue::String(key.clone())),
+                ));
+            }
+            BuiltinFunction::SymbolToString | BuiltinFunction::SymbolValueOf => {
+                let JsValue::Symbol(_) = this_value else {
+                    return Err(JsError::type_error(
+                        "Symbol method requires a Symbol receiver",
+                    ));
+                };
+                if builtin == BuiltinFunction::SymbolToString {
+                    return Ok(CallOutcome::Value(JsValue::String(
+                        this_value.to_js_string(),
+                    )));
+                }
+                return Ok(CallOutcome::Value(this_value));
+            }
             BuiltinFunction::Math(method) => {
+                if arguments
+                    .iter()
+                    .any(|value| matches!(value, JsValue::Symbol(_)))
+                {
+                    return Err(JsError::type_error("cannot convert Symbol to number"));
+                }
                 return Ok(CallOutcome::Value(apply_math_builtin(method, &arguments)));
             }
             BuiltinFunction::ImageConstructor => {
@@ -6266,6 +6494,12 @@ impl JsRuntime {
                 )));
             }
             BuiltinFunction::NumberConstructor => {
+                if arguments
+                    .first()
+                    .is_some_and(|value| matches!(value, JsValue::Symbol(_)))
+                {
+                    return Err(JsError::type_error("cannot convert Symbol to number"));
+                }
                 return Ok(CallOutcome::Value(JsValue::Number(
                     arguments.first().map(JsValue::to_number).unwrap_or(0.0),
                 )));
@@ -8132,6 +8366,11 @@ impl JsRuntime {
             | BuiltinFunction::StringMatch
             | BuiltinFunction::StringSplit
             | BuiltinFunction::RegExpConstructor
+            | BuiltinFunction::SymbolConstructor
+            | BuiltinFunction::SymbolFor
+            | BuiltinFunction::SymbolKeyFor
+            | BuiltinFunction::SymbolToString
+            | BuiltinFunction::SymbolValueOf
             | BuiltinFunction::RegExpTest
             | BuiltinFunction::RegExpExec
             | BuiltinFunction::ArrayPush
@@ -8186,6 +8425,11 @@ impl JsRuntime {
             if matches!(
                 builtin,
                 BuiltinFunction::ArrayIsArray
+                    | BuiltinFunction::SymbolConstructor
+                    | BuiltinFunction::SymbolFor
+                    | BuiltinFunction::SymbolKeyFor
+                    | BuiltinFunction::SymbolToString
+                    | BuiltinFunction::SymbolValueOf
                     | BuiltinFunction::Math(_)
                     | BuiltinFunction::PerformanceNow
                     | BuiltinFunction::ArrayOf
@@ -8421,6 +8665,84 @@ impl JsRuntime {
             .filter(|env| env.alive && env.generation == id.generation())
             .and_then(|environment| environment.parent)
             .ok_or_else(|| JsError::type_error("cannot exit root lexical environment"))
+    }
+
+    fn get_symbol_property(&self, target: &JsValue, symbol: &JsSymbol) -> Result<JsValue, JsError> {
+        let JsValue::Object(id) = target else {
+            return if matches!(target, JsValue::Null | JsValue::Undefined) {
+                Err(JsError::type_error(
+                    "cannot read symbol property of null or undefined",
+                ))
+            } else {
+                Ok(JsValue::Undefined)
+            };
+        };
+        let mut current = Some(*id);
+        let mut remaining = self.heap.len().saturating_add(1);
+        while let Some(id) = current {
+            if remaining == 0 {
+                return Err(JsError::type_error("cyclic prototype chain"));
+            }
+            remaining -= 1;
+            let object = self.object(id)?;
+            if let Some(value) = object
+                .symbol_properties
+                .as_ref()
+                .and_then(|properties| properties.get(&symbol.id))
+            {
+                return Ok(value.clone());
+            }
+            current = object.prototype;
+        }
+        Ok(JsValue::Undefined)
+    }
+
+    fn has_symbol_property(&self, start: ObjectId, symbol: &JsSymbol) -> Result<bool, JsError> {
+        let mut current = Some(start);
+        let mut remaining = self.heap.len().saturating_add(1);
+        while let Some(id) = current {
+            if remaining == 0 {
+                return Err(JsError::type_error("cyclic prototype chain"));
+            }
+            remaining -= 1;
+            let object = self.object(id)?;
+            if object
+                .symbol_properties
+                .as_ref()
+                .is_some_and(|properties| properties.contains_key(&symbol.id))
+            {
+                return Ok(true);
+            }
+            current = object.prototype;
+        }
+        Ok(false)
+    }
+
+    fn set_symbol_property(
+        &mut self,
+        target: &JsValue,
+        symbol: &JsSymbol,
+        value: JsValue,
+    ) -> Result<(), JsError> {
+        let JsValue::Object(id) = target else {
+            return Err(JsError::type_error(
+                "symbol property assignment requires an object",
+            ));
+        };
+        if self.object(*id)?.kind == ObjectKind::Location {
+            return Err(JsError::type_error("location navigation is not supported"));
+        }
+        let object = self.object_mut(*id)?;
+        let properties = object
+            .symbol_properties
+            .get_or_insert_with(|| Box::new(HashMap::new()));
+        if properties.len() >= 4096 && !properties.contains_key(&symbol.id) {
+            return Err(JsError::execution_limit(
+                "symbol property capacity exceeded",
+            ));
+        }
+        properties.insert(symbol.id, value);
+        Ok(())
     }
 
     pub fn get_property(&mut self, target: &JsValue, key: &str) -> Result<JsValue, JsError> {
@@ -8825,6 +9147,23 @@ impl JsRuntime {
                 };
                 let JsValue::Object(prototype) =
                     self.get_object_property(*string_ctor, "prototype")?
+                else {
+                    return Ok(JsValue::Undefined);
+                };
+                self.get_object_property(prototype, key)
+            }
+            JsValue::Symbol(symbol) => {
+                if key == "description" {
+                    return Ok(symbol
+                        .description
+                        .clone()
+                        .map_or(JsValue::Undefined, JsValue::String));
+                }
+                let Some(JsValue::Object(constructor)) = self.global("Symbol").cloned() else {
+                    return Ok(JsValue::Undefined);
+                };
+                let JsValue::Object(prototype) =
+                    self.get_object_property(constructor, "prototype")?
                 else {
                     return Ok(JsValue::Undefined);
                 };
@@ -9404,6 +9743,7 @@ impl JsRuntime {
         };
         let new_object = |generation| JsObject {
             properties,
+            symbol_properties: None,
             prototype,
             kind,
             function,
@@ -9588,6 +9928,7 @@ fn strict_equal(left: &JsValue, right: &JsValue) -> bool {
         (JsValue::Boolean(a), JsValue::Boolean(b)) => a == b,
         (JsValue::Number(a), JsValue::Number(b)) => !a.is_nan() && !b.is_nan() && a == b,
         (JsValue::String(a), JsValue::String(b)) => a == b,
+        (JsValue::Symbol(a), JsValue::Symbol(b)) => a.id == b.id,
         (JsValue::Object(a), JsValue::Object(b)) => a == b,
         _ => false,
     }
@@ -9737,6 +10078,109 @@ mod tests {
                 "{source}"
             );
         }
+    }
+
+    #[test]
+    fn original_symbol_primitives_registry_and_distinct_property_keys() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("typeof Symbol", JsValue::String("function".into())),
+            ("typeof Symbol('x')", JsValue::String("symbol".into())),
+            ("Symbol('x')===Symbol('x')", JsValue::Boolean(false)),
+            ("var a=Symbol('x');a===a", JsValue::Boolean(true)),
+            (
+                "Symbol.for('shared')===Symbol.for('shared')",
+                JsValue::Boolean(true),
+            ),
+            (
+                "Symbol.for('shared')===Symbol('shared')",
+                JsValue::Boolean(false),
+            ),
+            (
+                "Symbol.keyFor(Symbol.for('shared'))",
+                JsValue::String("shared".into()),
+            ),
+            ("Symbol.keyFor(Symbol('x'))", JsValue::Undefined),
+            ("Symbol('test').description", JsValue::String("test".into())),
+            ("Symbol().description", JsValue::Undefined),
+            (
+                "String(Symbol.iterator)",
+                JsValue::String("Symbol(Symbol.iterator)".into()),
+            ),
+            (
+                "Symbol('ok').toString()",
+                JsValue::String("Symbol(ok)".into()),
+            ),
+            (
+                "Symbol('ok').valueOf()===Symbol('ok')",
+                JsValue::Boolean(false),
+            ),
+            ("Symbol.iterator===Symbol.iterator", JsValue::Boolean(true)),
+            (
+                "Symbol.iterator===Symbol('Symbol.iterator')",
+                JsValue::Boolean(false),
+            ),
+            ("typeof Symbol.dispose", JsValue::String("symbol".into())),
+            (
+                "var s=Symbol('x');var o={};o[s]=4;o['Symbol(x)']=99;o[s]===4&&o['Symbol(x)']===99",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var a=Symbol.for('a');var b=Symbol.for('b');var o={};o[a]=11;o[b]=12;o[a]===11&&o[b]===12",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var s=Symbol('k');var p={};p[s]=5;var c={__proto__:p};c[s]===5",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var s=Symbol('k');var o={};o[s]=7;(s in o)&&!('Symbol(k)' in o)",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var s=Symbol('k');var o={};o[s]=7;delete o[s];!(s in o)",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var s=Symbol('n');var o={};o[s]=1;o[s]++;o[s]",
+                JsValue::Number(2.0),
+            ),
+            (
+                "var s=Symbol('hidden');var o={a:1};o[s]=4;var out='';for(var k in o){out+=k;}out",
+                JsValue::String("a".into()),
+            ),
+            (
+                "var o={v:Symbol('secret')};JSON.stringify(o)",
+                JsValue::String("{}".into()),
+            ),
+            (
+                "var s=Symbol('key');var o={};o[s]=2;JSON.stringify(o)",
+                JsValue::String("{}".into()),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        for source in [
+            "new Symbol('x')",
+            "Symbol.keyFor('bad')",
+            "Symbol(Symbol('x'))",
+            "Symbol('x') + 1",
+            "+Symbol('x')",
+            "-Symbol('x')",
+            "Math.abs(Symbol('x'))",
+            "Number(Symbol('x'))",
+            "var s=Symbol('x');s++",
+            "var o={value:Symbol('x')};o.value++",
+        ] {
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
+        vm.eval_script("var keep=Symbol('keep');var root={};root[keep]={value:137};")
+            .unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert_eq!(
+            vm.eval_script("root[keep].value").unwrap(),
+            JsValue::Number(137.0),
+        );
     }
 
     #[test]
