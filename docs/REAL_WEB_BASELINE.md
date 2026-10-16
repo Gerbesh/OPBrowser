@@ -298,6 +298,29 @@ YouTube still renders zero text and Reddit is blank; there is no
 certified first viewport. Exact thrown-value semantics and full
 descriptors remain incomplete.
 
+## 17 October 2026: bounded non-callable diagnostics and queue/reflection
+
+With the opt-in `OPBROWSER_JS_ERROR_CONTEXT=1`,
+native YouTube `value is not callable` errors were
+localized to `Object.getOwnPropertyDescriptor`,
+`Object.create`, `Array.shift`, and
+`document.createElementNS`. The original JS VM now
+implements array shift/unshift (including holes),
+`Object.create` for null/object prototypes, and basic
+own data/accessor descriptors (not full property attributes).
+Synthetic HTML -> JS -> DOM -> native paint regressions pass.
+
+Release probe with 1300 ms settle under ignored
+`artifacts/live_web/queue-object-methods-2026-10-17/`
+reports failed scripts: Google **2**, YouTube **5**,
+Pikabu **11**, Reddit **1**, DeviantArt **3**.
+YouTube drops from prior **8** to **5** failures.
+The next native diagnostic identifies
+`Object.defineProperty` and `document.createElementNS`.
+YouTube still paints **zero text** and Reddit is blank.
+Script-count skips remain, so this is not complete JS
+or viewport compatibility.
+
 ## 17 October 2026: native JS Symbol primitive and property keys
 
 The original VM implements real unique Symbol values, registry

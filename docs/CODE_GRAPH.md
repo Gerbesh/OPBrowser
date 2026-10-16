@@ -57,6 +57,25 @@ Original-VM tests and an HTML -> DOM mutation -> paint regression
 exercise the entire path. General ECMAScript label/ASI coverage
 remains incomplete.
 
+## Native callsite diagnostics and queue/reflection builtins (17 October 2026)
+
+`op_js::runtime::run_code` has opt-in, bounded and sanitized
+non-callable-member diagnostics gated by
+`OPBROWSER_JS_ERROR_CONTEXT=1`. A 16-entry recent-member trace
+correlates the operand stack's receiver/callee with property
+reads, revealing the missing member name without retaining
+site scripts. The default VM path does not enable this trace.
+
+`JsRuntime::install_standard_primitives` now installs
+`Array.prototype.shift/unshift`, `Object.create`, and
+`Object.getOwnPropertyDescriptor`. Array operations preserve
+sparse holes and bound resulting length at 4096; Object.create
+supports null or object prototypes but explicitly rejects a
+nonempty second property-descriptor argument. Reflection
+covers existing own data/accessor property cells, not the
+complete ECMAScript attribute model for host/builtin fields.
+Focused VM and native HTML-to-paint tests pass.
+
 ## Original Symbol primitive and GC-traced symbol properties (17 October 2026)
 
 `op_js::value::JsValue::Symbol(JsSymbol)` represents an original

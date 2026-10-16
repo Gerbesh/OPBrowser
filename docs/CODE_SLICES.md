@@ -16,6 +16,21 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S89 - Real YouTube missing builtins to original pixels
+
+Real live YouTube `Type: value is not callable` -> opt-in
+bounded operand-stack/member trace identifies
+`getOwnPropertyDescriptor`, `createElementNS`,
+`create`, and `shift` -> own Rust JS intrinsic dispatch
+for `Array.shift/unshift`, `Object.create`, and
+`Object.getOwnPropertyDescriptor` -> JS value, DOM
+`textContent` and native paint primitive on synthetic
+HTML fixture. Public YouTube's failed initial scripts
+decrease **8 to 5** at the same 1300 ms settle window,
+while the remaining errors expose `defineProperty`,
+`createElementNS` and null/undefined access.
+YouTube still paints zero text; this is not a visual pass.
+
 ## S88 - Original Symbol identity to native pixels and GC
 
 Public or inline JS invokes `Symbol('key')` ->

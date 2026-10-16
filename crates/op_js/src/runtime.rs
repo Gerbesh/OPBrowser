@@ -142,6 +142,8 @@ enum BuiltinFunction {
     RegExpExec,
     ArrayPush,
     ArrayPop,
+    ArrayShift,
+    ArrayUnshift,
     FunctionCall,
     DomGetElementById,
     DomGetElementsByTagName,
@@ -211,6 +213,8 @@ enum BuiltinFunction {
     JsonParse,
     JsonStringify,
     ObjectConstructor,
+    ObjectCreate,
+    ObjectGetOwnPropertyDescriptor,
     ArrayConstructor,
     BooleanConstructor,
     NumberConstructor,
@@ -1394,18 +1398,20 @@ impl JsRuntime {
             ("valueOf".into(), JsValue::Object(value_of)),
             ("toString".into(), JsValue::Object(to_string)),
         ]);
-        let push = self.allocate_lifecycle_method("push", BuiltinFunction::ArrayPush)?;
-        let pop = self.allocate_lifecycle_method("pop", BuiltinFunction::ArrayPop)?;
-        self.object_mut(push)?
-            .properties
-            .insert("length".into(), JsValue::Number(1.0));
-        self.object_mut(pop)?
-            .properties
-            .insert("length".into(), JsValue::Number(0.0));
-        self.object_mut(self.array_prototype)?.properties.extend([
-            ("push".into(), JsValue::Object(push)),
-            ("pop".into(), JsValue::Object(pop)),
-        ]);
+        for (name, builtin, length) in [
+            ("push", BuiltinFunction::ArrayPush, 1.0),
+            ("pop", BuiltinFunction::ArrayPop, 0.0),
+            ("shift", BuiltinFunction::ArrayShift, 0.0),
+            ("unshift", BuiltinFunction::ArrayUnshift, 1.0),
+        ] {
+            let method = self.allocate_lifecycle_method(name, builtin)?;
+            self.object_mut(method)?
+                .properties
+                .insert("length".into(), JsValue::Number(length));
+            self.object_mut(self.array_prototype)?
+                .properties
+                .insert(name.into(), JsValue::Object(method));
+        }
         for (name, builtin) in [
             ("Object", BuiltinFunction::ObjectConstructor),
             ("Array", BuiltinFunction::ArrayConstructor),
@@ -1512,6 +1518,13 @@ impl JsRuntime {
             ("Number", "isNaN", BuiltinFunction::NumberIsNaN, 1.0),
             ("Number", "isFinite", BuiltinFunction::NumberIsFinite, 1.0),
             ("Object", "is", BuiltinFunction::ObjectIs, 2.0),
+            ("Object", "create", BuiltinFunction::ObjectCreate, 2.0),
+            (
+                "Object",
+                "getOwnPropertyDescriptor",
+                BuiltinFunction::ObjectGetOwnPropertyDescriptor,
+                2.0,
+            ),
         ] {
             let method_id = self.allocate_lifecycle_method(method, builtin)?;
             self.object_mut(method_id)?
@@ -5259,6 +5272,11 @@ impl JsRuntime {
     ) -> Result<RunOutcome, JsError> {
         let _execution = ActiveExecutionGuard::enter(Arc::clone(&self.active_execution_depth));
         let mut stack = Vec::new();
+        // Explicit, bounded call-site diagnostics for native page probes.
+        // Never retain script bodies or record property values in public logs.
+        let trace_calls = std::env::var_os("OPBROWSER_JS_ERROR_CONTEXT").as_deref()
+            == Some(std::ffi::OsStr::new("1"));
+        let mut recent_property_reads: Vec<(usize, JsValue, JsValue, String)> = Vec::new();
         let mut completion = JsValue::Undefined;
         let mut env = start_env;
         let mut ip = 0usize;
@@ -5523,11 +5541,28 @@ impl JsRuntime {
                         .pop()
                         .expect("compiler must push computed property key");
                     let target = stack.pop().expect("compiler must push property target");
+                    let name = if trace_calls {
+                        let raw = to_property_key(key.clone());
+                        Some(
+                            raw.chars()
+                                .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+                                .take(48)
+                                .collect::<String>(),
+                        )
+                    } else {
+                        None
+                    };
                     let result = if let JsValue::Symbol(symbol) = key {
                         self.get_symbol_property(&target, &symbol)?
                     } else {
                         self.get_property(&target, &to_property_key(key))?
                     };
+                    if let Some(name) = name {
+                        if recent_property_reads.len() == 16 {
+                            recent_property_reads.remove(0);
+                        }
+                        recent_property_reads.push((stack.len(), target, result.clone(), name));
+                    }
                     stack.push(result);
                 }
                 Instruction::SetProperty => {
@@ -5560,6 +5595,7 @@ impl JsRuntime {
                         );
                     }
                     arguments.reverse();
+                    let callee_slot = stack.len().saturating_sub(1);
                     let callee = stack.pop().expect("compiler must push function callee");
                     let this_value = if *has_receiver {
                         stack
@@ -5568,6 +5604,25 @@ impl JsRuntime {
                     } else {
                         JsValue::Object(self.global_object)
                     };
+                    if trace_calls && *has_receiver {
+                        let callable = match &callee {
+                            JsValue::Object(id) => self.object(*id)?.function.is_some(),
+                            _ => false,
+                        };
+                        if !callable
+                            && let Some((_, _, _, name)) = recent_property_reads.iter().rev().find(
+                                |(slot, receiver, value, _)| {
+                                    *slot == callee_slot
+                                        && receiver == &this_value
+                                        && value == &callee
+                                },
+                            )
+                        {
+                            return Err(JsError::type_error(format!(
+                                "value is not callable (member {name})"
+                            )));
+                        }
+                    }
                     match self.call_value(callee, this_value, arguments, steps, call_depth + 1)? {
                         CallOutcome::Value(value) => stack.push(value),
                         CallOutcome::Thrown(value) => return Ok(RunOutcome::Thrown(value)),
@@ -6445,6 +6500,64 @@ impl JsRuntime {
                     .map_err(|_| JsError::type_error("invalid charAt code unit"))?;
                 return Ok(CallOutcome::Value(JsValue::String(value)));
             }
+            BuiltinFunction::ArrayShift | BuiltinFunction::ArrayUnshift => {
+                let JsValue::Object(id) = this_value else {
+                    return Err(JsError::type_error("Array shift/unshift requires an array"));
+                };
+                if self.object(id)?.kind != ObjectKind::Array {
+                    return Err(JsError::type_error("Array shift/unshift requires an array"));
+                }
+                let length = self.array_length(id)?;
+                if builtin == BuiltinFunction::ArrayShift {
+                    if length == 0 {
+                        return Ok(CallOutcome::Value(JsValue::Undefined));
+                    }
+                    let first = self.get_object_property(id, "0")?;
+                    for index in 1..length {
+                        let from = index.to_string();
+                        let into = (index - 1).to_string();
+                        if self.has_property(id, &from)? {
+                            let value = self.get_object_property(id, &from)?;
+                            self.object_mut(id)?.properties.insert(into, value);
+                        } else {
+                            self.object_mut(id)?.properties.remove(&into);
+                        }
+                    }
+                    self.object_mut(id)?
+                        .properties
+                        .remove(&(length - 1).to_string());
+                    self.object_mut(id)?
+                        .properties
+                        .insert("length".into(), JsValue::Number((length - 1) as f64));
+                    return Ok(CallOutcome::Value(first));
+                }
+                let count = arguments.len();
+                let new_length = length
+                    .checked_add(count)
+                    .ok_or_else(|| JsError::execution_limit("array length overflow"))?;
+                if new_length > 4096 {
+                    return Err(JsError::execution_limit("Array.unshift capacity exceeded"));
+                }
+                for index in (0..length).rev() {
+                    let from = index.to_string();
+                    let to = (index + count).to_string();
+                    if self.has_property(id, &from)? {
+                        let value = self.get_object_property(id, &from)?;
+                        self.object_mut(id)?.properties.insert(to, value);
+                    } else {
+                        self.object_mut(id)?.properties.remove(&to);
+                    }
+                }
+                for (index, value) in arguments.into_iter().enumerate() {
+                    self.object_mut(id)?
+                        .properties
+                        .insert(index.to_string(), value);
+                }
+                self.object_mut(id)?
+                    .properties
+                    .insert("length".into(), JsValue::Number(new_length as f64));
+                return Ok(CallOutcome::Value(JsValue::Number(new_length as f64)));
+            }
             BuiltinFunction::ArrayPush => {
                 let JsValue::Object(id) = this_value else {
                     return Err(JsError::type_error("Array.push receiver must be an array"));
@@ -6559,6 +6672,88 @@ impl JsRuntime {
                 return Ok(CallOutcome::Value(JsValue::Boolean(matches!(
                     arguments.first(), Some(JsValue::Number(value)) if value.is_finite()
                 ))));
+            }
+            BuiltinFunction::ObjectCreate => {
+                let prototype = match arguments.first() {
+                    Some(JsValue::Object(id)) => {
+                        self.object(*id)?;
+                        Some(*id)
+                    }
+                    Some(JsValue::Null) => None,
+                    _ => {
+                        return Err(JsError::type_error(
+                            "Object.create prototype must be an object or null",
+                        ));
+                    }
+                };
+                if arguments
+                    .get(1)
+                    .is_some_and(|value| !matches!(value, JsValue::Undefined))
+                {
+                    return Err(JsError::type_error(
+                        "Object.create property descriptors are not implemented",
+                    ));
+                }
+                let id = self.allocate_object(ObjectKind::Ordinary, prototype, HashMap::new())?;
+                return Ok(CallOutcome::Value(JsValue::Object(id)));
+            }
+            BuiltinFunction::ObjectGetOwnPropertyDescriptor => {
+                let Some(JsValue::Object(id)) = arguments.first() else {
+                    return Err(JsError::type_error(
+                        "Object.getOwnPropertyDescriptor needs an object",
+                    ));
+                };
+                let property = arguments.get(1).cloned().unwrap_or(JsValue::Undefined);
+                let key = to_property_key(property.clone());
+                let own = self.object(*id)?;
+                let entry = if let JsValue::Symbol(symbol) = &property {
+                    own.symbol_properties
+                        .as_ref()
+                        .and_then(|map| map.get(&symbol.id))
+                        .cloned()
+                } else {
+                    own.properties.get(&key).cloned()
+                };
+                let Some(value) = entry else {
+                    return Ok(CallOutcome::Value(JsValue::Undefined));
+                };
+                let is_array_length = own.kind == ObjectKind::Array
+                    && key == "length"
+                    && !matches!(property, JsValue::Symbol(_));
+                let mut fields = HashMap::from([
+                    ("enumerable".into(), JsValue::Boolean(!is_array_length)),
+                    ("configurable".into(), JsValue::Boolean(!is_array_length)),
+                ]);
+                if let JsValue::Object(descriptor_id) = &value
+                    && self.object(*descriptor_id)?.kind == ObjectKind::AccessorDescriptor
+                {
+                    let descriptor = self.object(*descriptor_id)?;
+                    fields.insert(
+                        "get".into(),
+                        descriptor
+                            .properties
+                            .get("get")
+                            .cloned()
+                            .unwrap_or(JsValue::Undefined),
+                    );
+                    fields.insert(
+                        "set".into(),
+                        descriptor
+                            .properties
+                            .get("set")
+                            .cloned()
+                            .unwrap_or(JsValue::Undefined),
+                    );
+                } else {
+                    fields.insert("value".into(), value);
+                    fields.insert("writable".into(), JsValue::Boolean(true));
+                }
+                let descriptor = self.allocate_object(
+                    ObjectKind::Ordinary,
+                    Some(self.object_prototype),
+                    fields,
+                )?;
+                return Ok(CallOutcome::Value(JsValue::Object(descriptor)));
             }
             BuiltinFunction::ObjectIs => {
                 let first = arguments.first().unwrap_or(&JsValue::Undefined);
@@ -8375,6 +8570,10 @@ impl JsRuntime {
             | BuiltinFunction::RegExpExec
             | BuiltinFunction::ArrayPush
             | BuiltinFunction::ArrayPop
+            | BuiltinFunction::ArrayShift
+            | BuiltinFunction::ArrayUnshift
+            | BuiltinFunction::ObjectCreate
+            | BuiltinFunction::ObjectGetOwnPropertyDescriptor
             | BuiltinFunction::ObjectConstructor
             | BuiltinFunction::ArrayConstructor
             | BuiltinFunction::BooleanConstructor
@@ -8438,6 +8637,10 @@ impl JsRuntime {
                     | BuiltinFunction::StringIncludes
                     | BuiltinFunction::ArrayPush
                     | BuiltinFunction::ArrayPop
+                    | BuiltinFunction::ArrayShift
+                    | BuiltinFunction::ArrayUnshift
+                    | BuiltinFunction::ObjectCreate
+                    | BuiltinFunction::ObjectGetOwnPropertyDescriptor
                     | BuiltinFunction::NumberIsNaN
                     | BuiltinFunction::NumberIsFinite
                     | BuiltinFunction::ObjectIs
@@ -10077,6 +10280,98 @@ mod tests {
                 JsValue::String("object".into()),
                 "{source}"
             );
+        }
+    }
+
+    #[test]
+    fn live_youtube_array_queue_and_object_reflection_slice() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("var a=[1,2,3];a.shift()", JsValue::Number(1.0)),
+            ("var a=[1,2,3];a.shift();a.length", JsValue::Number(2.0)),
+            (
+                "var a=[1,2,3];a.shift();a[0]===2&&a[1]===3",
+                JsValue::Boolean(true),
+            ),
+            ("var a=[];a.shift()", JsValue::Undefined),
+            (
+                "var a=[1];a.shift();a.length===0&&!(0 in a)",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var a=[,2,,4];a.shift();(0 in a)&&!(1 in a)&&(2 in a)&&a[0]===2&&a[2]===4",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var a=[2,3];a.unshift(0,1);a.length===4&&a[0]===0&&a[1]===1&&a[3]===3",
+                JsValue::Boolean(true),
+            ),
+            ("var a=[];a.unshift()", JsValue::Number(0.0)),
+            (
+                "var a=[,3];a.unshift(1);!(1 in a)&&a[0]===1&&a[2]===3",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var a=[1,2];a.shift();a.unshift(8);a[0]===8&&a[1]===2",
+                JsValue::Boolean(true),
+            ),
+            ("Array.prototype.shift.length", JsValue::Number(0.0)),
+            ("Array.prototype.unshift.length", JsValue::Number(1.0)),
+            (
+                "var p={x:4};var o=Object.create(p);o.x===4&&o.__proto__===p",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var o=Object.create(null);o.__proto__===null&&typeof o.toString==='undefined'",
+                JsValue::Boolean(true),
+            ),
+            ("typeof Object.create", JsValue::String("function".into())),
+            ("Object.create.length", JsValue::Number(2.0)),
+            (
+                "typeof Object.getOwnPropertyDescriptor",
+                JsValue::String("function".into()),
+            ),
+            (
+                "Object.getOwnPropertyDescriptor.length",
+                JsValue::Number(2.0),
+            ),
+            (
+                "var d=Object.getOwnPropertyDescriptor({x:4},'x');d.value===4&&d.enumerable&&d.configurable&&d.writable",
+                JsValue::Boolean(true),
+            ),
+            (
+                "Object.getOwnPropertyDescriptor({x:4},'other')",
+                JsValue::Undefined,
+            ),
+            (
+                "var p={x:4};var o=Object.create(p);Object.getOwnPropertyDescriptor(o,'x')",
+                JsValue::Undefined,
+            ),
+            (
+                "var d=Object.getOwnPropertyDescriptor([7,8],'length');d.value===2&&d.writable&&!d.enumerable&&!d.configurable",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var s=Symbol('v');var o={};o[s]=10;Object.getOwnPropertyDescriptor(o,s).value===10",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var d=Object.getOwnPropertyDescriptor({get x(){return 3}},'x');typeof d.get==='function'&&typeof d.value==='undefined'",
+                JsValue::Boolean(true),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        for source in [
+            "Object.create()",
+            "Object.create(1)",
+            "Object.create({}, {x:{value:1}})",
+            "Object.getOwnPropertyDescriptor(null, 'x')",
+            "Array.prototype.shift.call({length:1,0:'x'})",
+            "new Object.create({})",
+            "new Array.prototype.shift()",
+        ] {
+            assert!(vm.eval_script(source).is_err(), "{source}");
         }
     }
 

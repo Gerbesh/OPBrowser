@@ -3,6 +3,25 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Native callable diagnostics and YouTube JS methods (17 October 2026)
+
+With `OPBROWSER_JS_ERROR_CONTEXT=1`, the original VM
+records at most 16 recent member reads to identify a failed
+method call without storing entire public site scripts.
+Real YouTube identified missing `Array.shift`,
+`Object.create`, `Object.getOwnPropertyDescriptor`
+and `document.createElementNS`.
+
+The original VM now supports `Array.shift/unshift` with
+sparse-hole handling; `Object.create(object|null)` and
+partial `Object.getOwnPropertyDescriptor` on own
+data/accessor cells. Full descriptor attributes,
+Object.defineProperty and DOM namespace creation remain
+future work; unsupported Object.create property descriptors
+reject instead of silently pretending to work. The same
+real-site probe improves YouTube initial script errors
+from **8 to 5**, but still draws no text.
+
 ## Original Symbol primitive (17 October 2026)
 
 OPBrowser's own JS VM now supports genuine unique `Symbol()`

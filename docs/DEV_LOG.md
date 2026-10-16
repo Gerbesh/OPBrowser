@@ -3739,3 +3739,10 @@ This file is append-only project history.
 
 - Follow-up within the same change: symbol-key maps are now lazily allocated as Option<Box<HashMap<..>>> per JsObject, avoiding an inlined HashMap header on the large majority of plain JS objects. Symbol properties remain strongly traced by GC and the optional map is released after its last symbol is deleted. The intentionally sparse boxed-table tradeoff is documented for strict Clippy. Full Rust workspace, Win32 smoke and Symbol regressions pass.
 
+
+## 2026-10-17 - YouTube non-callable diagnostics and original Array/Object methods
+
+- Added explicitly opt-in bounded recent-property call trace behind OPBROWSER_JS_ERROR_CONTEXT=1 to identify missing native methods without archiving site scripts. Bounded to 16 entries, sanitized 48-character member names, absent on normal runs.
+- Initial real YouTube trace located getOwnPropertyDescriptor, createElementNS, Object.create and Array.shift. Implemented original Array.prototype.shift/unshift with holes and 4096-element bounds, Object.create(null/object) with explicit rejection of unsupported property descriptors, and own data/accessor Object.getOwnPropertyDescriptor subset. VM and HTML-to-native-text-paint regressions pass.
+- Windows Release 1300 ms run stored under ignored artifacts/live_web/queue-object-methods-2026-10-17 shows JS failed Google 2, YouTube 5 (previously 8), Pikabu 11, Reddit 1, DeviantArt 3. Remaining YouTube callsite diagnostics include Object.defineProperty and document.createElementNS. YouTube still paints zero text and Reddit is blank; neither real-site compatibility nor complete property descriptors are claimed.
+

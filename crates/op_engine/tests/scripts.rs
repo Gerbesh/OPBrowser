@@ -26,6 +26,30 @@ fn labeled_break_continue_through_finally_mutates_actual_document_pixels() {
 }
 
 #[test]
+fn youtube_queue_and_object_reflection_mutate_native_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var events=['a','b'];events.shift();events.unshift('start');",
+            "var proto={ready:true};var state=Object.create(proto);state.status=events[0];",
+            "var descriptor=Object.getOwnPropertyDescriptor(state,'status');",
+            "document.getElementById('result').textContent=",
+            "state.ready&&descriptor.value==='start'&&events[1]==='b'?",
+            "'REFLECTION-QUEUE-PASS':'REFLECTION-QUEUE-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("REFLECTION-QUEUE-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn original_symbol_key_from_inline_script_reaches_native_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

@@ -228,6 +228,23 @@ dynamic scripts, DOM APIs and layout. Full symbol reflection,
 computed object-literal symbol keys and custom iterators
 remain unsupported and must not be silently faked.
 
+**P0 measured YouTube JS progress (17 October 2026):**
+Opt-in capped callsite diagnostics identify attempted
+non-callable method names. Original `Array.shift/unshift`
+handles sparse arrays and bounds sizes; `Object.create`
+supports object/null prototypes; basic
+`Object.getOwnPropertyDescriptor` handles own
+data/accessor values, with missing descriptor attributes
+explicitly documented. VM and native HTML-to-paint tests
+pass. New real-site JS failures **2/5/11/1/3**
+(Google/YouTube/Pikabu/Reddit/DeviantArt),
+compared with previous **2/8/11/1/3**.
+YouTube still renders no text, Reddit remains blank.
+NEXT: original Object.defineProperty with true
+descriptor semantics, verified namespace-aware
+`document.createElementNS`, async JS, script scheduling,
+and real visible layout. Do not call this a site pass.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.
