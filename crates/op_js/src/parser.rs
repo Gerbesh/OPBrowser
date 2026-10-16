@@ -31,6 +31,12 @@ pub enum Statement {
         update: Option<Expression>,
         body: Box<Statement>,
     },
+    ForOf {
+        kind: Option<VariableKind>,
+        name: String,
+        iterable: Expression,
+        body: Box<Statement>,
+    },
     Switch {
         discriminant: Expression,
         cases: Vec<SwitchCase>,
@@ -106,6 +112,7 @@ pub enum VariableKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Literal(JsValue),
+    ForOfValues(Box<Expression>),
     /// Untagged template: cooked quasis and ordered substitution expressions.
     Template {
         quasis: Vec<String>,
@@ -187,6 +194,7 @@ pub enum UnaryOp {
 pub enum LogicalOp {
     And,
     Or,
+    Nullish,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -403,6 +411,47 @@ impl Parser {
             ));
         }
 
+        // The contextual "of" token is not a reserved word. Detect the
+        // single-binding for-of grammar before the classic for initializer.
+        let (kind, binding_index) = match self.current().kind {
+            TokenKind::Let => (Some(VariableKind::Let), self.index + 1),
+            TokenKind::Const => (Some(VariableKind::Const), self.index + 1),
+            TokenKind::Var => (Some(VariableKind::Var), self.index + 1),
+            _ => (None, self.index),
+        };
+        let binding_name = self.tokens.get(binding_index).and_then(|token| {
+            if let TokenKind::Identifier(name) = &token.kind {
+                Some(name.clone())
+            } else {
+                None
+            }
+        });
+        if let Some(name) = binding_name
+            && self.tokens.get(binding_index + 1).is_some_and(
+                |token| matches!(&token.kind, TokenKind::Identifier(word) if word == "of"),
+            )
+        {
+            self.index = binding_index + 2;
+            let iterable = self.assignment()?;
+            if !self.take(&TokenKind::RightParen) {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "expected ')' after for-of iterable",
+                ));
+            }
+            self.loop_depth += 1;
+            self.breakable_depth += 1;
+            let body = self.statement();
+            self.breakable_depth -= 1;
+            self.loop_depth -= 1;
+            return Ok(Statement::ForOf {
+                kind,
+                name,
+                iterable,
+                body: Box::new(body?),
+            });
+        }
+
         let initializer = if self.take(&TokenKind::Semicolon) {
             None
         } else {
@@ -426,10 +475,14 @@ impl Parser {
             };
 
             if !self.take(&TokenKind::Semicolon) {
-                return Err(JsError::syntax(
-                    self.current().start,
-                    "expected ';' after for initializer",
-                ));
+                let message = match &self.current().kind {
+                    TokenKind::In => "for-in enumeration is not supported",
+                    TokenKind::Identifier(word) if word == "of" => {
+                        "for-of requires a single identifier binding"
+                    }
+                    _ => "expected ';' after for initializer",
+                };
+                return Err(JsError::syntax(self.current().start, message));
             }
             initializer
         };
@@ -819,7 +872,7 @@ impl Parser {
     }
 
     fn conditional(&mut self) -> Result<Expression, JsError> {
-        let test = self.logical_or()?;
+        let test = self.nullish()?;
         if !self.take(&TokenKind::Question) {
             return Ok(test);
         }
@@ -838,6 +891,58 @@ impl Parser {
             consequent: Box::new(consequent),
             alternate: Box::new(alternate),
         })
+    }
+
+    fn nullish(&mut self) -> Result<Expression, JsError> {
+        let start = self.index;
+        let mut expression = self.logical_or()?;
+        let left_has_logic = self.has_unparenthesized_logic(start, self.index);
+        while self.take(&TokenKind::QuestionQuestion) {
+            if left_has_logic {
+                return Err(JsError::syntax(
+                    self.previous().start,
+                    "parentheses required when mixing ?? with && or ||",
+                ));
+            }
+            let right_start = self.index;
+            let right = self.logical_or()?;
+            if self.has_unparenthesized_logic(right_start, self.index) {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "parentheses required when mixing ?? with && or ||",
+                ));
+            }
+            expression = Expression::Logical {
+                left: Box::new(expression),
+                op: LogicalOp::Nullish,
+                right: Box::new(right),
+            };
+        }
+        Ok(expression)
+    }
+
+    fn has_unparenthesized_logic(&self, start: usize, end: usize) -> bool {
+        let (mut parens, mut brackets, mut braces, mut templates) =
+            (0usize, 0usize, 0usize, 0usize);
+        for token in &self.tokens[start..end] {
+            match token.kind {
+                TokenKind::TemplateHead(_) => templates += 1,
+                TokenKind::TemplateTail(_) => templates = templates.saturating_sub(1),
+                TokenKind::LeftParen => parens += 1,
+                TokenKind::RightParen => parens = parens.saturating_sub(1),
+                TokenKind::LeftBracket => brackets += 1,
+                TokenKind::RightBracket => brackets = brackets.saturating_sub(1),
+                TokenKind::LeftBrace => braces += 1,
+                TokenKind::RightBrace => braces = braces.saturating_sub(1),
+                TokenKind::AmpAmp | TokenKind::PipePipe
+                    if parens == 0 && brackets == 0 && braces == 0 && templates == 0 =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
     }
 
     fn logical_or(&mut self) -> Result<Expression, JsError> {

@@ -16,6 +16,26 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S83 - Public JS for-of syntax through original VM and DOM snapshot
+
+Classic script with `for(const node of document.querySelectorAll('span'))`
+-> parser recognizes contextual `of` -> `Statement::ForOf` -> bytecode
+lowers to private-index for loop with per-iteration lexical scope -> VM
+`ToForOfValues` captures a bounded DOM-list snapshot -> loop body
+updates `document.getElementById(...).textContent` -> native DOM
+parser integration verifies visible source data changes. Noniterables
+and over-budget inputs fail explicitly; arbitrary iterable protocol
+and dynamically mutating iterator semantics remain unsupported.
+
+## S82 - Nullish coalescing to real DOM update
+
+Classic JS `null ?? 'ready'` -> original Rust lexer/parser ->
+`Expression::Logical(Nullish)` -> `JumpIfNullish` branches lazily in
+the VM -> `textContent` mutation -> authoritative DOM text in an
+engine integration test. The separate same-five-site native web run
+still has Google 2, YouTube 9, Pikabu 12, Reddit 1, DeviantArt 4
+script failures; no real webpage acceptance gate was passed.
+
 ## S81 - Loaded HTTPS URL through page script to DOM content
 
 Network-backed page source -> `op_engine::scripts::parse_and_execute`

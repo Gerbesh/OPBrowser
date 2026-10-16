@@ -203,6 +203,30 @@ YouTube remains **7 executed / 9 failed**, **0 text primitives** and
 skeleton-only. Network responses varied in load time. No real-site
 compatibility acceptance gate was passed.
 
+## 16 October 2026: `??` and partial `for...of` syntax follow-up
+
+The original JS pipeline now tokenizes and executes lazy nullish coalescing
+and an explicitly bounded synchronous `for...of` subset. New VM regressions
+exercise short-circuiting, grouped `&&`/`||`, arrays, string code points,
+empty slots, nested loops, closures, `break`/`continue` and rejection of
+noniterables/large inputs. Parser-to-DOM tests prove that `??` updates a
+real text node and a `querySelectorAll` collection can be traversed.
+The array/DOM iteration implementation uses a snapshot and is **not** the
+full ECMAScript iterator protocol; live array append behavior differs.
+
+Live real-native runs under `artifacts/live_web/nullish-2026-10-16/` and
+`artifacts/live_web/for-of-2026-10-16/` used the same five public URLs
+and 1,300 ms settle. Both still report JS failures Google **2**,
+YouTube **9**, Pikabu **12**, Reddit **1**, DeviantArt **4**. YouTube
+still paints **zero text primitives**, and Reddit is still white.
+In `artifacts/live_web/for-diagnosis-2026-10-16/`, even a more precise
+`for` parser diagnostic retains `expected ';' after for initializer`:
+this particular YouTube case is **not** a recognized single-binding
+`for...of` or straightforward `for...in` syntax at the error token.
+No visually correct modern first viewport is established. Next:
+identify the exact remaining modern expression/initializer pattern and
+attack the repeated backslash lexer failures with bounded evidence.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell

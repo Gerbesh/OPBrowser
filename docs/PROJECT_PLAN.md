@@ -140,6 +140,8 @@ absolute URL reflection and full HTMLImageElement remain open.
 
 **P0 read-only page Location (16 October 2026):** Loaded HTTP(S) URL now reaches a shared `window.location` / `document.location` object and `document.URL`, `documentURI`, `baseURI`. URL component reads work; navigation setters explicitly reject. VM and parser-DOM integration tests pass. Pikabu's `location is not defined` diagnostic becomes a later `value is not callable` failure; Pikabu still has **12 failed** scripts, malformed layout. YouTube remains **9 failed / zero text**. Next: actual JS syntax blockers, dynamic script loading and visual layout, not a cosmetic error-count pass.
 
+**P0 original modern JavaScript (16 October 2026):** Bounded lazy `??` coalescing and a synchronous `for...of` subset now execute through the original lexer/parser/bytecode/VM. Arrays, Unicode strings and selected DOM collections are supported with per-iteration `let`/`const` scopes, `break`/`continue` and a 4,096-item cap. Custom iterator protocols, destructuring, `for...in`, mutation-sensitive array iteration and general ECMAScript parity remain open. Both real 5-site checks still report 2/9/12/1/4 JS failures (Google/YouTube/Pikabu/Reddit/DeviantArt); YouTube paints no text and Reddit is blank. Further improvements must target observed failures, not widen budgets blindly.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

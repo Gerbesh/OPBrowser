@@ -13,6 +13,16 @@ page still paints **no text**. Pikabu remains visually malformed.
 The 30-minute synthetic GC safety and private-memory checks passed,
 while rare long wall-time GC pauses still need investigation.
 
+## Modern JavaScript compatibility checkpoint (16 October 2026)
+
+Original JS now understands lazy `??` and a bounded `for...of` subset
+for arrays, strings and DOM collections. New tests exercise nested
+loops, closures and browser parser-to-DOM mutations; incomplete
+`Symbol.iterator` support and snapshot iteration are documented.
+Five public sites were rerun with native screenshots. None gained
+a confirmed functional first viewport: YouTube remains skeleton-only
+with 9 script failures, Reddit blank, Pikabu malformed with 12.
+
 ## Page location URL checkpoint (16 October 2026)
 
 Real loaded HTTP(S) URLs now reach the independent JavaScript VM as

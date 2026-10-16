@@ -36,6 +36,16 @@ advances to a later runtime failure, but its 12 failed scripts and
 broken layout remain; YouTube is still skeleton-only. Prioritize
 correct syntax/DOM/script-loading and usable pixels next.
 
+## JavaScript syntax and DOM-first-paint checkpoint (16 October 2026)
+
+The independent VM now handles `??` and bounded synchronous
+`for...of`, including real DOM query-result iteration and lexical
+closures. New compiler and integration tests pass. The same five
+public pages remain visibly broken, so these fixes are **not** a
+website-compatibility milestone. Next diagnose YouTube's remaining
+for-initializer and backslash syntax failures, Reddit's argument parse
+error, and missing layout/paint paths while retaining GC memory guards.
+
 ## Native DOM checkpoint (14 October 2026)
 
 Native Document now collects orphan node components and reuses slots with

@@ -2,6 +2,32 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S83",
+      "title": "Bounded synchronous for-of into live DOM mutations",
+      "status": "Original VM and DOM integration tested; iterable subset",
+      "steps": [
+        {"path": "crates/op_js/src/parser.rs", "symbol": "for_statement"},
+        {"path": "crates/op_js/src/bytecode.rs", "symbol": "for_of_statement"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "ToForOfValues"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "parse_and_execute"}
+      ],
+      "limitation": "Snapshots arrays, strings and selected DOM lists; no generic iterator protocol or live array mutation semantics."
+    },
+    {
+      "id": "S82",
+      "title": "Lazy nullish coalescing into page text",
+      "status": "Original JS semantics and parser-DOM integration tested",
+      "steps": [
+        {"path": "crates/op_js/src/lexer.rs", "symbol": "QuestionQuestion"},
+        {"path": "crates/op_js/src/parser.rs", "symbol": "nullish"},
+        {"path": "crates/op_js/src/bytecode.rs", "symbol": "JumpIfNullish"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "JumpIfNullish"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "parse_and_execute"}
+      ],
+      "limitation": "Five live public sites remain visually incomplete; grammar and expression compatibility are partial."
+    },
+
+    {
       "id": "S1",
       "title": "HTML source to visible pixels",
       "status": "Static pipeline implemented",

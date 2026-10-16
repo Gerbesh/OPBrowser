@@ -5087,6 +5087,58 @@ impl JsRuntime {
                     )?;
                     stack.push(JsValue::Object(id));
                 }
+                Instruction::ToForOfValues => {
+                    let iterable = stack.pop().expect("compiler must push iterable");
+                    let values = match &iterable {
+                        JsValue::String(text) => {
+                            let values = text
+                                .chars()
+                                .take(4097)
+                                .map(|character| JsValue::String(character.to_string()))
+                                .collect::<Vec<_>>();
+                            if values.len() > 4096 {
+                                return Err(JsError::execution_limit(
+                                    "for-of iteration budget exceeded",
+                                ));
+                            }
+                            values
+                        }
+                        JsValue::Object(id)
+                            if matches!(
+                                self.object(*id)?.kind,
+                                ObjectKind::Array
+                                    | ObjectKind::DomNodeList(_)
+                                    | ObjectKind::DomHtmlCollection(_)
+                                    | ObjectKind::DomTagCollection
+                                    | ObjectKind::DomQueryNodeList
+                            ) =>
+                        {
+                            let length = self.get_property(&iterable, "length")?.to_number();
+                            if !length.is_finite() || length < 0.0 || length > 4096.0 {
+                                return Err(JsError::execution_limit(
+                                    "for-of iteration budget exceeded",
+                                ));
+                            }
+                            let mut values = Vec::with_capacity(length as usize);
+                            for index in 0..(length as usize) {
+                                values.push(self.get_property(&iterable, &index.to_string())?);
+                            }
+                            values
+                        }
+                        _ => return Err(JsError::type_error("value is not iterable")),
+                    };
+                    let mut properties = HashMap::new();
+                    for (index, value) in values.iter().enumerate() {
+                        properties.insert(index.to_string(), value.clone());
+                    }
+                    properties.insert("length".into(), JsValue::Number(values.len() as f64));
+                    let snapshot = self.allocate_object(
+                        ObjectKind::Array,
+                        Some(self.array_prototype),
+                        properties,
+                    )?;
+                    stack.push(JsValue::Object(snapshot));
+                }
                 Instruction::CreateFunction(template) => {
                     let id = self.allocate_function(template.clone(), env)?;
                     stack.push(JsValue::Object(id));
@@ -5250,6 +5302,16 @@ impl JsRuntime {
                         .last()
                         .expect("compiler must leave branch condition on stack");
                     if value.is_truthy() {
+                        debug_assert!(*target <= code.len());
+                        ip = *target;
+                        continue;
+                    }
+                }
+                Instruction::JumpIfNullish(target) => {
+                    let value = stack
+                        .last()
+                        .expect("compiler must leave branch condition on stack");
+                    if matches!(value, JsValue::Null | JsValue::Undefined) {
                         debug_assert!(*target <= code.len());
                         ip = *target;
                         continue;
@@ -8914,6 +8976,104 @@ mod tests {
             vm.eval_script("location.pathname").unwrap(),
             JsValue::String("/".into())
         );
+    }
+
+    #[test]
+    fn modern_for_of_iterates_arrays_strings_and_nested_loops() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            (
+                "var total=0; for(const value of [1,2,3]) {total=total+value;} total",
+                JsValue::Number(6.0),
+            ),
+            (
+                "var total=0; for(let value of [1,,3]) {total=total+(value===undefined?10:value);} total",
+                JsValue::Number(14.0),
+            ),
+            (
+                "var result=''; for(const letter of 'A🐈B') {result=result+letter;} result",
+                JsValue::String("A🐈B".into()),
+            ),
+            (
+                "var total=0; for(let x of [1,2]) {for(const y of [3,4]) {total=total+x*y;}} total",
+                JsValue::Number(21.0),
+            ),
+            (
+                "var out=0; for(const n of [1,2,3,4]) {if(n===2) continue; if(n===4) break; out=out+n;} out",
+                JsValue::Number(4.0),
+            ),
+            (
+                "var funcs=[]; for(let n of [1,2,3]) {funcs.push(()=>n);} funcs[0]()+funcs[1]()+funcs[2]()",
+                JsValue::Number(6.0),
+            ),
+            ("for (var last of [5,6]) {} last", JsValue::Number(6.0)),
+            (
+                "var current=0; for(current of [9,8]) {} current",
+                JsValue::Number(8.0),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn modern_for_of_fails_closed_on_noniterables_and_excessive_work() {
+        let mut vm = JsRuntime::new();
+        assert!(vm.eval_script("for(const x of null) {}").is_err());
+        assert!(vm.eval_script("for(const x of {a:1}) {}").is_err());
+        let long = format!("for(const x of '{}') {{}}", "a".repeat(4097));
+        assert!(vm.eval_script(&long).is_err());
+    }
+
+    #[test]
+    fn modern_nullish_coalescing_preserves_values_and_short_circuits() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("null ?? 17", JsValue::Number(17.0)),
+            ("undefined ?? 19", JsValue::Number(19.0)),
+            ("false ?? true", JsValue::Boolean(false)),
+            ("0 ?? 25", JsValue::Number(0.0)),
+            ("'' ?? 'fallback'", JsValue::String(String::new())),
+            ("null ?? undefined ?? 31", JsValue::Number(31.0)),
+            ("null ?? 7 ? 4 : 5", JsValue::Number(4.0)),
+            ("null ?? (false || true)", JsValue::Boolean(true)),
+            ("(null ?? false) || 6", JsValue::Number(6.0)),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        vm.eval_script("var calls = 0; function side() { calls = calls + 1; return 42; }")
+            .unwrap();
+        assert_eq!(vm.eval_script("0 ?? side()").unwrap(), JsValue::Number(0.0));
+        assert_eq!(vm.eval_script("calls").unwrap(), JsValue::Number(0.0));
+        assert_eq!(
+            vm.eval_script("undefined ?? side()").unwrap(),
+            JsValue::Number(42.0)
+        );
+        assert_eq!(vm.eval_script("calls").unwrap(), JsValue::Number(1.0));
+        assert_eq!(
+            vm.eval_script("null ?? `x${true && false}`").unwrap(),
+            JsValue::String("xfalse".into())
+        );
+    }
+
+    #[test]
+    fn nullish_rejects_unparenthesized_boolean_mixing() {
+        for source in [
+            "null ?? true || false",
+            "false || null ?? 3",
+            "true && null ?? 9",
+            "null ?? false && true",
+        ] {
+            assert!(crate::parse_script(source).is_err(), "{source}");
+        }
+        for source in [
+            "null ?? (true || false)",
+            "(false || null) ?? 3",
+            "true && (null ?? 9)",
+            "null ?? (false && true)",
+        ] {
+            assert!(crate::parse_script(source).is_ok(), "{source}");
+        }
     }
 
     #[test]

@@ -965,6 +965,40 @@ mod tests {
     }
 
     #[test]
+    fn for_of_iterates_real_dom_query_snapshot_and_updates_document() {
+        let source = "<div id='result'>Before</div><span>One</span><span>Two</span>
+            <script>
+                var count = 0;
+                for (const node of document.querySelectorAll('span')) { count = count + 1; }
+                document.getElementById('result').textContent = count;
+            </script>";
+        let (document, report, _, diagnostics) = parse_and_execute(source, None, None);
+        assert_eq!(report.executed, 1, "{diagnostics:?}");
+        assert_eq!(report.failed, 0, "{diagnostics:?}");
+        assert_eq!(report.mutations, 1);
+        assert!(collect_text(&document, document.root(), 4096).contains('2'));
+    }
+
+    #[test]
+    fn nullish_script_mutates_real_parser_dom_without_eager_fallback() {
+        let source = "<h1 id='status'>Before</h1><script>
+            var called = 0;
+            function fallback() { called = called + 1; return 'fallback'; }
+            document.getElementById('status').textContent = (0 ?? fallback()) + ':' + (null ?? 'ready');
+        </script>";
+        let (document, report, runtime, diagnostics) = parse_and_execute(source, None, None);
+        assert_eq!(report.executed, 1, "{diagnostics:?}");
+        assert_eq!(report.failed, 0, "{diagnostics:?}");
+        assert_eq!(report.mutations, 1);
+        assert!(collect_text(&document, document.root(), 4096).contains("0:ready"));
+        let mut vm = runtime.expect("script keeps its VM");
+        assert_eq!(
+            vm.eval_script("called").unwrap(),
+            op_js::JsValue::Number(0.0)
+        );
+    }
+
+    #[test]
     fn executes_script_and_replaces_text_without_reparsing_html() {
         let mut doc = parse_document(
             "<h1 id='title'>Before</h1><script>             document.getElementById('title').textContent = 'After';             </script>",

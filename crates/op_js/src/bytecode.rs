@@ -50,6 +50,7 @@ pub(crate) enum Instruction {
     },
     CreateObject(Vec<bool>),
     CreateArray(Vec<bool>),
+    ToForOfValues,
     CreateFunction(Arc<FunctionTemplate>),
     GetProperty,
     SetProperty,
@@ -68,6 +69,7 @@ pub(crate) enum Instruction {
     Jump(usize),
     JumpIfFalse(usize),
     JumpIfTrue(usize),
+    JumpIfNullish(usize),
     Try {
         template: Arc<TryTemplate>,
         break_target: Option<usize>,
@@ -102,6 +104,7 @@ struct Compiler {
     code: Vec<Instruction>,
     controls: Vec<ControlContext>,
     scope_depth: usize,
+    next_private_loop: usize,
 }
 
 struct ControlContext {
@@ -137,6 +140,12 @@ impl Compiler {
                 update,
                 body,
             } => self.for_statement(initializer.as_ref(), test.as_ref(), update.as_ref(), body),
+            Statement::ForOf {
+                kind,
+                name,
+                iterable,
+                body,
+            } => self.for_of_statement(*kind, name, iterable, body),
             Statement::Switch {
                 discriminant,
                 cases,
@@ -316,6 +325,68 @@ impl Compiler {
         for instruction in context.break_try_patches {
             self.patch_try_break(instruction, end);
         }
+    }
+
+    /// Lower the supported synchronous for-of subset to the existing
+    /// scoped for-loop bytecode. Private names cannot occur in source tokens.
+    fn for_of_statement(
+        &mut self,
+        kind: Option<VariableKind>,
+        name: &str,
+        iterable: &Expression,
+        body: &Statement,
+    ) {
+        let suffix = self.next_private_loop;
+        self.next_private_loop += 1;
+        let values_name = format!("\\0for_of_values_{suffix}");
+        let index_name = format!("\\0for_of_index_{suffix}");
+        let item = Expression::Member {
+            object: Box::new(Expression::Identifier(values_name.clone())),
+            property: Box::new(Expression::Identifier(index_name.clone())),
+        };
+        let assign = match kind {
+            Some(kind) => Statement::Variable {
+                kind,
+                declarations: vec![VariableDeclarator {
+                    name: name.to_owned(),
+                    initializer: Some(item),
+                }],
+            },
+            None => Statement::Expression(Expression::Assignment {
+                target: AssignmentTarget::Identifier(name.to_owned()),
+                value: Box::new(item),
+            }),
+        };
+        let lowered = Statement::For {
+            initializer: Some(ForInitializer::Variable {
+                kind: VariableKind::Let,
+                declarations: vec![
+                    VariableDeclarator {
+                        name: values_name.clone(),
+                        initializer: Some(Expression::ForOfValues(Box::new(iterable.clone()))),
+                    },
+                    VariableDeclarator {
+                        name: index_name.clone(),
+                        initializer: Some(Expression::Literal(JsValue::Number(0.0))),
+                    },
+                ],
+            }),
+            test: Some(Expression::Binary {
+                left: Box::new(Expression::Identifier(index_name.clone())),
+                op: BinaryOp::Less,
+                right: Box::new(Expression::Member {
+                    object: Box::new(Expression::Identifier(values_name)),
+                    property: Box::new(Expression::Literal(JsValue::String("length".into()))),
+                }),
+            }),
+            update: Some(Expression::Update {
+                target: AssignmentTarget::Identifier(index_name),
+                op: UpdateOp::Increment,
+                prefix: false,
+            }),
+            body: Box::new(Statement::Block(vec![assign, body.clone()])),
+        };
+        self.statement(&lowered);
     }
 
     fn for_statement(
@@ -528,6 +599,10 @@ impl Compiler {
     fn expression(&mut self, expression: &Expression) {
         match expression {
             Expression::Literal(value) => self.code.push(Instruction::Push(value.clone())),
+            Expression::ForOfValues(iterable) => {
+                self.expression(iterable);
+                self.code.push(Instruction::ToForOfValues);
+            }
             Expression::Template {
                 quasis,
                 expressions,
@@ -684,14 +759,25 @@ impl Compiler {
             }
             Expression::Logical { left, op, right } => {
                 self.expression(left);
-                let short_circuit = match op {
-                    LogicalOp::And => self.emit_jump_if_false(),
-                    LogicalOp::Or => self.emit_jump_if_true(),
-                };
-                self.code.push(Instruction::Pop);
-                self.expression(right);
-                let end = self.code.len();
-                self.patch_jump(short_circuit, end);
+                if *op == LogicalOp::Nullish {
+                    let evaluate_right = self.code.len();
+                    self.code.push(Instruction::JumpIfNullish(usize::MAX));
+                    let skip_right = self.emit_jump();
+                    self.patch_jump(evaluate_right, self.code.len());
+                    self.code.push(Instruction::Pop);
+                    self.expression(right);
+                    self.patch_jump(skip_right, self.code.len());
+                } else {
+                    let short_circuit = match op {
+                        LogicalOp::And => self.emit_jump_if_false(),
+                        LogicalOp::Or => self.emit_jump_if_true(),
+                        LogicalOp::Nullish => unreachable!("handled above"),
+                    };
+                    self.code.push(Instruction::Pop);
+                    self.expression(right);
+                    let end = self.code.len();
+                    self.patch_jump(short_circuit, end);
+                }
             }
             Expression::Assignment { target, value } => match target {
                 AssignmentTarget::Identifier(name) => {
@@ -731,7 +817,8 @@ impl Compiler {
             Some(
                 Instruction::Jump(current)
                 | Instruction::JumpIfFalse(current)
-                | Instruction::JumpIfTrue(current),
+                | Instruction::JumpIfTrue(current)
+                | Instruction::JumpIfNullish(current),
             ) => *current = target,
             _ => unreachable!("compiler jump patch must reference a jump instruction"),
         }

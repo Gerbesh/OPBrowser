@@ -16,6 +16,20 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## Original JS nullish and synchronous for-of integration (16 October 2026)
+
+`op_js::lexer::TokenKind::QuestionQuestion` -> `parser::LogicalOp::Nullish`
+-> `bytecode::Instruction::JumpIfNullish` -> `JsRuntime` branch checks
+only null/undefined, preserving short-circuit value and evaluation order.
+Parser distinguishes required grouping with boolean logic.
+`parser::Statement::ForOf` and `Expression::ForOfValues` lower to
+scoped ordinary-for bytecode with unspellable private iterator/index
+names. `Instruction::ToForOfValues` snapshots bounded arrays, strings
+or selected DOM collections in the original heap; per-iteration block
+scopes protect lexical closure captures. This is not Symbol.iterator,
+full iteration or dynamic array-length semantics. Existing JS/native GC
+identity and parser-DOM integration pathways are reused.
+
 ## Loaded page URL to browser-owned Location object (16 October 2026)
 
 `op_engine::scripts::parse_and_execute` forwards its verified loaded
