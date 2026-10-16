@@ -3,6 +3,22 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## YouTube parser and 32-bit operators (16 October 2026)
+
+The original interpreter now supports full-expression right-hand
+operands in `for...in`, including a comma operator after an
+assignment, while `for...of` retains its narrower RHS grammar.
+Supported numeric operators now include `*=`, `/=`, `%=`,
+`<<`, `>>`, `>>>` and their compound assignment forms. Shift
+counts use the low five bits and unsigned right shifts produce a
+nonnegative uint32 result. Member assignments evaluate the receiver
+and property once. VM and HTML-to-native-text regressions pass.
+
+Native YouTube's three previously observed syntax rejections
+progressed to later missing-global errors (`RegExp`, `Math`).
+It still has eight failed scripts and no painted text. Native
+rendering, async JS, and broad Web API coverage remain incomplete.
+
 ## Labeled statements and named break/continue (16 October 2026)
 
 The original parser/bytecode/VM support statement labels and

@@ -55,8 +55,11 @@ pub enum TokenKind {
     MinusMinus,
     MinusEqual,
     Star,
+    StarEqual,
     Slash,
+    SlashEqual,
     Percent,
+    PercentEqual,
     Bang,
     Equal,
     Arrow,
@@ -68,6 +71,12 @@ pub enum TokenKind {
     LessEqual,
     Greater,
     GreaterEqual,
+    ShiftLeft,
+    ShiftRight,
+    UnsignedShiftRight,
+    ShiftLeftEqual,
+    ShiftRightEqual,
+    UnsignedShiftRightEqual,
     AmpAmp,
     PipePipe,
     Amp,
@@ -249,8 +258,11 @@ impl<'a> Lexer<'a> {
             b'-' if self.take(b'-') => TokenKind::MinusMinus,
             b'-' if self.take(b'=') => TokenKind::MinusEqual,
             b'-' => TokenKind::Minus,
+            b'*' if self.take(b'=') => TokenKind::StarEqual,
             b'*' => TokenKind::Star,
+            b'/' if self.take(b'=') => TokenKind::SlashEqual,
             b'/' => TokenKind::Slash,
+            b'%' if self.take(b'=') => TokenKind::PercentEqual,
             b'%' => TokenKind::Percent,
             b'(' => TokenKind::LeftParen,
             b')' => TokenKind::RightParen,
@@ -287,8 +299,28 @@ impl<'a> Lexer<'a> {
                 }
             }
             b'!' => TokenKind::Bang,
+            b'<' if self.take(b'<') => {
+                if self.take(b'=') {
+                    TokenKind::ShiftLeftEqual
+                } else {
+                    TokenKind::ShiftLeft
+                }
+            }
             b'<' if self.take(b'=') => TokenKind::LessEqual,
             b'<' => TokenKind::Less,
+            b'>' if self.take(b'>') => {
+                if self.take(b'>') {
+                    if self.take(b'=') {
+                        TokenKind::UnsignedShiftRightEqual
+                    } else {
+                        TokenKind::UnsignedShiftRight
+                    }
+                } else if self.take(b'=') {
+                    TokenKind::ShiftRightEqual
+                } else {
+                    TokenKind::ShiftRight
+                }
+            }
             b'>' if self.take(b'=') => TokenKind::GreaterEqual,
             b'>' => TokenKind::Greater,
             _ => {
@@ -693,7 +725,13 @@ fn can_start_regex(previous: Option<&TokenKind>) -> bool {
                 | TokenKind::Plus
                 | TokenKind::Minus
                 | TokenKind::Star
+                | TokenKind::StarEqual
                 | TokenKind::Slash
+                | TokenKind::SlashEqual
+                | TokenKind::PercentEqual
+                | TokenKind::ShiftLeftEqual
+                | TokenKind::ShiftRightEqual
+                | TokenKind::UnsignedShiftRightEqual
                 | TokenKind::Bang
                 | TokenKind::AmpAmp
                 | TokenKind::PipePipe

@@ -9256,6 +9256,18 @@ fn apply_binary(op: BinaryOp, left: JsValue, right: JsValue) -> JsValue {
         BinaryOp::Multiply => JsValue::Number(left.to_number() * right.to_number()),
         BinaryOp::Divide => JsValue::Number(left.to_number() / right.to_number()),
         BinaryOp::Remainder => JsValue::Number(left.to_number() % right.to_number()),
+        BinaryOp::ShiftLeft => {
+            let shift = (to_int32(&right) as u32) & 31;
+            JsValue::Number(f64::from(to_int32(&left).wrapping_shl(shift)))
+        }
+        BinaryOp::ShiftRight => {
+            let shift = (to_int32(&right) as u32) & 31;
+            JsValue::Number(f64::from(to_int32(&left) >> shift))
+        }
+        BinaryOp::UnsignedShiftRight => {
+            let shift = (to_int32(&right) as u32) & 31;
+            JsValue::Number(f64::from((to_int32(&left) as u32) >> shift))
+        }
         BinaryOp::BitwiseAnd => JsValue::Number(f64::from(to_int32(&left) & to_int32(&right))),
         BinaryOp::BitwiseXor => JsValue::Number(f64::from(to_int32(&left) ^ to_int32(&right))),
         BinaryOp::BitwiseOr => JsValue::Number(f64::from(to_int32(&left) | to_int32(&right))),
@@ -9737,6 +9749,60 @@ mod tests {
         ] {
             assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
         }
+    }
+
+    #[test]
+    fn real_web_shifts_and_compound_assignments_use_js_32_bit_rules() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("1<<3", JsValue::Number(8.0)),
+            ("1<<31", JsValue::Number(-2147483648.0)),
+            ("-1>>>0", JsValue::Number(4294967295.0)),
+            ("-8>>2", JsValue::Number(-2.0)),
+            ("1<<33", JsValue::Number(2.0)),
+            ("3+1<<2", JsValue::Number(16.0)),
+            ("8>>1+1", JsValue::Number(2.0)),
+            ("1<<4>>>2", JsValue::Number(4.0)),
+            ("(1<<31)>>>0", JsValue::Number(2147483648.0)),
+            ("var x=1;x<<=4;x", JsValue::Number(16.0)),
+            ("var x=16;x>>=2;x", JsValue::Number(4.0)),
+            ("var x=-1;x>>>=0;x", JsValue::Number(4294967295.0)),
+            ("var x=9;x*= -1;x", JsValue::Number(-9.0)),
+            ("var x=15;x/=3;x", JsValue::Number(5.0)),
+            ("var x=13;x%=5;x", JsValue::Number(3.0)),
+            (
+                "var o={rate:2};var calls=0;function get(){calls+=1;return o;}get().rate*=-1;calls===1&&o.rate===-2",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var o={x:-1};var calls=0;function get(){calls+=1;return o;}get().x>>>=0;calls===1&&o.x===4294967295",
+                JsValue::Boolean(true),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn live_youtube_for_in_rhs_comma_expression_runs_side_effects_once() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            (
+                "var obj={};var target={a:1,b:2};var x;var count=0;for(x in obj.key=7,target){count+=1;}count===2&&obj.key===7",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var seen='';var passes=0;function side(){passes+=1;return {wrong:1};}for(const k in side(),{a:1,b:2}){seen+=k;}seen==='ab'&&passes===1",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var y='';var key='';for(key in ({a:1},{z:9})){y+=key;}y",
+                JsValue::String("z".into()),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        assert!(vm.eval_script("for(const x of [1,2],[3,4]){}").is_err());
     }
 
     #[test]

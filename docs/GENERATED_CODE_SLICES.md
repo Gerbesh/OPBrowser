@@ -76,7 +76,7 @@ op_js::ToForOfValues
 op_engine::parse_and_execute
 ```
 
-- [`op_js::for_statement`](../crates/op_js/src/parser.rs#L309)
+- [`op_js::for_statement`](../crates/op_js/src/parser.rs#L312)
 - [`op_js::for_of_statement`](../crates/op_js/src/bytecode.rs#L168)
 - [`op_js::ToForOfValues`](../crates/op_js/src/runtime.rs#L5161)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L394)
@@ -95,8 +95,8 @@ op_js::JumpIfNullish
 op_engine::parse_and_execute
 ```
 
-- [`op_js::QuestionQuestion`](../crates/op_js/src/lexer.rs#L85)
-- [`op_js::nullish`](../crates/op_js/src/parser.rs#L1031)
+- [`op_js::QuestionQuestion`](../crates/op_js/src/lexer.rs#L94)
+- [`op_js::nullish`](../crates/op_js/src/parser.rs#L1053)
 - [`op_js::JumpIfNullish`](../crates/op_js/src/bytecode.rs#L85)
 - [`op_js::JumpIfNullish`](../crates/op_js/src/runtime.rs#L5428)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L394)
@@ -1127,7 +1127,7 @@ op_dom::append_child
 op_paint::build_display_list
 ```
 
-- [`op_js::comparison`](../crates/op_js/src/parser.rs#L1170)
+- [`op_js::comparison`](../crates/op_js/src/parser.rs#L1192)
 - [`op_js::binary_with_coercion`](../crates/op_js/src/runtime.rs#L1645)
 - [`op_js::query_descendants`](../crates/op_js/src/runtime.rs#L3779)
 - [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3052)
@@ -1322,8 +1322,8 @@ op_dom::set_text_content
 op_paint::build_display_list
 ```
 
-- [`op_js::tokenize`](../crates/op_js/src/lexer.rs#L92)
-- [`op_js::conditional`](../crates/op_js/src/parser.rs#L1003)
+- [`op_js::tokenize`](../crates/op_js/src/lexer.rs#L101)
+- [`op_js::conditional`](../crates/op_js/src/parser.rs#L1013)
 - [`op_js::compile_program`](../crates/op_js/src/bytecode.rs#L105)
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L422)
 - [`op_js::typeof_value`](../crates/op_js/src/runtime.rs#L1510)
@@ -1476,8 +1476,8 @@ op_js::apply_binary
 - [`op_engine::ParserScriptRunner`](../crates/op_engine/src/scripts.rs#L399)
 - [`op_engine::active_script_diagnostics`](../crates/op_engine/src/lib.rs#L349)
 - [`op_browser::script_diag_`](../crates/op_browser/src/bin/live_site_probe.rs#L184)
-- [`op_js::Caret`](../crates/op_js/src/lexer.rs#L75)
-- [`op_js::bitwise_xor`](../crates/op_js/src/parser.rs#L1131)
+- [`op_js::Caret`](../crates/op_js/src/lexer.rs#L84)
+- [`op_js::bitwise_xor`](../crates/op_js/src/parser.rs#L1153)
 - [`op_js::to_int32`](../crates/op_js/src/runtime.rs#L9230)
 - [`op_js::apply_binary`](../crates/op_js/src/runtime.rs#L1721)
 

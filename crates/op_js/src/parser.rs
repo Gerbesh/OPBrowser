@@ -233,6 +233,9 @@ pub enum BinaryOp {
     Multiply,
     Divide,
     Remainder,
+    ShiftLeft,
+    ShiftRight,
+    UnsignedShiftRight,
     BitwiseAnd,
     BitwiseXor,
     BitwiseOr,
@@ -549,7 +552,14 @@ impl Parser {
             });
         if let (Some(name), Some(for_in)) = (binding_name, for_in) {
             self.index = binding_index + 2;
-            let iterable = self.assignment()?;
+            // In a for-in head, the RHS is an Expression (including comma).
+            // In for-of, it is only an AssignmentExpression. YouTube uses
+            // "for (x in style[key] = value, other)" in shipped JS.
+            let iterable = if for_in {
+                self.sequence()?
+            } else {
+                self.assignment()?
+            };
             if !self.take(&TokenKind::RightParen) {
                 return Err(JsError::syntax(
                     self.current().start,
@@ -1007,6 +1017,18 @@ impl Parser {
             Some(BinaryOp::Add)
         } else if self.take(&TokenKind::MinusEqual) {
             Some(BinaryOp::Subtract)
+        } else if self.take(&TokenKind::StarEqual) {
+            Some(BinaryOp::Multiply)
+        } else if self.take(&TokenKind::SlashEqual) {
+            Some(BinaryOp::Divide)
+        } else if self.take(&TokenKind::PercentEqual) {
+            Some(BinaryOp::Remainder)
+        } else if self.take(&TokenKind::ShiftLeftEqual) {
+            Some(BinaryOp::ShiftLeft)
+        } else if self.take(&TokenKind::ShiftRightEqual) {
+            Some(BinaryOp::ShiftRight)
+        } else if self.take(&TokenKind::UnsignedShiftRightEqual) {
+            Some(BinaryOp::UnsignedShiftRight)
         } else {
             return Ok(left);
         };
@@ -1193,7 +1215,7 @@ impl Parser {
     }
 
     fn comparison(&mut self) -> Result<Expression, JsError> {
-        let mut expression = self.additive()?;
+        let mut expression = self.shift()?;
         loop {
             let op = if self.take(&TokenKind::Less) {
                 Some(BinaryOp::Less)
@@ -1211,6 +1233,27 @@ impl Parser {
                 None
             };
             let Some(op) = op else {
+                return Ok(expression);
+            };
+            let right = self.shift()?;
+            expression = Expression::Binary {
+                left: Box::new(expression),
+                op,
+                right: Box::new(right),
+            };
+        }
+    }
+
+    fn shift(&mut self) -> Result<Expression, JsError> {
+        let mut expression = self.additive()?;
+        loop {
+            let op = if self.take(&TokenKind::ShiftLeft) {
+                BinaryOp::ShiftLeft
+            } else if self.take(&TokenKind::ShiftRight) {
+                BinaryOp::ShiftRight
+            } else if self.take(&TokenKind::UnsignedShiftRight) {
+                BinaryOp::UnsignedShiftRight
+            } else {
                 return Ok(expression);
             };
             let right = self.additive()?;
@@ -1898,6 +1941,26 @@ mod tests {
         assert!(matches!(inner.as_ref(), Statement::For { .. }));
         let block = parse_script("label: {break label;}").unwrap();
         assert!(matches!(block.statements[0], Statement::Labeled { .. }));
+    }
+
+    #[test]
+    fn parse_web_shift_and_compound_assignments() {
+        assert!(parse_script("this.playbackRate *= -1;").is_ok());
+        assert!(parse_script("var i=Math.random()*1E9>>>0; d[f]=(d[f]||0)|1<<e%32;").is_ok());
+        assert!(parse_script("x<<=2;y>>=2;z>>>=0;v/=2;v%=2;").is_ok());
+        assert!(parse_script("1<<;").is_err());
+        assert!(parse_script("var x=3; x>>>;").is_err());
+    }
+
+    #[test]
+    fn parses_for_in_sequence_but_does_not_loosen_for_of_grammar() {
+        let program = parse_script("for(x in a[b]=c, keys){x;}").unwrap();
+        let Statement::ForIn { object, .. } = &program.statements[0] else {
+            panic!("expected for-in statement")
+        };
+        assert!(matches!(object, Expression::Sequence(items) if items.len()==2));
+        assert!(parse_script("for(const x in ({a:1},{b:2})){}").is_ok());
+        assert!(parse_script("for(const x of [1,2],[3,4]){}").is_err());
     }
 
     #[test]

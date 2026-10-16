@@ -169,6 +169,21 @@ investigate its `expected ')' after for-of iterable` and remaining
 actual runtime failures, async functions, script loading and visible
 layout. This change is a language-semantic fix, not a full-site pass.
 
+**P0 modern JS syntax unblocking (16 October 2026):** The original
+parser now handles a comma-expression RHS in `for...in`, observed
+directly in live YouTube code, without broadening `for...of`.
+Native `*=`/`/=`/`%=`, shifts `<<`/`>>`/`>>>`, their compound
+assignments, 32-bit signed/unsigned semantics and correct operator
+precedence are implemented. Parser/VM plus HTML-to-native-paint
+regressions pass. In a 1300 ms live five-site run, failed JS:
+Google **2**, YouTube **8**, Pikabu **11**, Reddit **1**,
+DeviantArt **3**. YouTube's three syntax errors now proceed to
+`RegExp` and `Math` missing-global ReferenceErrors; it
+still paints **zero text**, Reddit is blank. NEXT: original
+`Math` and `RegExp` globals with standards-based tests,
+async function parsing/runtime, script scheduling, and real layout.
+Do not treat error transitions as successful website rendering.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

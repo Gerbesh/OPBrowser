@@ -132,6 +132,20 @@ missing-global failure. PerformanceObserver/resource timing and an
 interactive CPU profiler remain unimplemented; DeviantArt still has
 other JavaScript errors.
 
+## S78 - YouTube-style JS syntax to native DOM pixels
+
+Live observed `for(x in h.style[u]=q,C)` -> original
+`Parser::for_statement` accepts comma RHS -> `Expression::Sequence`
+executes the assignment exactly once -> `ToForInKeys` snapshots own
+keys -> original VM executes body -> DOM `textContent` -> native
+paint-text primitive (synthetic HTML regression). Independently,
+`this.playbackRate*=-1`, `1<<e%32` and `random()*1E9>>>0`
+reach original lexer -> operator precedence parser -> existing
+compound-assignment bytecode and numeric VM -> DOM/paint regression.
+Public YouTube advances from three syntax failures to Reference
+failures for missing `RegExp` and `Math`; still zero native text.
+No visual or interaction pass for the live page.
+
 ## S77 - Labeled JS jump through finally to real DOM pixels
 
 Live script or inline HTML -> lexer identifier/colon -> parser

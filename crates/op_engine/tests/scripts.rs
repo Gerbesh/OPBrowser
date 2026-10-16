@@ -26,6 +26,52 @@ fn labeled_break_continue_through_finally_mutates_actual_document_pixels() {
 }
 
 #[test]
+fn real_web_compound_shift_operators_reach_native_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var video={playbackRate:2};",
+            "video.playbackRate*= -1;",
+            "var id=-1>>>0;",
+            "document.getElementById('result').textContent=",
+            "video.playbackRate===-2&&id===4294967295?",
+            "'BITSHIFT-COMPOUND-PASS':'BITSHIFT-COMPOUND-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("BITSHIFT-COMPOUND-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn youtube_for_in_rhs_comma_expression_reaches_dom_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var keys={a:1,b:2};var style={};var k;var out='';",
+            "for(k in style.color='blue',keys){out+=k;}",
+            "document.getElementById('result').textContent=",
+            "out==='ab'&&style.color==='blue'?'FORIN-SEQUENCE-PASS':'FORIN-SEQUENCE-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("FORIN-SEQUENCE-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn r11_timer_scrolltop_repaints_even_without_dom_text_mutation() {
     let mut engine = Engine::new();
     let initial = engine.set_html_page(

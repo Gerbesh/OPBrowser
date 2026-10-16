@@ -3707,3 +3707,10 @@ This file is append-only project history.
 - Focused parser and VM regressions check nested labels, loop exits, invalid targets, nested-finally sequencing and preserved completion. Original HTML integration verifies correct textContent change appears in genuine paint commands.
 - Rebuilt the Release real-site probe and tested the five public HTTPS URLs with 1300ms settling under gitignored artifacts/live_web/labels-try-2026-10-16/: Google 2 failed JS, YouTube 8, Pikabu 11, Reddit 1, DeviantArt 3. YouTube remains zero text and Reddit blank. One former YouTube labeled-try syntax rejection now advances to a subsequent expected-expression error, without visual progress; a separate for-of parser blocker remains.
 
+
+## 2026-10-16 - YouTube for-in comma expressions and 32-bit JS operators
+
+- Read native YouTube syntax-context diagnostics without archiving public scripts. Corrected Parser::for_statement to parse Expression (including comma) on for-in RHS while leaving for-of at AssignmentExpression; shipped snippet for(x in h.style[u]=q,C) now parses. Added parser/VM/HTML-to-paint regression and a negative for-of case.
+- The next YouTube syntax context contained this.playbackRate*=-1, 1<<e%32 and Math.random()*1E9>>>0. Added original lexer/parser/VM operators *=, /=, %=, <<, >>, >>>, <<=, >>=, >>>= with JS ToInt32 conversion, masked 5-bit shift counts and correct operator precedence. Compound member assignment retains single evaluation of receiver/property. Tests include uint32 -1>>>0, edge wrapping and native DOM-to-paint.
+- Rebuilt original native Windows release probe and checked real Google, YouTube, Pikabu, Reddit and DeviantArt at 1300ms. Three previously noted YouTube syntax errors advance to missing built-in RegExp and Math ReferenceErrors; YouTube still has eight JS failures/zero painted text, Reddit remains blank. Other counts: Google 2, Pikabu 11, Reddit 1, DeviantArt 3 JS failures. No real-site visual compatibility claimed. Probe artifacts are gitignored.
+

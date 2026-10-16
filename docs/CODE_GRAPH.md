@@ -57,6 +57,22 @@ Original-VM tests and an HTML -> DOM mutation -> paint regression
 exercise the entire path. General ECMAScript label/ASI coverage
 remains incomplete.
 
+## Modern arithmetic/shift operators and real-site for-in grammar (16 October 2026)
+
+`op_js::lexer::TokenKind` recognizes `*=`, `/=`, `%=`,
+`<<`, `>>`, `>>>` and their compound-assignment forms;
+`parser::BinaryOp` now carries signed and unsigned shifts at the
+correct precedence between addition and comparison. Original
+`bytecode::Compiler` already evaluates assignment targets exactly
+once, so new compound operations reuse `Dup2/GetProperty/Binary/
+SetProperty` without new heap state. The Rust VM handles JS ToInt32,
+five-bit shift counts, signed extension and unsigned 32-bit output.
+`Parser::for_statement` separately uses `sequence()` for for-in
+right-hand expressions but preserves the assignment-expression-only
+for-of grammar. Focused AST, VM and native DOM-to-paint tests pass.
+Neither a complete ECMAScript number model nor real-site readiness
+is claimed.
+
 ## Opt-in real-script diagnostics and bounded for-in (16 October 2026)
 
 `ParserScriptRunner::evaluate_code` receives `JsError.offset` from

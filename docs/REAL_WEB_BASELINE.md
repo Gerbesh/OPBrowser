@@ -298,6 +298,29 @@ YouTube still renders zero text and Reddit is blank; there is no
 certified first viewport. Exact thrown-value semantics and full
 descriptors remain incomplete.
 
+## 16 October 2026: operator and for-in parser unblocking
+
+The real YouTube opt-in syntax excerpt exposed a valid comma-expression
+RHS in `for(x in h.style[u]=q,C)` that the original parser incorrectly
+treated as for-of-style `AssignmentExpression`. Corrected for-in
+to parse `Expression`, retaining for-of's restriction. A second
+real syntax sample revealed `this.playbackRate*=-1`, and another
+showed `1<<e%32` / `Math.random()*1E9>>>0`. Added original
+`*=`/`/=`/`%=`, signed/unsigned bitshifts and shift assignments,
+with JS ToInt32 and 5-bit shift masking, plus original VM and native
+HTML-to-text-paint tests.
+
+Rebuilt Windows Release probe and reran the same five real HTTPS
+sites with 1300 ms settling in ignored
+`artifacts/live_web/shiftops-2026-10-16/`. JS failed counts:
+Google **2**, YouTube **8**, Pikabu **11**, Reddit **1**, DeviantArt
+**3**. YouTube still renders **zero text**, Reddit remains
+**blank**. In a live context trace, the formerly observed three
+YouTube syntax errors now reach `Reference: RegExp is not defined`
+and `Reference: Math is not defined`. Those globals and async
+script loading are subsequent blockers. This is a parser/VM
+regression improvement, not an end-to-end site compatibility pass.
+
 ## 16 October 2026: labeled statements and protected finally execution
 
 Original JS supports statement labels plus named `break` and
