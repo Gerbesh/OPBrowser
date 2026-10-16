@@ -32,6 +32,16 @@ operands but preserves ordered side effects. Parser uses it only where
 comma is an expression operator rather than an argument/declaration
 separator. JS and native DOM regression tests cover the complete path.
 
+## Object accessors and method shorthand (16 October 2026)
+
+`parser::ObjectPropertyKind` distinguishes data/getter/setter expressions.
+The ordinary function compiler builds accessor/method bodies; VM
+`CreateObject` stores GC-traced internal `ObjectKind::AccessorDescriptor`
+cells. `get_property`/`set_property` call inherited and own accessors
+on the original receiver; GC retains closures through property edges.
+Thrown-value identity through accessors and complete property descriptor
+APIs remain unsupported.
+
 ## Opt-in real-script diagnostics and bounded for-in (16 October 2026)
 
 `ParserScriptRunner::evaluate_code` receives `JsError.offset` from

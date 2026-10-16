@@ -76,6 +76,14 @@ pub struct ObjectProperty {
     pub key: String,
     pub value: Expression,
     pub prototype_setter: bool,
+    pub kind: ObjectPropertyKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObjectPropertyKind {
+    Data,
+    Getter,
+    Setter,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1455,18 +1463,78 @@ impl Parser {
                 }
             };
 
-            let has_colon = self.take(&TokenKind::Colon);
-            let value = if has_colon {
-                self.assignment()?
-            } else if let Some(name) = shorthand {
-                Expression::Identifier(name)
+            // Accessor names are contextual: get(), {get: value} and
+            // {get} are ordinary properties.
+            let accessor = matches!(key.as_str(), "get" | "set")
+                && !self.check(&TokenKind::LeftParen)
+                && !self.check(&TokenKind::Colon)
+                && self
+                    .tokens
+                    .get(self.index + 1)
+                    .is_some_and(|next| same_variant(&next.kind, &TokenKind::LeftParen));
+            let (key, kind, value, prototype_setter) = if accessor {
+                let name_token = self.advance().clone();
+                let property_name = match name_token.kind {
+                    TokenKind::Identifier(name) | TokenKind::String(name) => name,
+                    TokenKind::Number(number) => JsValue::Number(number).to_js_string(),
+                    other => identifier_name(&other).ok_or_else(|| {
+                        JsError::syntax(name_token.start, "expected accessor property name")
+                    })?,
+                };
+                let (params, body) = self.function_tail()?;
+                let kind = if key == "get" {
+                    ObjectPropertyKind::Getter
+                } else {
+                    ObjectPropertyKind::Setter
+                };
+                let expected = if kind == ObjectPropertyKind::Getter {
+                    0
+                } else {
+                    1
+                };
+                if params.len() != expected {
+                    return Err(JsError::syntax(
+                        name_token.start,
+                        "invalid accessor parameter count",
+                    ));
+                }
+                (
+                    property_name,
+                    kind,
+                    Expression::Function {
+                        name: None,
+                        params,
+                        body,
+                    },
+                    false,
+                )
+            } else if self.check(&TokenKind::LeftParen) {
+                let (params, body) = self.function_tail()?;
+                (
+                    key.clone(),
+                    ObjectPropertyKind::Data,
+                    Expression::Function {
+                        name: Some(key),
+                        params,
+                        body,
+                    },
+                    false,
+                )
             } else {
-                return Err(JsError::syntax(
-                    self.current().start,
-                    "expected ':' after object property name",
-                ));
+                let has_colon = self.take(&TokenKind::Colon);
+                let value = if has_colon {
+                    self.assignment()?
+                } else if let Some(name) = shorthand {
+                    Expression::Identifier(name)
+                } else {
+                    return Err(JsError::syntax(
+                        self.current().start,
+                        "expected ':' after object property name",
+                    ));
+                };
+                let prototype_setter = has_colon && key == "__proto__";
+                (key, ObjectPropertyKind::Data, value, prototype_setter)
             };
-            let prototype_setter = has_colon && key == "__proto__";
             if prototype_setter {
                 if saw_prototype_setter {
                     return Err(JsError::syntax(
@@ -1480,6 +1548,7 @@ impl Parser {
                 key,
                 value,
                 prototype_setter,
+                kind,
             });
 
             if self.take(&TokenKind::RightBrace) {

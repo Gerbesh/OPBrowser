@@ -1,7 +1,7 @@
 use crate::{
     AssignmentTarget, BinaryOp, CatchClause, Expression, ForInitializer, JsError, JsValue,
-    LogicalOp, Program, Statement, SwitchCase, UnaryOp, UpdateOp, VariableDeclarator, VariableKind,
-    parse_script,
+    LogicalOp, ObjectPropertyKind, Program, Statement, SwitchCase, UnaryOp, UpdateOp,
+    VariableDeclarator, VariableKind, parse_script,
 };
 use std::sync::Arc;
 
@@ -48,7 +48,7 @@ pub(crate) enum Instruction {
         op: UpdateOp,
         prefix: bool,
     },
-    CreateObject(Vec<bool>),
+    CreateObject(Vec<(bool, ObjectPropertyKind)>),
     CreateArray(Vec<bool>),
     CreateRegExp {
         pattern: String,
@@ -658,14 +658,14 @@ impl Compiler {
             Expression::Identifier(name) => self.code.push(Instruction::Load(name.clone())),
             Expression::This => self.code.push(Instruction::Load("this".into())),
             Expression::ObjectLiteral(properties) => {
-                let mut prototype_setters = Vec::with_capacity(properties.len());
+                let mut property_kinds = Vec::with_capacity(properties.len());
                 for property in properties {
                     self.code
                         .push(Instruction::Push(JsValue::String(property.key.clone())));
                     self.expression(&property.value);
-                    prototype_setters.push(property.prototype_setter);
+                    property_kinds.push((property.prototype_setter, property.kind));
                 }
-                self.code.push(Instruction::CreateObject(prototype_setters));
+                self.code.push(Instruction::CreateObject(property_kinds));
             }
             Expression::ArrayLiteral(elements) => {
                 let mut present = Vec::with_capacity(elements.len());
@@ -985,7 +985,7 @@ mod tests {
             script
                 .code
                 .iter()
-                .any(|instruction| matches!(instruction, Instruction::CreateObject(flags) if flags == &[false]))
+                .any(|instruction| matches!(instruction, Instruction::CreateObject(flags) if flags == &[(false, ObjectPropertyKind::Data)]))
         );
         assert!(script.code.iter().any(
             |instruction| matches!(instruction, Instruction::CreateArray(present) if present == &[true, false, true])

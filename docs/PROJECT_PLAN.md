@@ -146,6 +146,16 @@ absolute URL reflection and full HTMLImageElement remain open.
 
 **P0 RegExp and expression-grammar follow-up (16 October 2026):** Added native original JS lexer distinction between regex literals and division, `RegExp` objects with bounded `test/exec`, and String `replace/match/split`. A small finite-automata `regex` dependency performs matching, not HTML/DOM or JavaScript execution. Added `+=`/`-=` assignments with receiver-once evaluation and the sequence/comma operator without merging function arguments. UTF-16 RegExp offsets and literal string splitting have tests. Measured live YouTube at **8 executed / 8 failed / zero text**, compared to 7/9 earlier. `get`/`set` object accessors, labeled statements, async functions, dynamic scripts and many Web APIs remain. Regex support is a documented subset: unsupported backreferences/lookaround, missing constructor/protocol features and a conservative slash lexical heuristic. Do not treat zero syntax failures as guaranteed visual progress.
 
+**P0 accessor follow-up (16 October 2026):** Original JS now executes
+getter/setter object fields and concise methods through GC-traced
+function descriptors, with receiver-binding and closure tests.
+Five-site 1300 ms run: Google 2, YouTube 8, Pikabu 11, Reddit 1,
+DeviantArt 3 JS failures. YouTube still has **zero painted text**,
+Reddit remains blank. Next blockers: remaining syntax (including
+labels/async functions), dynamic scripts, DOM and visible layout,
+plus on-demand interactive profiling. Failure counts alone are not
+visual compatibility.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

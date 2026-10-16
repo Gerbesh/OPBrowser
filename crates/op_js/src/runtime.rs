@@ -1,6 +1,6 @@
 use crate::{
-    BinaryOp, CompiledScript, JsError, JsErrorKind, JsValue, ObjectId, UnaryOp, UpdateOp,
-    VariableKind,
+    BinaryOp, CompiledScript, JsError, JsErrorKind, JsValue, ObjectId, ObjectPropertyKind, UnaryOp,
+    UpdateOp, VariableKind,
     bytecode::{FunctionTemplate, Instruction, TryTemplate},
     compile_script,
 };
@@ -75,6 +75,7 @@ struct Environment {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ObjectKind {
     Ordinary,
+    AccessorDescriptor,
     Array,
     RegExp,
     Function,
@@ -5048,28 +5049,59 @@ impl JsRuntime {
                     self.set_property(&target, &key, updated.clone())?;
                     stack.push(if *prefix { updated } else { previous });
                 }
-                Instruction::CreateObject(prototype_setters) => {
-                    let mut entries = Vec::with_capacity(prototype_setters.len());
-                    for prototype_setter in prototype_setters.iter().rev().copied() {
+                Instruction::CreateObject(property_kinds) => {
+                    let mut entries = Vec::with_capacity(property_kinds.len());
+                    for property_kind in property_kinds.iter().rev().copied() {
                         let value = stack
                             .pop()
                             .expect("compiler must push object property value");
                         let key = stack.pop().expect("compiler must push object property key");
-                        entries.push((to_property_key(key), value, prototype_setter));
+                        entries.push((to_property_key(key), value, property_kind));
                     }
                     entries.reverse();
 
                     let mut properties = HashMap::new();
                     let mut prototype = Some(self.object_prototype);
-                    for (key, value, prototype_setter) in entries {
+                    for (key, value, (prototype_setter, kind)) in entries {
                         if prototype_setter {
                             match value {
                                 JsValue::Object(id) => prototype = Some(id),
                                 JsValue::Null => prototype = None,
                                 _ => {}
                             }
-                        } else {
+                        } else if kind == ObjectPropertyKind::Data {
                             properties.insert(key, value);
+                        } else {
+                            let previous = properties.get(&key).and_then(|value| match value {
+                                JsValue::Object(id) => Some(*id),
+                                _ => None,
+                            });
+                            let descriptor = if let Some(id) = previous {
+                                if self.object(id)?.kind == ObjectKind::AccessorDescriptor {
+                                    id
+                                } else {
+                                    self.allocate_object(
+                                        ObjectKind::AccessorDescriptor,
+                                        None,
+                                        HashMap::new(),
+                                    )?
+                                }
+                            } else {
+                                self.allocate_object(
+                                    ObjectKind::AccessorDescriptor,
+                                    None,
+                                    HashMap::new(),
+                                )?
+                            };
+                            let slot = if kind == ObjectPropertyKind::Getter {
+                                "get"
+                            } else {
+                                "set"
+                            };
+                            self.object_mut(descriptor)?
+                                .properties
+                                .insert(slot.into(), value);
+                            properties.insert(key, JsValue::Object(descriptor));
                         }
                     }
 
@@ -8138,6 +8170,12 @@ impl JsRuntime {
         match target {
             JsValue::Object(id) => {
                 let kind = self.object(*id)?.kind;
+                if let Some(getter) = self.accessor_at(*id, key, "get")? {
+                    return match getter {
+                        Some(function) => self.call_accessor(function, target.clone(), Vec::new()),
+                        None => Ok(JsValue::Undefined),
+                    };
+                }
                 let event_like = kind == ObjectKind::DomEvent
                     || self
                         .object(*id)?
@@ -8562,6 +8600,12 @@ impl JsRuntime {
         if self.dom_document == Some(*id) && matches!(key, "URL" | "documentURI" | "baseURI") {
             return Ok(());
         }
+        if let Some(setter) = self.accessor_at(*id, key, "set")? {
+            if let Some(function) = setter {
+                self.call_accessor(function, target.clone(), vec![value])?;
+            }
+            return Ok(());
+        }
 
         let event_like = self.object(*id)?.kind == ObjectKind::DomEvent
             || self
@@ -8830,6 +8874,43 @@ impl JsRuntime {
         }
 
         Ok(())
+    }
+
+    // Descriptor objects are internal GC-traced cells, never exposed to page JS.
+    // Lookups respect an ordinary data property's shadowing of inherited accessors.
+    fn accessor_at(
+        &self,
+        start: ObjectId,
+        key: &str,
+        slot: &str,
+    ) -> Result<Option<Option<JsValue>>, JsError> {
+        let value = self.get_object_property(start, key)?;
+        if let JsValue::Object(id) = value
+            && self.object(id)?.kind == ObjectKind::AccessorDescriptor
+        {
+            return Ok(Some(self.object(id)?.properties.get(slot).cloned()));
+        }
+        Ok(None)
+    }
+
+    fn call_accessor(
+        &mut self,
+        function: JsValue,
+        receiver: JsValue,
+        args: Vec<JsValue>,
+    ) -> Result<JsValue, JsError> {
+        // Nested getters and setters must not reset the recursion safety gate.
+        let depth = self.active_execution_depth.load(Ordering::Relaxed);
+        if depth >= self.call_depth_budget {
+            return Err(JsError::execution_limit("accessor call depth exceeded"));
+        }
+        let mut steps = 0;
+        match self.call_value(function, receiver, args, &mut steps, depth + 1)? {
+            CallOutcome::Value(value) => Ok(value),
+            CallOutcome::Thrown(_) => Err(JsError::type_error(
+                "accessor threw a script value (exception propagation is incomplete)",
+            )),
+        }
     }
 
     fn get_object_property(&self, start: ObjectId, key: &str) -> Result<JsValue, JsError> {
@@ -9388,6 +9469,67 @@ mod tests {
         ] {
             assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
         }
+    }
+
+    #[test]
+    fn object_literal_accessors_invoke_real_functions_on_original_receiver() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            (
+                "var o={_x:3,get x(){return this._x;},set x(v){this._x=v;}};o.x=9;o.x",
+                JsValue::Number(9.0),
+            ),
+            (
+                "var o={get x(){return 6;},get x(){return 7;}};o.x",
+                JsValue::Number(7.0),
+            ),
+            (
+                "var o={get x(){return 2;}};o.x=17;o.x",
+                JsValue::Number(2.0),
+            ),
+            ("var o={set x(v){this.y=v;}};o.x", JsValue::Undefined),
+            (
+                "var p={get x(){return this.y;}};var o={__proto__:p,y:6};o.x",
+                JsValue::Number(6.0),
+            ),
+            (
+                "var p={set x(v){this.y=v;}};var o={__proto__:p};o.x=8;o.y",
+                JsValue::Number(8.0),
+            ),
+            (
+                "var p={get x(){return 2;}};var o={__proto__:p,x:5};o.x",
+                JsValue::Number(5.0),
+            ),
+            (
+                "var o={double(v){return v*2;}};o.double(4)",
+                JsValue::Number(8.0),
+            ),
+            ("var o={get(){return 3;}};o.get()", JsValue::Number(3.0)),
+            ("var get=4;var o={get};o.get", JsValue::Number(4.0)),
+            ("var o={get:5};o.get", JsValue::Number(5.0)),
+            ("var o={get 'x'(){return 9;}};o.x", JsValue::Number(9.0)),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        for invalid in [
+            "var o={get x(v){return v;}};",
+            "var o={set x(){}};",
+            "var o={set x(a,b){}};",
+        ] {
+            assert!(vm.eval_script(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn accessor_closures_survive_the_original_js_gc() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script("var retained=(function(){let secret=12;return {get value(){return secret;},set value(v){secret=v;}};})();")
+            .unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert_eq!(
+            vm.eval_script("retained.value=19;retained.value").unwrap(),
+            JsValue::Number(19.0)
+        );
     }
 
     #[test]

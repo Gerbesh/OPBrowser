@@ -286,6 +286,18 @@ include object-literal getters (`get playbackRate()`, `get capture()`)
 and labeled statements; runtime functions and DOM APIs also block.
 The public sites change over time; no visual compatibility pass is claimed.
 
+## 16 October 2026: original JS accessors and method shorthand
+
+Native getter/setter and concise-method implementation passed VM/GC,
+full workspace tests and strict lint. With 1300 ms settling, the
+same five live anonymous URLs in
+`artifacts/live_web/accessors-2026-10-16/` report failed scripts:
+Google 2, YouTube 8, Pikabu 11, Reddit 1, DeviantArt 3.
+Prior Pikabu/DeviantArt counts were 12/4; live responses vary.
+YouTube still renders zero text and Reddit is blank; there is no
+certified first viewport. Exact thrown-value semantics and full
+descriptors remain incomplete.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell

@@ -3,6 +3,15 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Original getters, setters and concise methods (16 October 2026)
+
+Object literals now execute `get x(){}`, `set x(v){}`, and
+`method(){}` through original JS bytecode and GC-traced closures.
+Prototype receiver binding and ordinary `get` fields are tested.
+Exact thrown-value propagation, computed keys and descriptor APIs
+remain incomplete. Five real-site diagnostics improved Pikabu and
+DeviantArt error counts, but YouTube still paints no text.
+
 ## Basic arrow functions (15 October 2026)
 
 Original Rust lexer/parser/VM support `x => x + 1`,

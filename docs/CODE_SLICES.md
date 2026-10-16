@@ -132,6 +132,14 @@ missing-global failure. PerformanceObserver/resource timing and an
 interactive CPU profiler remain unimplemented; DeviantArt still has
 other JavaScript errors.
 
+## S76 - Object-literal accessor through VM and GC
+
+Public inline script -> original object parser with contextual get/set ->
+function bytecode -> `CreateObject` GC-traced accessor descriptor ->
+member get/set invokes real getter/setter with the receiver ->
+captured closure survives GC -> VM tests and native public-site recheck.
+Computed names, full descriptors and exact thrown-value propagation remain open.
+
 ## S75 - Real-site JS failure diagnostics to language compatibility
 
 Public page -> parser script boundary -> bounded execution/error and
