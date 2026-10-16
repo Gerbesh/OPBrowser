@@ -13,6 +13,15 @@ page still paints **no text**. Pikabu remains visually malformed.
 The 30-minute synthetic GC safety and private-memory checks passed,
 while rare long wall-time GC pauses still need investigation.
 
+## Page location URL checkpoint (16 October 2026)
+
+Real loaded HTTP(S) URLs now reach the independent JavaScript VM as
+`window.location` / `document.location` and document URL fields.
+This partial read-only Location implementation rejects fake navigation.
+Pikabu's missing-location error disappeared, but 12 scripts still fail
+and its layout is incorrect. YouTube remains 9 JS failures and paints no
+text. Two focused tests cover the binding and HTML-to-DOM behavior.
+
 ## Script-created images (16 October 2026)
 
 The original JS runtime now exposes a bounded `Image()` constructor

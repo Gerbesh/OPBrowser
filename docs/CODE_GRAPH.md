@@ -1,6 +1,6 @@
 # OPBrowser Code Graph
 
-Last updated: 2026-10-15
+Last updated: 2026-10-16
 
 This document is the maintained human-readable code/dependency graph. It is updated
 whenever crates, important types, or ownership boundaries change.
@@ -15,6 +15,17 @@ the generated graph describes **crate-level edges only**, not a call graph.
 See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
+
+## Loaded page URL to browser-owned Location object (16 October 2026)
+
+`op_engine::scripts::parse_and_execute` forwards its verified loaded
+`page_base` to `op_js::JsRuntime::set_page_location` at parser-script
+boundaries. The per-document VM owns one `ObjectKind::Location` that
+`window.location` and `document.location` reference; document URL
+fields use the same source. It is a read-only HTTP(S) subset with
+explicitly unsupported JS location navigation setters, not a second
+navigation engine or new crate dependency. Tests cover loaded URL ->
+script -> DOM text and URL component reads.
 
 ## Browser-owned Image constructor and host attribute reflection (16 October 2026)
 

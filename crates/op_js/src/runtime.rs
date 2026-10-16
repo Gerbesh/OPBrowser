@@ -92,6 +92,7 @@ enum ObjectKind {
     DomStyle(usize),
     Headers,
     Performance,
+    Location,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -932,6 +933,71 @@ impl JsRuntime {
         }
     }
 
+    /// Expose the loaded HTTP(S) page URL without simulating navigation.
+    pub fn set_page_location(&mut self, page_url: Option<&str>) -> Result<(), JsError> {
+        let href = page_url
+            .filter(|s| s.len() <= 8192 && (s.starts_with("http://") || s.starts_with("https://")))
+            .unwrap_or("about:blank");
+        let mut values = HashMap::from([
+            ("href".into(), JsValue::String(href.into())),
+            ("protocol".into(), JsValue::String("about:".into())),
+            ("host".into(), JsValue::String(String::new())),
+            ("hostname".into(), JsValue::String(String::new())),
+            ("port".into(), JsValue::String(String::new())),
+            ("origin".into(), JsValue::String("null".into())),
+            ("pathname".into(), JsValue::String("blank".into())),
+            ("search".into(), JsValue::String(String::new())),
+            ("hash".into(), JsValue::String(String::new())),
+        ]);
+        if let Some((scheme, rest)) = href.split_once("://") {
+            let at = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+            let host = rest[..at].to_ascii_lowercase();
+            let (hostname, port) = if host.starts_with('[') {
+                let end = host.find(']').unwrap_or(host.len().saturating_sub(1));
+                (
+                    host[..=end].to_owned(),
+                    host[end + 1..].strip_prefix(':').unwrap_or("").to_owned(),
+                )
+            } else if let Some((name, port)) = host.rsplit_once(':') {
+                (name.to_owned(), port.to_owned())
+            } else {
+                (host.clone(), String::new())
+            };
+            let rest = &rest[at..];
+            let (rest, hash) = rest
+                .split_once('#')
+                .map_or((rest, String::new()), |(a, b)| (a, format!("#{b}")));
+            let (path, search) = rest
+                .split_once('?')
+                .map_or((rest, String::new()), |(a, b)| (a, format!("?{b}")));
+            for (name, value) in [
+                ("protocol", format!("{scheme}:")),
+                ("host", host.clone()),
+                ("hostname", hostname),
+                ("port", port),
+                ("origin", format!("{scheme}://{host}")),
+                ("pathname", if path.is_empty() { "/" } else { path }.into()),
+                ("search", search),
+                ("hash", hash),
+            ] {
+                values.insert(name.into(), JsValue::String(value));
+            }
+        }
+        let location = match self.global("location").cloned() {
+            Some(JsValue::Object(id)) => id,
+            _ => return Err(JsError::type_error("location is not initialized")),
+        };
+        self.object_mut(location)?.properties = values;
+        if let Some(document) = self.dom_document {
+            for name in ["URL", "documentURI", "baseURI"] {
+                self.object_mut(document)?
+                    .properties
+                    .insert(name.into(), JsValue::String(href.into()));
+            }
+        }
+        Ok(())
+    }
+
     /// Install a deliberately minimal document host object. DOM identities are
     /// detached snapshots, never borrowed pointers into the live tree.
     pub fn install_dom_snapshot(
@@ -1057,6 +1123,23 @@ impl JsRuntime {
             ]),
         )?;
         self.dom_document = Some(document);
+        // Share one original Location object between window and document.
+        // Navigation setters reject until the host can perform real navigation.
+        let location = self.allocate_object(
+            ObjectKind::Location,
+            Some(self.object_prototype),
+            HashMap::new(),
+        )?;
+        self.install_global_binding(
+            "location",
+            JsValue::Object(location),
+            false,
+            VariableKind::Const,
+        );
+        self.object_mut(document)?
+            .properties
+            .insert("location".into(), JsValue::Object(location));
+        self.set_page_location(None)?;
         // Image() creates a real detached img node in the browser-owned DOM.
         // Network completion and image load/error events are not simulated.
         let image = self.allocate_lifecycle_method("Image", BuiltinFunction::ImageConstructor)?;
@@ -8139,6 +8222,15 @@ impl JsRuntime {
             };
         };
 
+        if self.object(*id)?.kind == ObjectKind::Location
+            || (key == "location" && (*id == self.global_object || self.dom_document == Some(*id)))
+        {
+            return Err(JsError::type_error("location navigation is not supported"));
+        }
+        if self.dom_document == Some(*id) && matches!(key, "URL" | "documentURI" | "baseURI") {
+            return Ok(());
+        }
+
         let event_like = self.object(*id)?.kind == ObjectKind::DomEvent
             || self
                 .object(*id)?
@@ -8775,6 +8867,54 @@ fn compare(left: &JsValue, right: &JsValue, op: impl FnOnce(f64, f64) -> bool) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_location_exposes_loaded_url_and_rejects_fake_navigation() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        vm.set_page_location(Some("https://pikabu.ru:8443/feed?sort=hot#top"))
+            .unwrap();
+        for (expression, expected) in [
+            ("location.href", "https://pikabu.ru:8443/feed?sort=hot#top"),
+            ("location.hostname", "pikabu.ru"),
+            ("location.host", "pikabu.ru:8443"),
+            ("location.port", "8443"),
+            ("location.protocol", "https:"),
+            ("location.origin", "https://pikabu.ru:8443"),
+            ("location.pathname", "/feed"),
+            ("location.search", "?sort=hot"),
+            ("location.hash", "#top"),
+            ("document.URL", "https://pikabu.ru:8443/feed?sort=hot#top"),
+        ] {
+            assert_eq!(
+                vm.eval_script(expression).unwrap(),
+                JsValue::String(expected.into())
+            );
+        }
+        assert_eq!(
+            vm.eval_script("window.location === document.location && location === window.location")
+                .unwrap(),
+            JsValue::Boolean(true)
+        );
+        assert!(
+            vm.eval_script("location.href = 'https://example.com/'")
+                .is_err()
+        );
+        assert!(
+            vm.eval_script("window.location = 'https://example.com/'")
+                .is_err()
+        );
+        vm.set_page_location(Some("http://[::1]:8080?x=1")).unwrap();
+        assert_eq!(
+            vm.eval_script("location.hostname").unwrap(),
+            JsValue::String("[::1]".into())
+        );
+        assert_eq!(
+            vm.eval_script("location.pathname").unwrap(),
+            JsValue::String("/".into())
+        );
+    }
 
     #[test]
     fn real_web_performance_now_is_monotonic_and_has_a_stable_time_origin() {

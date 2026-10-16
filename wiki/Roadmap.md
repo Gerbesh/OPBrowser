@@ -24,8 +24,17 @@ profiler. See the active project plan for current gates.
 Browser-owned `new Image()` now uses real DOM nodes and reaches native
 paint commands when inserted. YouTube's missing-`Image` error was
 removed but it still renders a skeleton without text. Next priority:
-the surviving real-site JS syntax errors, Pikabu's `location` binding,
+the surviving real-site JS syntax/runtime errors and Pikabu's layout,
 and interactive CPU/wall profiling rather than synthetic PASS inflation.
+
+## Location and real-page checkpoint (16 October 2026)
+
+The live page URL now reaches shared `window.location` and
+`document.location` objects with readable HTTP(S) components and
+explicitly rejected navigation writes. The Pikabu reference error
+advances to a later runtime failure, but its 12 failed scripts and
+broken layout remain; YouTube is still skeleton-only. Prioritize
+correct syntax/DOM/script-loading and usable pixels next.
 
 ## Native DOM checkpoint (14 October 2026)
 

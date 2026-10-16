@@ -185,6 +185,24 @@ Pikabu remains **4 executed / 12 failed**, with broken layout.
 Both runs used the same 1300-ms settle budget; page/network changes
 still prevent turning an error-count change into a pass claim.
 
+## 16 October 2026: page URL exposed through original Location
+
+The page parser now passes the actual loaded HTTP(S) URL to its retained
+JS runtime. `location`, `window.location`, `document.location`,
+`document.URL`, `documentURI` and `baseURI` share page URL information;
+common location components are readable. This initial facade does **not**
+simulate location assignments, real navigation, non-HTTP origins, or the
+complete URL standard. VM and parser-to-DOM integration tests pass.
+
+The matched 1300-ms-settle HTTPS rerun under
+`artifacts/live_web/location-2026-10-16/` reports Pikabu **4 executed /
+12 failed** scripts, with the former `location is not defined` replaced
+by `value is not callable`. It remains visually malformed, and its
+paint-command and text counts are not a valid visual-improvement oracle.
+YouTube remains **7 executed / 9 failed**, **0 text primitives** and
+skeleton-only. Network responses varied in load time. No real-site
+compatibility acceptance gate was passed.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell

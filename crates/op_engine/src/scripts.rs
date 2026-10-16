@@ -759,6 +759,10 @@ impl ParserScriptRunner<'_> {
             self.runtime = Some(runtime);
         }
         let runtime = self.runtime.as_mut().expect("runtime just installed");
+        if runtime.set_page_location(self.page_base).is_err() {
+            self.report.failed += 1;
+            return;
+        }
         sync_dom_tree(document, runtime);
         if let Some(body) = find_body(document)
             && runtime.set_dom_body_node(body.index()).is_err()
@@ -815,6 +819,10 @@ pub(crate) fn execute_retained(
     }
     let mut runtime = JsRuntime::with_instruction_budget(JS_INSTRUCTION_BUDGET);
     if runtime.install_dom_snapshot(elements).is_err() {
+        report.failed = scripts.len();
+        return (report, None);
+    }
+    if runtime.set_page_location(page_base).is_err() {
         report.failed = scripts.len();
         return (report, None);
     }
@@ -909,6 +917,21 @@ pub(crate) fn dispatch_click(
 mod tests {
     use super::*;
     use op_html::parse_document;
+
+    #[test]
+    fn live_page_parser_passes_real_origin_to_script_runtime() {
+        let html = "<div id='host'>Before</div><script>document.getElementById('host').textContent = location.hostname;</script>";
+        let (document, report, runtime, diagnostics) =
+            parse_and_execute(html, None, Some("https://pikabu.ru/feed?x=1"));
+        assert_eq!(report.executed, 1, "{diagnostics:?}");
+        assert_eq!(report.failed, 0, "{diagnostics:?}");
+        let mut vm = runtime.expect("parser retains script VM");
+        assert_eq!(
+            vm.eval_script("document.URL").unwrap(),
+            op_js::JsValue::String("https://pikabu.ru/feed?x=1".into())
+        );
+        assert!(collect_text(&document, document.root(), 4096).contains("pikabu.ru"));
+    }
 
     #[test]
     fn g2b_page_parser_auto_collects_between_scripts_without_breaking_globals() {

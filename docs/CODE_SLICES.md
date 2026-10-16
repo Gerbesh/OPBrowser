@@ -1,6 +1,6 @@
 # OPBrowser Code Slices
 
-Last updated: 2026-10-15
+Last updated: 2026-10-16
 
 A code slice is an end-to-end path through the architecture that produces one
 observable capability. This prevents isolated subsystems from becoming impressive
@@ -15,6 +15,18 @@ current. The same validator runs in CI. This is a **source-anchor
 feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
+
+## S81 - Loaded HTTPS URL through page script to DOM content
+
+Network-backed page source -> `op_engine::scripts::parse_and_execute`
+passes `page_base` -> `JsRuntime::install_dom_snapshot` creates one
+Location identity -> `set_page_location` assigns URL components and
+document URL fields before executing scripts -> inline JS reads
+`location.hostname` and mutates actual DOM text -> parser integration
+asserts result. Real Pikabu no longer reports the missing `location`
+global, but still fails 12 scripts and paints a malformed first view.
+Writes cannot silently fake navigation; Web URL normalization and
+navigation actions remain unimplemented.
 
 ## S80 - Script-created Image to native pixels
 
