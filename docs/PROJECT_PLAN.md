@@ -195,6 +195,23 @@ zero text; Reddit is blank. The two missing globals progress to
 `navigator`/`Symbol` and TypeErrors. Next: real feature detection,
 symbols, async functions, dynamic scripts and visible rendering.
 
+**P0 navigator and UTF-16 String search (17 October 2026):**
+Original document-bound navigator now honestly exposes
+OPBrowser identity, provisional language fallback,
+`cookieEnabled=false` and bounded hardware concurrency.
+Undefined host capabilities remain absent. Native VM supports
+`String.indexOf/includes` with UTF-16 positions and strict
+builtin receivers via `Function.prototype.call`, retaining
+sloppy global-this behavior for user functions. VM and native
+DOM-to-paint regressions pass. Five public-site checks still
+show failed scripts **2/8/11/1/3** (Google/YouTube/Pikabu/
+Reddit/DeviantArt). The earlier YouTube `navigator` missing
+global advances to a TypeError. YouTube remains zero-text
+and Reddit blank. NEXT: real Symbol primitives and well-known
+properties, async function syntax, dynamic scripts and
+actual viewport rendering. These cannot be replaced by
+optimistic fake globals.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

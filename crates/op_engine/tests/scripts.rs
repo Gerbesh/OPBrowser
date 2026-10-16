@@ -26,6 +26,30 @@ fn labeled_break_continue_through_finally_mutates_actual_document_pixels() {
 }
 
 #[test]
+fn navigator_feature_detection_updates_real_dom_text() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='status'>WAIT</p><script>",
+            "document.getElementById('status').textContent=",
+            "navigator===window.navigator && ",
+            "navigator.userAgent.indexOf('OPBrowser')===0 && navigator.userAgent.includes('Windows') && ",
+            "navigator.cookieEnabled===false && ",
+            "typeof navigator.serviceWorker==='undefined'?",
+            "'NAVIGATOR-PASS':'NAVIGATOR-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("NAVIGATOR-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn real_web_regexp_constructor_reaches_native_paint() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

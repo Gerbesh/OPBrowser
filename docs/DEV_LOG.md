@@ -3721,3 +3721,10 @@ This file is append-only project history.
 - Implemented original RegExp function/constructor, sharing the existing finite Rust regex subset with literal regex creation. Added flag validation, default empty pattern source, a RegExp prototype, and constructor/literal instanceof tests. Unsupported regex patterns remain rejected.
 - Deterministic VM and HTML DOM-to-native-text regressions pass for both globals. Rebuilt native Windows release probe and checked five live sites at 1300ms under artifacts/live_web/math-regexp-2026-10-16. Site failure counts remain Google 2, YouTube 8, Pikabu 11, Reddit 1, DeviantArt 3; YouTube has zero text, Reddit blank. Former missing Math/RegExp errors now proceed to missing navigator/Symbol and TypeErrors, not visual compatibility.
 
+
+## 2026-10-17 - Honest navigator and UTF-16 String search
+
+- Implemented original per-document navigator object, sharing the same identity through navigator and window.navigator. Exposes OPBrowser/0.1 User-Agent and honest platform/vendor, documented en-US fallback, languages, bounded availableParallelism, and cookieEnabled=false consistent with op_net stripping cookies. Unsupported host APIs stay undefined.
+- Added String.prototype.indexOf and includes via bounded UTF-16 code-unit searches, with length metadata and JS receiver validation. Fixed Function.prototype.call semantics so strict native builtins retain null/undefined receiver while sloppy user functions still substitute global this.
+- VM tests cover navigator, document reset, feature detection, UTF-16 surrogate-pair indexes, String search positions, native receiver errors and sloppy function.this. HTML script changes DOM and native paint text. Real Google/YouTube/Pikabu/Reddit/DeviantArt run with 1300 ms settle in gitignored artifacts/live_web/navigator-string-2026-10-17 has JS failures 2/8/11/1/3; YouTube navigator error advances to later TypeError, but YouTube paints no text and Reddit remains blank. Symbol still missing.
+

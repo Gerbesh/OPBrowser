@@ -57,6 +57,25 @@ Original-VM tests and an HTML -> DOM mutation -> paint regression
 exercise the entire path. General ECMAScript label/ASI coverage
 remains incomplete.
 
+## Original navigator and UTF-16 String search (17 October 2026)
+
+`JsRuntime::install_dom_snapshot` creates a GC-traced `navigator`
+per document and binds it both on the global environment and
+`window`. This conservative object identifies OPBrowser rather
+than claiming Chromium/WebKit compatibility, sets `cookieEnabled`
+false (the native network loader discards cookies), and leaves
+unsupported APIs absent for feature detection. The language is
+currently an explicit `en-US` fallback, not an OS-locale promise;
+available processor parallelism is clamped to 1..64.
+
+`BuiltinFunction::StringIndexOf` and `StringIncludes` resolve
+search offsets as UTF-16 code units; search inputs are bounded.
+`Function.prototype.call` preserves null/undefined receiver for
+native builtins, while ordinary non-strict user functions continue
+using the global object. VM and HTML-to-native-paint regressions
+verify both. Full Navigator/WebIDL interface and strict functions
+remain future work.
+
 ## Original JavaScript Math and RegExp globals (16 October 2026)
 
 `JsRuntime::install_standard_primitives` creates GC-traced

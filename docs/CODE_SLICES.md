@@ -16,6 +16,20 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S87 - Honest navigator feature detection to native pixels
+
+HTML inline JS -> original VM global `navigator` and `window`
+share an arena-backed navigator object -> `userAgent`,
+`language`, `languages`, `cookieEnabled=false`, and absence
+of unsupported APIs drive feature detection -> original
+`String.indexOf/includes` search by UTF-16 code unit -> DOM
+`textContent` mutation -> original paint text commands and
+Windows native rendering. Strict builtins preserve null receiver
+in `Function.prototype.call`, verified separately. Live YouTube
+no longer reports `navigator is not defined`; it instead advances
+to a later TypeError, while eight scripts still fail and no text
+is painted. Explicitly not a visually working YouTube page.
+
 ## S86 - YouTube comma and compound assignments through DOM
 
 YouTube native diagnostics expose `window.counter+=1` and

@@ -298,6 +298,24 @@ YouTube still renders zero text and Reddit is blank; there is no
 certified first viewport. Exact thrown-value semantics and full
 descriptors remain incomplete.
 
+## 17 October 2026: navigator and UTF-16 String search
+
+Native browser JS exposes a conservative document-owned
+`navigator` (real OPBrowser identity, `en-US` fallback language,
+`cookieEnabled=false`, 1..64 available threads, unsupported
+features absent). The original VM adds UTF-16-based `indexOf`
+and `includes` and separates strict builtin receiver binding
+from non-strict user-function `this` substitution.
+Deterministic VM and HTML-to-original-paint regressions pass.
+
+Release public-site sampling (1300 ms settle, ignored
+`artifacts/live_web/navigator-string-2026-10-17/`):
+Google **2**, YouTube **8**, Pikabu **11**, Reddit **1**,
+DeviantArt **3** JavaScript failures. Native YouTube's former
+`navigator is not defined` becomes a later TypeError;
+`Symbol is not defined` remains. YouTube paints **0 text**
+and Reddit remains blank; this is not a live-site pass.
+
 ## 16 October 2026: Math and RegExp missing-global follow-up
 
 Implemented GC-traced original JS `Math` and `RegExp` globals,

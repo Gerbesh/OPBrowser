@@ -126,6 +126,8 @@ enum BuiltinFunction {
     ReferenceError,
     SyntaxError,
     StringCharAt,
+    StringIndexOf,
+    StringIncludes,
     StringReplace,
     StringMatch,
     StringSplit,
@@ -1171,6 +1173,38 @@ impl JsRuntime {
             .properties
             .insert("location".into(), JsValue::Object(location));
         self.set_page_location(None)?;
+        // The navigator only advertises implemented capabilities. Cookies
+        // are deliberately disabled by op_net, and unsupported APIs remain
+        // absent so feature detection does not promise fake browser behavior.
+        let language = "en-US";
+        let languages = self.js_array_from_values(vec![JsValue::String(language.into())])?;
+        let cores = std::thread::available_parallelism()
+            .map_or(1, std::num::NonZeroUsize::get)
+            .min(64);
+        let navigator = self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            HashMap::from([
+                (
+                    "userAgent".into(),
+                    JsValue::String("OPBrowser/0.1 (Windows)".into()),
+                ),
+                ("appName".into(), JsValue::String("OPBrowser".into())),
+                ("appVersion".into(), JsValue::String("0.1".into())),
+                ("platform".into(), JsValue::String("Win32".into())),
+                ("language".into(), JsValue::String(language.into())),
+                ("languages".into(), languages),
+                ("vendor".into(), JsValue::String(String::new())),
+                ("cookieEnabled".into(), JsValue::Boolean(false)),
+                ("hardwareConcurrency".into(), JsValue::Number(cores as f64)),
+            ]),
+        )?;
+        self.install_global_binding(
+            "navigator",
+            JsValue::Object(navigator),
+            false,
+            VariableKind::Const,
+        );
         // Image() creates a real detached img node in the browser-owned DOM.
         // Network completion and image load/error events are not simulated.
         let image = self.allocate_lifecycle_method("Image", BuiltinFunction::ImageConstructor)?;
@@ -1415,12 +1449,17 @@ impl JsRuntime {
                     self.object_mut(proto)?
                         .properties
                         .insert("charAt".into(), JsValue::Object(char_at));
-                    for (method, builtin) in [
-                        ("replace", BuiltinFunction::StringReplace),
-                        ("match", BuiltinFunction::StringMatch),
-                        ("split", BuiltinFunction::StringSplit),
+                    for (method, builtin, length) in [
+                        ("indexOf", BuiltinFunction::StringIndexOf, 1.0),
+                        ("includes", BuiltinFunction::StringIncludes, 1.0),
+                        ("replace", BuiltinFunction::StringReplace, 2.0),
+                        ("match", BuiltinFunction::StringMatch, 1.0),
+                        ("split", BuiltinFunction::StringSplit, 2.0),
                     ] {
                         let id = self.allocate_lifecycle_method(method, builtin)?;
+                        self.object_mut(id)?
+                            .properties
+                            .insert("length".into(), JsValue::Number(length));
                         self.object_mut(proto)?
                             .properties
                             .insert(method.into(), JsValue::Object(id));
@@ -5702,11 +5741,6 @@ impl JsRuntime {
         match function.implementation {
             FunctionImplementation::Builtin(BuiltinFunction::FunctionCall) => {
                 let receiver = arguments.first().cloned().unwrap_or(JsValue::Undefined);
-                let receiver = if matches!(receiver, JsValue::Null | JsValue::Undefined) {
-                    JsValue::Object(self.global_object)
-                } else {
-                    receiver
-                };
                 self.call_value(
                     this_value,
                     receiver,
@@ -5735,6 +5769,14 @@ impl JsRuntime {
         steps: &mut usize,
         call_depth: usize,
     ) -> Result<CallOutcome, JsError> {
+        // Sloppy user functions substitute the global object for null/undefined
+        // this. Builtins are strict: they must receive the original receiver.
+        let this_value =
+            if !template.is_arrow && matches!(this_value, JsValue::Null | JsValue::Undefined) {
+                JsValue::Object(self.global_object)
+            } else {
+                this_value
+            };
         let function_env = self.allocate_environment(Some(closure), EnvironmentKind::Function)?;
 
         if !template.is_arrow {
@@ -6090,6 +6132,55 @@ impl JsRuntime {
                     return Ok(CallOutcome::Value(JsValue::Null));
                 }
                 return Ok(CallOutcome::Value(self.js_array_from_values(values)?));
+            }
+            BuiltinFunction::StringIndexOf | BuiltinFunction::StringIncludes => {
+                let primitive = match &this_value {
+                    JsValue::Object(id) => self
+                        .boxed_values
+                        .get(id)
+                        .cloned()
+                        .unwrap_or_else(|| this_value.clone()),
+                    JsValue::Null | JsValue::Undefined => {
+                        return Err(JsError::type_error(
+                            "String search requires a non-null receiver",
+                        ));
+                    }
+                    _ => this_value.clone(),
+                };
+                let text = primitive.to_js_string();
+                let needle = arguments
+                    .first()
+                    .map_or_else(|| "undefined".to_owned(), JsValue::to_js_string);
+                if text.len() > 65536 || needle.len() > 8192 {
+                    return Err(JsError::execution_limit(
+                        "String search input budget exceeded",
+                    ));
+                }
+                let haystack = text.encode_utf16().collect::<Vec<_>>();
+                let sought = needle.encode_utf16().collect::<Vec<_>>();
+                let position = arguments.get(1).map_or(0.0, JsValue::to_number);
+                let position = if position.is_nan() || position < 0.0 {
+                    0
+                } else {
+                    (position.trunc() as usize).min(haystack.len())
+                };
+                let index = if sought.is_empty() {
+                    Some(position)
+                } else {
+                    haystack.get(position..).and_then(|remaining| {
+                        remaining
+                            .windows(sought.len())
+                            .position(|window| window == sought)
+                            .map(|index| position + index)
+                    })
+                };
+                return Ok(CallOutcome::Value(
+                    if builtin == BuiltinFunction::StringIndexOf {
+                        JsValue::Number(index.map_or(-1.0, |value| value as f64))
+                    } else {
+                        JsValue::Boolean(index.is_some())
+                    },
+                ));
             }
             BuiltinFunction::StringCharAt => {
                 let primitive = match &this_value {
@@ -8035,6 +8126,8 @@ impl JsRuntime {
             | BuiltinFunction::JsonParse
             | BuiltinFunction::JsonStringify
             | BuiltinFunction::StringCharAt
+            | BuiltinFunction::StringIndexOf
+            | BuiltinFunction::StringIncludes
             | BuiltinFunction::StringReplace
             | BuiltinFunction::StringMatch
             | BuiltinFunction::StringSplit
@@ -8097,6 +8190,8 @@ impl JsRuntime {
                     | BuiltinFunction::PerformanceNow
                     | BuiltinFunction::ArrayOf
                     | BuiltinFunction::StringCharAt
+                    | BuiltinFunction::StringIndexOf
+                    | BuiltinFunction::StringIncludes
                     | BuiltinFunction::ArrayPush
                     | BuiltinFunction::ArrayPop
                     | BuiltinFunction::NumberIsNaN
@@ -9601,6 +9696,98 @@ fn build_js_regex(pattern: &str, flags: &str) -> Result<regex::Regex, JsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn string_search_uses_utf16_positions_and_receiver_rules() {
+        let mut vm = JsRuntime::new();
+        for (script, expected) in [
+            ("'abcd'.indexOf('bc')", JsValue::Number(1.0)),
+            ("'abcd'.indexOf('z')", JsValue::Number(-1.0)),
+            ("'banana'.indexOf('an',2)", JsValue::Number(3.0)),
+            ("'banana'.indexOf('an',4)", JsValue::Number(-1.0)),
+            ("'abc'.indexOf('', 12)", JsValue::Number(3.0)),
+            ("'abc'.indexOf('', -2)", JsValue::Number(0.0)),
+            ("'🐈xy'.indexOf('x')", JsValue::Number(2.0)),
+            ("'x🐈x'.indexOf('x',2)", JsValue::Number(3.0)),
+            ("'🍋🍋'.indexOf('🍋',1)", JsValue::Number(2.0)),
+            ("'banana'.includes('ana',2)", JsValue::Boolean(true)),
+            ("'banana'.includes('ana',4)", JsValue::Boolean(false)),
+            ("'abc'.includes('',100)", JsValue::Boolean(true)),
+            (
+                "String.prototype.indexOf.call('abc', 'b')",
+                JsValue::Number(1.0),
+            ),
+            ("String.prototype.indexOf.length", JsValue::Number(1.0)),
+            ("String.prototype.includes.length", JsValue::Number(1.0)),
+        ] {
+            assert_eq!(vm.eval_script(script).unwrap(), expected, "{script}");
+        }
+        assert!(
+            vm.eval_script("String.prototype.indexOf.call(null, 'a')")
+                .is_err()
+        );
+        for source in [
+            "function sloppy(){return typeof this;}sloppy()",
+            "function sloppy(){return typeof this;}sloppy.call(null)",
+            "function sloppy(){return typeof this;}sloppy.call(undefined)",
+        ] {
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::String("object".into()),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn navigator_truthfully_exposes_original_browser_capabilities() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        for (script, expected) in [
+            ("navigator === window.navigator", JsValue::Boolean(true)),
+            (
+                "navigator.userAgent",
+                JsValue::String("OPBrowser/0.1 (Windows)".into()),
+            ),
+            ("navigator.appName", JsValue::String("OPBrowser".into())),
+            ("navigator.platform", JsValue::String("Win32".into())),
+            ("navigator.language", JsValue::String("en-US".into())),
+            ("navigator.languages[0]", JsValue::String("en-US".into())),
+            ("navigator.languages.length", JsValue::Number(1.0)),
+            ("navigator.cookieEnabled", JsValue::Boolean(false)),
+            ("navigator.vendor", JsValue::String(String::new())),
+            (
+                "typeof navigator.geolocation",
+                JsValue::String("undefined".into()),
+            ),
+            (
+                "typeof navigator.serviceWorker",
+                JsValue::String("undefined".into()),
+            ),
+            (
+                "typeof navigator.userAgentData",
+                JsValue::String("undefined".into()),
+            ),
+            (
+                "typeof navigator.sendBeacon",
+                JsValue::String("undefined".into()),
+            ),
+            (
+                "navigator.hardwareConcurrency >= 1 && navigator.hardwareConcurrency <= 64",
+                JsValue::Boolean(true),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(script).unwrap(), expected, "{script}");
+        }
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        assert_eq!(
+            vm.eval_script("navigator === window.navigator && !navigator.cookieEnabled")
+                .unwrap(),
+            JsValue::Boolean(true)
+        );
+    }
 
     #[test]
     fn live_location_exposes_loaded_url_and_rejects_fake_navigation() {

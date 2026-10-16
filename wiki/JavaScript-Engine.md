@@ -3,6 +3,24 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Navigator feature detection and String search (17 October 2026)
+
+Each document gets a minimal `navigator` also available at
+`window.navigator`. It exposes OPBrowser's own honest name
+and User-Agent, a temporary `en-US` language fallback,
+`languages`, `platform`, bounded `hardwareConcurrency`,
+and `cookieEnabled=false`. Unsupported geolocation,
+serviceWorker, beacon and UA-Client-Hints features remain
+absent, not stubbed as working. This does **not** yet read
+the Windows UI locale.
+
+The original JS VM adds `String.prototype.indexOf` and
+`includes`, with UTF-16 indexes and bounded search.
+`Function.prototype.call(null)` now preserves null for
+native builtins but substitutes the global object for
+non-strict user-defined functions. Native DOM-to-paint tests
+pass. YouTube still lacks `Symbol` and renders zero text.
+
 ## Math and RegExp globals (16 October 2026)
 
 Original `Math` supplies 17 numeric functions (including
