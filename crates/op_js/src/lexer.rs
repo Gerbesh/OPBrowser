@@ -11,6 +11,7 @@ pub struct Token {
 pub enum TokenKind {
     Number(f64),
     String(String),
+    RegExp(String, String),
     TemplateNoSub(String),
     TemplateHead(String),
     TemplateMiddle(String),
@@ -49,8 +50,10 @@ pub enum TokenKind {
     Undefined,
     Plus,
     PlusPlus,
+    PlusEqual,
     Minus,
     MinusMinus,
+    MinusEqual,
     Star,
     Slash,
     Percent,
@@ -125,7 +128,8 @@ impl<'a> Lexer<'a> {
             if self.index >= self.bytes.len() {
                 break;
             }
-            tokens.push(self.next_token()?);
+            let previous = tokens.last().map(|token: &Token| &token.kind);
+            tokens.push(self.next_token(previous)?);
         }
         if !self.templates.is_empty() {
             return Err(JsError::syntax(self.index, "unterminated template literal"));
@@ -179,7 +183,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn next_token(&mut self) -> Result<Token, JsError> {
+    fn next_token(&mut self, previous: Option<&TokenKind>) -> Result<Token, JsError> {
         if self
             .templates
             .last()
@@ -233,12 +237,17 @@ impl<'a> Lexer<'a> {
         if matches!(byte, b'\'' | b'"') {
             return self.string();
         }
+        if byte == b'/' && can_start_regex(previous) {
+            return self.regexp();
+        }
 
         self.index += 1;
         let kind = match byte {
             b'+' if self.take(b'+') => TokenKind::PlusPlus,
+            b'+' if self.take(b'=') => TokenKind::PlusEqual,
             b'+' => TokenKind::Plus,
             b'-' if self.take(b'-') => TokenKind::MinusMinus,
+            b'-' if self.take(b'=') => TokenKind::MinusEqual,
             b'-' => TokenKind::Minus,
             b'*' => TokenKind::Star,
             b'/' => TokenKind::Slash,
@@ -304,6 +313,65 @@ impl<'a> Lexer<'a> {
         } else {
             false
         }
+    }
+
+    /// Slash disambiguation is lexical and intentionally conservative:
+    /// a slash after an operator/open delimiter begins a regular expression,
+    /// while a slash after a value remains division.
+    fn regexp(&mut self) -> Result<Token, JsError> {
+        let start = self.index;
+        self.index += 1;
+        let pattern_start = self.index;
+        let mut class = false;
+        let mut escaped = false;
+        while let Some(&byte) = self.bytes.get(self.index) {
+            if matches!(byte, b'\n' | b'\r') {
+                return Err(JsError::syntax(start, "line break in regular expression"));
+            }
+            if escaped {
+                escaped = false;
+                self.index += 1;
+                continue;
+            }
+            match byte {
+                b'\\' => escaped = true,
+                b'[' => class = true,
+                b']' => class = false,
+                b'/' if !class => {
+                    let pattern = self.source[pattern_start..self.index].to_owned();
+                    self.index += 1;
+                    let flags_start = self.index;
+                    while self
+                        .bytes
+                        .get(self.index)
+                        .is_some_and(u8::is_ascii_alphabetic)
+                    {
+                        self.index += 1;
+                    }
+                    let flags = self.source[flags_start..self.index].to_owned();
+                    let mut seen = std::collections::HashSet::new();
+                    for flag in flags.chars() {
+                        if !matches!(flag, 'g' | 'i' | 'm' | 's' | 'u') || !seen.insert(flag) {
+                            return Err(JsError::syntax(start, "invalid regular expression flags"));
+                        }
+                    }
+                    if pattern.len() > 8192 {
+                        return Err(JsError::syntax(
+                            start,
+                            "regular expression source budget exceeded",
+                        ));
+                    }
+                    return Ok(Token {
+                        kind: TokenKind::RegExp(pattern, flags),
+                        start,
+                        end: self.index,
+                    });
+                }
+                _ => {}
+            }
+            self.index += 1;
+        }
+        Err(JsError::syntax(start, "unterminated regular expression"))
     }
 
     fn number(&mut self) -> Result<Token, JsError> {
@@ -603,6 +671,36 @@ impl<'a> Lexer<'a> {
 
         Err(JsError::syntax(start, "unterminated string literal"))
     }
+}
+
+fn can_start_regex(previous: Option<&TokenKind>) -> bool {
+    matches!(
+        previous,
+        None | Some(
+            TokenKind::Equal
+                | TokenKind::Arrow
+                | TokenKind::LeftParen
+                | TokenKind::LeftBracket
+                | TokenKind::LeftBrace
+                | TokenKind::Comma
+                | TokenKind::Colon
+                | TokenKind::Semicolon
+                | TokenKind::Question
+                | TokenKind::QuestionQuestion
+                | TokenKind::Return
+                | TokenKind::Throw
+                | TokenKind::Case
+                | TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::Star
+                | TokenKind::Slash
+                | TokenKind::Bang
+                | TokenKind::AmpAmp
+                | TokenKind::PipePipe
+                | TokenKind::EqualEqual
+                | TokenKind::EqualEqualEqual
+        )
+    )
 }
 
 fn is_identifier_start(byte: u8) -> bool {

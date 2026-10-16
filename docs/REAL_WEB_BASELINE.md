@@ -253,6 +253,39 @@ order, property descriptors, inherited enumerable properties, proxies
 and mutation-observing enumeration are not implemented. Next fix the
 actual regex-literal blockers before claiming modern JS readiness.
 
+## 16 October 2026: literal RegExp, compound assignment and comma expressions
+
+The independent Rust lexer now reads `/pattern/flags` with escapes,
+character classes and conservative regex-vs-division context. Own
+bytecode instantiates RegExp objects. `test`, `exec`, and bounded
+String `replace`, `match`, `split` use a lightweight finite-state
+regex crate, **not** a browser/JS engine. Unsupported ECMAScript
+regex constructs such as lookaround and backreferences reject. Flags
+`g/i/m/s/u` are parsed; implementation is a partial subset, not full
+ECMAScript RegExp semantics or the `RegExp` constructor. Match indices
+and `lastIndex` use UTF-16 indexing, preserving non-BMP characters.
+Regular-string `split` treats the delimiter literally.
+
+Original assignment grammar and VM also support `+=`/`-=` with
+receiver/key evaluated once, plus the comma sequence expression in
+parentheses and for-loop parts while preserving function-argument
+boundaries. Original VM and parser-to-authoritative-DOM integration
+regressions pass. Regex input length and capture/result counts are
+bounded to resist abusive scripts.
+
+`artifacts/live_web/regexp-2026-10-16/` records that YouTube's five
+prior unsupported-backslash regex errors disappear, but **7/9**
+executed/failed still yields no painted text. In
+`artifacts/live_web/regex-compound-2026-10-16/`, the five sites still
+report Google **2**, YouTube **9**, Pikabu **12**, Reddit **1** and
+DeviantArt **4** failed scripts; several failures advance to runtime.
+After adding comma expressions, the separate release YouTube probe at
+`artifacts/live_web/regexp-comma-2026-10-16/` advances to **8 executed /
+8 failed**, zero text and skeleton-only. Remaining syntax diagnostics
+include object-literal getters (`get playbackRate()`, `get capture()`)
+and labeled statements; runtime functions and DOM APIs also block.
+The public sites change over time; no visual compatibility pass is claimed.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell

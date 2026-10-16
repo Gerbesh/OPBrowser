@@ -13,6 +13,19 @@ page still paints **no text**. Pikabu remains visually malformed.
 The 30-minute synthetic GC safety and private-memory checks passed,
 while rare long wall-time GC pauses still need investigation.
 
+## RegExp and expression compatibility (16 October 2026)
+
+The independent JS lexer/compiler/VM now handles a bounded RegExp
+literal subset, including `test`/`exec`, String
+`replace/match/split`, UTF-16 match indices and correctly literal
+string delimiters. It uses a small finite-automata matcher, not an
+existing JS engine. Compound `+=`/`-=` assignments and the comma
+sequence operator also execute in native HTML/DOM regression tests.
+A native YouTube rerun advances to **8 executed / 8 failed** scripts,
+but still **zero text primitives**. Object accessors, labeled syntax,
+modern APIs and rendering remain incomplete. No modern site has passed
+the fully usable acceptance gate.
+
 ## Live-site syntax evidence and for-in (16 October 2026)
 
 User-enabled local-only JS syntax excerpts pinpointed YouTube's

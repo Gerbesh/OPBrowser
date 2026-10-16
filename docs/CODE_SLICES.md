@@ -16,6 +16,26 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S86 - YouTube comma and compound assignments through DOM
+
+YouTube native diagnostics expose `window.counter+=1` and
+`w&&(A.fill='both',A.duration='auto')` -> original lexer/parser
+recognizes compound and comma expressions -> original compiler emits
+receiver-once `Dup2`, Binary, SetProperty, or ordered sequence Pop
+-> VM mutates objects and browser HTML integration changes DOM text.
+Native YouTube advances from 7 executed/9 failed to 8/8, still zero
+text and not ready. Function-call argument commas remain separators.
+
+## S85 - Real regexp literal through JS VM to native DOM
+
+Real YouTube uses `/https:\\/\\/www.youtube.com\\//g`, `/\\s+/` and
+other regex literals -> independent lexer parses flags/escape classes
+-> AST and `CreateRegExp` bytecode -> GC-owned RegExp object ->
+bounded finite-automata matcher via RegExp/String host methods ->
+classic inline script changes authoritative DOM text in integration
+tests. Unsupported lookaround and backreferences remain explicit
+errors, while browser visual first-view acceptance is still open.
+
 ## S84 - YouTube for-in syntax and local diagnostic to native DOM
 
 Actual YouTube inline config script `for(k in a[0])` -> default

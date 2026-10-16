@@ -76,6 +76,7 @@ struct Environment {
 enum ObjectKind {
     Ordinary,
     Array,
+    RegExp,
     Function,
     DomElement(usize),
     DomText(usize),
@@ -102,6 +103,11 @@ enum BuiltinFunction {
     ReferenceError,
     SyntaxError,
     StringCharAt,
+    StringReplace,
+    StringMatch,
+    StringSplit,
+    RegExpTest,
+    RegExpExec,
     ArrayPush,
     ArrayPop,
     FunctionCall,
@@ -1384,6 +1390,16 @@ impl JsRuntime {
                     self.object_mut(proto)?
                         .properties
                         .insert("charAt".into(), JsValue::Object(char_at));
+                    for (method, builtin) in [
+                        ("replace", BuiltinFunction::StringReplace),
+                        ("match", BuiltinFunction::StringMatch),
+                        ("split", BuiltinFunction::StringSplit),
+                    ] {
+                        let id = self.allocate_lifecycle_method(method, builtin)?;
+                        self.object_mut(proto)?
+                            .properties
+                            .insert(method.into(), JsValue::Object(id));
+                    }
                 }
             }
             self.install_global_binding(name, JsValue::Object(id), true, VariableKind::Var);
@@ -5060,6 +5076,27 @@ impl JsRuntime {
                     let id = self.allocate_object(ObjectKind::Ordinary, prototype, properties)?;
                     stack.push(JsValue::Object(id));
                 }
+                Instruction::CreateRegExp { pattern, flags } => {
+                    build_js_regex(pattern, flags)?;
+                    let test =
+                        self.allocate_lifecycle_method("test", BuiltinFunction::RegExpTest)?;
+                    let exec =
+                        self.allocate_lifecycle_method("exec", BuiltinFunction::RegExpExec)?;
+                    let value = self.allocate_object(
+                        ObjectKind::RegExp,
+                        Some(self.object_prototype),
+                        HashMap::from([
+                            ("source".into(), JsValue::String(pattern.clone())),
+                            ("flags".into(), JsValue::String(flags.clone())),
+                            ("global".into(), JsValue::Boolean(flags.contains('g'))),
+                            ("ignoreCase".into(), JsValue::Boolean(flags.contains('i'))),
+                            ("lastIndex".into(), JsValue::Number(0.0)),
+                            ("test".into(), JsValue::Object(test)),
+                            ("exec".into(), JsValue::Object(exec)),
+                        ]),
+                    )?;
+                    stack.push(JsValue::Object(value));
+                }
                 Instruction::CreateArray(present) => {
                     let mut values = Vec::with_capacity(present.len());
                     for _ in 0..present.len() {
@@ -5307,6 +5344,13 @@ impl JsRuntime {
                         .expect("compiler must leave a value to duplicate")
                         .clone();
                     stack.push(value);
+                }
+                Instruction::Dup2 => {
+                    let count = stack.len();
+                    let object = stack[count - 2].clone();
+                    let property = stack[count - 1].clone();
+                    stack.push(object);
+                    stack.push(property);
                 }
                 Instruction::Pop => {
                     stack.pop().expect("compiler must leave a value to pop");
@@ -5674,6 +5718,187 @@ impl JsRuntime {
                         .ok_or_else(|| JsError::type_error("incompatible toString receiver"))?
                         .to_js_string(),
                 )));
+            }
+            BuiltinFunction::RegExpTest | BuiltinFunction::RegExpExec => {
+                let JsValue::Object(id) = this_value else {
+                    return Err(JsError::type_error("RegExp method requires a RegExp"));
+                };
+                if self.object(id)?.kind != ObjectKind::RegExp {
+                    return Err(JsError::type_error("RegExp method requires a RegExp"));
+                }
+                let source = self.get_object_property(id, "source")?.to_js_string();
+                let flags = self.get_object_property(id, "flags")?.to_js_string();
+                let regex = build_js_regex(&source, &flags)?;
+                let input = arguments
+                    .first()
+                    .map_or_else(|| "undefined".to_owned(), JsValue::to_js_string);
+                if input.len() > 65536 {
+                    return Err(JsError::execution_limit("RegExp input budget exceeded"));
+                }
+                let global = flags.contains('g');
+                let start = if global {
+                    js_utf16_to_byte(
+                        &input,
+                        self.get_object_property(id, "lastIndex")?
+                            .to_number()
+                            .max(0.0) as usize,
+                    )
+                    .unwrap_or(input.len().saturating_add(1))
+                } else {
+                    0
+                };
+                let found = if start <= input.len() && input.is_char_boundary(start) {
+                    regex.captures_at(&input, start)
+                } else {
+                    None
+                };
+                if global {
+                    let next = found
+                        .as_ref()
+                        .and_then(|caps| caps.get(0))
+                        .map_or(0, |m| js_byte_to_utf16(&input, m.end()));
+                    self.object_mut(id)?
+                        .properties
+                        .insert("lastIndex".into(), JsValue::Number(next as f64));
+                }
+                if builtin == BuiltinFunction::RegExpTest {
+                    return Ok(CallOutcome::Value(JsValue::Boolean(found.is_some())));
+                }
+                let Some(caps) = found else {
+                    return Ok(CallOutcome::Value(JsValue::Null));
+                };
+                let values = caps
+                    .iter()
+                    .take(32)
+                    .map(|part| {
+                        part.map_or(JsValue::Undefined, |m| JsValue::String(m.as_str().into()))
+                    })
+                    .collect::<Vec<_>>();
+                let result = self.js_array_from_values(values)?;
+                if let JsValue::Object(array) = result {
+                    let index =
+                        js_byte_to_utf16(&input, caps.get(0).expect("full regex capture").start());
+                    self.object_mut(array)?
+                        .properties
+                        .insert("index".into(), JsValue::Number(index as f64));
+                    self.object_mut(array)?
+                        .properties
+                        .insert("input".into(), JsValue::String(input));
+                }
+                return Ok(CallOutcome::Value(result));
+            }
+            BuiltinFunction::StringReplace
+            | BuiltinFunction::StringMatch
+            | BuiltinFunction::StringSplit => {
+                let receiver = match &this_value {
+                    JsValue::Object(id) => self.boxed_values.get(id).cloned().unwrap_or(this_value),
+                    _ => this_value,
+                };
+                if matches!(receiver, JsValue::Null | JsValue::Undefined) {
+                    return Err(JsError::type_error(
+                        "String method called on null or undefined",
+                    ));
+                }
+                let input = receiver.to_js_string();
+                if input.len() > 65536 {
+                    return Err(JsError::execution_limit(
+                        "String RegExp input budget exceeded",
+                    ));
+                }
+                let pattern = arguments.first().cloned().unwrap_or(JsValue::Undefined);
+                let regexp = if let JsValue::Object(id) = &pattern {
+                    self.object(*id)?.kind == ObjectKind::RegExp
+                } else {
+                    false
+                };
+                let (pattern_text, flags) = if let JsValue::Object(id) = &pattern
+                    && regexp
+                {
+                    (
+                        self.get_object_property(*id, "source")?.to_js_string(),
+                        self.get_object_property(*id, "flags")?.to_js_string(),
+                    )
+                } else {
+                    (pattern.to_js_string(), String::new())
+                };
+                if builtin == BuiltinFunction::StringReplace && !regexp {
+                    let replacement = arguments
+                        .get(1)
+                        .map_or_else(|| "undefined".to_owned(), JsValue::to_js_string);
+                    let result = input.replacen(&pattern_text, &replacement, 1);
+                    return Ok(CallOutcome::Value(JsValue::String(result)));
+                }
+                if builtin == BuiltinFunction::StringSplit && !regexp {
+                    let chunks: Vec<String> = if arguments.is_empty() {
+                        vec![input.clone()]
+                    } else if pattern_text.is_empty() {
+                        input.chars().take(257).map(|ch| ch.to_string()).collect()
+                    } else {
+                        input
+                            .split(&pattern_text)
+                            .take(257)
+                            .map(str::to_owned)
+                            .collect()
+                    };
+                    if chunks.len() > 256 {
+                        return Err(JsError::execution_limit(
+                            "String.split result budget exceeded",
+                        ));
+                    }
+                    return Ok(CallOutcome::Value(self.js_array_from_values(
+                        chunks.into_iter().map(JsValue::String).collect(),
+                    )?));
+                }
+                let regex = build_js_regex(&pattern_text, &flags)?;
+                if builtin == BuiltinFunction::StringReplace {
+                    let replacement = arguments
+                        .get(1)
+                        .map_or_else(|| "undefined".to_owned(), JsValue::to_js_string);
+                    // Rust's $0 corresponds to the JS replacement token $&.
+                    let replacement = replacement.replace("$&", "$0");
+                    let replaced = if flags.contains('g') {
+                        regex.replace_all(&input, replacement.as_str()).into_owned()
+                    } else {
+                        regex.replace(&input, replacement.as_str()).into_owned()
+                    };
+                    return Ok(CallOutcome::Value(JsValue::String(replaced)));
+                }
+                let values = if builtin == BuiltinFunction::StringSplit {
+                    regex
+                        .split(&input)
+                        .take(257)
+                        .map(|part| JsValue::String(part.into()))
+                        .collect::<Vec<_>>()
+                } else if flags.contains('g') {
+                    regex
+                        .find_iter(&input)
+                        .take(257)
+                        .map(|part| JsValue::String(part.as_str().into()))
+                        .collect::<Vec<_>>()
+                } else {
+                    regex
+                        .captures(&input)
+                        .map(|caps| {
+                            caps.iter()
+                                .take(32)
+                                .map(|part| {
+                                    part.map_or(JsValue::Undefined, |m| {
+                                        JsValue::String(m.as_str().into())
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
+                if values.len() > 256 {
+                    return Err(JsError::execution_limit(
+                        "String RegExp result budget exceeded",
+                    ));
+                }
+                if builtin == BuiltinFunction::StringMatch && values.is_empty() {
+                    return Ok(CallOutcome::Value(JsValue::Null));
+                }
+                return Ok(CallOutcome::Value(self.js_array_from_values(values)?));
             }
             BuiltinFunction::StringCharAt => {
                 let primitive = match &this_value {
@@ -7619,6 +7844,11 @@ impl JsRuntime {
             | BuiltinFunction::JsonParse
             | BuiltinFunction::JsonStringify
             | BuiltinFunction::StringCharAt
+            | BuiltinFunction::StringReplace
+            | BuiltinFunction::StringMatch
+            | BuiltinFunction::StringSplit
+            | BuiltinFunction::RegExpTest
+            | BuiltinFunction::RegExpExec
             | BuiltinFunction::ArrayPush
             | BuiltinFunction::ArrayPop
             | BuiltinFunction::ObjectConstructor
@@ -8787,6 +9017,23 @@ impl JsRuntime {
         }
     }
 
+    fn js_array_from_values(&mut self, values: Vec<JsValue>) -> Result<JsValue, JsError> {
+        if values.len() > 256 {
+            return Err(JsError::execution_limit(
+                "RegExp match result budget exceeded",
+            ));
+        }
+        let mut properties = HashMap::new();
+        let length = values.len();
+        for (index, value) in values.into_iter().enumerate() {
+            properties.insert(index.to_string(), value);
+        }
+        properties.insert("length".into(), JsValue::Number(length as f64));
+        let array =
+            self.allocate_object(ObjectKind::Array, Some(self.array_prototype), properties)?;
+        Ok(JsValue::Object(array))
+    }
+
     fn allocate_object(
         &mut self,
         kind: ObjectKind,
@@ -8966,6 +9213,75 @@ fn compare(left: &JsValue, right: &JsValue, op: impl FnOnce(f64, f64) -> bool) -
     op(left.to_number(), right.to_number())
 }
 
+/// A bounded regex backend, not a replacement ECMAScript engine.
+/// Unsupported JS-only assertions/backreferences fail explicitly at compilation.
+fn js_utf16_to_byte(text: &str, units: usize) -> Option<usize> {
+    let mut seen = 0;
+    for (byte, ch) in text.char_indices() {
+        if seen == units {
+            return Some(byte);
+        }
+        seen += ch.len_utf16();
+        if seen > units {
+            return None;
+        }
+    }
+    (seen == units).then_some(text.len())
+}
+
+fn js_byte_to_utf16(text: &str, byte: usize) -> usize {
+    text[..byte].encode_utf16().count()
+}
+
+fn build_js_regex(pattern: &str, flags: &str) -> Result<regex::Regex, JsError> {
+    if pattern.len() > 8192 {
+        return Err(JsError::execution_limit(
+            "regular expression source budget exceeded",
+        ));
+    }
+    let mut converted = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars().peekable();
+    while let Some(character) = chars.next() {
+        if character == '\\' {
+            match chars.peek().copied() {
+                Some('/') => {
+                    chars.next();
+                    converted.push('/');
+                }
+                Some('u') => {
+                    chars.next();
+                    let mut hex = String::new();
+                    for _ in 0..4 {
+                        if let Some(digit) = chars.next() {
+                            hex.push(digit);
+                        }
+                    }
+                    if hex.len() != 4 || !hex.chars().all(|digit| digit.is_ascii_hexdigit()) {
+                        return Err(JsError::syntax(
+                            0,
+                            "invalid regular expression Unicode escape",
+                        ));
+                    }
+                    converted.push_str("\\x{");
+                    converted.push_str(&hex);
+                    converted.push('}');
+                }
+                _ => converted.push('\\'),
+            }
+        } else {
+            converted.push(character);
+        }
+    }
+    regex::RegexBuilder::new(&converted)
+        .case_insensitive(flags.contains('i'))
+        .multi_line(flags.contains('m'))
+        .dot_matches_new_line(flags.contains('s'))
+        .size_limit(2 * 1024 * 1024)
+        .dfa_size_limit(2 * 1024 * 1024)
+        .build()
+        .map_err(|error| JsError::syntax(0, format!("unsupported regular expression: {error}")))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -9016,6 +9332,122 @@ mod tests {
             vm.eval_script("location.pathname").unwrap(),
             JsValue::String("/".into())
         );
+    }
+
+    #[test]
+    fn comma_operator_preserves_order_without_merging_call_arguments() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("var x=0,y=0; (x=2,y=3); x+y", JsValue::Number(5.0)),
+            ("var x=0; false || (x=2,x=4); x", JsValue::Number(4.0)),
+            (
+                "var x=0; for(var i=0;i<3;i++,x+=2) {} x",
+                JsValue::Number(6.0),
+            ),
+            (
+                "var x=0; function pair(a,b){return a*10+b;} pair((x=1,x+2),4)",
+                JsValue::Number(34.0),
+            ),
+            (
+                "var x=0; var a=[(x=1,5),8]; a[0]+a[1]+x",
+                JsValue::Number(14.0),
+            ),
+            (
+                "function f(){var a=0;return (a=5,a+2);} f()",
+                JsValue::Number(7.0),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn compound_assignment_preserves_receiver_evaluation_order() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("var n=1; n+=2; n", JsValue::Number(3.0)),
+            ("var n=5; n-=3; n", JsValue::Number(2.0)),
+            ("var n=1; n+=2; n+=4; n", JsValue::Number(7.0)),
+            (
+                "var o={name:'A'};o.name+='B';o.name",
+                JsValue::String("AB".into()),
+            ),
+            (
+                "var o={num:3};var calls=0; function get(){calls+=1;return o;} get().num+=4;calls",
+                JsValue::Number(1.0),
+            ),
+            (
+                "var o={num:3};var calls=0; function get(){calls+=1;return o;} get().num+=4;o.num",
+                JsValue::Number(7.0),
+            ),
+            (
+                "var o={a:1};var keyCalls=0;function key(){keyCalls+=1;return 'a';}o[key()]+=3;keyCalls",
+                JsValue::Number(1.0),
+            ),
+            ("var x=2; var y=(x+=3); y+x", JsValue::Number(10.0)),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn regex_utf16_offsets_and_plain_string_split_are_consistent() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("var r=/猫/g; r.exec('🐈猫').index", JsValue::Number(2.0)),
+            (
+                "var r=/猫/g; r.test('🐈猫猫'); r.lastIndex",
+                JsValue::Number(3.0),
+            ),
+            (
+                "var r=/猫/g; r.test('🐈猫猫'); r.test('🐈猫猫'); r.lastIndex",
+                JsValue::Number(4.0),
+            ),
+            ("'a.b'.split('.')[1]", JsValue::String("b".into())),
+            ("'abc'.split().length", JsValue::Number(1.0)),
+            ("'abc'.split('')[2]", JsValue::String("c".into())),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn real_web_regex_literal_methods_and_division_work() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("6 / 2", JsValue::Number(3.0)),
+            ("10 / 2 / 5", JsValue::Number(1.0)),
+            (" /foo/i.test('FOO')", JsValue::Boolean(true)),
+            (" /foo/.test('bar')", JsValue::Boolean(false)),
+            (" /[&\\u00A0]/g.test('a&b')", JsValue::Boolean(true)),
+            (" /\\d+/.exec('a12b')[0]", JsValue::String("12".into())),
+            ("'a b  c'.split(/\\s+/)[2]", JsValue::String("c".into())),
+            ("'A-b-C'.replace(/-/g,'_')", JsValue::String("A_b_C".into())),
+            ("'A-b-C'.replace(/-/,'_')", JsValue::String("A_b-C".into())),
+            ("'abc'.match(/[a-z]/g).length", JsValue::Number(3.0)),
+            (
+                r#"'https://www.youtube.com/foo'.replace(/https:\/\/www\.youtube\.com\//g,'')"#,
+                JsValue::String("foo".into()),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn regex_literal_rejects_unsupported_features_and_bounded_input() {
+        let mut vm = JsRuntime::new();
+        for source in [
+            "/abc/gg",
+            "/[abc/",
+            "/unterminated",
+            "/(?=a)/.test('a')",
+            "/(a)\\1/.test('aa')",
+        ] {
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
+        let long = format!("/a/.test('{}')", "a".repeat(65537));
+        assert!(vm.eval_script(&long).is_err());
     }
 
     #[test]

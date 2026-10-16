@@ -2,6 +2,33 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S86",
+      "title": "Compound and comma JS expressions into browser DOM",
+      "status": "Original VM, full expression and native DOM integration tested",
+      "steps": [
+        {"path": "crates/op_js/src/lexer.rs", "symbol": "PlusEqual"},
+        {"path": "crates/op_js/src/parser.rs", "symbol": "CompoundAssignment"},
+        {"path": "crates/op_js/src/parser.rs", "symbol": "Sequence"},
+        {"path": "crates/op_js/src/bytecode.rs", "symbol": "Dup2"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "Dup2"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "parse_and_execute"}
+      ],
+      "limitation": "Only += and -= compound operations; comma operator only in explicitly supported expression contexts; real YouTube still displays no text."
+    },
+    {
+      "id": "S85",
+      "title": "Real regex literals through original VM into native DOM",
+      "status": "Bounded regexp subset and parser-DOM integration tested",
+      "steps": [
+        {"path": "crates/op_js/src/lexer.rs", "symbol": "RegExp"},
+        {"path": "crates/op_js/src/parser.rs", "symbol": "RegExp"},
+        {"path": "crates/op_js/src/bytecode.rs", "symbol": "CreateRegExp"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "build_js_regex"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "parse_and_execute"}
+      ],
+      "limitation": "A finite automata regular-expression backend is not a full JavaScript RegExp implementation; unsupported patterns and flags reject."
+    },
+    {
       "id": "S84",
       "title": "Original for-in parsing through real YouTube configuration script",
       "status": "Own-key VM subset and HTML-to-DOM integration tested",

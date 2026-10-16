@@ -118,6 +118,10 @@ pub enum VariableKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Literal(JsValue),
+    RegExp {
+        pattern: String,
+        flags: String,
+    },
     ForOfValues(Box<Expression>),
     ForInKeys(Box<Expression>),
     /// Untagged template: cooked quasis and ordered substitution expressions.
@@ -176,6 +180,12 @@ pub enum Expression {
     },
     Assignment {
         target: AssignmentTarget,
+        value: Box<Expression>,
+    },
+    Sequence(Vec<Expression>),
+    CompoundAssignment {
+        target: AssignmentTarget,
+        op: BinaryOp,
         value: Box<Expression>,
     },
 }
@@ -283,7 +293,7 @@ impl Parser {
             return self.try_statement();
         }
         if self.take(&TokenKind::Throw) {
-            let value = self.assignment()?;
+            let value = self.sequence()?;
             self.optional_semicolon();
             return Ok(Statement::Throw(value));
         }
@@ -300,7 +310,7 @@ impl Parser {
             let value = if self.check(&TokenKind::Semicolon) || self.check(&TokenKind::RightBrace) {
                 None
             } else {
-                Some(self.assignment()?)
+                Some(self.sequence()?)
             };
             self.optional_semicolon();
             return Ok(Statement::Return(value));
@@ -340,7 +350,7 @@ impl Parser {
             return self.variable_statement(kind);
         }
 
-        let expression = self.assignment()?;
+        let expression = self.sequence()?;
         self.optional_semicolon();
         Ok(Statement::Expression(expression))
     }
@@ -491,7 +501,7 @@ impl Parser {
                     declarations: self.variable_declarations(kind)?,
                 })
             } else {
-                Some(ForInitializer::Expression(self.assignment()?))
+                Some(ForInitializer::Expression(self.sequence()?))
             };
 
             if !self.take(&TokenKind::Semicolon) {
@@ -510,7 +520,7 @@ impl Parser {
         let test = if self.take(&TokenKind::Semicolon) {
             None
         } else {
-            let test = self.assignment()?;
+            let test = self.sequence()?;
             if !self.take(&TokenKind::Semicolon) {
                 return Err(JsError::syntax(
                     self.current().start,
@@ -523,7 +533,7 @@ impl Parser {
         let update = if self.take(&TokenKind::RightParen) {
             None
         } else {
-            let update = self.assignment()?;
+            let update = self.sequence()?;
             if !self.take(&TokenKind::RightParen) {
                 return Err(JsError::syntax(
                     self.current().start,
@@ -759,7 +769,7 @@ impl Parser {
                 format!("expected '(' after {owner}"),
             ));
         }
-        let expression = self.assignment()?;
+        let expression = self.sequence()?;
         if !self.take(&TokenKind::RightParen) {
             return Err(JsError::syntax(
                 self.current().start,
@@ -874,21 +884,47 @@ impl Parser {
         Ok(Expression::Arrow { params, body })
     }
 
+    fn sequence(&mut self) -> Result<Expression, JsError> {
+        let first = self.assignment()?;
+        if !self.take(&TokenKind::Comma) {
+            return Ok(first);
+        }
+        let mut expressions = vec![first, self.assignment()?];
+        while self.take(&TokenKind::Comma) {
+            expressions.push(self.assignment()?);
+        }
+        Ok(Expression::Sequence(expressions))
+    }
+
     fn assignment(&mut self) -> Result<Expression, JsError> {
         if let Some((params, body_start)) = self.arrow_parameters() {
             return self.arrow_function(params, body_start);
         }
         let left = self.conditional()?;
-        if !self.take(&TokenKind::Equal) {
+        let compound = if self.take(&TokenKind::Equal) {
+            None
+        } else if self.take(&TokenKind::PlusEqual) {
+            Some(BinaryOp::Add)
+        } else if self.take(&TokenKind::MinusEqual) {
+            Some(BinaryOp::Subtract)
+        } else {
             return Ok(left);
-        }
+        };
 
         let target = assignment_target(left, self.previous().start)?;
         let value = self.assignment()?;
-        Ok(Expression::Assignment {
-            target,
-            value: Box::new(value),
-        })
+        if let Some(op) = compound {
+            Ok(Expression::CompoundAssignment {
+                target,
+                op,
+                value: Box::new(value),
+            })
+        } else {
+            Ok(Expression::Assignment {
+                target,
+                value: Box::new(value),
+            })
+        }
     }
 
     fn conditional(&mut self) -> Result<Expression, JsError> {
@@ -1250,6 +1286,7 @@ impl Parser {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Number(value) => Ok(Expression::Literal(JsValue::Number(value))),
+            TokenKind::RegExp(pattern, flags) => Ok(Expression::RegExp { pattern, flags }),
             TokenKind::String(value) | TokenKind::TemplateNoSub(value) => {
                 Ok(Expression::Literal(JsValue::String(value)))
             }
@@ -1309,7 +1346,7 @@ impl Parser {
             TokenKind::LeftBrace => self.object_literal(),
             TokenKind::LeftBracket => self.array_literal(),
             TokenKind::LeftParen => {
-                let expression = self.assignment()?;
+                let expression = self.sequence()?;
                 if !self.take(&TokenKind::RightParen) {
                     return Err(JsError::syntax(
                         self.current().start,

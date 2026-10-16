@@ -16,6 +16,22 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## Original JS regex objects and sequence assignment (16 October 2026)
+
+`op_js::lexer` selects `TokenKind::RegExp` after expression-leading
+tokens and keeps division after values. `parser::Expression::RegExp`
+-> `bytecode::Instruction::CreateRegExp` -> `JsRuntime` allocates a
+GC-owned `ObjectKind::RegExp`; `RegExpTest`/`RegExpExec` and String
+`replace/match/split` call bounded Rust `regex::RegexBuilder`.
+This is an infrastructure regex matcher, not a JS engine; unsupported
+ECMAScript patterns reject. `parser::Expression::CompoundAssignment`
+-> existing original Binary and Assign/SetProperty bytecode, with
+`Instruction::Dup2` preserving object/key evaluation once.
+`parser::Expression::Sequence` -> compiler discards intermediate
+operands but preserves ordered side effects. Parser uses it only where
+comma is an expression operator rather than an argument/declaration
+separator. JS and native DOM regression tests cover the complete path.
+
 ## Opt-in real-script diagnostics and bounded for-in (16 October 2026)
 
 `ParserScriptRunner::evaluate_code` receives `JsError.offset` from

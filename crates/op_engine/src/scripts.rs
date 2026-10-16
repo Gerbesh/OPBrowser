@@ -1002,6 +1002,22 @@ mod tests {
     }
 
     #[test]
+    fn regular_expression_and_compound_update_mutate_real_html_dom() {
+        let source = r#"<p id='out'>Waiting</p><script>
+            var query = 'https://www.youtube.com/a1';
+            query = query.replace(/https:\/\/www\.youtube\.com\//g, '');
+            var count = 0;
+            for (const value of query.split(/\d+/)) {count += value.length;}
+            document.getElementById('out').textContent = query + ':' + count;
+        </script>"#;
+        let (document, report, _, diagnostics) = parse_and_execute(source, None, None);
+        assert_eq!(report.executed, 1, "{diagnostics:?}");
+        assert_eq!(report.failed, 0, "{diagnostics:?}");
+        assert!(report.mutations > 0);
+        assert!(collect_text(&document, document.root(), 4096).contains("a1:1"));
+    }
+
+    #[test]
     fn real_youtube_for_in_configuration_copy_updates_dom_text() {
         let html = "<p id='out'>Waiting</p><script>
             var source = {quality:'high',autoplay:'off'};

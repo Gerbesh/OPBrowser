@@ -57,6 +57,18 @@ next verified blockers are regex literals, labeled statements,
 unsupported `async function` syntax on Reddit and host API behavior.
 Do not increase script budgets simply to hide errors.
 
+## RegExp and comma-operator checkpoint (16 October 2026)
+
+Bounded original RegExp objects and String matching now parse the
+previous live YouTube backslash failures. The independent VM also
+executes compound assignment and comma sequences with verified call
+argument boundaries. A live native YouTube probe advances from 7/9 to
+**8 executed / 8 failed** scripts; viewport still has zero text. Next
+semantic blockers: object-literal getters/setters, labeled statements,
+`async function`, host DOM APIs, dynamic script scheduling and
+native paint/layout. The regex subsystem is intentionally partial,
+with unsupported ECMAScript patterns rejected rather than faked.
+
 ## Native DOM checkpoint (14 October 2026)
 
 Native Document now collects orphan node components and reuses slots with

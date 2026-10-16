@@ -50,6 +50,10 @@ pub(crate) enum Instruction {
     },
     CreateObject(Vec<bool>),
     CreateArray(Vec<bool>),
+    CreateRegExp {
+        pattern: String,
+        flags: String,
+    },
     ToForOfValues,
     ToForInKeys,
     CreateFunction(Arc<FunctionTemplate>),
@@ -63,6 +67,7 @@ pub(crate) enum Instruction {
     Unary(UnaryOp),
     Binary(BinaryOp),
     Dup,
+    Dup2,
     Pop,
     EnterScope,
     ExitScope,
@@ -611,6 +616,20 @@ impl Compiler {
     fn expression(&mut self, expression: &Expression) {
         match expression {
             Expression::Literal(value) => self.code.push(Instruction::Push(value.clone())),
+            Expression::RegExp { pattern, flags } => {
+                self.code.push(Instruction::CreateRegExp {
+                    pattern: pattern.clone(),
+                    flags: flags.clone(),
+                });
+            }
+            Expression::Sequence(expressions) => {
+                for (index, expression) in expressions.iter().enumerate() {
+                    self.expression(expression);
+                    if index + 1 < expressions.len() {
+                        self.code.push(Instruction::Pop);
+                    }
+                }
+            }
             Expression::ForOfValues(iterable) => {
                 self.expression(iterable);
                 self.code.push(Instruction::ToForOfValues);
@@ -795,6 +814,23 @@ impl Compiler {
                     self.patch_jump(short_circuit, end);
                 }
             }
+            Expression::CompoundAssignment { target, op, value } => match target {
+                AssignmentTarget::Identifier(name) => {
+                    self.code.push(Instruction::Load(name.clone()));
+                    self.expression(value);
+                    self.code.push(Instruction::Binary(*op));
+                    self.code.push(Instruction::Assign(name.clone()));
+                }
+                AssignmentTarget::Member { object, property } => {
+                    self.expression(object);
+                    self.expression(property);
+                    self.code.push(Instruction::Dup2);
+                    self.code.push(Instruction::GetProperty);
+                    self.expression(value);
+                    self.code.push(Instruction::Binary(*op));
+                    self.code.push(Instruction::SetProperty);
+                }
+            },
             Expression::Assignment { target, value } => match target {
                 AssignmentTarget::Identifier(name) => {
                     self.expression(value);
