@@ -3714,3 +3714,10 @@ This file is append-only project history.
 - The next YouTube syntax context contained this.playbackRate*=-1, 1<<e%32 and Math.random()*1E9>>>0. Added original lexer/parser/VM operators *=, /=, %=, <<, >>, >>>, <<=, >>=, >>>= with JS ToInt32 conversion, masked 5-bit shift counts and correct operator precedence. Compound member assignment retains single evaluation of receiver/property. Tests include uint32 -1>>>0, edge wrapping and native DOM-to-paint.
 - Rebuilt original native Windows release probe and checked real Google, YouTube, Pikabu, Reddit and DeviantArt at 1300ms. Three previously noted YouTube syntax errors advance to missing built-in RegExp and Math ReferenceErrors; YouTube still has eight JS failures/zero painted text, Reddit remains blank. Other counts: Google 2, Pikabu 11, Reddit 1, DeviantArt 3 JS failures. No real-site visual compatibility claimed. Probe artifacts are gitignored.
 
+
+## 2026-10-16 - Original Math and RegExp globals
+
+- Implemented original heap/GC-rooted Math global with seventeen numeric methods, standard constants and OS-seeded non-cryptographic bounded Math.random. Tests cover value range, negative zero, NaN, Infinity, method lengths and integration with existing JS shift operators.
+- Implemented original RegExp function/constructor, sharing the existing finite Rust regex subset with literal regex creation. Added flag validation, default empty pattern source, a RegExp prototype, and constructor/literal instanceof tests. Unsupported regex patterns remain rejected.
+- Deterministic VM and HTML DOM-to-native-text regressions pass for both globals. Rebuilt native Windows release probe and checked five live sites at 1300ms under artifacts/live_web/math-regexp-2026-10-16. Site failure counts remain Google 2, YouTube 8, Pikabu 11, Reddit 1, DeviantArt 3; YouTube has zero text, Reddit blank. Former missing Math/RegExp errors now proceed to missing navigator/Symbol and TypeErrors, not visual compatibility.
+

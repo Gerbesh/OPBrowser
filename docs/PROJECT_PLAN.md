@@ -184,6 +184,17 @@ still paints **zero text**, Reddit is blank. NEXT: original
 async function parsing/runtime, script scheduling, and real layout.
 Do not treat error transitions as successful website rendering.
 
+**P0 original Math/RegExp globals (16 October 2026):**
+`Math` includes 17 intrinsic methods, standard constants and
+non-cryptographic random; `RegExp()` and `new RegExp()` reuse
+the bounded literal regex implementation, now supporting
+`instanceof RegExp`. The VM and HTML-to-native-paint tests pass.
+Five real site measurements remain **2/8/11/1/3** failed JS
+(Google/YouTube/Pikabu/Reddit/DeviantArt). YouTube still has
+zero text; Reddit is blank. The two missing globals progress to
+`navigator`/`Symbol` and TypeErrors. Next: real feature detection,
+symbols, async functions, dynamic scripts and visible rendering.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

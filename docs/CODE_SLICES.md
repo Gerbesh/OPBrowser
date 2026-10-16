@@ -132,6 +132,16 @@ missing-global failure. PerformanceObserver/resource timing and an
 interactive CPU profiler remain unimplemented; DeviantArt still has
 other JavaScript errors.
 
+## S79 - Math and RegExp into rendered DOM text
+
+Live site JS `Math.random()*1E9>>>0` / `RegExp(...)`
+-> JS global binding lookup -> original numeric or bounded regex
+builtin -> GC-traced objects, method/prototype dispatch -> JS value
+-> DOM `textContent` -> native paint text. VM, constructor,
+invalid flag, and HTML-to-paint regressions pass. Live YouTube
+moves beyond Math/RegExp missing-global errors to navigator/Symbol
+ReferenceErrors and TypeErrors but still renders zero text.
+
 ## S78 - YouTube-style JS syntax to native DOM pixels
 
 Live observed `for(x in h.style[u]=q,C)` -> original

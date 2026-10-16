@@ -3,6 +3,17 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Math and RegExp globals (16 October 2026)
+
+Original `Math` supplies 17 numeric functions (including
+`floor`, `pow`, `max`, `round`, `random`) and standard
+constants. `Math.random` is non-cryptographic and in [0,1).
+`RegExp()`, `new RegExp()` and regular-expression literals use
+the same bounded Rust regex subset; methods, flags, prototypes
+and `instanceof` have tests. Unsupported regex syntax remains
+explicitly unsupported. Live YouTube has moved beyond missing
+Math/RegExp but remains zero-text and incomplete.
+
 ## YouTube parser and 32-bit operators (16 October 2026)
 
 The original interpreter now supports full-expression right-hand

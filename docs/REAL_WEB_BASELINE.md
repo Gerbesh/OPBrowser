@@ -298,6 +298,18 @@ YouTube still renders zero text and Reddit is blank; there is no
 certified first viewport. Exact thrown-value semantics and full
 descriptors remain incomplete.
 
+## 16 October 2026: Math and RegExp missing-global follow-up
+
+Implemented GC-traced original JS `Math` and `RegExp` globals,
+using existing VM builtin dispatch and bounded regex code.
+VM/unit and HTML-to-native-paint tests pass. The 1300ms five-
+site run under ignored `artifacts/live_web/math-regexp-2026-10-16/`
+still reports failed JS Google **2**, YouTube **8**, Pikabu **11**,
+Reddit **1**, DeviantArt **3**. YouTube still paints **zero text**,
+Reddit remains **blank**. Real YouTube trace shows prior
+Math/RegExp ReferenceErrors removed and later navigator/Symbol
+missing globals and TypeErrors. No visual acceptance achieved.
+
 ## 16 October 2026: operator and for-in parser unblocking
 
 The real YouTube opt-in syntax excerpt exposed a valid comma-expression

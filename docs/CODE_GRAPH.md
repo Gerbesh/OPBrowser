@@ -57,6 +57,19 @@ Original-VM tests and an HTML -> DOM mutation -> paint regression
 exercise the entire path. General ECMAScript label/ASI coverage
 remains incomplete.
 
+## Original JavaScript Math and RegExp globals (16 October 2026)
+
+`JsRuntime::install_standard_primitives` creates GC-traced
+`Math` and `RegExp` globals in the original object arena.
+`BuiltinFunction::Math(MathBuiltin)` provides 17 numeric methods,
+standard numeric constants and non-cryptographic bounded random.
+`BuiltinFunction::RegExpConstructor` and
+`Instruction::CreateRegExp` share `allocate_regexp_object`,
+validated through the existing bounded native regex implementation.
+The original prototype chain supports `instanceof RegExp`.
+VM tests, invalid-input tests and HTML-to-native-paint regressions
+pass. Full ECMAScript number/protocol behavior remains incomplete.
+
 ## Modern arithmetic/shift operators and real-site for-in grammar (16 October 2026)
 
 `op_js::lexer::TokenKind` recognizes `*=`, `/=`, `%=`,

@@ -6,6 +6,7 @@ use crate::{
 };
 use std::{
     collections::{HashMap, VecDeque},
+    hash::{BuildHasher, Hasher},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -98,6 +99,27 @@ enum ObjectKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MathBuiltin {
+    Abs,
+    Floor,
+    Ceil,
+    Round,
+    Trunc,
+    Sqrt,
+    Pow,
+    Max,
+    Min,
+    Random,
+    Sign,
+    Log,
+    Exp,
+    Sin,
+    Cos,
+    Tan,
+    Atan2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BuiltinFunction {
     Error,
     TypeError,
@@ -107,6 +129,7 @@ enum BuiltinFunction {
     StringReplace,
     StringMatch,
     StringSplit,
+    RegExpConstructor,
     RegExpTest,
     RegExpExec,
     ArrayPush,
@@ -186,6 +209,7 @@ enum BuiltinFunction {
     StringConstructor,
     IsNaN,
     IsFinite,
+    Math(MathBuiltin),
     PerformanceNow,
     ArrayIsArray,
     ArrayOf,
@@ -1445,6 +1469,70 @@ impl JsRuntime {
                     .insert(method.into(), JsValue::Object(method_id));
             }
         }
+        let mut math_props = HashMap::from([
+            ("E".into(), JsValue::Number(std::f64::consts::E)),
+            ("PI".into(), JsValue::Number(std::f64::consts::PI)),
+            ("LN2".into(), JsValue::Number(std::f64::consts::LN_2)),
+            ("LN10".into(), JsValue::Number(std::f64::consts::LN_10)),
+            ("LOG2E".into(), JsValue::Number(std::f64::consts::LOG2_E)),
+            ("LOG10E".into(), JsValue::Number(std::f64::consts::LOG10_E)),
+            ("SQRT2".into(), JsValue::Number(std::f64::consts::SQRT_2)),
+            (
+                "SQRT1_2".into(),
+                JsValue::Number(std::f64::consts::FRAC_1_SQRT_2),
+            ),
+        ]);
+        for (name, method, length) in [
+            ("abs", MathBuiltin::Abs, 1.0),
+            ("floor", MathBuiltin::Floor, 1.0),
+            ("ceil", MathBuiltin::Ceil, 1.0),
+            ("round", MathBuiltin::Round, 1.0),
+            ("trunc", MathBuiltin::Trunc, 1.0),
+            ("sqrt", MathBuiltin::Sqrt, 1.0),
+            ("pow", MathBuiltin::Pow, 2.0),
+            ("max", MathBuiltin::Max, 2.0),
+            ("min", MathBuiltin::Min, 2.0),
+            ("random", MathBuiltin::Random, 0.0),
+            ("sign", MathBuiltin::Sign, 1.0),
+            ("log", MathBuiltin::Log, 1.0),
+            ("exp", MathBuiltin::Exp, 1.0),
+            ("sin", MathBuiltin::Sin, 1.0),
+            ("cos", MathBuiltin::Cos, 1.0),
+            ("tan", MathBuiltin::Tan, 1.0),
+            ("atan2", MathBuiltin::Atan2, 2.0),
+        ] {
+            let id = self.allocate_lifecycle_method(name, BuiltinFunction::Math(method))?;
+            self.object_mut(id)?
+                .properties
+                .insert("length".into(), JsValue::Number(length));
+            math_props.insert(name.into(), JsValue::Object(id));
+        }
+        let math = self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            math_props,
+        )?;
+        self.install_global_binding("Math", JsValue::Object(math), true, VariableKind::Var);
+        let test = self.allocate_lifecycle_method("test", BuiltinFunction::RegExpTest)?;
+        let exec = self.allocate_lifecycle_method("exec", BuiltinFunction::RegExpExec)?;
+        let regexp_prototype = self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("test".into(), JsValue::Object(test)),
+                ("exec".into(), JsValue::Object(exec)),
+            ]),
+        )?;
+        let regexp =
+            self.allocate_lifecycle_method("RegExp", BuiltinFunction::RegExpConstructor)?;
+        self.object_mut(regexp)?.properties.extend([
+            ("length".into(), JsValue::Number(2.0)),
+            ("prototype".into(), JsValue::Object(regexp_prototype)),
+        ]);
+        self.object_mut(regexp_prototype)?
+            .properties
+            .insert("constructor".into(), JsValue::Object(regexp));
+        self.install_global_binding("RegExp", JsValue::Object(regexp), true, VariableKind::Var);
         self.install_global_binding("NaN", JsValue::Number(f64::NAN), false, VariableKind::Const);
         self.install_global_binding(
             "Infinity",
@@ -1453,6 +1541,41 @@ impl JsRuntime {
             VariableKind::Const,
         );
         Ok(())
+    }
+
+    fn allocate_regexp_object(&mut self, pattern: &str, flags: &str) -> Result<ObjectId, JsError> {
+        let mut seen = std::collections::HashSet::new();
+        for flag in flags.chars() {
+            if !matches!(flag, 'g' | 'i' | 'm' | 's' | 'u') || !seen.insert(flag) {
+                return Err(JsError::syntax(0, "invalid regular expression flags"));
+            }
+        }
+        let source = if pattern.is_empty() { "(?:)" } else { pattern };
+        build_js_regex(source, flags)?;
+        let test = self.allocate_lifecycle_method("test", BuiltinFunction::RegExpTest)?;
+        let exec = self.allocate_lifecycle_method("exec", BuiltinFunction::RegExpExec)?;
+        let prototype = match self.global("RegExp").cloned() {
+            Some(JsValue::Object(constructor)) => {
+                match self.get_object_property(constructor, "prototype")? {
+                    JsValue::Object(id) => id,
+                    _ => self.object_prototype,
+                }
+            }
+            _ => self.object_prototype,
+        };
+        self.allocate_object(
+            ObjectKind::RegExp,
+            Some(prototype),
+            HashMap::from([
+                ("source".into(), JsValue::String(source.into())),
+                ("flags".into(), JsValue::String(flags.into())),
+                ("global".into(), JsValue::Boolean(flags.contains('g'))),
+                ("ignoreCase".into(), JsValue::Boolean(flags.contains('i'))),
+                ("lastIndex".into(), JsValue::Number(0.0)),
+                ("test".into(), JsValue::Object(test)),
+                ("exec".into(), JsValue::Object(exec)),
+            ]),
+        )
     }
 
     fn box_primitive(
@@ -5111,24 +5234,7 @@ impl JsRuntime {
                     stack.push(JsValue::Object(id));
                 }
                 Instruction::CreateRegExp { pattern, flags } => {
-                    build_js_regex(pattern, flags)?;
-                    let test =
-                        self.allocate_lifecycle_method("test", BuiltinFunction::RegExpTest)?;
-                    let exec =
-                        self.allocate_lifecycle_method("exec", BuiltinFunction::RegExpExec)?;
-                    let value = self.allocate_object(
-                        ObjectKind::RegExp,
-                        Some(self.object_prototype),
-                        HashMap::from([
-                            ("source".into(), JsValue::String(pattern.clone())),
-                            ("flags".into(), JsValue::String(flags.clone())),
-                            ("global".into(), JsValue::Boolean(flags.contains('g'))),
-                            ("ignoreCase".into(), JsValue::Boolean(flags.contains('i'))),
-                            ("lastIndex".into(), JsValue::Number(0.0)),
-                            ("test".into(), JsValue::Object(test)),
-                            ("exec".into(), JsValue::Object(exec)),
-                        ]),
-                    )?;
+                    let value = self.allocate_regexp_object(pattern, flags)?;
                     stack.push(JsValue::Object(value));
                 }
                 Instruction::CreateArray(present) => {
@@ -5690,6 +5796,9 @@ impl JsRuntime {
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
         match builtin {
+            BuiltinFunction::Math(method) => {
+                return Ok(CallOutcome::Value(apply_math_builtin(method, &arguments)));
+            }
             BuiltinFunction::ImageConstructor => {
                 let Some(document) = self.dom_document else {
                     return Err(JsError::type_error("Image requires a document"));
@@ -5770,6 +5879,36 @@ impl JsRuntime {
                         .ok_or_else(|| JsError::type_error("incompatible toString receiver"))?
                         .to_js_string(),
                 )));
+            }
+            BuiltinFunction::RegExpConstructor => {
+                let previous = if let Some(JsValue::Object(id)) = arguments.first() {
+                    if self.object(*id)?.kind == ObjectKind::RegExp {
+                        Some((
+                            self.get_object_property(*id, "source")?.to_js_string(),
+                            self.get_object_property(*id, "flags")?.to_js_string(),
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                let pattern = if let Some((source, _)) = &previous {
+                    source.clone()
+                } else {
+                    match arguments.first() {
+                        None | Some(JsValue::Undefined) => String::new(),
+                        Some(value) => value.to_js_string(),
+                    }
+                };
+                let flags = match arguments.get(1) {
+                    None | Some(JsValue::Undefined) => {
+                        previous.map_or_else(String::new, |(_, flags)| flags)
+                    }
+                    Some(value) => value.to_js_string(),
+                };
+                let id = self.allocate_regexp_object(&pattern, &flags)?;
+                return Ok(CallOutcome::Value(JsValue::Object(id)));
             }
             BuiltinFunction::RegExpTest | BuiltinFunction::RegExpExec => {
                 let JsValue::Object(id) = this_value else {
@@ -7899,6 +8038,7 @@ impl JsRuntime {
             | BuiltinFunction::StringReplace
             | BuiltinFunction::StringMatch
             | BuiltinFunction::StringSplit
+            | BuiltinFunction::RegExpConstructor
             | BuiltinFunction::RegExpTest
             | BuiltinFunction::RegExpExec
             | BuiltinFunction::ArrayPush
@@ -7910,6 +8050,7 @@ impl JsRuntime {
             | BuiltinFunction::StringConstructor
             | BuiltinFunction::IsNaN
             | BuiltinFunction::IsFinite
+            | BuiltinFunction::Math(_)
             | BuiltinFunction::PerformanceNow
             | BuiltinFunction::ArrayIsArray
             | BuiltinFunction::ArrayOf
@@ -7952,6 +8093,7 @@ impl JsRuntime {
             if matches!(
                 builtin,
                 BuiltinFunction::ArrayIsArray
+                    | BuiltinFunction::Math(_)
                     | BuiltinFunction::PerformanceNow
                     | BuiltinFunction::ArrayOf
                     | BuiltinFunction::StringCharAt
@@ -9243,6 +9385,67 @@ fn to_int32(value: &JsValue) -> i32 {
     number.trunc().rem_euclid(4_294_967_296.0) as u32 as i32
 }
 
+fn apply_math_builtin(method: MathBuiltin, arguments: &[JsValue]) -> JsValue {
+    let first = arguments.first().map_or(f64::NAN, JsValue::to_number);
+    let second = arguments.get(1).map_or(f64::NAN, JsValue::to_number);
+    let number = match method {
+        MathBuiltin::Abs => first.abs(),
+        MathBuiltin::Floor => first.floor(),
+        MathBuiltin::Ceil => first.ceil(),
+        MathBuiltin::Round => {
+            if (-0.5..0.0).contains(&first) {
+                -0.0
+            } else if first.is_finite() && first.abs() < 4_503_599_627_370_496.0 {
+                (first + 0.5).floor()
+            } else {
+                first
+            }
+        }
+        MathBuiltin::Trunc => first.trunc(),
+        MathBuiltin::Sqrt => first.sqrt(),
+        MathBuiltin::Pow => first.powf(second),
+        MathBuiltin::Sign => {
+            if first.is_nan() || first == 0.0 {
+                first
+            } else {
+                first.signum()
+            }
+        }
+        MathBuiltin::Log => first.ln(),
+        MathBuiltin::Exp => first.exp(),
+        MathBuiltin::Sin => first.sin(),
+        MathBuiltin::Cos => first.cos(),
+        MathBuiltin::Tan => first.tan(),
+        MathBuiltin::Atan2 => first.atan2(second),
+        MathBuiltin::Max | MathBuiltin::Min => {
+            let mut value = if method == MathBuiltin::Max {
+                f64::NEG_INFINITY
+            } else {
+                f64::INFINITY
+            };
+            for arg in arguments {
+                let current = arg.to_number();
+                if current.is_nan() {
+                    return JsValue::Number(f64::NAN);
+                }
+                value = if method == MathBuiltin::Max {
+                    value.max(current)
+                } else {
+                    value.min(current)
+                };
+            }
+            value
+        }
+        MathBuiltin::Random => {
+            // RandomState obtains an OS-seeded, per-instance keyed hash.
+            // Math.random is not a cryptographic randomness interface.
+            let random = std::collections::hash_map::RandomState::new();
+            (random.build_hasher().finish() >> 11) as f64 / 9_007_199_254_740_992.0
+        }
+    };
+    JsValue::Number(number)
+}
+
 fn apply_binary(op: BinaryOp, left: JsValue, right: JsValue) -> JsValue {
     match op {
         BinaryOp::Add => {
@@ -9749,6 +9952,86 @@ mod tests {
         ] {
             assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
         }
+    }
+
+    #[test]
+    fn real_web_regexp_constructor_reuses_native_regex_subset() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("typeof RegExp", JsValue::String("function".into())),
+            ("RegExp().source", JsValue::String("(?:)".into())),
+            ("RegExp('ab','g').flags", JsValue::String("g".into())),
+            ("RegExp('ab','g').global", JsValue::Boolean(true)),
+            ("new RegExp('a','i').test('Aha')", JsValue::Boolean(true)),
+            ("RegExp('(ab)+').test('xabab')", JsValue::Boolean(true)),
+            (
+                "new RegExp('a','g').exec('cat')[0]",
+                JsValue::String("a".into()),
+            ),
+            ("RegExp(/abc/i).flags", JsValue::String("i".into())),
+            ("RegExp(/ab/g).source", JsValue::String("ab".into())),
+            ("new RegExp(/ab/g,'i').flags", JsValue::String("i".into())),
+            ("new RegExp('a') instanceof RegExp", JsValue::Boolean(true)),
+            ("/ab/ instanceof RegExp", JsValue::Boolean(true)),
+            (
+                "'ababa'.match(new RegExp('ab','g')).length",
+                JsValue::Number(2.0),
+            ),
+            ("RegExp.length", JsValue::Number(2.0)),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        assert!(vm.eval_script("RegExp('a','gg')").is_err());
+        assert!(vm.eval_script("new RegExp('a','z')").is_err());
+        assert!(vm.eval_script("RegExp('(?<=a)b')").is_err());
+    }
+
+    #[test]
+    fn real_web_math_intrinsic_values_and_functions() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("typeof Math", JsValue::String("object".into())),
+            ("typeof Math.floor", JsValue::String("function".into())),
+            ("Math.floor(3.9)", JsValue::Number(3.0)),
+            ("Math.ceil(-3.9)", JsValue::Number(-3.0)),
+            ("Math.abs(-7)", JsValue::Number(7.0)),
+            ("Math.trunc(-3.9)", JsValue::Number(-3.0)),
+            ("Math.sqrt(81)", JsValue::Number(9.0)),
+            ("Math.pow(2,5)", JsValue::Number(32.0)),
+            ("Math.max(1,8,2)", JsValue::Number(8.0)),
+            ("Math.min(1,8,2)", JsValue::Number(1.0)),
+            ("Math.sign(-3)", JsValue::Number(-1.0)),
+            ("Math.round(-1.5)", JsValue::Number(-1.0)),
+            ("Math.round(2.5)", JsValue::Number(3.0)),
+            ("Math.sin(0)", JsValue::Number(0.0)),
+            ("Math.cos(0)", JsValue::Number(1.0)),
+            ("Math.atan2(0,1)", JsValue::Number(0.0)),
+            ("Math.abs(-Math.PI)===Math.PI", JsValue::Boolean(true)),
+            ("Math.E>2&&Math.LN2>0&&Math.SQRT2>1", JsValue::Boolean(true)),
+            ("Math.floor.length", JsValue::Number(1.0)),
+            ("Math.random.length", JsValue::Number(0.0)),
+            ("Math.max()", JsValue::Number(f64::NEG_INFINITY)),
+            ("Math.min()", JsValue::Number(f64::INFINITY)),
+            ("1/Math.round(-0.1)", JsValue::Number(f64::NEG_INFINITY)),
+            ("1/Math.sign(-0)", JsValue::Number(f64::NEG_INFINITY)),
+            ("Math.random()*1E9>>>0 < 1000000000", JsValue::Boolean(true)),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        for _ in 0..64 {
+            let JsValue::Number(value) = vm.eval_script("Math.random()").unwrap() else {
+                panic!("Math.random must produce a number");
+            };
+            assert!((0.0..1.0).contains(&value), "out of range: {value}");
+        }
+        assert!(vm.eval_script("new Math.random()").is_err());
+        assert!(vm.eval_script("Math.floor()").unwrap().to_number().is_nan());
+        assert!(
+            vm.eval_script("Math.max(1,NaN)")
+                .unwrap()
+                .to_number()
+                .is_nan()
+        );
     }
 
     #[test]

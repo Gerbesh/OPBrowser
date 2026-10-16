@@ -26,6 +26,49 @@ fn labeled_break_continue_through_finally_mutates_actual_document_pixels() {
 }
 
 #[test]
+fn real_web_regexp_constructor_reaches_native_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var rx=new RegExp('ab','i');",
+            "document.getElementById('result').textContent=",
+            "rx.test('ABBA')&&rx instanceof RegExp?",
+            "'REGEXP-CONSTRUCTOR-PASS':'REGEXP-CONSTRUCTOR-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("REGEXP-CONSTRUCTOR-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn real_web_math_intrinsic_reaches_native_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var id=(Math.floor(12.8)*Math.pow(2,2))>>>0;",
+            "document.getElementById('result').textContent=",
+            "id===48&&Math.abs(-2)===2?'MATH-PAINT-PASS':'MATH-PAINT-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("MATH-PAINT-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn real_web_compound_shift_operators_reach_native_paint() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(
