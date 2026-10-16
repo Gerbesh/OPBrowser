@@ -298,6 +298,25 @@ YouTube still renders zero text and Reddit is blank; there is no
 certified first viewport. Exact thrown-value semantics and full
 descriptors remain incomplete.
 
+## 16 October 2026: labeled statements and protected finally execution
+
+Original JS supports statement labels plus named `break` and
+`continue` for labeled blocks/loops, including nested
+`try/catch/finally`. The interpreter propagates the name across
+try frames and runs finalizers before branching; deterministic VM
+and native DOM-to-paint regressions pass. Unsupported source forms
+and incomplete async/script scheduling remain explicit risks.
+
+Same five live HTTPS sites rechecked with 1300 ms settle in
+`artifacts/live_web/labels-try-2026-10-16/`: failed scripts
+Google **2**, YouTube **8**, Pikabu **11**, Reddit **1**, DeviantArt
+**3**. Native YouTube's former "labeled jump across try" rejection
+became a later "expected expression" error. YouTube still paints
+**0 text** and Reddit is blank; no visual acceptance gate passed.
+Public pages and responses vary, so counts do not prove controlled
+causality. Earlier intermediate diagnostics in
+`artifacts/live_web/labels-2026-10-16/` are diagnostic only.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell

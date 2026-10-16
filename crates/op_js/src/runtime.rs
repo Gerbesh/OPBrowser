@@ -227,8 +227,8 @@ enum RunOutcome {
     Complete(JsValue),
     Returned(JsValue),
     Thrown(JsValue),
-    Break,
-    Continue,
+    Break(Option<String>),
+    Continue(Option<String>),
 }
 
 enum CallOutcome {
@@ -4969,8 +4969,10 @@ impl JsRuntime {
             Ok(RunOutcome::Thrown(value)) => {
                 Err(JsError::exception(self.describe_thrown_value(&value)))
             }
-            Ok(RunOutcome::Break) => Err(JsError::type_error("break escaped script control flow")),
-            Ok(RunOutcome::Continue) => {
+            Ok(RunOutcome::Break(_)) => {
+                Err(JsError::type_error("break escaped script control flow"))
+            }
+            Ok(RunOutcome::Continue(_)) => {
                 Err(JsError::type_error("continue escaped script control flow"))
             }
             Err(error) => Err(error),
@@ -5439,28 +5441,44 @@ impl JsRuntime {
                     break_unwind,
                     continue_target,
                     continue_unwind,
+                    labeled_breaks,
+                    labeled_continues,
                 } => match self.run_try(template, env, steps, call_depth)? {
                     RunOutcome::Complete(value) => completion = value,
-                    RunOutcome::Break => {
-                        let Some(target) = break_target else {
-                            return Ok(RunOutcome::Break);
+                    RunOutcome::Break(label) => {
+                        let destination = match &label {
+                            Some(label) => labeled_breaks
+                                .iter()
+                                .find(|jump| &jump.name == label)
+                                .map(|jump| (jump.target, jump.unwind)),
+                            None => break_target.map(|target| (target, *break_unwind)),
                         };
-                        debug_assert!(*target != usize::MAX && *target <= code.len());
-                        for _ in 0..*break_unwind {
+                        let Some((target, unwind)) = destination else {
+                            return Ok(RunOutcome::Break(label));
+                        };
+                        debug_assert!(target != usize::MAX && target <= code.len());
+                        for _ in 0..unwind {
                             env = self.parent_environment(env)?;
                         }
-                        ip = *target;
+                        ip = target;
                         continue;
                     }
-                    RunOutcome::Continue => {
-                        let Some(target) = continue_target else {
-                            return Ok(RunOutcome::Continue);
+                    RunOutcome::Continue(label) => {
+                        let destination = match &label {
+                            Some(label) => labeled_continues
+                                .iter()
+                                .find(|jump| &jump.name == label)
+                                .map(|jump| (jump.target, jump.unwind)),
+                            None => continue_target.map(|target| (target, *continue_unwind)),
                         };
-                        debug_assert!(*target != usize::MAX && *target <= code.len());
-                        for _ in 0..*continue_unwind {
+                        let Some((target, unwind)) = destination else {
+                            return Ok(RunOutcome::Continue(label));
+                        };
+                        debug_assert!(target != usize::MAX && target <= code.len());
+                        for _ in 0..unwind {
                             env = self.parent_environment(env)?;
                         }
-                        ip = *target;
+                        ip = target;
                         continue;
                     }
                     outcome => return Ok(outcome),
@@ -5469,8 +5487,10 @@ impl JsRuntime {
                     let value = stack.pop().expect("compiler must push thrown value");
                     return Ok(RunOutcome::Thrown(value));
                 }
-                Instruction::BreakSignal => return Ok(RunOutcome::Break),
-                Instruction::ContinueSignal => return Ok(RunOutcome::Continue),
+                Instruction::BreakSignal(label) => return Ok(RunOutcome::Break(label.clone())),
+                Instruction::ContinueSignal(label) => {
+                    return Ok(RunOutcome::Continue(label.clone()));
+                }
                 Instruction::Return => {
                     let value = stack
                         .pop()
@@ -5658,8 +5678,8 @@ impl JsRuntime {
             RunOutcome::Returned(value) => Ok(CallOutcome::Value(value)),
             RunOutcome::Complete(_) => Ok(CallOutcome::Value(JsValue::Undefined)),
             RunOutcome::Thrown(value) => Ok(CallOutcome::Thrown(value)),
-            RunOutcome::Break => Err(JsError::type_error("break escaped a function body")),
-            RunOutcome::Continue => Err(JsError::type_error("continue escaped a function body")),
+            RunOutcome::Break(_) => Err(JsError::type_error("break escaped a function body")),
+            RunOutcome::Continue(_) => Err(JsError::type_error("continue escaped a function body")),
         }
     }
 
@@ -9590,6 +9610,96 @@ mod tests {
         }
         let long = format!("/a/.test('{}')", "a".repeat(65537));
         assert!(vm.eval_script(&long).is_err());
+    }
+
+    #[test]
+    fn real_web_labeled_statements_control_correct_outer_targets() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("var x=0; end:{x=1;break end;x=99;}x", JsValue::Number(1.0)),
+            (
+                "var x=0; outer:inner:{x=4;break outer;x=99;}x",
+                JsValue::Number(4.0),
+            ),
+            (
+                "var i=0; escape:for(i=0;i<5;i++){if(i===3)break escape;}i",
+                JsValue::Number(3.0),
+            ),
+            (
+                "var n=0; outer:while(true){while(true){n=7;break outer;}}n",
+                JsValue::Number(7.0),
+            ),
+            (
+                "var n=0; outer:for(var i=0;i<5;i++){if(i<3)continue outer;n=i;break outer;}n",
+                JsValue::Number(3.0),
+            ),
+            (
+                "var n=0; alpha:beta:for(var i=0;i<3;i++){n+=1;continue alpha;}n",
+                JsValue::Number(3.0),
+            ),
+            (
+                "var n=0; outer:for(const v of [1,2,3]){if(v===2)continue outer;n+=v;}n",
+                JsValue::Number(4.0),
+            ),
+            (
+                "var n=0; outer:for(let k in {a:1,b:2}){n+=1;break outer;}n",
+                JsValue::Number(1.0),
+            ),
+            (
+                "var n=0; tag:switch(5){case 5:n=5;break tag;default:n=8;}n",
+                JsValue::Number(5.0),
+            ),
+            (
+                "var n=0; while(true){tag:{n=1;break;}n=99;}n",
+                JsValue::Number(1.0),
+            ),
+            (
+                "var n=0;try{tag:{n=1;break tag;n=9;}}finally{n+=2;}n",
+                JsValue::Number(3.0),
+            ),
+            (
+                "var n=0; tag:{for(var i=0;i<4;i++){if(i===2)break tag;n+=1;}}n",
+                JsValue::Number(2.0),
+            ),
+            (
+                "var n=0; outer:do{n+=1;if(n===2)break outer;}while(true);n",
+                JsValue::Number(2.0),
+            ),
+            (
+                "var n=0; outer:try{n=1;break outer;n=100;}finally{n+=2;}n",
+                JsValue::Number(3.0),
+            ),
+            (
+                "var n=0; outer:for(var i=0;i<3;i++){try{if(i<2)continue outer;break outer;}finally{n+=1;}}n",
+                JsValue::Number(3.0),
+            ),
+            (
+                "var n=0; outer:while(true){try{try{break outer;}finally{n+=2;}}finally{n+=3;}}n",
+                JsValue::Number(5.0),
+            ),
+            (
+                "var n=0; outer:for(var i=0;i<4;i++){try{try{continue outer;}finally{n+=1;}}finally{n+=2;}}n",
+                JsValue::Number(12.0),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn real_web_labeled_control_rejects_invalid_targets() {
+        let mut vm = JsRuntime::new();
+        for source in [
+            "a: a: {break a;}",
+            "break absent;",
+            "continue absent;",
+            "a: {continue a;}",
+            "outer: for(;;){function nested(){break outer;}break;}",
+            "outer: while(true){function nested(){continue outer;}break;}",
+            "a: {b: {continue a;}}",
+        ] {
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
     }
 
     #[test]

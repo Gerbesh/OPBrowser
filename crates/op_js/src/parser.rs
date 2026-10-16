@@ -59,8 +59,12 @@ pub enum Statement {
         body: Vec<Statement>,
     },
     Return(Option<Expression>),
-    Break,
-    Continue,
+    Labeled {
+        label: String,
+        body: Box<Statement>,
+    },
+    Break(Option<String>),
+    Continue(Option<String>),
     Expression(Expression),
     Empty,
 }
@@ -254,6 +258,7 @@ struct Parser {
     loop_depth: usize,
     breakable_depth: usize,
     function_depth: usize,
+    labels: Vec<(String, bool)>,
 }
 
 impl Parser {
@@ -264,6 +269,7 @@ impl Parser {
             loop_depth: 0,
             breakable_depth: 0,
             function_depth: 0,
+            labels: Vec::new(),
         }
     }
 
@@ -281,6 +287,14 @@ impl Parser {
         }
         if self.take(&TokenKind::LeftBrace) {
             return self.block_statement();
+        }
+        if matches!(self.current().kind, TokenKind::Identifier(_))
+            && self
+                .tokens
+                .get(self.index + 1)
+                .is_some_and(|token| matches!(token.kind, TokenKind::Colon))
+        {
+            return self.labeled_statement();
         }
         if self.take(&TokenKind::If) {
             return self.if_statement();
@@ -324,24 +338,32 @@ impl Parser {
             return Ok(Statement::Return(value));
         }
         if self.take(&TokenKind::Break) {
-            if self.breakable_depth == 0 {
+            let offset = self.previous().start;
+            let label = self.optional_jump_label();
+            if let Some(name) = &label {
+                self.validate_jump_label(name, false, offset)?;
+            } else if self.breakable_depth == 0 {
                 return Err(JsError::syntax(
-                    self.previous().start,
-                    "break is only valid inside a loop or switch",
+                    offset,
+                    "break is only valid inside a loop, switch or labeled statement",
                 ));
             }
             self.optional_semicolon();
-            return Ok(Statement::Break);
+            return Ok(Statement::Break(label));
         }
         if self.take(&TokenKind::Continue) {
-            if self.loop_depth == 0 {
+            let offset = self.previous().start;
+            let label = self.optional_jump_label();
+            if let Some(name) = &label {
+                self.validate_jump_label(name, true, offset)?;
+            } else if self.loop_depth == 0 {
                 return Err(JsError::syntax(
-                    self.previous().start,
+                    offset,
                     "continue is only valid inside a loop",
                 ));
             }
             self.optional_semicolon();
-            return Ok(Statement::Continue);
+            return Ok(Statement::Continue(label));
         }
 
         let variable_kind = if self.take(&TokenKind::Let) {
@@ -361,6 +383,72 @@ impl Parser {
         let expression = self.sequence()?;
         self.optional_semicolon();
         Ok(Statement::Expression(expression))
+    }
+
+    fn labeled_statement(&mut self) -> Result<Statement, JsError> {
+        let token = self.advance().clone();
+        let TokenKind::Identifier(label) = token.kind else {
+            unreachable!("label lookahead requires identifier")
+        };
+        self.advance(); // colon, validated by lookahead
+        if self.labels.iter().any(|(active, _)| active == &label) {
+            return Err(JsError::syntax(token.start, "duplicate statement label"));
+        }
+        if self.labels.len() >= 64 {
+            return Err(JsError::execution_limit("statement label nesting exceeded"));
+        }
+        let mut lookahead = self.index;
+        while let (Some(first), Some(second)) =
+            (self.tokens.get(lookahead), self.tokens.get(lookahead + 1))
+        {
+            if matches!(first.kind, TokenKind::Identifier(_))
+                && matches!(second.kind, TokenKind::Colon)
+            {
+                lookahead += 2;
+            } else {
+                break;
+            }
+        }
+        let iteration = self.tokens.get(lookahead).is_some_and(|token| {
+            matches!(
+                token.kind,
+                TokenKind::For | TokenKind::While | TokenKind::Do
+            )
+        });
+        self.labels.push((label.clone(), iteration));
+        let body = self.statement();
+        self.labels.pop();
+        Ok(Statement::Labeled {
+            label,
+            body: Box::new(body?),
+        })
+    }
+
+    fn optional_jump_label(&mut self) -> Option<String> {
+        let TokenKind::Identifier(name) = &self.current().kind else {
+            return None;
+        };
+        let name = name.clone();
+        self.advance();
+        Some(name)
+    }
+
+    fn validate_jump_label(
+        &self,
+        name: &str,
+        is_continue: bool,
+        offset: usize,
+    ) -> Result<(), JsError> {
+        let Some((_, iteration)) = self.labels.iter().rev().find(|(label, _)| label == name) else {
+            return Err(JsError::syntax(offset, "undefined statement label"));
+        };
+        if is_continue && !iteration {
+            return Err(JsError::syntax(
+                offset,
+                "continue label must name an iteration statement",
+            ));
+        }
+        Ok(())
     }
 
     fn block_statement(&mut self) -> Result<Statement, JsError> {
@@ -746,6 +834,7 @@ impl Parser {
 
         let saved_loop_depth = self.loop_depth;
         let saved_breakable_depth = self.breakable_depth;
+        let saved_labels = std::mem::take(&mut self.labels);
         self.loop_depth = 0;
         self.breakable_depth = 0;
         self.function_depth += 1;
@@ -766,6 +855,7 @@ impl Parser {
         self.function_depth -= 1;
         self.loop_depth = saved_loop_depth;
         self.breakable_depth = saved_breakable_depth;
+        self.labels = saved_labels;
         result?;
         Ok((params, body))
     }
@@ -875,6 +965,7 @@ impl Parser {
         let body = if self.take(&TokenKind::LeftBrace) {
             let saved_loop = self.loop_depth;
             let saved_breakable = self.breakable_depth;
+            let saved_labels = std::mem::take(&mut self.labels);
             self.loop_depth = 0;
             self.breakable_depth = 0;
             self.function_depth += 1;
@@ -882,6 +973,7 @@ impl Parser {
             self.function_depth -= 1;
             self.loop_depth = saved_loop;
             self.breakable_depth = saved_breakable;
+            self.labels = saved_labels;
             let Statement::Block(body) = parsed? else {
                 unreachable!("block parser returns a block");
             };
@@ -1790,6 +1882,22 @@ mod tests {
             Some(Expression::New { .. })
         ));
         assert!(parse_script("new").is_err());
+    }
+
+    #[test]
+    fn parses_statement_labels_and_validates_nested_break_and_continue() {
+        let script = parse_script("outer: inner: for(let i=0;i<2;i++){continue outer;}").unwrap();
+        let Statement::Labeled { label, body } = &script.statements[0] else {
+            panic!("outer label missing");
+        };
+        assert_eq!(label, "outer");
+        let Statement::Labeled { label, body: inner } = body.as_ref() else {
+            panic!("inner label missing");
+        };
+        assert_eq!(label, "inner");
+        assert!(matches!(inner.as_ref(), Statement::For { .. }));
+        let block = parse_script("label: {break label;}").unwrap();
+        assert!(matches!(block.statements[0], Statement::Labeled { .. }));
     }
 
     #[test]

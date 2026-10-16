@@ -132,6 +132,19 @@ missing-global failure. PerformanceObserver/resource timing and an
 interactive CPU profiler remain unimplemented; DeviantArt still has
 other JavaScript errors.
 
+## S77 - Labeled JS jump through finally to real DOM pixels
+
+Live script or inline HTML -> lexer identifier/colon -> parser
+`Statement::Labeled` with validated break/continue target ->
+bytecode control stack and patched `LabeledJump` destinations ->
+original interpreter passes named completion through
+`run_try` while executing every finally -> resumed outer loop or
+labeled block -> DOM `textContent` mutation -> engine display list
+and native text primitive. Focused compiler/parser/VM checks and
+engine integration tests pass; public YouTube probe now advances
+past its prior labeled-try rejection to a later parser failure.
+No fully correct first viewport claimed.
+
 ## S76 - Object-literal accessor through VM and GC
 
 Public inline script -> original object parser with contextual get/set ->

@@ -3,6 +3,18 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Labeled statements and named break/continue (16 October 2026)
+
+The original parser/bytecode/VM support statement labels and
+`break label`/`continue label`, including nested labeled loops,
+`for...of`, `for...in`, `switch`, and labeled blocks. Named exits
+can pass through nested try/finally with ordered finalizer execution
+and correct scope unwinding. Invalid labels and cross-function jumps
+are rejected. A deterministic HTML-to-pixels regression passes.
+Live YouTube still has eight script failures and zero text primitives:
+the previous labeled-try error is now followed by a later syntax error.
+This does not establish real-site compatibility.
+
 ## Original getters, setters and concise methods (16 October 2026)
 
 Object literals now execute `get x(){}`, `set x(v){}`, and

@@ -42,6 +42,21 @@ on the original receiver; GC retains closures through property edges.
 Thrown-value identity through accessors and complete property descriptor
 APIs remain unsupported.
 
+## Original JavaScript labeled control flow and try/finally (16 October 2026)
+
+`op_js::parser::Statement::Labeled` records contextual identifier-colon
+labels; the parser verifies unique active labels and valid iteration
+targets for labeled `continue`, resetting labels at function boundaries.
+`op_js::bytecode::Compiler` attaches loop labels to `ControlContext`,
+patches named `break`/`continue` jumps and preserves scope unwinding.
+The original `Instruction::Try` carries explicitly patched
+`LabeledJump` destinations. Nested try/catch/finally code passes named
+`RunOutcome::Break/Continue` signals to the owning outer context,
+executing every intervening finally block. No external JS engine.
+Original-VM tests and an HTML -> DOM mutation -> paint regression
+exercise the entire path. General ECMAScript label/ASI coverage
+remains incomplete.
+
 ## Opt-in real-script diagnostics and bounded for-in (16 October 2026)
 
 `ParserScriptRunner::evaluate_code` receives `JsError.offset` from

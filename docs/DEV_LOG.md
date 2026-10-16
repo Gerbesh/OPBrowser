@@ -3699,3 +3699,11 @@ This file is append-only project history.
 - GC-traced internal accessor descriptor cells retain getter/setter closures and captured environments across full collection. Exact thrown-value propagation, computed names and full ECMAScript descriptors remain future work.
 - Added VM regressions for real reads/writes, receiver binding, prototype lookup, data shadowing, method calls, syntax rejection and GC survival. Formatting, strict Clippy and full workspace tests passed.
 - Native release five-site run with 1300ms settle: failed scripts Google 2, YouTube 8, Pikabu 11, Reddit 1, DeviantArt 3. Previous Pikabu/DeviantArt counts were 12/4, but live content can differ. YouTube remains zero painted text; Reddit blank. Gitignored reports: artifacts/live_web/accessors-2026-10-16/ and accessors-context-2026-10-16/. No visual success claimed.
+
+## 2026-10-16 - Labeled JavaScript control flow and nested finally
+
+- Added original JS statement-label AST with active-scope validation and function isolation; named break/continue support labeled blocks, switches, loops, for-in and for-of. Invalid, duplicate and non-iteration continue targets reject. Bytecode compilation maps labels to correct control destinations and unwinds lexical scopes.
+- Extended original Try bytecode with patched label-specific break/continue destinations and named run outcomes. Nested try/catch/finally frames run required finalizers before propagating a named completion to its owning loop or block; no third-party JS engine.
+- Focused parser and VM regressions check nested labels, loop exits, invalid targets, nested-finally sequencing and preserved completion. Original HTML integration verifies correct textContent change appears in genuine paint commands.
+- Rebuilt the Release real-site probe and tested the five public HTTPS URLs with 1300ms settling under gitignored artifacts/live_web/labels-try-2026-10-16/: Google 2 failed JS, YouTube 8, Pikabu 11, Reddit 1, DeviantArt 3. YouTube remains zero text and Reddit blank. One former YouTube labeled-try syntax rejection now advances to a subsequent expected-expression error, without visual progress; a separate for-of parser blocker remains.
+

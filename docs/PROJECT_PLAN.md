@@ -156,6 +156,19 @@ labels/async functions), dynamic scripts, DOM and visible layout,
 plus on-demand interactive profiling. Failure counts alone are not
 visual compatibility.
 
+**P0 labeled-control flow (16 October 2026):** Independent JS parser,
+bytecode and VM now support contextual statement labels, named
+break/continue, nested loops and finally-safe named exits through
+nested try/catch/finally. Invalid labels are rejected. A real
+HTML-to-DOM-to-paint regression and VM tests pass. Five 1300ms
+real-site probes still report failed JS Google **2**, YouTube
+**8**, Pikabu **11**, Reddit **1**, DeviantArt **3**. YouTube remains
+**zero-text** and Reddit blank. YouTube's formerly rejected labeled
+jump now advances to another `expected expression` error. NEXT:
+investigate its `expected ')' after for-of iterable` and remaining
+actual runtime failures, async functions, script loading and visible
+layout. This change is a language-semantic fix, not a full-site pass.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

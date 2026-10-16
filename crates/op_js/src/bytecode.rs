@@ -27,6 +27,13 @@ pub(crate) struct TryTemplate {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct LabeledJump {
+    pub(crate) name: String,
+    pub(crate) target: usize,
+    pub(crate) unwind: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Instruction {
     Push(JsValue),
     Load(String),
@@ -82,10 +89,12 @@ pub(crate) enum Instruction {
         break_unwind: usize,
         continue_target: Option<usize>,
         continue_unwind: usize,
+        labeled_breaks: Vec<LabeledJump>,
+        labeled_continues: Vec<LabeledJump>,
     },
     Throw,
-    BreakSignal,
-    ContinueSignal,
+    BreakSignal(Option<String>),
+    ContinueSignal(Option<String>),
     Return,
     SetCompletion,
     Halt,
@@ -111,15 +120,20 @@ struct Compiler {
     controls: Vec<ControlContext>,
     scope_depth: usize,
     next_private_loop: usize,
+    pending_loop_labels: Vec<String>,
 }
 
 struct ControlContext {
     scope_depth: usize,
     is_loop: bool,
+    unlabeled_breakable: bool,
+    labels: Vec<String>,
     break_jumps: Vec<usize>,
     continue_jumps: Vec<usize>,
     break_try_patches: Vec<usize>,
     continue_try_patches: Vec<usize>,
+    labeled_break_try_patches: Vec<usize>,
+    labeled_continue_try_patches: Vec<usize>,
 }
 
 impl Compiler {
@@ -182,8 +196,9 @@ impl Compiler {
                 }
                 self.code.push(Instruction::Return);
             }
-            Statement::Break => self.break_statement(),
-            Statement::Continue => self.continue_statement(),
+            Statement::Labeled { label, body } => self.labeled_statement(label, body),
+            Statement::Break(label) => self.break_statement(label.as_deref()),
+            Statement::Continue(label) => self.continue_statement(label.as_deref()),
             Statement::Expression(expression) => {
                 self.expression(expression);
                 self.code.push(Instruction::SetCompletion);
@@ -268,11 +283,61 @@ impl Compiler {
         self.controls.push(ControlContext {
             scope_depth: self.scope_depth,
             is_loop,
+            unlabeled_breakable: true,
+            labels: if is_loop {
+                std::mem::take(&mut self.pending_loop_labels)
+            } else {
+                Vec::new()
+            },
             break_jumps: Vec::new(),
             continue_jumps: Vec::new(),
             break_try_patches: Vec::new(),
             continue_try_patches: Vec::new(),
+            labeled_break_try_patches: Vec::new(),
+            labeled_continue_try_patches: Vec::new(),
         });
+    }
+
+    fn labeled_statement(&mut self, label: &str, body: &Statement) {
+        fn labels_iteration(body: &Statement) -> bool {
+            match body {
+                Statement::Labeled { body, .. } => labels_iteration(body),
+                Statement::While { .. }
+                | Statement::DoWhile { .. }
+                | Statement::For { .. }
+                | Statement::ForIn { .. }
+                | Statement::ForOf { .. } => true,
+                _ => false,
+            }
+        }
+        if labels_iteration(body) {
+            let saved = self.pending_loop_labels.clone();
+            self.pending_loop_labels.push(label.into());
+            self.statement(body);
+            self.pending_loop_labels = saved;
+        } else {
+            self.controls.push(ControlContext {
+                scope_depth: self.scope_depth,
+                is_loop: false,
+                unlabeled_breakable: false,
+                labels: vec![label.into()],
+                break_jumps: Vec::new(),
+                continue_jumps: Vec::new(),
+                break_try_patches: Vec::new(),
+                continue_try_patches: Vec::new(),
+                labeled_break_try_patches: Vec::new(),
+                labeled_continue_try_patches: Vec::new(),
+            });
+            self.statement(body);
+            let context = self.pop_control();
+            let end = self.code.len();
+            for jump in context.break_jumps {
+                self.patch_jump(jump, end);
+            }
+            for instruction in context.labeled_break_try_patches {
+                self.patch_labeled_try(instruction, &context.labels, end, false);
+            }
+        }
     }
 
     fn pop_control(&mut self) -> ControlContext {
@@ -294,6 +359,9 @@ impl Compiler {
         for instruction in context.continue_try_patches {
             self.patch_try_continue(instruction, loop_start);
         }
+        for instruction in context.labeled_continue_try_patches {
+            self.patch_labeled_try(instruction, &context.labels, loop_start, true);
+        }
         self.code.push(Instruction::Jump(loop_start));
 
         let false_cleanup = self.code.len();
@@ -305,6 +373,9 @@ impl Compiler {
         }
         for instruction in context.break_try_patches {
             self.patch_try_break(instruction, end);
+        }
+        for instruction in context.labeled_break_try_patches {
+            self.patch_labeled_try(instruction, &context.labels, end, false);
         }
     }
 
@@ -321,6 +392,9 @@ impl Compiler {
         for instruction in context.continue_try_patches {
             self.patch_try_continue(instruction, continue_target);
         }
+        for instruction in context.labeled_continue_try_patches {
+            self.patch_labeled_try(instruction, &context.labels, continue_target, true);
+        }
 
         self.expression(test);
         let exit_jump = self.emit_jump_if_false();
@@ -336,6 +410,9 @@ impl Compiler {
         }
         for instruction in context.break_try_patches {
             self.patch_try_break(instruction, end);
+        }
+        for instruction in context.labeled_break_try_patches {
+            self.patch_labeled_try(instruction, &context.labels, end, false);
         }
     }
 
@@ -447,6 +524,9 @@ impl Compiler {
         for instruction in context.continue_try_patches {
             self.patch_try_continue(instruction, continue_target);
         }
+        for instruction in context.labeled_continue_try_patches {
+            self.patch_labeled_try(instruction, &context.labels, continue_target, true);
+        }
         if let Some(update) = update {
             self.expression(update);
             self.code.push(Instruction::Pop);
@@ -465,6 +545,9 @@ impl Compiler {
         }
         for instruction in context.break_try_patches {
             self.patch_try_break(instruction, exit_scope);
+        }
+        for instruction in context.labeled_break_try_patches {
+            self.patch_labeled_try(instruction, &context.labels, exit_scope, false);
         }
         self.scope_depth -= 1;
         self.code.push(Instruction::ExitScope);
@@ -526,6 +609,9 @@ impl Compiler {
         for instruction in context.break_try_patches {
             self.patch_try_break(instruction, exit_scope);
         }
+        for instruction in context.labeled_break_try_patches {
+            self.patch_labeled_try(instruction, &context.labels, exit_scope, false);
+        }
 
         self.scope_depth -= 1;
         self.code.push(Instruction::ExitScope);
@@ -548,7 +634,10 @@ impl Compiler {
         };
         let finally_code = finalizer.map(compile_nested_block);
 
-        let break_context = self.controls.len().checked_sub(1);
+        let break_context = self
+            .controls
+            .iter()
+            .rposition(|ctx| ctx.unlabeled_breakable);
         let continue_context = self.controls.iter().rposition(|context| context.is_loop);
         let break_unwind = break_context
             .map(|index| {
@@ -563,6 +652,30 @@ impl Compiler {
             })
             .unwrap_or(0);
 
+        let labeled_breaks: Vec<_> = self
+            .controls
+            .iter()
+            .flat_map(|context| {
+                context.labels.iter().map(|name| LabeledJump {
+                    name: name.clone(),
+                    target: usize::MAX,
+                    unwind: self.scope_depth.saturating_sub(context.scope_depth),
+                })
+            })
+            .collect();
+        let labeled_continues: Vec<_> = self
+            .controls
+            .iter()
+            .filter(|context| context.is_loop)
+            .flat_map(|context| {
+                context.labels.iter().map(|name| LabeledJump {
+                    name: name.clone(),
+                    target: usize::MAX,
+                    unwind: self.scope_depth.saturating_sub(context.scope_depth),
+                })
+            })
+            .collect();
+
         let instruction = self.code.len();
         self.code.push(Instruction::Try {
             template: Arc::new(TryTemplate {
@@ -575,8 +688,18 @@ impl Compiler {
             break_unwind,
             continue_target: continue_context.map(|_| usize::MAX),
             continue_unwind,
+            labeled_breaks,
+            labeled_continues,
         });
 
+        for context in &mut self.controls {
+            if !context.labels.is_empty() {
+                context.labeled_break_try_patches.push(instruction);
+                if context.is_loop {
+                    context.labeled_continue_try_patches.push(instruction);
+                }
+            }
+        }
         if let Some(index) = break_context {
             self.controls[index].break_try_patches.push(instruction);
         }
@@ -585,9 +708,20 @@ impl Compiler {
         }
     }
 
-    fn break_statement(&mut self) {
-        let Some(context_index) = self.controls.len().checked_sub(1) else {
-            self.code.push(Instruction::BreakSignal);
+    fn break_statement(&mut self, label: Option<&str>) {
+        let context_index = match label {
+            Some(label) => self
+                .controls
+                .iter()
+                .rposition(|ctx| ctx.labels.iter().any(|candidate| candidate == label)),
+            None => self
+                .controls
+                .iter()
+                .rposition(|ctx| ctx.unlabeled_breakable),
+        };
+        let Some(context_index) = context_index else {
+            self.code
+                .push(Instruction::BreakSignal(label.map(str::to_owned)));
             return;
         };
         let scope_depth = self.controls[context_index].scope_depth;
@@ -599,9 +733,16 @@ impl Compiler {
         self.controls[context_index].break_jumps.push(jump);
     }
 
-    fn continue_statement(&mut self) {
-        let Some(context_index) = self.controls.iter().rposition(|context| context.is_loop) else {
-            self.code.push(Instruction::ContinueSignal);
+    fn continue_statement(&mut self, label: Option<&str>) {
+        let context_index = match label {
+            Some(label) => self.controls.iter().rposition(|ctx| {
+                ctx.is_loop && ctx.labels.iter().any(|candidate| candidate == label)
+            }),
+            None => self.controls.iter().rposition(|ctx| ctx.is_loop),
+        };
+        let Some(context_index) = context_index else {
+            self.code
+                .push(Instruction::ContinueSignal(label.map(str::to_owned)));
             return;
         };
         let scope_depth = self.controls[context_index].scope_depth;
@@ -883,6 +1024,33 @@ impl Compiler {
                 ..
             }) => *current = target,
             _ => unreachable!("try break patch must reference a try instruction"),
+        }
+    }
+
+    fn patch_labeled_try(
+        &mut self,
+        instruction: usize,
+        labels: &[String],
+        target: usize,
+        is_continue: bool,
+    ) {
+        let Some(Instruction::Try {
+            labeled_breaks,
+            labeled_continues,
+            ..
+        }) = self.code.get_mut(instruction)
+        else {
+            unreachable!("labeled try patch must reference a try instruction");
+        };
+        let jumps = if is_continue {
+            labeled_continues
+        } else {
+            labeled_breaks
+        };
+        for jump in jumps {
+            if labels.contains(&jump.name) {
+                jump.target = target;
+            }
         }
     }
 

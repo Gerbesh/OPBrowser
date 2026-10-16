@@ -2,6 +2,30 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn labeled_break_continue_through_finally_mutates_actual_document_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var total=0;",
+            "outer:for(var i=0;i<5;i++){try{",
+            "if(i<2)continue outer;total+=i;break outer;",
+            "}finally{total+=1;}}",
+            "document.getElementById('result').textContent=",
+            "total===5?'LABEL-FINALLY-PASS':'LABEL-FINALLY-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("LABEL-FINALLY-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn r11_timer_scrolltop_repaints_even_without_dom_text_mutation() {
     let mut engine = Engine::new();
     let initial = engine.set_html_page(
