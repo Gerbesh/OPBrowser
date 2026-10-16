@@ -57,6 +57,25 @@ Original-VM tests and an HTML -> DOM mutation -> paint regression
 exercise the entire path. General ECMAScript label/ASI coverage
 remains incomplete.
 
+## Original Object.defineProperty with tracked descriptors (17 October 2026)
+
+`JsObject::attributes` lazily stores non-default
+`PropertyAttributes { writable, enumerable, configurable }`
+indexed by string or symbol `PropertyKey`. The original VM
+`Object.defineProperty` now parses a descriptor object, owns
+data or accessor cells, and enforces essential non-configurable
+and non-writable restrictions. `Object.getOwnPropertyDescriptor`
+reads recorded attributes; ordinary assignment, delete,
+`for...in`, and `JSON.stringify` respect them. Hidden
+attributes are GC-independent metadata of the owning object,
+and the existing GC traces all stored values. Deterministic
+VM, GC and HTML-to-native-paint regressions pass.
+
+Not yet full ES descriptors: inherited non-writable property
+assignment, WebIDL/host attributes, array length redefinition,
+symbol accessors and enumerable getter invocation during JSON
+serialization remain incomplete or explicitly rejected.
+
 ## Native callsite diagnostics and queue/reflection builtins (17 October 2026)
 
 `op_js::runtime::run_code` has opt-in, bounded and sanitized

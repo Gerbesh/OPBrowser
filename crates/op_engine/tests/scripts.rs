@@ -26,6 +26,29 @@ fn labeled_break_continue_through_finally_mutates_actual_document_pixels() {
 }
 
 #[test]
+fn object_define_property_descriptor_updates_native_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var o={};Object.defineProperty(o,'value',{value:'SAFE'});",
+            "o.value='NOT SAFE';var d=Object.getOwnPropertyDescriptor(o,'value');",
+            "document.getElementById('result').textContent=",
+            "o.value==='SAFE'&&!d.writable&&!d.configurable?",
+            "'DEFINE-PROPERTY-PASS':'DEFINE-PROPERTY-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("DEFINE-PROPERTY-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn youtube_queue_and_object_reflection_mutate_native_paint() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

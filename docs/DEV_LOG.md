@@ -3746,3 +3746,10 @@ This file is append-only project history.
 - Initial real YouTube trace located getOwnPropertyDescriptor, createElementNS, Object.create and Array.shift. Implemented original Array.prototype.shift/unshift with holes and 4096-element bounds, Object.create(null/object) with explicit rejection of unsupported property descriptors, and own data/accessor Object.getOwnPropertyDescriptor subset. VM and HTML-to-native-text-paint regressions pass.
 - Windows Release 1300 ms run stored under ignored artifacts/live_web/queue-object-methods-2026-10-17 shows JS failed Google 2, YouTube 5 (previously 8), Pikabu 11, Reddit 1, DeviantArt 3. Remaining YouTube callsite diagnostics include Object.defineProperty and document.createElementNS. YouTube still paints zero text and Reddit is blank; neither real-site compatibility nor complete property descriptors are claimed.
 
+
+## 2026-10-17 - Original Object.defineProperty and sparse property attributes
+
+- Implemented original Object.defineProperty on ordinary objects, arrays (except array.length changes) and functions, with data and basic accessor descriptors, per-object lazy metadata keyed by string/symbol, and writable/enumerable/configurable flags. Strict guardrails reject invalid mixed descriptors, non-configurable redefinitions, unsupported host objects and symbol accessors.
+- Object.getOwnPropertyDescriptor now reflects own attributes, while ordinary writes and deletes, for-in and JSON.stringify observe the new flags. Existing GC traces property values and dedicated unit/integration regressions cover non-writable assignments, accessor dispatch, symbol keys, deletion, invalid redefinitions and retained descriptor-owned objects.
+- Release 1300ms five-site suite under ignored artifacts/live_web/define-property-2026-10-17: JS failures Google 2, YouTube 4 (from 5 immediately prior and 8 at start of turn), Pikabu 11, Reddit 1, DeviantArt 3. YouTube still has zero painted text and skips 19 scripts due to the test-script limit; Reddit remains blank. The next verified blockers are createElementNS and null/undefined property reads. This is not an actual YouTube page pass.
+

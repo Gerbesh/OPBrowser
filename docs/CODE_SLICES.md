@@ -16,6 +16,20 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S90 - YouTube Object.defineProperty through original VM and pixels
+
+Real YouTube advances to `Object.defineProperty` after
+`Object.create/getOwnPropertyDescriptor` -> original
+descriptor parser -> lazy `JsObject::attributes` flags
+with non-configurable write/delete guards -> own data/accessor
+lookup, JSON/for-in enumerability -> JS DOM textContent ->
+native paint text. VM and rendered HTML tests cover flags,
+invalid descriptors, symbol property keys and GC retention.
+YouTube initial failed scripts fall **5 to 4** in a 1300 ms
+release check (previously 8 at start of session);
+`createElementNS` and null-property dereferences remain.
+The page still paints zero text.
+
 ## S89 - Real YouTube missing builtins to original pixels
 
 Real live YouTube `Type: value is not callable` -> opt-in

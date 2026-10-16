@@ -245,6 +245,22 @@ descriptor semantics, verified namespace-aware
 `document.createElementNS`, async JS, script scheduling,
 and real visible layout. Do not call this a site pass.
 
+**P0 descriptor semantics (17 October 2026):**
+Original `Object.defineProperty` and sparse per-object
+attribute flags now control `writable`, `enumerable`,
+`configurable`, delete, assignment, `for...in`, JSON and
+`Object.getOwnPropertyDescriptor`. Basic data/accessor
+descriptors, invalid redefinition and GC are covered in
+VM and HTML-to-native-paint tests. Live failed script
+counts **2/4/11/1/3** (Google/YouTube/Pikabu/Reddit/
+DeviantArt), versus YouTube **5** before this change and
+**8** at start of turn. Still no text on YouTube and
+blank Reddit; 19 YouTube scripts are skipped by count limit.
+NEXT: original namespace-aware `createElementNS`,
+null/undefined errors, missing async functions, dynamic JS,
+Web APIs and actual viewport rendering. Full descriptors
+and WebIDL semantics remain incomplete.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

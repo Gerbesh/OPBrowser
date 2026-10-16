@@ -215,6 +215,7 @@ enum BuiltinFunction {
     ObjectConstructor,
     ObjectCreate,
     ObjectGetOwnPropertyDescriptor,
+    ObjectDefineProperty,
     ArrayConstructor,
     BooleanConstructor,
     NumberConstructor,
@@ -248,9 +249,35 @@ struct FunctionObject {
     implementation: FunctionImplementation,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum PropertyKey {
+    Name(String),
+    Symbol(u64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PropertyAttributes {
+    writable: bool,
+    enumerable: bool,
+    configurable: bool,
+}
+
+impl Default for PropertyAttributes {
+    fn default() -> Self {
+        Self {
+            writable: true,
+            enumerable: true,
+            configurable: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct JsObject {
     properties: HashMap<String, JsValue>,
+    // Sparse metadata: normal properties carry no extra allocation.
+    #[allow(clippy::box_collection)]
+    attributes: Option<Box<HashMap<PropertyKey, PropertyAttributes>>>,
     // Sparse JS symbols: pay for a hash table only on first symbol property.
     // This saves the inlined HashMap header for every ordinary object.
     #[allow(clippy::box_collection)]
@@ -641,6 +668,7 @@ impl Default for JsRuntime {
 
         let ordinary = |prototype, properties| JsObject {
             properties,
+            attributes: None,
             symbol_properties: None,
             prototype,
             kind: ObjectKind::Ordinary,
@@ -1518,6 +1546,12 @@ impl JsRuntime {
             ("Number", "isNaN", BuiltinFunction::NumberIsNaN, 1.0),
             ("Number", "isFinite", BuiltinFunction::NumberIsFinite, 1.0),
             ("Object", "is", BuiltinFunction::ObjectIs, 2.0),
+            (
+                "Object",
+                "defineProperty",
+                BuiltinFunction::ObjectDefineProperty,
+                3.0,
+            ),
             ("Object", "create", BuiltinFunction::ObjectCreate, 2.0),
             (
                 "Object",
@@ -2111,7 +2145,19 @@ impl JsRuntime {
                 } else {
                     // Deterministic key order for now. Insertion-order
                     // enumeration and toJSON hooks need dedicated VM support.
-                    let mut keys: Vec<_> = object.properties.keys().collect();
+                    let mut keys: Vec<_> = object
+                        .properties
+                        .keys()
+                        .filter(|key| {
+                            object
+                                .attributes
+                                .as_ref()
+                                .and_then(|attributes| {
+                                    attributes.get(&PropertyKey::Name((*key).clone()))
+                                })
+                                .is_none_or(|flags| flags.enumerable)
+                        })
+                        .collect();
                     keys.sort();
                     for key in keys {
                         let part =
@@ -5497,7 +5543,20 @@ impl JsRuntime {
                     let mut keys = match &object {
                         JsValue::Object(id) => {
                             let value = self.object(*id)?;
-                            let mut keys = value.properties.keys().cloned().collect::<Vec<_>>();
+                            let mut keys = value
+                                .properties
+                                .keys()
+                                .filter(|key| {
+                                    value
+                                        .attributes
+                                        .as_ref()
+                                        .and_then(|attributes| {
+                                            attributes.get(&PropertyKey::Name((*key).clone()))
+                                        })
+                                        .is_none_or(|flags| flags.enumerable)
+                                })
+                                .cloned()
+                                .collect::<Vec<_>>();
                             if value.kind == ObjectKind::Array {
                                 keys.retain(|key| key != "length");
                             }
@@ -5680,14 +5739,34 @@ impl JsRuntime {
                                     kind,
                                     ObjectKind::Ordinary | ObjectKind::Array | ObjectKind::Function
                                 ) {
-                                    let object = self.object_mut(id)?;
-                                    if let Some(properties) = &mut object.symbol_properties {
-                                        properties.remove(&symbol.id);
-                                        if properties.is_empty() {
-                                            object.symbol_properties = None;
+                                    let property = PropertyKey::Symbol(symbol.id);
+                                    let exists = self
+                                        .object(id)?
+                                        .symbol_properties
+                                        .as_ref()
+                                        .is_some_and(|props| props.contains_key(&symbol.id));
+                                    if exists
+                                        && !self
+                                            .own_property_attributes(id, &property)?
+                                            .configurable
+                                    {
+                                        false
+                                    } else {
+                                        let object = self.object_mut(id)?;
+                                        if let Some(properties) = &mut object.symbol_properties {
+                                            properties.remove(&symbol.id);
+                                            if properties.is_empty() {
+                                                object.symbol_properties = None;
+                                            }
                                         }
+                                        if let Some(attributes) = &mut object.attributes {
+                                            attributes.remove(&property);
+                                            if attributes.is_empty() {
+                                                object.attributes = None;
+                                            }
+                                        }
+                                        true
                                     }
-                                    true
                                 } else {
                                     false
                                 }
@@ -5714,9 +5793,27 @@ impl JsRuntime {
                                 || kind == ObjectKind::Array && key == "length"
                             {
                                 false
-                            } else if matches!(kind, ObjectKind::Ordinary | ObjectKind::Array) {
-                                self.object_mut(id)?.properties.remove(&key);
-                                true
+                            } else if matches!(
+                                kind,
+                                ObjectKind::Ordinary | ObjectKind::Array | ObjectKind::Function
+                            ) {
+                                let property = PropertyKey::Name(key.clone());
+                                let exists = self.object(id)?.properties.contains_key(&key);
+                                if exists
+                                    && !self.own_property_attributes(id, &property)?.configurable
+                                {
+                                    false
+                                } else {
+                                    let object = self.object_mut(id)?;
+                                    object.properties.remove(&key);
+                                    if let Some(attributes) = &mut object.attributes {
+                                        attributes.remove(&property);
+                                        if attributes.is_empty() {
+                                            object.attributes = None;
+                                        }
+                                    }
+                                    true
+                                }
                             } else {
                                 // Host/DOM objects have separate backing state.
                                 false
@@ -6697,6 +6794,11 @@ impl JsRuntime {
                 let id = self.allocate_object(ObjectKind::Ordinary, prototype, HashMap::new())?;
                 return Ok(CallOutcome::Value(JsValue::Object(id)));
             }
+            BuiltinFunction::ObjectDefineProperty => {
+                return self
+                    .define_property_builtin(&arguments)
+                    .map(CallOutcome::Value);
+            }
             BuiltinFunction::ObjectGetOwnPropertyDescriptor => {
                 let Some(JsValue::Object(id)) = arguments.first() else {
                     return Err(JsError::type_error(
@@ -6717,12 +6819,14 @@ impl JsRuntime {
                 let Some(value) = entry else {
                     return Ok(CallOutcome::Value(JsValue::Undefined));
                 };
-                let is_array_length = own.kind == ObjectKind::Array
-                    && key == "length"
-                    && !matches!(property, JsValue::Symbol(_));
+                let prop_key = match &property {
+                    JsValue::Symbol(symbol) => PropertyKey::Symbol(symbol.id),
+                    _ => PropertyKey::Name(key.clone()),
+                };
+                let flags = self.own_property_attributes(*id, &prop_key)?;
                 let mut fields = HashMap::from([
-                    ("enumerable".into(), JsValue::Boolean(!is_array_length)),
-                    ("configurable".into(), JsValue::Boolean(!is_array_length)),
+                    ("enumerable".into(), JsValue::Boolean(flags.enumerable)),
+                    ("configurable".into(), JsValue::Boolean(flags.configurable)),
                 ]);
                 if let JsValue::Object(descriptor_id) = &value
                     && self.object(*descriptor_id)?.kind == ObjectKind::AccessorDescriptor
@@ -6746,7 +6850,7 @@ impl JsRuntime {
                     );
                 } else {
                     fields.insert("value".into(), value);
-                    fields.insert("writable".into(), JsValue::Boolean(true));
+                    fields.insert("writable".into(), JsValue::Boolean(flags.writable));
                 }
                 let descriptor = self.allocate_object(
                     ObjectKind::Ordinary,
@@ -8574,6 +8678,7 @@ impl JsRuntime {
             | BuiltinFunction::ArrayUnshift
             | BuiltinFunction::ObjectCreate
             | BuiltinFunction::ObjectGetOwnPropertyDescriptor
+            | BuiltinFunction::ObjectDefineProperty
             | BuiltinFunction::ObjectConstructor
             | BuiltinFunction::ArrayConstructor
             | BuiltinFunction::BooleanConstructor
@@ -8641,6 +8746,7 @@ impl JsRuntime {
                     | BuiltinFunction::ArrayUnshift
                     | BuiltinFunction::ObjectCreate
                     | BuiltinFunction::ObjectGetOwnPropertyDescriptor
+                    | BuiltinFunction::ObjectDefineProperty
                     | BuiltinFunction::NumberIsNaN
                     | BuiltinFunction::NumberIsFinite
                     | BuiltinFunction::ObjectIs
@@ -8870,6 +8976,273 @@ impl JsRuntime {
             .ok_or_else(|| JsError::type_error("cannot exit root lexical environment"))
     }
 
+    fn define_property_builtin(&mut self, arguments: &[JsValue]) -> Result<JsValue, JsError> {
+        let Some(JsValue::Object(target)) = arguments.first() else {
+            return Err(JsError::type_error(
+                "Object.defineProperty target must be an object",
+            ));
+        };
+        if !matches!(
+            self.object(*target)?.kind,
+            ObjectKind::Ordinary | ObjectKind::Array | ObjectKind::Function
+        ) {
+            return Err(JsError::type_error(
+                "Object.defineProperty on host objects is not supported",
+            ));
+        }
+        let property = arguments.get(1).cloned().unwrap_or(JsValue::Undefined);
+        let key = match property {
+            JsValue::Symbol(symbol) => PropertyKey::Symbol(symbol.id),
+            other => PropertyKey::Name(to_property_key(other)),
+        };
+        let Some(JsValue::Object(descriptor)) = arguments.get(2) else {
+            return Err(JsError::type_error(
+                "Object.defineProperty needs a descriptor object",
+            ));
+        };
+        let receiver = JsValue::Object(*descriptor);
+        let mut fields = HashMap::new();
+        for name in [
+            "value",
+            "writable",
+            "enumerable",
+            "configurable",
+            "get",
+            "set",
+        ] {
+            if self.has_property(*descriptor, name)? {
+                fields.insert(name, self.get_property(&receiver, name)?);
+            }
+        }
+        let is_accessor = fields.contains_key("get") || fields.contains_key("set");
+        let is_data = fields.contains_key("value") || fields.contains_key("writable");
+        if is_accessor && is_data {
+            return Err(JsError::type_error(
+                "invalid mixed data/accessor descriptor",
+            ));
+        }
+        if is_accessor {
+            if matches!(key, PropertyKey::Symbol(_)) {
+                return Err(JsError::type_error(
+                    "symbol accessors are not yet implemented",
+                ));
+            }
+            for name in ["get", "set"] {
+                if let Some(value) = fields.get(name) {
+                    match value {
+                        JsValue::Undefined => {}
+                        JsValue::Object(id) if self.object(*id)?.function.is_some() => {}
+                        _ => {
+                            return Err(JsError::type_error(
+                                "accessor must be callable or undefined",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        if self.object(*target)?.kind == ObjectKind::Array
+            && matches!(&key, PropertyKey::Name(name) if name == "length")
+        {
+            return Err(JsError::type_error(
+                "array length descriptors are not implemented",
+            ));
+        }
+        let old = {
+            let obj = self.object(*target)?;
+            match &key {
+                PropertyKey::Name(name) => obj.properties.get(name).cloned(),
+                PropertyKey::Symbol(id) => obj
+                    .symbol_properties
+                    .as_ref()
+                    .and_then(|map| map.get(id))
+                    .cloned(),
+            }
+        };
+        let old_flags = if old.is_some() {
+            self.own_property_attributes(*target, &key)?
+        } else {
+            PropertyAttributes {
+                writable: false,
+                enumerable: false,
+                configurable: false,
+            }
+        };
+        let mut flags = old_flags;
+        if let Some(value) = fields.get("writable") {
+            flags.writable = value.is_truthy();
+        }
+        if let Some(value) = fields.get("enumerable") {
+            flags.enumerable = value.is_truthy();
+        }
+        if let Some(value) = fields.get("configurable") {
+            flags.configurable = value.is_truthy();
+        }
+        let old_accessor = match &old {
+            Some(JsValue::Object(id)) => self.object(*id)?.kind == ObjectKind::AccessorDescriptor,
+            _ => false,
+        };
+        let conversion =
+            old.is_some() && ((old_accessor && is_data) || (!old_accessor && is_accessor));
+        if old.is_some() && !old_flags.configurable {
+            if flags.configurable || flags.enumerable != old_flags.enumerable || conversion {
+                return Err(JsError::type_error(
+                    "cannot reconfigure a non-configurable property",
+                ));
+            }
+            if !old_accessor && !old_flags.writable {
+                if flags.writable {
+                    return Err(JsError::type_error(
+                        "cannot make non-writable property writable",
+                    ));
+                }
+                if let Some(value) = fields.get("value") {
+                    let old_value = old
+                        .as_ref()
+                        .ok_or_else(|| JsError::type_error("missing own property"))?;
+                    let same = match (old_value, value) {
+                        (JsValue::Number(a), JsValue::Number(b)) => {
+                            a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan())
+                        }
+                        _ => old_value == value,
+                    };
+                    if !same {
+                        return Err(JsError::type_error(
+                            "cannot change non-writable property value",
+                        ));
+                    }
+                }
+            }
+            if old_accessor && is_accessor {
+                let old_id = match old {
+                    Some(JsValue::Object(id)) => id,
+                    _ => unreachable!(),
+                };
+                for name in ["get", "set"] {
+                    if let Some(value) = fields.get(name) {
+                        let old_value = self
+                            .object(old_id)?
+                            .properties
+                            .get(name)
+                            .cloned()
+                            .unwrap_or(JsValue::Undefined);
+                        if &old_value != value {
+                            return Err(JsError::type_error(
+                                "cannot replace non-configurable accessor",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        let next = if is_accessor || (old_accessor && !is_data) {
+            let mut accessor_fields = HashMap::new();
+            for name in ["get", "set"] {
+                let value = fields
+                    .get(name)
+                    .cloned()
+                    .or_else(|| {
+                        if let Some(JsValue::Object(id)) = &old {
+                            self.object(*id)
+                                .ok()
+                                .and_then(|obj| obj.properties.get(name).cloned())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(JsValue::Undefined);
+                accessor_fields.insert(name.into(), value);
+            }
+            let desc = self.allocate_object(
+                ObjectKind::AccessorDescriptor,
+                Some(self.object_prototype),
+                accessor_fields,
+            )?;
+            JsValue::Object(desc)
+        } else {
+            fields.remove("value").or(old).unwrap_or(JsValue::Undefined)
+        };
+        // Always install values before metadata; a thrown capacity limit must
+        // not leave an incorrectly writable property behind.
+        self.set_property_attributes(*target, key.clone(), flags)?;
+        match key {
+            PropertyKey::Name(name) => {
+                self.object_mut(*target)?.properties.insert(name, next);
+            }
+            PropertyKey::Symbol(id) => {
+                let obj = self.object_mut(*target)?;
+                obj.symbol_properties
+                    .get_or_insert_with(|| Box::new(HashMap::new()))
+                    .insert(id, next);
+            }
+        }
+        Ok(JsValue::Object(*target))
+    }
+
+    fn own_property_attributes(
+        &self,
+        id: ObjectId,
+        key: &PropertyKey,
+    ) -> Result<PropertyAttributes, JsError> {
+        let object = self.object(id)?;
+        if let Some(found) = object
+            .attributes
+            .as_ref()
+            .and_then(|attributes| attributes.get(key))
+        {
+            return Ok(*found);
+        }
+        if object.kind == ObjectKind::Array
+            && matches!(key, PropertyKey::Name(name) if name == "length")
+        {
+            return Ok(PropertyAttributes {
+                writable: true,
+                enumerable: false,
+                configurable: false,
+            });
+        }
+        Ok(PropertyAttributes::default())
+    }
+
+    fn set_property_attributes(
+        &mut self,
+        id: ObjectId,
+        key: PropertyKey,
+        flags: PropertyAttributes,
+    ) -> Result<(), JsError> {
+        let is_special = self.object(id)?.kind == ObjectKind::Array
+            && matches!(&key, PropertyKey::Name(name) if name == "length");
+        let defaults = if is_special {
+            PropertyAttributes {
+                writable: true,
+                enumerable: false,
+                configurable: false,
+            }
+        } else {
+            PropertyAttributes::default()
+        };
+        let object = self.object_mut(id)?;
+        if flags == defaults {
+            if let Some(attributes) = &mut object.attributes {
+                attributes.remove(&key);
+                if attributes.is_empty() {
+                    object.attributes = None;
+                }
+            }
+        } else {
+            let attributes = object
+                .attributes
+                .get_or_insert_with(|| Box::new(HashMap::new()));
+            if attributes.len() >= 4096 && !attributes.contains_key(&key) {
+                return Err(JsError::execution_limit(
+                    "property descriptor capacity exceeded",
+                ));
+            }
+            attributes.insert(key, flags);
+        }
+        Ok(())
+    }
+
     fn get_symbol_property(&self, target: &JsValue, symbol: &JsSymbol) -> Result<JsValue, JsError> {
         let JsValue::Object(id) = target else {
             return if matches!(target, JsValue::Null | JsValue::Undefined) {
@@ -8934,6 +9307,18 @@ impl JsRuntime {
         };
         if self.object(*id)?.kind == ObjectKind::Location {
             return Err(JsError::type_error("location navigation is not supported"));
+        }
+        let present = self
+            .object(*id)?
+            .symbol_properties
+            .as_ref()
+            .is_some_and(|map| map.contains_key(&symbol.id));
+        if present
+            && !self
+                .own_property_attributes(*id, &PropertyKey::Symbol(symbol.id))?
+                .writable
+        {
+            return Ok(());
         }
         let object = self.object_mut(*id)?;
         let properties = object
@@ -9403,6 +9788,14 @@ impl JsRuntime {
             if let Some(function) = setter {
                 self.call_accessor(function, target.clone(), vec![value])?;
             }
+            return Ok(());
+        }
+        if self.object(*id)?.properties.contains_key(key)
+            && !self
+                .own_property_attributes(*id, &PropertyKey::Name(key.to_owned()))?
+                .writable
+        {
+            // Non-strict assignment does not mutate a read-only data property.
             return Ok(());
         }
 
@@ -9946,6 +10339,7 @@ impl JsRuntime {
         };
         let new_object = |generation| JsObject {
             properties,
+            attributes: None,
             symbol_properties: None,
             prototype,
             kind,
@@ -10281,6 +10675,108 @@ mod tests {
                 "{source}"
             );
         }
+    }
+
+    #[test]
+    fn object_define_property_respects_descriptor_flags_and_gc() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            (
+                "typeof Object.defineProperty",
+                JsValue::String("function".into()),
+            ),
+            ("Object.defineProperty.length", JsValue::Number(3.0)),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:7});o.x",
+                JsValue::Number(7.0),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:7});o.x=99;o.x",
+                JsValue::Number(7.0),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:7});delete o.x",
+                JsValue::Boolean(false),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:7});JSON.stringify(o)",
+                JsValue::String("{}".into()),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:7});var s='';for(var k in o){s+=k;}s",
+                JsValue::String(String::new()),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:7});var d=Object.getOwnPropertyDescriptor(o,'x');!d.configurable&&!d.enumerable&&!d.writable&&d.value===7",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:7,writable:true,enumerable:true,configurable:true});o.x=8;JSON.stringify(o)",
+                JsValue::String("{\"x\":8}".into()),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:1,writable:true});Object.defineProperty(o,'x',{value:2,writable:false});o.x",
+                JsValue::Number(2.0),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:1});Object.defineProperty(o,'x',{value:1});o.x",
+                JsValue::Number(1.0),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:1,configurable:true});delete o.x",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:1,enumerable:true});var s='';for(var k in o){s+=k;}s",
+                JsValue::String("x".into()),
+            ),
+            (
+                "var s=Symbol('s');var o={};Object.defineProperty(o,s,{value:3});o[s]===3 && !delete o[s]",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var s=Symbol('s');var o={};Object.defineProperty(o,s,{value:3,configurable:true,writable:true});o[s]=4;delete o[s]",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{get:function(){return 13;},configurable:true});o.x",
+                JsValue::Number(13.0),
+            ),
+            (
+                "var o={y:0};Object.defineProperty(o,'x',{set:function(value){this.y=value;}});o.x=9;o.y",
+                JsValue::Number(9.0),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{get:function(){return 3;}});typeof Object.getOwnPropertyDescriptor(o,'x').get",
+                JsValue::String("function".into()),
+            ),
+            (
+                "var o={};Object.defineProperty(o,'x',{value:7,enumerable:true});Object.getOwnPropertyDescriptor(o,'x').enumerable",
+                JsValue::Boolean(true),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        for source in [
+            "Object.defineProperty(null,'x',{value:1})",
+            "Object.defineProperty({},'x',null)",
+            "Object.defineProperty({},'x',{value:1,get:function(){return 1;}})",
+            "Object.defineProperty({},'x',{get:7})",
+            "var o={};Object.defineProperty(o,'x',{value:1});Object.defineProperty(o,'x',{value:2})",
+            "var o={};Object.defineProperty(o,'x',{value:1});Object.defineProperty(o,'x',{configurable:true})",
+            "var o={};Object.defineProperty(o,'x',{value:1});Object.defineProperty(o,'x',{writable:true})",
+            "var o=[];Object.defineProperty(o,'length',{value:1})",
+            "var s=Symbol('x');Object.defineProperty({},s,{get:function(){return 1;}})",
+        ] {
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
+        vm.eval_script("var owned={};Object.defineProperty(owned,'ref',{value:{value:137}});")
+            .unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert_eq!(
+            vm.eval_script("owned.ref.value").unwrap(),
+            JsValue::Number(137.0)
+        );
     }
 
     #[test]

@@ -298,6 +298,29 @@ YouTube still renders zero text and Reddit is blank; there is no
 certified first viewport. Exact thrown-value semantics and full
 descriptors remain incomplete.
 
+## 17 October 2026: original Object.defineProperty and attributes
+
+`Object.defineProperty` now consumes original own data/accessor
+descriptors, stores sparse `writable`/`enumerable`/
+`configurable` flags, enforces non-writable assignment and
+non-configurable delete/redefinition, and works with string
+and symbol data keys. `for...in`, `JSON.stringify`, and
+`Object.getOwnPropertyDescriptor` observe the flags.
+VM/GC/native-paint regressions pass. This remains a subset,
+not full ECMAScript descriptors or WebIDL DOM reflection.
+
+Native Windows Release run with 1300 ms settle in ignored
+`artifacts/live_web/define-property-2026-10-17/`
+measured failed JS: Google **2**, YouTube **4**, Pikabu
+**11**, Reddit **1**, DeviantArt **3**. YouTube previously
+had **5** failures after queue/reflection and **8** at turn
+start. YouTube has **0 text primitives**, Reddit is blank.
+Nineteen initial YouTube scripts were skipped by the
+test-only script count limit, so error count alone is not
+an end-to-end compatibility measure. Remaining diagnosed
+errors are null/undefined property access and
+`document.createElementNS`.
+
 ## 17 October 2026: bounded non-callable diagnostics and queue/reflection
 
 With the opt-in `OPBROWSER_JS_ERROR_CONTEXT=1`,

@@ -3,6 +3,23 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Property descriptors and Object.defineProperty (17 October 2026)
+
+The own JavaScript VM now supports `Object.defineProperty`
+for original ordinary objects, arrays (excluding redefining
+`length`) and functions, recording `writable`,
+`enumerable` and `configurable` only where needed.
+The VM honors these flags during assignment, deletion,
+`for...in` and JSON serialization and reflects them through
+`Object.getOwnPropertyDescriptor`. String and symbol data
+properties plus basic string-key accessors are tested.
+Unsupported host descriptors, symbol accessors, full prototype
+write rules and array-length descriptor changes remain open.
+
+YouTube's missing defineProperty call now progresses to
+later errors: the release probe falls from **5 to 4** failed
+scripts but YouTube still paints no text.
+
 ## Native callable diagnostics and YouTube JS methods (17 October 2026)
 
 With `OPBROWSER_JS_ERROR_CONTEXT=1`, the original VM
