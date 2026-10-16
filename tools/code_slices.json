@@ -2,6 +2,19 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S84",
+      "title": "Original for-in parsing through real YouTube configuration script",
+      "status": "Own-key VM subset and HTML-to-DOM integration tested",
+      "steps": [
+        {"path": "crates/op_js/src/parser.rs", "symbol": "ForIn"},
+        {"path": "crates/op_js/src/bytecode.rs", "symbol": "ToForInKeys"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "ToForInKeys"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "bounded_js_error_context"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "parse_and_execute"}
+      ],
+      "limitation": "Own keys only, sorted rather than insertion ordered. Real YouTube for initializer passes parser, but runtime failure and regex/paint gaps remain."
+    },
+    {
       "id": "S83",
       "title": "Bounded synchronous for-of into live DOM mutations",
       "status": "Original VM and DOM integration tested; iterable subset",

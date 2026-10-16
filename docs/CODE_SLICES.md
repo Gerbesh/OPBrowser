@@ -16,6 +16,18 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S84 - YouTube for-in syntax and local diagnostic to native DOM
+
+Actual YouTube inline config script `for(k in a[0])` -> default
+syntax failure -> explicit user-enabled bounded byte-context preview
+-> parser recognizes `In` -> original AST `Statement::ForIn` ->
+compiler lowers to capped own-key iteration with existing scoped for
+instructions -> VM `ToForInKeys` -> real document script test copies
+object properties and updates a text node. Native YouTube no longer
+reports the original for-in syntax failure, but advances to runtime
+null/undefined and remaining regex-literal syntax blockers; first
+viewport is still skeleton-only.
+
 ## S83 - Public JS for-of syntax through original VM and DOM snapshot
 
 Classic script with `for(const node of document.querySelectorAll('span'))`

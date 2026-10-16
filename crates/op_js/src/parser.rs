@@ -37,6 +37,12 @@ pub enum Statement {
         iterable: Expression,
         body: Box<Statement>,
     },
+    ForIn {
+        kind: Option<VariableKind>,
+        name: String,
+        object: Expression,
+        body: Box<Statement>,
+    },
     Switch {
         discriminant: Expression,
         cases: Vec<SwitchCase>,
@@ -113,6 +119,7 @@ pub enum VariableKind {
 pub enum Expression {
     Literal(JsValue),
     ForOfValues(Box<Expression>),
+    ForInKeys(Box<Expression>),
     /// Untagged template: cooked quasis and ordered substitution expressions.
     Template {
         quasis: Vec<String>,
@@ -426,11 +433,15 @@ impl Parser {
                 None
             }
         });
-        if let Some(name) = binding_name
-            && self.tokens.get(binding_index + 1).is_some_and(
-                |token| matches!(&token.kind, TokenKind::Identifier(word) if word == "of"),
-            )
-        {
+        let for_in = self
+            .tokens
+            .get(binding_index + 1)
+            .and_then(|token| match &token.kind {
+                TokenKind::Identifier(word) if word == "of" => Some(false),
+                TokenKind::In => Some(true),
+                _ => None,
+            });
+        if let (Some(name), Some(for_in)) = (binding_name, for_in) {
             self.index = binding_index + 2;
             let iterable = self.assignment()?;
             if !self.take(&TokenKind::RightParen) {
@@ -444,11 +455,20 @@ impl Parser {
             let body = self.statement();
             self.breakable_depth -= 1;
             self.loop_depth -= 1;
-            return Ok(Statement::ForOf {
-                kind,
-                name,
-                iterable,
-                body: Box::new(body?),
+            return Ok(if for_in {
+                Statement::ForIn {
+                    kind,
+                    name,
+                    object: iterable,
+                    body: Box::new(body?),
+                }
+            } else {
+                Statement::ForOf {
+                    kind,
+                    name,
+                    iterable,
+                    body: Box::new(body?),
+                }
             });
         }
 

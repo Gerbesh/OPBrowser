@@ -5139,6 +5139,46 @@ impl JsRuntime {
                     )?;
                     stack.push(JsValue::Object(snapshot));
                 }
+                Instruction::ToForInKeys => {
+                    let object = stack.pop().expect("compiler must push enumeration target");
+                    let mut keys = match &object {
+                        JsValue::Object(id) => {
+                            let value = self.object(*id)?;
+                            let mut keys = value.properties.keys().cloned().collect::<Vec<_>>();
+                            if value.kind == ObjectKind::Array {
+                                keys.retain(|key| key != "length");
+                            }
+                            keys
+                        }
+                        JsValue::String(value) => (0..value.encode_utf16().count())
+                            .map(|index| index.to_string())
+                            .collect::<Vec<_>>(),
+                        JsValue::Undefined | JsValue::Null => Vec::new(),
+                        _ => Vec::new(),
+                    };
+                    if keys.len() > 4096 {
+                        return Err(JsError::execution_limit("for-in key budget exceeded"));
+                    }
+                    // Stable numeric order; insertion ordering and inherited
+                    // enumerability require a later property-descriptor model.
+                    keys.sort_by(|a, b| match (a.parse::<u32>(), b.parse::<u32>()) {
+                        (Ok(left), Ok(right)) => left.cmp(&right),
+                        (Ok(_), Err(_)) => std::cmp::Ordering::Less,
+                        (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+                        _ => a.cmp(b),
+                    });
+                    let mut properties = HashMap::new();
+                    for (index, key) in keys.iter().enumerate() {
+                        properties.insert(index.to_string(), JsValue::String(key.clone()));
+                    }
+                    properties.insert("length".into(), JsValue::Number(keys.len() as f64));
+                    let snapshot = self.allocate_object(
+                        ObjectKind::Array,
+                        Some(self.array_prototype),
+                        properties,
+                    )?;
+                    stack.push(JsValue::Object(snapshot));
+                }
                 Instruction::CreateFunction(template) => {
                     let id = self.allocate_function(template.clone(), env)?;
                     stack.push(JsValue::Object(id));
@@ -8976,6 +9016,43 @@ mod tests {
             vm.eval_script("location.pathname").unwrap(),
             JsValue::String("/".into())
         );
+    }
+
+    #[test]
+    fn modern_for_in_enumerates_own_properties_and_handles_youtube_form() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            (
+                "var obj={b:2,a:1}; var key; var total=0; for(key in obj) {total=total+obj[key];} total",
+                JsValue::Number(3.0),
+            ),
+            (
+                "var keys=''; for(const k in {b:2,a:1}) {keys=keys+k;} keys",
+                JsValue::String("ab".into()),
+            ),
+            (
+                "var keys=''; for(let k in [4,,6]) {keys=keys+k;} keys",
+                JsValue::String("02".into()),
+            ),
+            (
+                "var keys=''; for(const k in 'abc') {keys=keys+k;} keys",
+                JsValue::String("012".into()),
+            ),
+            (
+                "var seen=false; for(var k in null) {seen=true;} seen",
+                JsValue::Boolean(false),
+            ),
+            (
+                "var seen=false; for(var k in undefined) {seen=true;} seen",
+                JsValue::Boolean(false),
+            ),
+            (
+                "var total=0; for(let k in {x:1,y:2,z:3}) {if(k==='y') continue; if(k==='z') break; total=total+1;} total",
+                JsValue::Number(1.0),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
     }
 
     #[test]

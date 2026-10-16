@@ -512,6 +512,35 @@ struct CompletedScript {
     result: Result<String, op_net::LoadError>,
 }
 
+/// Explicit diagnostic opt-in only: never retain full real-world script sources.
+/// Offsets are byte-indexed; the preview is clamped to valid UTF-8 boundaries.
+fn bounded_js_error_context(source: &str, offset: usize) -> String {
+    let mut offset = offset.min(source.len());
+    while !source.is_char_boundary(offset) {
+        offset -= 1;
+    }
+    let start = source[..offset]
+        .char_indices()
+        .rev()
+        .nth(40)
+        .map_or(0, |(index, _)| index);
+    let end = source[offset..]
+        .char_indices()
+        .nth(48)
+        .map_or(source.len(), |(index, _)| offset + index);
+    let fragment = source[start..end]
+        .chars()
+        .map(|character| {
+            if character.is_ascii_graphic() || character == ' ' {
+                character
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>();
+    format!(" [byte {offset}, near {fragment:?}]")
+}
+
 struct ParserScriptRunner<'a> {
     runtime: Option<JsRuntime>,
     report: ScriptReport,
@@ -530,7 +559,7 @@ struct ParserScriptRunner<'a> {
 }
 
 impl ParserScriptRunner<'_> {
-    fn record_error(&mut self, stage: &str, error: &JsError) {
+    fn record_error(&mut self, stage: &str, error: &JsError, source: &str) {
         if self.diagnostics.len() < MAX_SCRIPT_DIAGNOSTICS {
             let message = error
                 .message
@@ -538,8 +567,16 @@ impl ParserScriptRunner<'_> {
                 .filter(|c| !c.is_control())
                 .take(160)
                 .collect::<String>();
+            let context = if error.kind == op_js::JsErrorKind::Syntax
+                && std::env::var_os("OPBROWSER_JS_ERROR_CONTEXT").as_deref()
+                    == Some(std::ffi::OsStr::new("1"))
+            {
+                bounded_js_error_context(source, error.offset)
+            } else {
+                String::new()
+            };
             self.diagnostics
-                .push(format!("{stage}:{:?}: {message}", error.kind));
+                .push(format!("{stage}:{:?}: {message}{context}", error.kind));
         }
     }
 
@@ -778,7 +815,7 @@ impl ParserScriptRunner<'_> {
             Ok(_) => self.report.executed += 1,
             Err(error) => {
                 self.report.failed += 1;
-                self.record_error("script", &error);
+                self.record_error("script", &error, code);
             }
         }
         self.apply_mutations(document);
@@ -962,6 +999,33 @@ mod tests {
         );
         vm.eval_script("var retained=keeper.answer;").unwrap();
         assert_eq!(vm.global("retained"), Some(&op_js::JsValue::Number(42.0)));
+    }
+
+    #[test]
+    fn real_youtube_for_in_configuration_copy_updates_dom_text() {
+        let html = "<p id='out'>Waiting</p><script>
+            var source = {quality:'high',autoplay:'off'};
+            var copied = {}; var k;
+            for (k in source) copied[k] = source[k];
+            document.getElementById('out').textContent = copied.quality + '/' + copied.autoplay;
+        </script>";
+        let (document, report, _, diagnostics) = parse_and_execute(html, None, None);
+        assert_eq!(report.executed, 1, "{diagnostics:?}");
+        assert_eq!(report.failed, 0, "{diagnostics:?}");
+        assert_eq!(report.mutations, 1);
+        assert!(collect_text(&document, document.root(), 4096).contains("high/off"));
+    }
+
+    #[test]
+    fn opt_in_syntax_excerpt_is_bounded_and_unicode_safe() {
+        let source = "💡".repeat(100) + "\\nfunction broken( {";
+        let rendered = bounded_js_error_context(&source, source.len() - 1);
+        assert!(rendered.contains("byte "));
+        assert!(!rendered.contains('💡'));
+        assert!(rendered.len() < 260);
+        assert!(!rendered.contains(char::from(10)));
+        let at_middle_of_utf8 = bounded_js_error_context("a🐈z", 3);
+        assert!(at_middle_of_utf8.contains("byte 1"));
     }
 
     #[test]

@@ -51,6 +51,7 @@ pub(crate) enum Instruction {
     CreateObject(Vec<bool>),
     CreateArray(Vec<bool>),
     ToForOfValues,
+    ToForInKeys,
     CreateFunction(Arc<FunctionTemplate>),
     GetProperty,
     SetProperty,
@@ -145,7 +146,13 @@ impl Compiler {
                 name,
                 iterable,
                 body,
-            } => self.for_of_statement(*kind, name, iterable, body),
+            } => self.for_of_statement(*kind, name, iterable, body, false),
+            Statement::ForIn {
+                kind,
+                name,
+                object,
+                body,
+            } => self.for_of_statement(*kind, name, object, body, true),
             Statement::Switch {
                 discriminant,
                 cases,
@@ -335,6 +342,7 @@ impl Compiler {
         name: &str,
         iterable: &Expression,
         body: &Statement,
+        for_in: bool,
     ) {
         let suffix = self.next_private_loop;
         self.next_private_loop += 1;
@@ -363,7 +371,11 @@ impl Compiler {
                 declarations: vec![
                     VariableDeclarator {
                         name: values_name.clone(),
-                        initializer: Some(Expression::ForOfValues(Box::new(iterable.clone()))),
+                        initializer: Some(if for_in {
+                            Expression::ForInKeys(Box::new(iterable.clone()))
+                        } else {
+                            Expression::ForOfValues(Box::new(iterable.clone()))
+                        }),
                     },
                     VariableDeclarator {
                         name: index_name.clone(),
@@ -602,6 +614,10 @@ impl Compiler {
             Expression::ForOfValues(iterable) => {
                 self.expression(iterable);
                 self.code.push(Instruction::ToForOfValues);
+            }
+            Expression::ForInKeys(object) => {
+                self.expression(object);
+                self.code.push(Instruction::ToForInKeys);
             }
             Expression::Template {
                 quasis,

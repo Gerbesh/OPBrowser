@@ -46,6 +46,17 @@ website-compatibility milestone. Next diagnose YouTube's remaining
 for-initializer and backslash syntax failures, Reddit's argument parse
 error, and missing layout/paint paths while retaining GC memory guards.
 
+## Real error-context and for-in follow-up (16 October 2026)
+
+Local opt-in byte-context diagnostics now identify specific modern
+syntax failures without shipping full site scripts. Bounded native
+`for...in` own-key enumeration covers the exact YouTube configuration
+loop and verified DOM mutations. YouTube's for initializer syntax
+error is gone, but 9 failures and a textless first view remain. The
+next verified blockers are regex literals, labeled statements,
+unsupported `async function` syntax on Reddit and host API behavior.
+Do not increase script budgets simply to hide errors.
+
 ## Native DOM checkpoint (14 October 2026)
 
 Native Document now collects orphan node components and reuses slots with

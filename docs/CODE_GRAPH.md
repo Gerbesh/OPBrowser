@@ -16,6 +16,19 @@ See [Code Slicer](GENERATED_CODE_SLICES.md) for curated source-backed
 functional paths. The 8 October baseline contains 12 crates and 22
 local dependency edges.
 
+## Opt-in real-script diagnostics and bounded for-in (16 October 2026)
+
+`ParserScriptRunner::evaluate_code` receives `JsError.offset` from
+original lexer/parser; only `OPBROWSER_JS_ERROR_CONTEXT=1` emits a
+limited printable source excerpt into existing capped local reports.
+No automatic raw-script storage or telemetry. Original
+`parser::Statement::ForIn` -> `bytecode::Compiler::for_of_statement`
+(reused private-index lowering with in-mode) ->
+`Instruction::ToForInKeys` -> original `JsRuntime` snapshots a bounded
+object's own keys into an original array, then executes the loop body
+through existing scoping/control flow and DOM operations. Prototype
+enumeration and proper property ordering remain pending.
+
 ## Original JS nullish and synchronous for-of integration (16 October 2026)
 
 `op_js::lexer::TokenKind::QuestionQuestion` -> `parser::LogicalOp::Nullish`

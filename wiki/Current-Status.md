@@ -13,6 +13,18 @@ page still paints **no text**. Pikabu remains visually malformed.
 The 30-minute synthetic GC safety and private-memory checks passed,
 while rare long wall-time GC pauses still need investigation.
 
+## Live-site syntax evidence and for-in (16 October 2026)
+
+User-enabled local-only JS syntax excerpts pinpointed YouTube's
+`for(k in object)` and several `/.../` regex literals. The
+independent parser/compiler/VM now executes a bounded own-key
+`for...in` subset and passes HTML-to-DOM tests. The exact YouTube
+initializer syntax error disappeared, but a later runtime error took
+its place: **9 scripts still fail; zero text is painted**. Reddit's
+first inline script needs `async function` handling. Regex literals,
+labelled statements, complete enumerability and async callbacks remain
+open. No site has passed modern usability acceptance.
+
 ## Modern JavaScript compatibility checkpoint (16 October 2026)
 
 Original JS now understands lazy `??` and a bounded `for...of` subset

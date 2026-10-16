@@ -227,6 +227,32 @@ No visually correct modern first viewport is established. Next:
 identify the exact remaining modern expression/initializer pattern and
 attack the repeated backslash lexer failures with bounded evidence.
 
+## 16 October 2026: exact source-context diagnostics and original for-in
+
+A bounded, explicit opt-in diagnostic mode is available via
+`OPBROWSER_JS_ERROR_CONTEXT=1`; by default it is off. It emits
+an 88-character maximum printable script context around the syntax
+error offset, never saves a full script or transmits telemetry.
+`artifacts/live_web/syntax-context-2026-10-16/` established that:
+YouTube's first parser blocker is literally `for(k in a[0])`;
+five separate lexer failures are JavaScript regex literals such
+as `/\\s+/`, `/https:\\/\\//g` and character classes. Another error
+includes a labeled `a: { ... }` statement. Reddit's one failed
+inline script uses an `async function` callback, not a mistaken
+comma in an ordinary function parameter list.
+
+The browser-owned parser/compiler/VM now implements a deliberately
+limited own-key `for...in` subset, with bounded snapshots, lexical
+iteration scopes and genuine parser-to-DOM integration verification.
+Native YouTube recheck under `artifacts/live_web/for-in-2026-10-16/`
+confirms the `for` **syntax error disappeared**; that execution
+advances to `cannot read properties of null or undefined`. Overall
+YouTube stays **7 executed / 9 failed / 0 text primitives**, so no
+visible compatibility milestone was reached. Own-property insertion
+order, property descriptors, inherited enumerable properties, proxies
+and mutation-observing enumeration are not implemented. Next fix the
+actual regex-literal blockers before claiming modern JS readiness.
+
 ## Reproduce explicitly (never run against sites in CI by default)
 
 ```powershell
