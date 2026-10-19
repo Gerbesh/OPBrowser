@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 20 October 2026: original stacking-context paint order shared with DOM hit resolution
+
+`op_layout::ClickRegion.paint_key: Option<PaintKey>` now captures positioning metadata. `flow::Context::mark_positioned_outputs_since` annotates hit rectangles together with decorations/foreground commands; `inline::InlineFragment` and glyph-run `InlineHitSpan` inherit inline paint-group keys. `op_engine::order_native_hit_regions(layout, document)` combines the authoritative `layout.paint_groups` parent graph with any unregistered hit-only keys, orders negative and nonnegative children by the same key as `op_paint::build_display_list`, and uses connected DOM preorder for same-group ties. `PreparedDocument.hit_regions` stores this order once per render; `hit_target` reverse-scans it. `Engine::click_at` uses the same ranked order with fresh layout to preserve JS target dispatch and focus without changing original scrollbar precedence.
+
 ## 19 October 2026: block and glyph-run DOM hit regions to pointer-active CSS
 
 `op_layout::flow` emits `ClickRegion` for every native block and from `inline::Lines.hit_regions`; an `InlineChar.origin` carries the owning inline DOM NodeId, and `PreparedText.origin_spans` measures UTF-8 text-prefix glyph widths without changing text wrapping or painted `TextBox` boundaries. `OutputStart.clicks` makes translated hit rectangles follow positioned and scrolled output; original overflow clipping applies to the same regions. `op_engine::PreparedDocument.hit_target` shares cached hit testing for hover and press; `Engine::press_at/release_press` drives `StyleInteractionState.active`, and click dispatch clears active before handling scrollbar and DOM targets. `op_platform_win` handles capture and off-window cancellation through `PointerDown/PointerCancel`; `op_browser` queues ordered press/release events and coalesces hover. Remaining painted stacking/inline atomic coverage is incomplete.

@@ -636,6 +636,7 @@ impl<'a> Context<'a, '_> {
                 })
                 .map(|fragment| ClickRegion {
                     node: fragment.node,
+                    paint_key: fragment.paint_key,
                     x: fragment.x,
                     y: fragment.y,
                     width: fragment.width,
@@ -753,6 +754,11 @@ impl<'a> Context<'a, '_> {
     }
 
     fn mark_positioned_outputs_since(&mut self, start: OutputStart, key: PaintKey) {
+        for region in &mut self.click_regions[start.clicks..] {
+            if region.paint_key.is_none() {
+                region.paint_key = Some(key);
+            }
+        }
         for decoration in &mut self.decorations[start.decorations..] {
             if decoration.paint_key.is_none() {
                 decoration.paint_layer = decoration.paint_layer.positioned();
@@ -1486,6 +1492,7 @@ impl<'a> Context<'a, '_> {
             };
             self.click_regions.push(ClickRegion {
                 node,
+                paint_key: None,
                 x: border_x.saturating_add(dx),
                 y: border_y.saturating_add(dy),
                 width: used.border_width.max(0),

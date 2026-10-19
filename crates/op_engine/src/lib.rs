@@ -290,6 +290,86 @@ struct PreparedDocument {
     scroll_left_offsets: std::collections::HashMap<usize, i32>,
 }
 
+fn order_native_hit_regions(
+    layout: &op_layout::LayoutTree,
+    document: &op_dom::Document,
+) -> Vec<op_layout::ClickRegion> {
+    use op_layout::PaintKey;
+    use std::collections::HashMap;
+
+    // Mirror the paint compositor's context traversal, rather than
+    // comparing z-index values across unrelated stacking contexts.
+    let mut parents: HashMap<PaintKey, Option<PaintKey>> = layout
+        .paint_groups
+        .iter()
+        .map(|group| (group.key, group.parent))
+        .collect();
+    for region in &layout.click_regions {
+        if let Some(key) = region.paint_key {
+            parents.entry(key).or_insert(None);
+        }
+    }
+    let mut children: HashMap<Option<PaintKey>, Vec<PaintKey>> = HashMap::new();
+    for (&key, &parent) in &parents {
+        let parent =
+            parent.filter(|candidate| *candidate != key && parents.contains_key(candidate));
+        children.entry(parent).or_default().push(key);
+    }
+    for siblings in children.values_mut() {
+        siblings.sort_unstable();
+    }
+
+    let mut layer_rank = HashMap::new();
+    let mut pending = vec![(None, 0u8)];
+    let mut next_layer = 0usize;
+    while let Some((context, stage)) = pending.pop() {
+        match stage {
+            0 => {
+                if let Some(key) = context {
+                    layer_rank.insert(Some(key), next_layer);
+                    next_layer += 1;
+                }
+                pending.push((context, 1));
+                if let Some(siblings) = children.get(&context) {
+                    for &child in siblings.iter().rev().filter(|key| key.z_index < 0) {
+                        pending.push((Some(child), 0));
+                    }
+                }
+            }
+            1 => {
+                if context.is_none() {
+                    layer_rank.insert(None, next_layer);
+                    next_layer += 1;
+                }
+                if let Some(siblings) = children.get(&context) {
+                    for &child in siblings.iter().rev().filter(|key| key.z_index >= 0) {
+                        pending.push((Some(child), 0));
+                    }
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    let mut dom_order = HashMap::new();
+    let mut stack = vec![document.root()];
+    while let Some(node) = stack.pop() {
+        let index = dom_order.len();
+        if dom_order.insert(node, index).is_some() {
+            continue;
+        }
+        stack.extend(document.children(node).iter().rev().copied());
+    }
+    let mut regions = layout.click_regions.clone();
+    regions.sort_by_key(|region| {
+        (
+            layer_rank.get(&region.paint_key).copied().unwrap_or(0),
+            dom_order.get(&region.node).copied().unwrap_or(0),
+        )
+    });
+    regions
+}
+
 impl PreparedDocument {
     fn current_scroll_offsets(&self) -> &std::collections::HashMap<usize, i32> {
         self.runtime
@@ -300,7 +380,7 @@ impl PreparedDocument {
     fn hit_target(&self, x: i32, y: i32) -> Option<op_dom::NodeId> {
         self.hit_regions
             .iter()
-            .filter(|region| {
+            .rfind(|region| {
                 region.width > 0
                     && region.height > 0
                     && x >= region.x
@@ -309,7 +389,6 @@ impl PreparedDocument {
                     && y < region.y.saturating_add(region.height)
                     && self.document.node(region.node).is_some()
             })
-            .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
             .map(|region| region.node)
     }
 
@@ -409,7 +488,7 @@ impl PreparedDocument {
             ),
             &mut text::Measurer::new(),
         );
-        self.hit_regions.clone_from(&layout.click_regions);
+        self.hit_regions = order_native_hit_regions(&layout, &self.document);
         let scroll_limits: std::collections::HashMap<usize, i32> = layout
             .scroll_containers
             .iter()
@@ -834,10 +913,10 @@ impl Engine {
             }
             return Some(prepared.render(width, height));
         }
-        let target = layout
-            .click_regions
-            .iter()
-            .filter(|region| {
+        let target = order_native_hit_regions(&layout, &prepared.document)
+            .into_iter()
+            .rev()
+            .find(|region| {
                 region.width > 0
                     && region.height > 0
                     && x >= region.x
@@ -845,7 +924,6 @@ impl Engine {
                     && y >= region.y
                     && y < region.y.saturating_add(region.height)
             })
-            .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
             .map(|region| region.node);
         let Some(target) = target else {
             if was_pressed {
@@ -4975,6 +5053,126 @@ mod tests {
                 .expect("positioned foreground text");
             assert!(normal < background && background < foreground, "{position}");
         }
+    }
+
+    fn expect_top_hit_by_id(html: &str, id: &str) {
+        let mut engine = Engine::new();
+        engine.set_html_page(html, 800, 600);
+        let (expected, x, y) = {
+            let page = engine.active_document.as_ref().expect("page loaded");
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|region| {
+                    page.document.element(region.node).is_some_and(|element| {
+                        element
+                            .attributes
+                            .iter()
+                            .any(|attr| attr.name == "id" && attr.value == id)
+                    }) && region.width > 10
+                        && region.height > 10
+                })
+                .expect("expected hit region");
+            (region.node, region.x + 8, region.y + 8)
+        };
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(
+            page.hit_target(x, y),
+            Some(expected),
+            "{id}: cached native hit priority"
+        );
+        engine.press_at(x, y, 800, 600);
+        assert_eq!(
+            engine.active_document.as_ref().unwrap().interaction.active,
+            Some(expected)
+        );
+        engine.release_press(800, 600);
+        engine.click_at(x, y, 800, 600);
+        assert_eq!(
+            engine.active_document.as_ref().unwrap().interaction.hovered,
+            Some(expected),
+            "{id}: press and release keep the intended native element hovered"
+        );
+    }
+
+    #[test]
+    fn native_z_order_routes_real_dom_click_to_frontmost_handler() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<div style='position:relative;height:100px'>\
+               <div id='front' style='position:absolute;top:0;left:0;z-index:4;width:85px;height:60px;background:lime'>Front</div>\
+               <div id='behind' style='position:absolute;top:0;left:0;z-index:1;width:22px;height:22px;background:red'>Back</div>\
+             </div><p id='result'>Untouched</p><script>\
+             document.getElementById('front').addEventListener('click',function(){document.getElementById('result').textContent='Front handled';});\
+             document.getElementById('behind').addEventListener('click',function(){document.getElementById('result').textContent='Back handled';});\
+             </script>",
+            800,
+            600,
+        );
+        let (x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let front = page
+                .hit_regions
+                .iter()
+                .find(|region| {
+                    page.document.element(region.node).is_some_and(|element| {
+                        element
+                            .attributes
+                            .iter()
+                            .any(|attr| attr.name == "id" && attr.value == "front")
+                    })
+                })
+                .expect("topmost clickable element");
+            (front.x + 8, front.y + 8)
+        };
+        let painted = engine
+            .click_at(x, y, 800, 600)
+            .expect("DOM listener repaint");
+        assert!(contains_text(&painted.display_list, "Front handled"));
+        assert!(!contains_text(&painted.display_list, "Back handled"));
+    }
+
+    #[test]
+    fn native_hit_priority_obeys_z_index_not_smallest_rectangle() {
+        expect_top_hit_by_id(
+            "<div style='position:relative;height:90px'>\
+                <div id='high' style='position:absolute;top:0;left:0;width:65px;height:45px;background:red;z-index:8'></div>\
+                <div style='position:absolute;top:0;left:0;width:20px;height:20px;background:lime;z-index:-2'></div>\
+                <div style='position:absolute;top:0;left:0;width:50px;height:40px;background:blue;z-index:2'></div>\
+             </div>",
+            "high",
+        );
+    }
+
+    #[test]
+    fn native_hit_priority_keeps_nested_high_z_below_outer_sibling() {
+        expect_top_hit_by_id(
+            "<div style='position:relative;height:100px'>\
+                <div style='position:relative;z-index:1;width:100px;height:80px'>\
+                    <div style='position:absolute;z-index:999;top:0;left:0;background:lime;width:22px;height:22px'></div>\
+                </div>\
+                <div id='front' style='position:absolute;z-index:2;top:0;left:0;background:blue;width:90px;height:60px'></div>\
+             </div>",
+            "front",
+        );
+    }
+
+    #[test]
+    fn native_hit_priority_places_normal_flow_over_negative_z_and_later_siblings_first() {
+        expect_top_hit_by_id(
+            "<div style='position:relative;height:100px'>\
+                 <div style='position:absolute;z-index:-1;top:0;left:0;background:blue;width:20px;height:20px'></div>\
+                 <div id='normal' style='background:lime;width:100px;height:70px'>Normal</div>\
+             </div>",
+            "normal",
+        );
+        expect_top_hit_by_id(
+            "<div style='position:relative;height:90px'>\
+                 <div style='position:absolute;z-index:0;top:0;left:0;background:red;width:20px;height:20px'></div>\
+                 <div id='later' style='position:absolute;z-index:0;top:0;left:0;background:blue;width:90px;height:70px'></div>\
+             </div>",
+            "later",
+        );
     }
 
     #[test]

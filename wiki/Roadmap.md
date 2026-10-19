@@ -1,5 +1,9 @@
 # Roadmap
 
+## Input layering stage completed, subsequent P0 tasks (20 October 2026)
+
+Native target picking now respects ordinary positioned z-index precedence, nested stacking contexts, negative layers and DOM-order ties; tests exercise real JavaScript DOM click dispatch on overlapping elements. Next: painter-exact foreground/background hit testing, pointer-events:none and disabled-form behavior, image/inline atomic targets, native hyperlink overlay occlusion, bounded incremental hit-map updates, keyboard Tab/focus-visible and DOM JS event consistency. Independent major blockers remain browser-grade JS startup, DOM APIs, script loading and layout/font fidelity. No claim that YouTube or Reddit render fully.
+
 ## Next input/rendering milestones after expanded native hit testing (19 October 2026)
 
 Ordinary ID-less blocks and inline text/link source spans now support real native hover, and pointer press/release drives CSS `:active` without changing the line-break algorithm. Next P0: hit-test according to actual painted stacking/clip hierarchy, cover replaced and atomic inline elements, bound/coalesce worker input under load, implement keyboard focus-visible, and expose synchronized DOM/JS focus and selector state. Independent modern-web readiness blockers: JS VM/event loop, missing bootstrap DOM, font loading and layout correctness. Current Release sites are not fully supported.

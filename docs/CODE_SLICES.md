@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S102 - Topmost DOM hit target tracks original z-index painter
+
+Original CSS computed stacking contexts -> `LayoutTree.paint_groups` and paint keys on positioned boxes -> block/inline `ClickRegion.paint_key` -> native document-order and nested paint-group ordering -> per-render cached hit regions -> reverse ordered hit selection for hover/press; click reflows and uses identical ordering -> original JS click listener receives visible topmost element. Targeted tests challenge area-first selection, negative z contexts, nested high-z child versus outer sibling, same-z DOM order and actual JS DOM mutation after the click. Link navigation remains a separate native text-link path; no claim of full pointer-events / CSS stacking conformance.
+
 ## S101 - Ordinary inline glyph hover and native mouse active state
 
 Original HTML DOM -> CSS/layout -> block click regions regardless of ID, plus per-text-run DOM origin spans -> native text glyph prefix measurement -> generation-safe inline target rectangles -> coordinate transforms and overflow clipping -> cached hit regions -> Win32 hover/mousedown/capture/mouseup -> browser worker coalesces motion but retains press/release edges -> original CSS `:hover/:active` recascade and native painting. A separate existing link-hit path still navigates on mouse release; native click DOM events are dispatched only on release. End-to-end native tests confirm ID-less block and inline link hover, active color changes and cancellation, clipping, layout stability, Windows capture and link smoke.

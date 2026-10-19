@@ -1,5 +1,9 @@
 # Page Reflow
 
+## Stacking-context-aware hit precedence (20 October 2026)
+
+`LayoutTree.paint_groups` already drives the original raster compositing order. Each `ClickRegion` now optionally records the same `PaintKey`, including inline text/fragment positions. The engine sorts regions per completed render by nested context precedence and connected DOM order, then reverse-scans the cached list on hover/press. DOM click hit testing applies the same order to its fresh layout, so a smaller obscured element no longer steals focus/clicks from the higher-z visual element. Region creation, transform offsets, nested scrolling and clipping continue to come from original layout.
+
 ## Native hit regions follow overflow and positioned transforms (19 October 2026)
 
 The original layout now exposes hit rectangles for all ordinary block elements, plus inline text/link spans mapped onto the text painter's measured glyph runs. Click regions move with relative-position transforms and nested scroll offsets and are clipped by overflow scopes; creating these regions does not split text into new line boxes. The engine reuses the last hit map for mouse hover and press and recalculates styles only when needed. CSS stacking-aware topmost-hit selection and inline atomic targets are not yet complete.

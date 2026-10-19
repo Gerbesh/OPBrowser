@@ -431,6 +431,8 @@ impl ScrollContainer {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClickRegion {
     pub node: NodeId,
+    /// The original stacking context that paints this hit fragment, if any.
+    pub paint_key: Option<PaintKey>,
     pub x: i32,
     pub y: i32,
     pub width: i32,

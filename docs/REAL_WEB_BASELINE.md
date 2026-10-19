@@ -1,5 +1,9 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 20 October 2026: z-index hit precedence Release baseline
+
+At gitignored `artifacts/live_web/stacked-hits-2026-10-20/`, five native Release HTTPS probes retained the existing statuses: Google rendered_with_js_errors (2 JS failed), YouTube no_text_rendered (4 JS failed), Reddit blank_viewport (0 JS failed), DeviantArt rendered_with_js_errors (3 JS failed), Pikabu rendered_with_js_errors (11 JS failed). Load times were ~382 ms, 1495 ms, 242 ms, 9199 ms, and 12139 ms respectively (one changing-site snapshot, not a stable performance benchmark). Layer-aware interaction is verified by local hit-region and JS event tests, not by the headless-style real-site probes. Other layout/JS incompatibilities continue to block modern sites.
+
 ## 19 October 2026: ID-less/inline hit mapping and native press lifecycle
 
 Five public Release probes at ignored `artifacts/live_web/full-hit-and-active-2026-10-19/` retain the same classifications: Google partial with 2 JS failures, YouTube **zero painted text** with 4 JS failures, Reddit **blank viewport** with 0 failed scripts, Pikabu partial with 11 failures, DeviantArt partial with 3 failures. Prior CSS parser errors remain 0/22/1/114/170 respectively. These noninteractive probes cannot certify hover, active pixels or full website compatibility; native Rust and Windows UI regressions exercise those paths separately. The new hit regions preserve old text-wrap tests, unlike the discarded approach that generated CSS boxes for every inline element. Stacking-aware precise hit-testing and comprehensive replaced-element DOM targets still need work.

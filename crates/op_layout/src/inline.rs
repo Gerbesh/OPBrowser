@@ -355,6 +355,7 @@ pub(super) struct PositionedStatic {
 #[derive(Clone, Copy)]
 pub(super) struct InlineFragment {
     pub node: op_dom::NodeId,
+    pub paint_key: Option<super::PaintKey>,
     pub direction: Direction,
     pub x: i32,
     pub y: i32,
@@ -935,6 +936,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         let bounds = &self.decorations[decoration];
         self.fragments.push(InlineFragment {
             node: style.node,
+            paint_key: self.inline_boxes.paint_key(Some(id)),
             direction: style.direction,
             x: bounds.x,
             y: bounds.y,
@@ -1333,6 +1335,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                             if right > left {
                                 self.hit_regions.push(ClickRegion {
                                     node: span.node,
+                                    paint_key: self.inline_boxes.paint_key(text.style.boxes),
                                     x: x.saturating_add(dx).saturating_add(left),
                                     y: (baseline - text.metrics.ascent).saturating_add(dy),
                                     width: right - left,

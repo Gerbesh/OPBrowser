@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Paint-order-aware native pointer target (20 October 2026)
+
+Rendered overlapping elements now use the original paint-group/stacking-context hierarchy to determine the target under a pointer, rather than the smallest intersecting rectangle. Positioned inline and block hit regions carry a paint key; parent contexts prevent high-z children escaping a low-z parent; ordinary DOM-order ties and negative contexts follow the current native painter. The actual JS click handler on the frontmost of two overlapping elements was tested successfully. Workspace, Windows startup, native link smoke and Release site checks pass. YouTube remains textless and Reddit blank. Full CSS hit-testing, pointer-events rules, replaced elements and keyboard focus remain open work.
+
 ## Native inline hover, ID-less targets and mouse :active (19 October 2026)
 
 Now functional in the original Win32/Rust browser: normal blocks without `id` and inline text/link hover, source-node glyph hit regions, viewport clipping and scroll translations, mouse `:active` press/release/cancel, capture-loss cleanup, and ordered worker press/click events alongside coalesced hover. Real Windows and full workspace tests pass; browser and link smoke pass. Real pages retain previous partial/blank classifications (YouTube textless, Reddit blank). Full painted z-index hit testing, all replaced/atomic inline elements, JS event synchronization and keyboard focus-visible remain pending.
