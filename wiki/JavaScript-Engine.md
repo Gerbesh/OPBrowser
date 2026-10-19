@@ -3,6 +3,10 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Bounded async functions and Promise settlement (19 October 2026)
+
+The original parser interprets contextual `async` preceding `function`. Declarations and expressions compile to original closure bytecode flagged as async. Without `await`, calls return real self-hosted Promises, adopt returned Promises and reject thrown JS values or VM runtime errors. Async functions have no constructible prototype. Real `await` suspension, async arrows and complete ECMAScript async scheduling remain unsupported: the parser rejects `await` in async bodies rather than synchronously faking it. Two focused parser/VM tests pass. Reddit's diagnostic advances to this `await` blocker; live rendering remains unchanged.
+
 ## Namespace-aware DOM creation and YouTube diagnostics (17 October 2026)
 
 The original DOM and JS host now support

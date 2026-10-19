@@ -277,6 +277,8 @@ Performance Timing/JS object support without fabricated browser
 state, address async scripts/DOM, and actual modern layout.
 SVG drawing and foreign-content parser namespaces are NOT done.
 
+**P0 bounded async-functions checkpoint (19 October 2026):** The original parser, compiler and VM now support declared/anonymous `async function` forms **without `await`**. Calls return original self-hosted Promises with result adoption and rejection for throws/runtime errors; async functions cannot be constructed. Real `await` suspension, async arrows and complete JS scheduling remain unsupported (explicit syntax rejection). New parser/VM tests pass. The 1300ms five-site native rerun retains JS failures **2/4/11/1/3** (Google/YouTube/Pikabu/Reddit/DeviantArt). Reddit advances to unsupported `await` but remains blank; YouTube paints zero text. NEXT: compliant `await` and script scheduling plus visibly usable first viewport.
+
 ## Engineering gates
 
 1. **Visible behavior:** every rendering change must prove pixels and/or actual native input behavior, not only CSS parser acceptance. Scroll tests include nested containers, clipping of backgrounds/text, scroll offsets, click targets after scrolling, and restoration after resize.

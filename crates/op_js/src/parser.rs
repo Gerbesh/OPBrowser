@@ -57,6 +57,7 @@ pub enum Statement {
         name: String,
         params: Vec<String>,
         body: Vec<Statement>,
+        is_async: bool,
     },
     Return(Option<Expression>),
     Labeled {
@@ -165,6 +166,7 @@ pub enum Expression {
         name: Option<String>,
         params: Vec<String>,
         body: Vec<Statement>,
+        is_async: bool,
     },
     Update {
         target: AssignmentTarget,
@@ -261,6 +263,7 @@ struct Parser {
     loop_depth: usize,
     breakable_depth: usize,
     function_depth: usize,
+    in_async_function: bool,
     labels: Vec<(String, bool)>,
 }
 
@@ -272,6 +275,7 @@ impl Parser {
             loop_depth: 0,
             breakable_depth: 0,
             function_depth: 0,
+            in_async_function: false,
             labels: Vec::new(),
         }
     }
@@ -323,7 +327,17 @@ impl Parser {
             return Ok(Statement::Throw(value));
         }
         if self.take(&TokenKind::Function) {
-            return self.function_declaration();
+            return self.function_declaration(false);
+        }
+        if matches!(&self.current().kind, TokenKind::Identifier(name) if name == "async")
+            && self
+                .tokens
+                .get(self.index + 1)
+                .is_some_and(|next| matches!(next.kind, TokenKind::Function))
+        {
+            self.advance(); // contextual async
+            self.advance(); // function
+            return self.function_declaration(true);
         }
         if self.take(&TokenKind::Return) {
             if self.function_depth == 0 {
@@ -795,7 +809,7 @@ impl Parser {
         Ok(statements)
     }
 
-    fn function_declaration(&mut self) -> Result<Statement, JsError> {
+    fn function_declaration(&mut self, is_async: bool) -> Result<Statement, JsError> {
         let token = self.advance().clone();
         let TokenKind::Identifier(name) = token.kind else {
             return Err(JsError::syntax(
@@ -803,11 +817,16 @@ impl Parser {
                 "expected function name after 'function'",
             ));
         };
-        let (params, body) = self.function_tail()?;
-        Ok(Statement::FunctionDeclaration { name, params, body })
+        let (params, body) = self.function_tail(is_async)?;
+        Ok(Statement::FunctionDeclaration {
+            name,
+            params,
+            body,
+            is_async,
+        })
     }
 
-    fn function_tail(&mut self) -> Result<(Vec<String>, Vec<Statement>), JsError> {
+    fn function_tail(&mut self, is_async: bool) -> Result<(Vec<String>, Vec<Statement>), JsError> {
         if !self.take(&TokenKind::LeftParen) {
             return Err(JsError::syntax(
                 self.current().start,
@@ -822,6 +841,12 @@ impl Parser {
                 let TokenKind::Identifier(name) = token.kind else {
                     return Err(JsError::syntax(token.start, "expected parameter name"));
                 };
+                if is_async && name == "await" {
+                    return Err(JsError::syntax(
+                        token.start,
+                        "await cannot be an async parameter",
+                    ));
+                }
                 params.push(name);
                 if self.take(&TokenKind::RightParen) {
                     break;
@@ -845,6 +870,8 @@ impl Parser {
         let saved_loop_depth = self.loop_depth;
         let saved_breakable_depth = self.breakable_depth;
         let saved_labels = std::mem::take(&mut self.labels);
+        let saved_async = self.in_async_function;
+        self.in_async_function = is_async;
         self.loop_depth = 0;
         self.breakable_depth = 0;
         self.function_depth += 1;
@@ -866,6 +893,7 @@ impl Parser {
         self.loop_depth = saved_loop_depth;
         self.breakable_depth = saved_breakable_depth;
         self.labels = saved_labels;
+        self.in_async_function = saved_async;
         result?;
         Ok((params, body))
     }
@@ -1472,6 +1500,25 @@ impl Parser {
             TokenKind::False => Ok(Expression::Literal(JsValue::Boolean(false))),
             TokenKind::Null => Ok(Expression::Literal(JsValue::Null)),
             TokenKind::Undefined => Ok(Expression::Literal(JsValue::Undefined)),
+            TokenKind::Identifier(name) if name == "async" && self.take(&TokenKind::Function) => {
+                let name = if let TokenKind::Identifier(name) = &self.current().kind {
+                    let name = name.clone();
+                    self.advance();
+                    Some(name)
+                } else {
+                    None
+                };
+                let (params, body) = self.function_tail(true)?;
+                Ok(Expression::Function {
+                    name,
+                    params,
+                    body,
+                    is_async: true,
+                })
+            }
+            TokenKind::Identifier(name) if name == "await" && self.in_async_function => Err(
+                JsError::syntax(token.start, "await suspension is not supported yet"),
+            ),
             TokenKind::Identifier(name) => Ok(Expression::Identifier(name)),
             TokenKind::This => Ok(Expression::This),
             TokenKind::New => self.new_expression(token.start),
@@ -1483,8 +1530,13 @@ impl Parser {
                 } else {
                     None
                 };
-                let (params, body) = self.function_tail()?;
-                Ok(Expression::Function { name, params, body })
+                let (params, body) = self.function_tail(false)?;
+                Ok(Expression::Function {
+                    name,
+                    params,
+                    body,
+                    is_async: false,
+                })
             }
             TokenKind::LeftBrace => self.object_literal(),
             TokenKind::LeftBracket => self.array_literal(),
@@ -1616,7 +1668,7 @@ impl Parser {
                         JsError::syntax(name_token.start, "expected accessor property name")
                     })?,
                 };
-                let (params, body) = self.function_tail()?;
+                let (params, body) = self.function_tail(false)?;
                 let kind = if key == "get" {
                     ObjectPropertyKind::Getter
                 } else {
@@ -1640,11 +1692,12 @@ impl Parser {
                         name: None,
                         params,
                         body,
+                        is_async: false,
                     },
                     false,
                 )
             } else if self.check(&TokenKind::LeftParen) {
-                let (params, body) = self.function_tail()?;
+                let (params, body) = self.function_tail(false)?;
                 (
                     key.clone(),
                     ObjectPropertyKind::Data,
@@ -1652,6 +1705,7 @@ impl Parser {
                         name: Some(key),
                         params,
                         body,
+                        is_async: false,
                     },
                     false,
                 )
@@ -1876,6 +1930,32 @@ mod tests {
             program.statements[4],
             Statement::Expression(Expression::Member { .. })
         ));
+    }
+
+    #[test]
+    fn async_function_parser_preserves_contextual_keyword_and_rejects_await() {
+        let program = parse_script(
+            "async function work(x) { return x; } let callback=async function(x){return x+1;};",
+        )
+        .unwrap();
+        assert!(matches!(
+            program.statements[0],
+            Statement::FunctionDeclaration { is_async: true, .. }
+        ));
+        let Statement::Variable { declarations, .. } = &program.statements[1] else {
+            panic!("expected async function expression");
+        };
+        assert!(matches!(
+            declarations[0].initializer,
+            Some(Expression::Function { is_async: true, .. })
+        ));
+        assert!(parse_script("async function f() { return await Promise.resolve(3); }").is_err());
+        assert!(parse_script("async function f(await) {return 1;}").is_err());
+        assert!(
+            parse_script("async function f() { function inner() { return 5; } return inner(); }")
+                .is_ok()
+        );
+        assert!(parse_script("var async=3; async+2;").is_ok());
     }
 
     #[test]

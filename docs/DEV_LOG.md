@@ -3760,3 +3760,11 @@ This file is append-only project history.
 - VM tests cover SVG case preservation, reserved prefixes, invalid names and namespaces, host receiver checks and detached GC. Native op_dom and two-script HTML-to-original-paint integration tests pass. This does not implement SVG rasterization or full Unicode XML names / HTML parser foreign namespaces.
 - Native YouTube 1300 ms Release probe no longer reports missing createElementNS but remains at 4 failed initial scripts, 0 text primitives and 19 skipped scripts. Opt-in diagnostics reveal null/undefined reads of set, responseStart and prototype twice. Ignored artifact artifacts/live_web/namespace-2026-10-17. Other sites Google 2, Pikabu 11, Reddit 1, DeviantArt 3 JS failures. Real YouTube visual compatibility is not yet achieved.
 
+## 2026-10-19 - Original no-await async functions and live Reddit triage
+
+- Added contextual async function declarations and expressions to original Rust parser, bytecode and VM. A no-await call returns a real self-hosted Promise using Promise.resolve (including adoption) or Promise.reject for thrown JS values / runtime Reference and Type errors. Instruction-budget exhaustion is still fatal.
+- Async functions cannot be constructed and have no own prototype. The parser explicitly rejects unsupported await and await parameters; async arrows and full continuation scheduling are not claimed.
+- Focused parser and VM tests cover declarations, expressions, contextual identifiers, Promise values/adoption, exceptions and invalid construction.
+- Release original-engine five-site native 1300ms test: Google 2, YouTube 4, Pikabu 11, Reddit 1, DeviantArt 3 script failures. Reddit now fails at the real unsupported await but still paints a blank page; YouTube still paints zero text. Output is in ignored artifacts/live_web/async-five-2026-10-19/.
+- NEXT: actual await suspension/microtask continuations, script loading and first-viewport layout. No website is claimed functional.
+

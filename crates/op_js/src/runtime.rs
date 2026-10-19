@@ -6165,7 +6165,45 @@ impl JsRuntime {
             );
         }
 
-        match self.run_code(&template.code, function_env, steps, call_depth)? {
+        let outcome = self.run_code(&template.code, function_env, steps, call_depth);
+        if template.is_async {
+            let (method, value) = match outcome {
+                Ok(RunOutcome::Returned(value)) => ("resolve", value),
+                Ok(RunOutcome::Complete(_)) => ("resolve", JsValue::Undefined),
+                Ok(RunOutcome::Thrown(value)) => ("reject", value),
+                Err(error) if error.kind == JsErrorKind::ExecutionLimit => return Err(error),
+                Err(error) => {
+                    let constructor_name = match error.kind {
+                        JsErrorKind::Reference => "ReferenceError",
+                        JsErrorKind::Syntax => "SyntaxError",
+                        _ => "TypeError",
+                    };
+                    let constructor = self
+                        .global(constructor_name)
+                        .cloned()
+                        .ok_or_else(|| JsError::type_error("missing standard Error constructor"))?;
+                    let value = match self.construct_value(
+                        constructor,
+                        vec![JsValue::String(error.message)],
+                        steps,
+                        call_depth + 1,
+                    )? {
+                        CallOutcome::Value(value) | CallOutcome::Thrown(value) => value,
+                    };
+                    ("reject", value)
+                }
+                Ok(RunOutcome::Break(_) | RunOutcome::Continue(_)) => {
+                    return Err(JsError::type_error("jump escaped an async function body"));
+                }
+            };
+            let promise = self
+                .global("Promise")
+                .cloned()
+                .ok_or_else(|| JsError::type_error("missing Promise constructor"))?;
+            let operation = self.get_property(&promise, method)?;
+            return self.call_value(operation, promise, vec![value], steps, call_depth + 1);
+        }
+        match outcome? {
             RunOutcome::Returned(value) => Ok(CallOutcome::Value(value)),
             RunOutcome::Complete(_) => Ok(CallOutcome::Value(JsValue::Undefined)),
             RunOutcome::Thrown(value) => Ok(CallOutcome::Thrown(value)),
@@ -8816,9 +8854,11 @@ impl JsRuntime {
             .ok_or_else(|| JsError::type_error("value is not a constructor"))?;
 
         if let FunctionImplementation::User { template, .. } = &function.implementation
-            && template.is_arrow
+            && (template.is_arrow || template.is_async)
         {
-            return Err(JsError::type_error("arrow functions are not constructors"));
+            return Err(JsError::type_error(
+                "arrow and async functions are not constructors",
+            ));
         }
         if let FunctionImplementation::Builtin(builtin) = function.implementation {
             if matches!(
@@ -10286,7 +10326,7 @@ impl JsRuntime {
             "name".into(),
             JsValue::String(template.name.clone().unwrap_or_default()),
         );
-        let is_arrow = template.is_arrow;
+        let has_no_prototype = template.is_arrow || template.is_async;
         let function_id = self.allocate_object_with_function(
             ObjectKind::Function,
             Some(self.object_prototype),
@@ -10295,7 +10335,7 @@ impl JsRuntime {
                 implementation: FunctionImplementation::User { template, closure },
             }),
         )?;
-        if is_arrow {
+        if has_no_prototype {
             return Ok(function_id);
         }
 
@@ -16663,6 +16703,36 @@ mod tests {
         )
         .unwrap();
         assert_eq!(vm.global("log"), Some(&JsValue::String("ESA3MB7".into())));
+    }
+
+    #[test]
+    fn async_functions_without_await_return_real_promises_and_reject_failures() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var report='';\
+             async function add(x){return x+2;}\
+             async function empty(){}\
+             async function fail(){throw 'broken';}\
+             async function missing(){missingReference;}\
+             var expression=async function named(x){return Promise.resolve(x*2);};\
+             add(3).then(function(v){report=report+'add:'+v+';';});\
+             empty().then(function(v){report=report+'empty:'+(v===undefined)+';';});\
+             fail().catch(function(e){report=report+'fail:'+e+';';});\
+             missing().catch(function(e){report=report+'error:'+e.name+';';});\
+             expression(4).then(function(v){report=report+'expression:'+v+';';});",
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("report"),
+            Some(&JsValue::String(
+                "add:5;empty:true;fail:broken;error:ReferenceError;expression:8;".into()
+            ))
+        );
+        assert_eq!(
+            vm.eval_script("typeof add.prototype").unwrap(),
+            JsValue::String("undefined".into())
+        );
+        assert!(vm.eval_script("new add()").is_err());
     }
 
     #[test]

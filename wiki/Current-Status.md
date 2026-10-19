@@ -3,6 +3,10 @@
 Last reviewed: **16 October 2026**. The [published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki) tracks the main repository's `wiki/` sources. This is a development snapshot, not a
 claim that OPBrowser is ready for everyday browsing.
 
+## Bounded async function checkpoint (19 October 2026)
+
+Original Rust JS handles `async function` declarations and expressions when no `await` occurs. Calls settle browser-owned Promises, including returned-promise adoption and error rejection. Actual `await` suspension remains unsupported and rejects at parse time. Native five-site checks record JS errors 2/4/11/1/3 (Google/YouTube/Pikabu/Reddit/DeviantArt); Reddit is still blank and YouTube still paints zero text. This is a syntax/semantics checkpoint, not a successful website rendering.
+
 ## Modern-web readiness snapshot (16 October 2026)
 
 The 20-service live-network baseline has **zero verified functional

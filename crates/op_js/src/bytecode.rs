@@ -16,6 +16,7 @@ pub(crate) struct FunctionTemplate {
     pub(crate) params: Vec<String>,
     pub(crate) code: Vec<Instruction>,
     pub(crate) is_arrow: bool,
+    pub(crate) is_async: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -185,8 +186,13 @@ impl Compiler {
                 self.expression(value);
                 self.code.push(Instruction::Throw);
             }
-            Statement::FunctionDeclaration { name, params, body } => {
-                self.function_declaration(name, params, body);
+            Statement::FunctionDeclaration {
+                name,
+                params,
+                body,
+                is_async,
+            } => {
+                self.function_declaration(name, params, body, *is_async);
             }
             Statement::Return(value) => {
                 if let Some(value) = value {
@@ -209,8 +215,14 @@ impl Compiler {
 
     fn statement_list(&mut self, statements: &[Statement]) {
         for statement in statements {
-            if let Statement::FunctionDeclaration { name, params, body } = statement {
-                self.function_declaration(name, params, body);
+            if let Statement::FunctionDeclaration {
+                name,
+                params,
+                body,
+                is_async,
+            } = statement
+            {
+                self.function_declaration(name, params, body, *is_async);
             }
         }
         for statement in statements {
@@ -220,8 +232,15 @@ impl Compiler {
         }
     }
 
-    fn function_declaration(&mut self, name: &str, params: &[String], body: &[Statement]) {
-        let template = compile_function_template(Some(name.to_owned()), params, body, false);
+    fn function_declaration(
+        &mut self,
+        name: &str,
+        params: &[String],
+        body: &[Statement],
+        is_async: bool,
+    ) {
+        let template =
+            compile_function_template(Some(name.to_owned()), params, body, false, is_async);
         self.code.push(Instruction::CreateFunction(template));
         self.code.push(Instruction::Declare {
             name: name.to_owned(),
@@ -854,11 +873,17 @@ impl Compiler {
                 self.code.push(Instruction::Construct(arguments.len()));
             }
             Expression::Arrow { params, body } => {
-                let template = compile_function_template(None, params, body, true);
+                let template = compile_function_template(None, params, body, true, false);
                 self.code.push(Instruction::CreateFunction(template));
             }
-            Expression::Function { name, params, body } => {
-                let template = compile_function_template(name.clone(), params, body, false);
+            Expression::Function {
+                name,
+                params,
+                body,
+                is_async,
+            } => {
+                let template =
+                    compile_function_template(name.clone(), params, body, false, *is_async);
                 self.code.push(Instruction::CreateFunction(template));
             }
             Expression::Update { target, op, prefix } => match target {
@@ -1076,6 +1101,7 @@ fn compile_function_template(
     params: &[String],
     body: &[Statement],
     is_arrow: bool,
+    is_async: bool,
 ) -> Arc<FunctionTemplate> {
     let mut compiler = Compiler::default();
     compiler.statement_list(body);
@@ -1086,6 +1112,7 @@ fn compile_function_template(
         params: params.to_vec(),
         code: compiler.code,
         is_arrow,
+        is_async,
     })
 }
 

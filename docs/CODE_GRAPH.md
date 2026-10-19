@@ -57,6 +57,10 @@ Original-VM tests and an HTML -> DOM mutation -> paint regression
 exercise the entire path. General ECMAScript label/ASI coverage
 remains incomplete.
 
+## Original Promise-returning async functions without await (19 October 2026)
+
+`op_js::parser` marks contextual `async function` declarations and expressions via `is_async`, rejecting `await` until real suspension is available. `op_js::bytecode::FunctionTemplate` propagates the marker through original closure allocation. `op_js::runtime::call_user_function` executes a no-await body in the native VM and uses the existing self-hosted `Promise.resolve`/`Promise.reject` for value adoption and rejection. Standard Error objects represent runtime failures; execution-budget errors remain hard stops. Async functions have no own `prototype`, and `new` rejects. This is not a complete async scheduler.
+
 ## Namespace-aware DOM node creation and error diagnostics (17 October 2026)
 
 `op_dom::ElementData::namespace_uri: Option<String>` now survives

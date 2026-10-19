@@ -67,6 +67,10 @@ post fragments incorrectly;
 5. **Add visual comparison and interaction checks** only once pages
    render enough content; block/403 cases require independent verification.
 
+## 19 October 2026: async declaration unblocks parsing only
+
+Original no-`await` `async function` syntax now uses the native VM and existing Promise jobs. Five anonymous live HTTPS URLs were retested at 1280×720 and 1300ms settling, under ignored `artifacts/live_web/async-five-2026-10-19/`. JS failures: Google **2**, YouTube **4**, Pikabu **11**, Reddit **1**, DeviantArt **3**. YouTube remains a textless skeleton; Reddit remains white. Reddit's parse error moved from the async declaration to `await suspension is not supported yet`. This is parser progress, **not** a visual compatibility pass. Native await scheduling, dynamic scripts and layout remain outstanding.
+
 ## 15 October 2026: diagnostic follow-up on the five priority sites
 
 The new browser-owned `ScriptRunner` now retains at most **24 concise
