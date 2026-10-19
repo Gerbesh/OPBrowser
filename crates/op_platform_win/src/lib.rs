@@ -18,8 +18,8 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    EnableWindow, GetCapture, GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_CONTROL, VK_F5,
-    VK_L, VK_RETURN, VK_SHIFT,
+    EnableWindow, GetCapture, GetKeyState, ReleaseCapture, SetCapture, SetFocus, TME_LEAVE,
+    TRACKMOUSEEVENT, TrackMouseEvent, VK_CONTROL, VK_F5, VK_L, VK_RETURN, VK_SHIFT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -44,6 +44,7 @@ const GO: i32 = 105;
 const STATUS: i32 = 106;
 const POLL_TIMER: usize = 1;
 const RESIZE_TIMER: usize = 2;
+const WM_MOUSELEAVE: u32 = 0x02A3;
 const NAVIGATION_COMMAND: u32 = WM_APP + 1;
 const CANCEL_THUMB_DRAG: u32 = WM_APP + 2;
 
@@ -52,6 +53,7 @@ pub enum NavigationEvent {
     Navigate(String),
     FollowLink(String),
     Click { x: i32, y: i32 },
+    Hover { x: i32, y: i32 },
     Scroll { x: i32, y: i32, delta_y: i32 },
     HorizontalScroll { x: i32, y: i32, delta_x: i32 },
     ScrollbarDragStart { x: i32, y: i32 },
@@ -429,6 +431,29 @@ impl NativeBrowserWindow {
                 let document_y = y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst);
                 (THUMB_DRAG_LAST_Y.swap(document_y, Ordering::SeqCst) != document_y)
                     .then_some(NavigationEvent::ScrollbarDragMove { y: document_y })
+            }
+            WM_MOUSEMOVE if message.hwnd == self.hwnd => {
+                let mut tracking = TRACKMOUSEEVENT {
+                    cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE,
+                    hwndTrack: self.hwnd,
+                    dwHoverTime: 0,
+                };
+                unsafe { TrackMouseEvent(&mut tracking) };
+                let x = (message.lParam as u16 as i16) as i32;
+                let y = ((message.lParam >> 16) as u16 as i16) as i32;
+                let mut client: RECT = unsafe { zeroed() };
+                unsafe { GetClientRect(self.hwnd, &mut client) };
+                if x < 0 || x >= client.right || y < TOOLBAR_HEIGHT || y >= client.bottom {
+                    return Some(NavigationEvent::Hover { x: -1, y: -1 });
+                }
+                Some(NavigationEvent::Hover {
+                    x,
+                    y: y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst),
+                })
+            }
+            WM_MOUSELEAVE if message.hwnd == self.hwnd => {
+                Some(NavigationEvent::Hover { x: -1, y: -1 })
             }
             WM_LBUTTONUP if message.hwnd == self.hwnd => {
                 if THUMB_DRAG_ACTIVE.swap(false, Ordering::SeqCst) {
@@ -1535,6 +1560,9 @@ mod tests {
         });
         let mut step = 0;
         let exit = window.run_message_loop(|event| {
+            if matches!(event, NavigationEvent::Hover { .. }) {
+                return;
+            }
             match step {
                 0 => {
                     assert_eq!(

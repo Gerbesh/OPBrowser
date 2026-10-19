@@ -23,9 +23,11 @@ pub use parser::{
     parse_color_profiles, parse_declaration_list, parse_stylesheet, parse_stylesheet_at_viewport,
 };
 pub use style::{
-    MatchedDeclaration, StyleCollection, StyleError, StyleMap, StyleSource, collect_author_styles,
-    collect_author_styles_at_viewport, collect_author_styles_with_linked,
-    collect_author_styles_with_linked_at_viewport, selector_matches,
+    MatchedDeclaration, StyleCollection, StyleError, StyleInteractionState, StyleMap, StyleSource,
+    collect_author_styles, collect_author_styles_at_viewport, collect_author_styles_with_linked,
+    collect_author_styles_with_linked_at_viewport,
+    collect_author_styles_with_linked_at_viewport_with_state, selector_matches,
+    selector_matches_with_state,
 };
 pub use tokenizer::tokenize;
 

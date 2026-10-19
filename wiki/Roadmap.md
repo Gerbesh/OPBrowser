@@ -1,5 +1,10 @@
 # Roadmap
 
+## CSS interaction state after native hover/focus support (19 October 2026)
+
+Hover and mouse-focused CSS state now work through the existing original ID-block hit regions, nested selector matching, and native Win32 event dispatch, with transition-only repaint and coalesced queued motion. Next P0 is hit-testing for ordinary inline, ID-less and nested elements, correct pointer press/release `:active`, focus navigation with keyboard `:focus-visible` and API consistency with DOM scripting; improve low-latency style invalidation. Page bootstrap/CSS font/layout and full JS compatibility are independent open obstacles; no modern site is certified usable.
+
+
 ## Responsive CSS and first-paint state matching (19 October 2026)
 
 Original viewport-aware screen `@media` handling and bounded common state pseudo-classes now pass tests and work through native reflow. Next: link actual hit-test/focus/disabled behavior into dynamic selector recalculation; support more media features and `@font-face` without unsafe assumptions; pursue native first-paint layout/scripting failures on YouTube and absent Reddit feed. CSS parser error count reductions do not certify visual compatibility. Compare screenshots to a trustworthy browser oracle before declaring any site supported.

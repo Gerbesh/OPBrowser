@@ -1,5 +1,10 @@
 # CSS Syntax Foundation
 
+## Mouse hover and focus author matching (19 October 2026)
+
+The original selector matcher now consumes explicit native `StyleInteractionState` without global state: `:hover` includes the actual hovered target and its DOM ancestors, `:focus` checks the focused element, and `:focus-within` checks its ancestors. Nested `:not/:is/:has`, combinators and filtered nth-child selectors use the same input state. The no-input APIs retain an all-inactive initial snapshot for deterministic CSS tests. HTML form disabled/checked/read-only checks still use attributes. Press-time `:active` and keyboard `:focus-visible` are not wired; JavaScript's selector matching remains a separate implementation path.
+
+
 ## Viewport-aware screen media and initial state matching (19 October 2026)
 
 The OPBrowser-owned CSS parser now evaluates `@media` rules against the actual viewport: screen/all vs print, comma-separated alternatives, `and` conditions, px min/max/exact width or height, and orientation. Nested `@supports` retains rule order; unknown media features are rejected with an explicit diagnostic rather than applying false CSS. Author cascade includes inline and linked styles. Recognized pseudo-classes include `:hover`, `:active`, `:focus`, `:focus-visible`, `:focus-within` (currently false at initial paint), and the initial form-attribute subset `:enabled`, `:disabled`, `:checked`, `:read-only`. Pointer/focus state, preferences and container queries are not implemented. Error diagnostics use fixed, non-author-derived labels.

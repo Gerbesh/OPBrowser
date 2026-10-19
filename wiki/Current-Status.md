@@ -1,5 +1,10 @@
 # Current Project Status
 
+## Original native hover/focus event integration (19 October 2026)
+
+The original Rust browser now responds to pointer hover and mouse focus on the current ID-bearing block hit-region subset. DOM generation-safe state drives CSS `:hover`, `:focus` and `:focus-within` through nested selector and ancestor matching. Window leave clears hover; movement repeats do not trigger layout, and queued motion coalesces. Full Rust, Windows UI, Clippy and native smoke checks pass. The five noninteractive live-site classifications and JS/CSS failure counts remain unchanged: YouTube textless, Reddit blank, Google/Pikabu/DeviantArt partial. Full browser-level hover support awaits complete hit-testing and keyboard state.
+
+
 ## CSS media queries and static UI state selectors (19 October 2026)
 
 Native screen `@media` conditions now follow actual viewport dimensions and refresh on resize; common form/state pseudo-classes parse and participate in static initial matching. Real YouTube CSS errors fall **35→22**, Pikabu **532→114**, DeviantArt **676→170**. These measure parser coverage, not verified visual quality: YouTube still paints zero text, Reddit is blank, and Pikabu/DeviantArt native text counts changed considerably. Dynamic focus/hover, complex media, `@font-face`, `@container`, scripts and layout remain important P0 work. CSS diagnostics emit only fixed error classes.

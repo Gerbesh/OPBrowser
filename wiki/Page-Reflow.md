@@ -1,5 +1,10 @@
 # Page Reflow
 
+## CSS hover/focus recascade without unnecessary layout (19 October 2026)
+
+Native Win32 motion is translated to document coordinates and hit-tested against the ID-bearing block rectangles cached by the previous OPBrowser layout. When the target changes, the browser recomputes the original CSS cascade and redraws; moving inside the same target returns no new frame. Pointer-leave clears hover, and queued moves while layout is busy collapse to the latest position. Mouse clicks on supported focusable blocks update `:focus`. Full hit-testing for inline and ID-less elements remains unsupported.
+
+
 ## Screen media queries update computed styles on resize (19 October 2026)
 
 The authoritative page now tracks the viewport used to compute its author stylesheet. Changing width or height through native reflow triggers a fresh original CSS cascade for supported screen `@media` queries before layout and painting. Identical viewport renders avoid this extra refresh. Tests verify that a CSS-hidden paragraph becomes visible when the window crosses a min/max-width breakpoint; no page source or images are refetched solely for the style recascade.

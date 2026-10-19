@@ -1,5 +1,10 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 19 October 2026: native mouse hover / focus compatibility check
+
+Native Release baseline rerun on five public anonymous sites (gitignored `artifacts/live_web/native-pointer-states-2026-10-19/`) after pointer-to-style integration: Google 0 CSS / 2 JS failures, YouTube 22 CSS / 4 JS failures and no painted text, Reddit 1 CSS / 0 JS failures and white viewport, Pikabu 114 CSS / 11 JS failures, DeviantArt 170 CSS / 3 JS failures. Categories unchanged from preceding CSS stage. Hover and mouse click style changes have targeted Rust/Win32 tests but are not exercised by noninteractive HTTPS probes. Native block ID hit regions only, not general element picking; do not imply full `:hover` site conformance. Interactive reftest and keyboard/focus-visible follow-up required.
+
+
 ## 19 October 2026: live screen media and CSS state selectors
 
 Measured original native Release at 1280×720 with 1300ms settling. After bounded viewport-aware `@media` parsing, YouTube CSS parse errors fell **35→22** (13 previously ignored @media). After recognizing static pseudo-class states, Pikabu CSS errors fell **532→114**, DeviantArt **676→170** (ignored artifacts `artifacts/live_web/media-and-pseudo-2026-10-19/`). YouTube still has **4 JS failures and 0 text primitives**; Reddit has 0 JS failures and remains blank. Pikabu's text primitives changed from **799→691**, DeviantArt **2493→806** compared with the media-only probe: these are changed native renders, **not** reference-verified visual improvements. No hidden CSS source was retained; error diagnostics now emit only fixed categories. Unsupported dynamic hover/focus and complex/media preference features remain to be implemented before compatibility claims.

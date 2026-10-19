@@ -143,6 +143,16 @@ pub struct StyleCollection {
     pub errors: Vec<StyleError>,
 }
 
+/// A generation-safe snapshot of native pointer and focus targets.
+/// Script/selector state never relies on recycled DOM slot indices.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StyleInteractionState {
+    pub hovered: Option<NodeId>,
+    pub active: Option<NodeId>,
+    pub focused: Option<NodeId>,
+    pub focus_visible: bool,
+}
+
 pub fn collect_author_styles(document: &Document) -> StyleCollection {
     collect_author_styles_with_linked(document, &HashMap::new())
 }
@@ -151,7 +161,12 @@ pub fn collect_author_styles_with_linked(
     document: &Document,
     linked_stylesheets: &HashMap<NodeId, String>,
 ) -> StyleCollection {
-    collect_author_styles_with_linked_internal(document, linked_stylesheets, None)
+    collect_author_styles_with_linked_internal(
+        document,
+        linked_stylesheets,
+        None,
+        &StyleInteractionState::default(),
+    )
 }
 
 pub fn collect_author_styles_at_viewport(
@@ -159,7 +174,12 @@ pub fn collect_author_styles_at_viewport(
     width: i32,
     height: i32,
 ) -> StyleCollection {
-    collect_author_styles_with_linked_internal(document, &HashMap::new(), Some((width, height)))
+    collect_author_styles_with_linked_internal(
+        document,
+        &HashMap::new(),
+        Some((width, height)),
+        &StyleInteractionState::default(),
+    )
 }
 
 pub fn collect_author_styles_with_linked_at_viewport(
@@ -168,13 +188,36 @@ pub fn collect_author_styles_with_linked_at_viewport(
     width: i32,
     height: i32,
 ) -> StyleCollection {
-    collect_author_styles_with_linked_internal(document, linked_stylesheets, Some((width, height)))
+    collect_author_styles_with_linked_at_viewport_with_state(
+        document,
+        linked_stylesheets,
+        width,
+        height,
+        &StyleInteractionState::default(),
+    )
+}
+
+/// Collect author cascade using native pointer/focus state.
+pub fn collect_author_styles_with_linked_at_viewport_with_state(
+    document: &Document,
+    linked_stylesheets: &HashMap<NodeId, String>,
+    width: i32,
+    height: i32,
+    state: &StyleInteractionState,
+) -> StyleCollection {
+    collect_author_styles_with_linked_internal(
+        document,
+        linked_stylesheets,
+        Some((width, height)),
+        state,
+    )
 }
 
 fn collect_author_styles_with_linked_internal(
     document: &Document,
     linked_stylesheets: &HashMap<NodeId, String>,
     viewport: Option<(i32, i32)>,
+    state: &StyleInteractionState,
 ) -> StyleCollection {
     let mut errors = Vec::new();
     let mut rules = Vec::new();
@@ -195,6 +238,7 @@ fn collect_author_styles_with_linked_internal(
         document,
         document.root(),
         &rules,
+        state,
         &mut styles,
         &mut errors,
         &mut next_source_order,
@@ -204,6 +248,15 @@ fn collect_author_styles_with_linked_internal(
 }
 
 pub fn selector_matches(document: &Document, node: NodeId, selector: &Selector) -> bool {
+    selector_matches_with_state(document, node, selector, &StyleInteractionState::default())
+}
+
+pub fn selector_matches_with_state(
+    document: &Document,
+    node: NodeId,
+    selector: &Selector,
+    state: &StyleInteractionState,
+) -> bool {
     if selector.compounds.is_empty() {
         return false;
     }
@@ -212,6 +265,7 @@ pub fn selector_matches(document: &Document, node: NodeId, selector: &Selector) 
         node,
         selector,
         selector.compounds.len().saturating_sub(1),
+        state,
     )
 }
 
@@ -295,6 +349,7 @@ fn apply_author_styles(
     document: &Document,
     node: NodeId,
     rules: &[CollectedRule],
+    state: &StyleInteractionState,
     styles: &mut StyleMap,
     errors: &mut Vec<StyleError>,
     next_source_order: &mut usize,
@@ -313,7 +368,7 @@ fn apply_author_styles(
                     .selectors
                     .iter()
                     .filter(|selector| selector.pseudo_element == pseudo)
-                    .filter(|selector| selector_matches(document, node, selector))
+                    .filter(|selector| selector_matches_with_state(document, node, selector, state))
                     .map(|selector| selector.specificity)
                     .max();
 
@@ -376,7 +431,15 @@ fn apply_author_styles(
     }
 
     for child in document.children(node) {
-        apply_author_styles(document, *child, rules, styles, errors, next_source_order);
+        apply_author_styles(
+            document,
+            *child,
+            rules,
+            state,
+            styles,
+            errors,
+            next_source_order,
+        );
     }
 }
 
@@ -385,8 +448,9 @@ fn matches_selector_at(
     node: NodeId,
     selector: &Selector,
     compound_index: usize,
+    state: &StyleInteractionState,
 ) -> bool {
-    if !compound_matches(document, node, &selector.compounds[compound_index]) {
+    if !compound_matches(document, node, &selector.compounds[compound_index], state) {
         return false;
     }
     if compound_index == 0 {
@@ -399,13 +463,13 @@ fn matches_selector_at(
             .and_then(|current| current.parent)
             .is_some_and(|parent| {
                 document.element(parent).is_some()
-                    && matches_selector_at(document, parent, selector, compound_index - 1)
+                    && matches_selector_at(document, parent, selector, compound_index - 1, state)
             }),
         Combinator::Descendant => {
             let mut ancestor = document.node(node).and_then(|current| current.parent);
             while let Some(candidate) = ancestor {
                 if document.element(candidate).is_some()
-                    && matches_selector_at(document, candidate, selector, compound_index - 1)
+                    && matches_selector_at(document, candidate, selector, compound_index - 1, state)
                 {
                     return true;
                 }
@@ -415,15 +479,21 @@ fn matches_selector_at(
         }
         Combinator::AdjacentSibling => {
             previous_element_sibling(document, node).is_some_and(|sibling| {
-                matches_selector_at(document, sibling, selector, compound_index - 1)
+                matches_selector_at(document, sibling, selector, compound_index - 1, state)
             })
         }
-        Combinator::GeneralSibling => preceding_element_siblings(document, node)
-            .any(|sibling| matches_selector_at(document, sibling, selector, compound_index - 1)),
+        Combinator::GeneralSibling => preceding_element_siblings(document, node).any(|sibling| {
+            matches_selector_at(document, sibling, selector, compound_index - 1, state)
+        }),
     }
 }
 
-fn compound_matches(document: &Document, node: NodeId, compound: &crate::CompoundSelector) -> bool {
+fn compound_matches(
+    document: &Document,
+    node: NodeId,
+    compound: &crate::CompoundSelector,
+    state: &StyleInteractionState,
+) -> bool {
     let Some(element) = document.element(node) else {
         return false;
     };
@@ -435,19 +505,19 @@ fn compound_matches(document: &Document, node: NodeId, compound: &crate::Compoun
             .is_some_and(|classes| classes.split_ascii_whitespace().any(|class| class == name)),
         SimpleSelector::Id(name) => attribute_value(element, "id").is_some_and(|id| id == name),
         SimpleSelector::Attribute(attribute) => attribute_matches(element, attribute),
-        SimpleSelector::PseudoClass(pseudo) => pseudo_class_matches(document, node, *pseudo),
+        SimpleSelector::PseudoClass(pseudo) => pseudo_class_matches(document, node, *pseudo, state),
         SimpleSelector::Lang(ranges) => language_matches(document, node, ranges),
         SimpleSelector::Dir(direction) => direction_matches(document, node, direction),
         SimpleSelector::Is(selectors) | SimpleSelector::Where(selectors) => selectors
             .iter()
-            .any(|selector| selector_matches(document, node, selector)),
+            .any(|selector| selector_matches_with_state(document, node, selector, state)),
         SimpleSelector::Not(selectors) => selectors
             .iter()
-            .all(|selector| !selector_matches(document, node, selector)),
+            .all(|selector| !selector_matches_with_state(document, node, selector, state)),
         SimpleSelector::Has(selectors) => selectors
             .iter()
-            .any(|relative| relative_selector_matches(document, node, relative)),
-        SimpleSelector::NthChild(nth) => nth_child_matches(document, node, nth),
+            .any(|relative| relative_selector_matches(document, node, relative, state)),
+        SimpleSelector::NthChild(nth) => nth_child_matches(document, node, nth, state),
     })
 }
 
@@ -455,6 +525,7 @@ fn relative_selector_matches(
     document: &Document,
     anchor: NodeId,
     relative: &RelativeSelector,
+    state: &StyleInteractionState,
 ) -> bool {
     let selector = &relative.selector;
     let Some(first) = selector.compounds.first() else {
@@ -463,7 +534,7 @@ fn relative_selector_matches(
 
     let mut current = related_elements(document, anchor, relative.leading_combinator)
         .into_iter()
-        .filter(|candidate| compound_matches(document, *candidate, first))
+        .filter(|candidate| compound_matches(document, *candidate, first, state))
         .collect::<Vec<_>>();
 
     for (index, combinator) in selector.combinators.iter().copied().enumerate() {
@@ -474,7 +545,7 @@ fn relative_selector_matches(
         let mut next = Vec::new();
         for source in current {
             for candidate in related_elements(document, source, combinator) {
-                if compound_matches(document, candidate, next_compound)
+                if compound_matches(document, candidate, next_compound, state)
                     && !next.contains(&candidate)
                 {
                     next.push(candidate);
@@ -673,7 +744,31 @@ fn effective_direction(document: &Document, mut node: NodeId) -> &'static str {
     }
 }
 
-fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) -> bool {
+fn is_ancestor_or_self(document: &Document, ancestor: NodeId, target: NodeId) -> bool {
+    let mut cursor = Some(target);
+    let mut visited = 0usize;
+    while let Some(id) = cursor {
+        if document.node(id).is_none() {
+            return false;
+        }
+        if id == ancestor {
+            return true;
+        }
+        cursor = document.node(id).and_then(|node| node.parent);
+        visited += 1;
+        if visited >= 20_000 {
+            return false;
+        }
+    }
+    false
+}
+
+fn pseudo_class_matches(
+    document: &Document,
+    node: NodeId,
+    pseudo: PseudoClass,
+    state: &StyleInteractionState,
+) -> bool {
     match pseudo {
         PseudoClass::Root => document
             .node(node)
@@ -719,14 +814,17 @@ fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) 
             element.tag_name.eq_ignore_ascii_case("a")
                 && attribute_value(element, "href") == Some("")
         }),
-        // Until the original hit-test/focus state is threaded into selector
-        // matching, these interaction states correctly match no elements at
-        // initial paint. This still lets :not(:hover) and selector lists parse.
-        PseudoClass::Hover
-        | PseudoClass::Active
-        | PseudoClass::Focus
-        | PseudoClass::FocusVisible
-        | PseudoClass::FocusWithin => false,
+        PseudoClass::Hover => state
+            .hovered
+            .is_some_and(|target| is_ancestor_or_self(document, node, target)),
+        PseudoClass::Active => state
+            .active
+            .is_some_and(|target| is_ancestor_or_self(document, node, target)),
+        PseudoClass::Focus => state.focused == Some(node),
+        PseudoClass::FocusVisible => state.focused == Some(node) && state.focus_visible,
+        PseudoClass::FocusWithin => state
+            .focused
+            .is_some_and(|target| is_ancestor_or_self(document, node, target)),
         PseudoClass::Disabled => document.element(node).is_some_and(|element| {
             supports_disabled_state(element) && attribute_value(element, "disabled").is_some()
         }),
@@ -789,7 +887,12 @@ fn supports_required_state(element: &op_dom::ElementData) -> bool {
     )
 }
 
-fn nth_child_matches(document: &Document, node: NodeId, nth: &NthSelector) -> bool {
+fn nth_child_matches(
+    document: &Document,
+    node: NodeId,
+    nth: &NthSelector,
+    state: &StyleInteractionState,
+) -> bool {
     let Some(siblings) = (if nth.same_type {
         type_siblings(document, node)
     } else {
@@ -801,10 +904,9 @@ fn nth_child_matches(document: &Document, node: NodeId, nth: &NthSelector) -> bo
         .into_iter()
         .filter(|candidate| {
             nth.of.is_empty()
-                || nth
-                    .of
-                    .iter()
-                    .any(|selector| selector_matches(document, *candidate, selector))
+                || nth.of.iter().any(|selector| {
+                    selector_matches_with_state(document, *candidate, selector, state)
+                })
         })
         .collect();
     let Some(position) = siblings.iter().position(|candidate| *candidate == node) else {
@@ -1080,6 +1182,46 @@ mod tests {
         assert!(matches(two, "li:nth-child(2)"));
         assert!(matches(four, "li:nth-child(-n+4)"));
         assert!(!matches(four, "li:nth-child(2n+1)"));
+    }
+
+    #[test]
+    fn live_hover_and_focus_reach_ancestors_and_nested_selectors() {
+        let document = parse_document(
+            "<div id='outer'><section id='inner'><button id='target'>Click</button></section></div>",
+        );
+        let outer = element_by_id(&document, "outer");
+        let inner = element_by_id(&document, "inner");
+        let target = element_by_id(&document, "target");
+        let state = StyleInteractionState {
+            hovered: Some(target),
+            active: Some(target),
+            focused: Some(target),
+            focus_visible: true,
+        };
+        let matches = |id, selector: &str, state: &StyleInteractionState| {
+            let parsed = parse_stylesheet(&format!("{selector}{{color:red}}"));
+            assert!(parsed.errors.is_empty(), "{selector}: {:?}", parsed.errors);
+            selector_matches_with_state(&document, id, &parsed.value.rules[0].selectors[0], state)
+        };
+        assert!(matches(outer, "#outer:hover", &state));
+        assert!(matches(inner, "#inner:active", &state));
+        assert!(matches(outer, "#outer:focus-within", &state));
+        assert!(matches(target, "button:is(:focus-visible)", &state));
+        assert!(matches(target, "button:not(:hover:disabled)", &state));
+        assert!(!matches(inner, "#inner:focus", &state));
+        assert!(!matches(
+            outer,
+            "#outer:hover",
+            &StyleInteractionState::default()
+        ));
+        assert!(!matches(
+            target,
+            "button:focus-visible",
+            &StyleInteractionState {
+                focus_visible: false,
+                ..state
+            }
+        ));
     }
 
     #[test]

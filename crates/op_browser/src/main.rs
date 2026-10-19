@@ -92,6 +92,18 @@ fn queue_thumb_event(
                 queued.push_back(NavigationEvent::ScrollbarDragMove { y });
             }
         }
+        NavigationEvent::Hover { x, y } => {
+            if let Some(NavigationEvent::Hover {
+                x: last_x,
+                y: last_y,
+            }) = queued.back_mut()
+            {
+                *last_x = x;
+                *last_y = y;
+            } else {
+                queued.push_back(NavigationEvent::Hover { x, y });
+            }
+        }
         NavigationEvent::ScrollbarDragStart { .. } | NavigationEvent::ScrollbarDragEnd => {
             queued.push_back(event);
         }
@@ -191,6 +203,7 @@ fn main() {
                 event,
                 NavigationEvent::Resize
                     | NavigationEvent::Click { .. }
+                    | NavigationEvent::Hover { .. }
                     | NavigationEvent::Scroll { .. }
                     | NavigationEvent::HorizontalScroll { .. }
                     | NavigationEvent::ScrollbarDragStart { .. }
@@ -210,6 +223,7 @@ fn main() {
                 NavigationEvent::Reload => engine.reload(width, height),
                 NavigationEvent::Resize => Ok(engine.reflow(width, height)),
                 NavigationEvent::Click { x, y } => Ok(engine.click_at(x, y, width, height)),
+                NavigationEvent::Hover { x, y } => Ok(engine.hover_at(x, y, width, height)),
                 NavigationEvent::Scroll { x, y, delta_y } => {
                     let page = engine.scroll_at(x, y, delta_y, width, height);
                     if page.is_none() {
@@ -433,6 +447,7 @@ fn main() {
             let reflow = matches!(
                 event,
                 NavigationEvent::Resize | NavigationEvent::Click { .. }
+                    | NavigationEvent::Hover { .. }
                     | NavigationEvent::Scroll { .. }
                     | NavigationEvent::HorizontalScroll { .. }
                     | NavigationEvent::ScrollbarDragStart { .. }
@@ -470,6 +485,23 @@ fn main() {
 #[cfg(test)]
 mod overflow_tests {
     use super::*;
+
+    #[test]
+    fn pointer_hover_events_coalesce_to_latest_position_while_worker_is_busy() {
+        let mut queue = std::collections::VecDeque::new();
+        for x in 0..1000 {
+            queue_thumb_event(&mut queue, NavigationEvent::Hover { x, y: 70 });
+        }
+        assert_eq!(queue.len(), 1);
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::Hover { x: 999, y: 70 })
+        );
+        queue_thumb_event(&mut queue, NavigationEvent::Hover { x: 1, y: 5 });
+        queue_thumb_event(&mut queue, NavigationEvent::ScrollbarDragEnd);
+        queue_thumb_event(&mut queue, NavigationEvent::Hover { x: -1, y: -1 });
+        assert_eq!(queue.len(), 3);
+    }
 
     #[test]
     fn r12c_busy_drag_queue_coalesces_moves_without_losing_capture_edges() {

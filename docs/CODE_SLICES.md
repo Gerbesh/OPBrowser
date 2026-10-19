@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## S100 - Mouse movement and focus to native hover pixels
+
+Win32 `WM_MOUSEMOVE`/leave -> window-owned `NavigationEvent::Hover` -> busy queue coalesces redundant movement -> browser worker calls `Engine::hover_at` -> picks smallest connected ID-bearing block hit-region cached by last original layout -> `StyleInteractionState` changes only on target transition -> original CSS matcher resolves ancestors and nested selectors -> computed colors update -> native layout/paint reflects the change. Native click on an ID-bearing focusable block with `tabindex` updates `:focus` without JS handlers. Tests verify hover entry, no-op repeats, exit, focus reset on navigation, ancestor and nested CSS selectors and queue coalescing. This is bounded hit-testing, not full inline/pointer/keyboard event support.
+
+
 ## S99 - Responsive media from original CSS tokens to Win32 pixels
 
 HTML navigation and linked or inline CSS -> original CSS tokenizer -> bounded screen `@media` condition evaluator using actual viewport width/height -> nested selector parsing and author cascade -> original computed style and layout -> native display list and pixels. Changing browser viewport triggers a style recascade on reflow without re-fetching source. CSS state selectors participate in matching, with initial `:hover/:focus/:active` false and supported checked/disabled attributes recognized. Unit/integration tests verify widths, orientation, nested `@supports`, unknown-feature rejection, form states and repaint after resize. Five live sites remain visually unverified, including textless YouTube and blank Reddit.

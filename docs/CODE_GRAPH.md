@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 19 October 2026: UI event to original CSS interaction state
+
+`op_platform_win::NavigationEvent::Hover` is sourced from Win32 mouse movement and leave tracking. `op_browser::main` coalesces pending pointer moves and delivers them to `op_engine::Engine::hover_at`. `PreparedDocument.hit_regions` caches the generation-safe `op_layout::ClickRegion` subset during native render, so a no-op cursor movement avoids layout/style recalculation. `PreparedDocument.interaction: op_css::StyleInteractionState` records hovered, focused and reserved active/focus-visible state, prunes detached targets at GC checkpoints, and passes input state to `collect_author_styles_with_linked_at_viewport_with_state`. Recursive selector matching and `compute_styles` update the authoritative CSS cascade before native paint. Click dispatch updates mouse focus on supported focusable blocks. Dynamic JS selector API and complete hit testing remain future work.
+
+
 ## 19 October 2026: viewport-aware original CSS media cascade and state pseudo-classes
 
 `op_css::parser::parse_stylesheet_at_viewport` binds a screen viewport to nested `@media` parsing; `media_query_matches` conservatively evaluates simple width/height/orientation queries and propagates unknown conditions as errors instead of applying them. `op_css::style::collect_author_styles_with_linked_at_viewport` preserves original author declaration order for inline and linked CSS; `op_engine::PreparedDocument.style_viewport` triggers re-cascade only when its viewport changes. `PseudoClass` and `pseudo_class_matches` now recognize static form attributes and initial false interaction states; input-driven hover/focus still require event integration. `live_site_probe::style_error_category` produces fixed privacy-safe group labels instead of returning arbitrary selector names from CSS parser errors.

@@ -1,6 +1,7 @@
 use op_css::{
-    ComputedStyleMap, StyleCollection, StyleError, StyleMap, collect_author_styles_at_viewport,
-    collect_author_styles_with_linked_at_viewport, compute_styles,
+    ComputedStyleMap, StyleCollection, StyleError, StyleInteractionState, StyleMap,
+    collect_author_styles_at_viewport, collect_author_styles_with_linked_at_viewport,
+    collect_author_styles_with_linked_at_viewport_with_state, compute_styles,
 };
 use op_layout::{
     ImageResources, layout_document_with_axis_scrolling,
@@ -274,6 +275,8 @@ struct PreparedDocument {
     images: images::PageImages,
     style_collection: StyleCollection,
     style_viewport: (i32, i32),
+    interaction: StyleInteractionState,
+    hit_regions: Vec<op_layout::ClickRegion>,
     computed_styles: ComputedStyleMap,
     stylesheet_addresses: std::collections::HashMap<op_dom::NodeId, String>,
     linked_stylesheet_texts: std::collections::HashMap<op_dom::NodeId, String>,
@@ -297,11 +300,12 @@ impl PreparedDocument {
     /// Rebuild author matching and inline styles against the mutated real
     /// DOM, retaining originally loaded linked CSS and color profiles.
     fn refresh_styles(&mut self) {
-        self.style_collection = collect_author_styles_with_linked_at_viewport(
+        self.style_collection = collect_author_styles_with_linked_at_viewport_with_state(
             &self.document,
             &self.linked_stylesheet_texts,
             self.style_viewport.0,
             self.style_viewport.1,
+            &self.interaction,
         );
         if !self.color_profiles.is_empty() {
             let mut converted = std::collections::HashMap::new();
@@ -353,6 +357,18 @@ impl PreparedDocument {
         self.images
             .generated
             .retain(|(id, _, _), _| document.node(*id).is_some());
+        for target in [
+            &mut self.interaction.hovered,
+            &mut self.interaction.active,
+            &mut self.interaction.focused,
+        ] {
+            if target.is_some_and(|id| document.node(id).is_none()) {
+                *target = None;
+            }
+        }
+        if self.interaction.focused.is_none() {
+            self.interaction.focus_visible = false;
+        }
         self.scroll_offsets
             .retain(|id, _| document.node_id(*id).is_some());
         self.scroll_left_offsets
@@ -377,6 +393,7 @@ impl PreparedDocument {
             ),
             &mut text::Measurer::new(),
         );
+        self.hit_regions.clone_from(&layout.click_regions);
         let scroll_limits: std::collections::HashMap<usize, i32> = layout
             .scroll_containers
             .iter()
@@ -598,6 +615,8 @@ impl Engine {
             images: images::PageImages::default(),
             style_collection,
             style_viewport: (width, height),
+            interaction: StyleInteractionState::default(),
+            hit_regions: Vec::new(),
             computed_styles,
             stylesheet_addresses: std::collections::HashMap::new(),
             linked_stylesheet_texts: std::collections::HashMap::new(),
@@ -701,6 +720,33 @@ impl Engine {
         self.scrollbar_drag = None;
     }
 
+    /// Update :hover matching from the last committed native block hit map.
+    /// No layout work occurs while the pointer stays over the same target.
+    /// Coordinates are document pixels; negative values clear the state.
+    pub fn hover_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<RenderedPage> {
+        let prepared = self.active_document.as_mut()?;
+        let target = prepared
+            .hit_regions
+            .iter()
+            .filter(|region| {
+                region.width > 0
+                    && region.height > 0
+                    && x >= region.x
+                    && x < region.x.saturating_add(region.width)
+                    && y >= region.y
+                    && y < region.y.saturating_add(region.height)
+                    && prepared.document.node(region.node).is_some()
+            })
+            .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
+            .map(|region| region.node);
+        if prepared.interaction.hovered == target && prepared.style_viewport == (width, height) {
+            return None;
+        }
+        prepared.interaction.hovered = target;
+        prepared.refresh_styles();
+        Some(prepared.render(width, height))
+    }
+
     /// Dispatch an initial DOM click to the smallest live block hit region.
     /// Coordinates are document pixels (already adjusted for toolbar/scroll).
     pub fn click_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<RenderedPage> {
@@ -772,15 +818,28 @@ impl Engine {
             })
             .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
             .map(|region| region.node)?;
-        let runtime = prepared.runtime.as_mut()?;
-        let (handled, changes, checkpoint) =
-            scripts::dispatch_click(&mut prepared.document, runtime, target);
+        let focused = prepared.document.element(target).and_then(|element| {
+            let tag = element.tag_name.as_str();
+            (matches!(tag, "input" | "button" | "select" | "textarea")
+                || (tag == "a" && element.attributes.iter().any(|a| a.name == "href"))
+                || element.attributes.iter().any(|a| a.name == "tabindex"))
+            .then_some(target)
+        });
+        let focus_changed = prepared.interaction.focused != focused
+            || (focused.is_some() && prepared.interaction.focus_visible);
+        prepared.interaction.focused = focused;
+        prepared.interaction.focus_visible = false;
+        let (handled, changes, checkpoint) = if let Some(runtime) = prepared.runtime.as_mut() {
+            scripts::dispatch_click(&mut prepared.document, runtime, target)
+        } else {
+            (false, 0, None)
+        };
         prepared.finish_gc_checkpoint(checkpoint);
-        if !handled && changes == 0 {
+        if !handled && changes == 0 && !focus_changed {
             return None;
         }
         prepared.scripts.mutations += changes;
-        if changes > 0 {
+        if changes > 0 || focus_changed {
             prepared.refresh_styles();
         }
         Some(prepared.render(width, height))
@@ -1194,6 +1253,8 @@ impl Engine {
             images,
             style_collection,
             style_viewport: (viewport_width, viewport_height),
+            interaction: StyleInteractionState::default(),
+            hit_regions: Vec::new(),
             computed_styles,
             stylesheet_addresses: linked_stylesheets.addresses,
             linked_stylesheet_texts: linked_stylesheets.texts,
@@ -1218,6 +1279,116 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn clicking_focusable_native_control_recomputes_focus_style_without_js_handler() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><style>#control{width:160px;height:65px;color:blue}#control:focus{color:red}#control:focus-visible{background:yellow}</style><div id='control' tabindex='0'>Focus me</div></body>",
+            640,
+            480,
+        );
+        let (target, x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document.element(r.node).is_some_and(|e| {
+                        e.attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == "control")
+                    })
+                })
+                .expect("focusable element hit region");
+            (region.node, region.x + 5, region.y + 5)
+        };
+        let original = engine
+            .active_computed_styles()
+            .unwrap()
+            .style_for(target)
+            .unwrap()
+            .color;
+        assert!(engine.click_at(x, y, 640, 480).is_some());
+        let focused = engine
+            .active_computed_styles()
+            .unwrap()
+            .style_for(target)
+            .unwrap()
+            .color;
+        assert_ne!(original, focused);
+        assert!(engine.click_at(x, y, 640, 480).is_none());
+        assert_eq!(
+            engine.active_document.as_ref().unwrap().interaction.focused,
+            Some(target)
+        );
+        assert!(
+            !engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .interaction
+                .focus_visible
+        );
+        engine.set_html_page("<body><p>Fresh page</p></body>", 640, 480);
+        assert_eq!(
+            engine.active_document.as_ref().unwrap().interaction.focused,
+            None
+        );
+    }
+
+    #[test]
+    fn native_hover_repaints_block_and_ancestors_only_on_target_transitions() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><style>#card{width:180px;height:110px;color:blue}#card:hover{color:red}</style><div id='card'>Point at me</div></body>",
+            640,
+            480,
+        );
+        let (target, x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|region| {
+                    page.document.element(region.node).is_some_and(|element| {
+                        element
+                            .attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == "card")
+                    })
+                })
+                .expect("id hit rectangle");
+            assert!(region.width > 0 && region.height > 0);
+            (region.node, region.x + 10, region.y + 10)
+        };
+        let original = engine
+            .active_computed_styles()
+            .unwrap()
+            .style_for(target)
+            .unwrap()
+            .color;
+        assert!(engine.hover_at(x, y, 640, 480).is_some());
+        let hovered = engine
+            .active_computed_styles()
+            .unwrap()
+            .style_for(target)
+            .unwrap()
+            .color;
+        assert_ne!(original, hovered);
+        assert!(engine.hover_at(x, y, 640, 480).is_none());
+        assert!(engine.hover_at(-1, -1, 640, 480).is_some());
+        assert_eq!(
+            engine
+                .active_computed_styles()
+                .unwrap()
+                .style_for(target)
+                .unwrap()
+                .color,
+            original
+        );
+        assert!(engine.hover_at(-1, -1, 640, 480).is_none());
+    }
 
     #[test]
     fn responsive_media_reflow_recomputes_styles_for_actual_viewport() {
