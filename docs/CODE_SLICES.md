@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S103 - Pointer-transparent overlays and authorized link/image navigation
+
+Author CSS `pointer-events: none|auto` -> inherited computed style -> ordered DOM hit rectangles -> pointer eligibility filter for hover, active, JS click -> overlay mouse events pass through to lower DOM nodes. For link activation, original native Win32 painter records actual glyph/image hyperlink regions and emits href + document click coordinates -> browser worker -> authoritative engine hit test -> nearest matching visible DOM `a[href]` ancestor -> original `Engine::follow_link` on match, or ordinary `Engine::click_at` for a visually covering element. Inline loaded images provide real `img` target rectangles through original inline layout. End-to-end tests verify occluded link versus working link beneath a `pointer-events:none` overlay and real linked image navigation with local files. Outstanding semantics: anchor default-action preventDefault, pointer cursor overlay display and precise per-pixel painter interactions.
+
 ## S102 - Topmost DOM hit target tracks original z-index painter
 
 Original CSS computed stacking contexts -> `LayoutTree.paint_groups` and paint keys on positioned boxes -> block/inline `ClickRegion.paint_key` -> native document-order and nested paint-group ordering -> per-render cached hit regions -> reverse ordered hit selection for hover/press; click reflows and uses identical ordering -> original JS click listener receives visible topmost element. Targeted tests challenge area-first selection, negative z contexts, nested high-z child versus outer sibling, same-z DOM order and actual JS DOM mutation after the click. Link navigation remains a separate native text-link path; no claim of full pointer-events / CSS stacking conformance.

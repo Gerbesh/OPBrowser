@@ -1,5 +1,9 @@
 # Roadmap
 
+## Input and default link actions after pointer-events foundation (20 October 2026)
+
+HTML `pointer-events: auto|none` is now computed and inherited, including pointer-transparent ancestors with explicit-auto descendants; native loaded inline images participate in target picking, and hyperlink activation is validated against the topmost source-DOM anchor instead of being blindly trusted from Windows raster link regions. Next P0: reconcile native painted-link hover cursor with DOM selection, support all atomic/replaced hit regions, CSS paint-specific pointer regions and SVG values, dispatch cancelable JS click/default-action `preventDefault` before navigation, and implement keyboard Tab/focus-visible and synchronized DOM focus events. Broader JS/runtime and layout/browser compatibility are still prerequisites for YouTube/Reddit.
+
 ## Input layering stage completed, subsequent P0 tasks (20 October 2026)
 
 Native target picking now respects ordinary positioned z-index precedence, nested stacking contexts, negative layers and DOM-order ties; tests exercise real JavaScript DOM click dispatch on overlapping elements. Next: painter-exact foreground/background hit testing, pointer-events:none and disabled-form behavior, image/inline atomic targets, native hyperlink overlay occlusion, bounded incremental hit-map updates, keyboard Tab/focus-visible and DOM JS event consistency. Independent major blockers remain browser-grade JS startup, DOM APIs, script loading and layout/font fidelity. No claim that YouTube or Reddit render fully.

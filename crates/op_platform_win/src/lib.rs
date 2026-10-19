@@ -55,7 +55,7 @@ const CANCEL_POINTER_PRESS: u32 = WM_APP + 3;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NavigationEvent {
     Navigate(String),
-    FollowLink(String),
+    FollowLinkAt { href: String, x: i32, y: i32 },
     Click { x: i32, y: i32 },
     PointerDown { x: i32, y: i32 },
     PointerCancel,
@@ -478,7 +478,11 @@ impl NativeBrowserWindow {
                 let x = (message.lParam as u16 as i16) as i32;
                 let y = ((message.lParam >> 16) as u16 as i16) as i32;
                 if let Some(href) = self.link_at_client_point(x, y) {
-                    Some(NavigationEvent::FollowLink(href))
+                    Some(NavigationEvent::FollowLinkAt {
+                        href,
+                        x,
+                        y: y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst),
+                    })
                 } else {
                     let mut client: RECT = unsafe { zeroed() };
                     unsafe {
@@ -710,6 +714,7 @@ fn link_at_client_point(hwnd: HWND, x: i32, y: i32) -> Option<String> {
         .read()
         .ok()?
         .iter()
+        .rev() // Prefer the later-painted link when link rectangles overlap.
         .find(|region| {
             x >= region.bounds.left
                 && x < region.bounds.right
@@ -1759,7 +1764,7 @@ mod tests {
                     assert!(window.click_first_link());
                 }
                 6 => {
-                    assert_eq!(event, NavigationEvent::FollowLink("../target".into()));
+                    assert!(matches!(event, NavigationEvent::FollowLinkAt { ref href, .. } if href == "../target"));
                     let image =
                         op_paint::RasterImage::from_premultiplied_bgra(1, 1, vec![255; 4]).unwrap();
                     window.present(
@@ -1810,7 +1815,7 @@ mod tests {
                     assert!(window.click_first_link());
                 }
                 7 => {
-                    assert_eq!(event, NavigationEvent::FollowLink("../image".into()));
+                    assert!(matches!(event, NavigationEvent::FollowLinkAt { ref href, .. } if href == "../image"));
                     let old_scroll = SCROLL_Y.load(Ordering::SeqCst);
                     window.set_address("address edit survives reflow");
                     window.present_reflow(DisplayList {

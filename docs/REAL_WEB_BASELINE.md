@@ -1,5 +1,9 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 20 October 2026: pointer-events and validated native links Release sample
+
+Live anonymous native Release test output at gitignored `artifacts/live_web/pointer-events-native-link-2026-10-20/`: Google rendered_with_js_errors (2 JS failed, 6 commands), YouTube no_text_rendered (4 JS failed, 130 commands), Reddit blank_viewport (0 JS failed, 1 command), DeviantArt rendered_with_js_errors (3 JS failed, 1,229 commands), Pikabu rendered_with_js_errors (11 JS failed, 1,370 commands). Compared with earlier stage, high-level statuses and failure counts are unchanged; paint counts and load times fluctuate on remote sites, so these do not indicate a measured graphics improvement or regression. Headless-style probes do not click interactive link targets; native link/input regressions were checked in offline browser tests and Win32 smoke. Continued P0 blockers: modern JS bootstrap, fonts/layout fidelity, complete DOM event model.
+
 ## 20 October 2026: z-index hit precedence Release baseline
 
 At gitignored `artifacts/live_web/stacked-hits-2026-10-20/`, five native Release HTTPS probes retained the existing statuses: Google rendered_with_js_errors (2 JS failed), YouTube no_text_rendered (4 JS failed), Reddit blank_viewport (0 JS failed), DeviantArt rendered_with_js_errors (3 JS failed), Pikabu rendered_with_js_errors (11 JS failed). Load times were ~382 ms, 1495 ms, 242 ms, 9199 ms, and 12139 ms respectively (one changing-site snapshot, not a stable performance benchmark). Layer-aware interaction is verified by local hit-region and JS event tests, not by the headless-style real-site probes. Other layout/JS incompatibilities continue to block modern sites.

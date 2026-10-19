@@ -4988,6 +4988,7 @@ impl<'a> Context<'a, '_> {
                         };
                         items.push(Item::Image(
                             InlineImage {
+                                node: None,
                                 width,
                                 height,
                                 image: image.cloned(),
@@ -5026,6 +5027,7 @@ impl<'a> Context<'a, '_> {
             };
             items.push(Item::Image(
                 InlineImage {
+                    node: Some(id),
                     width,
                     height,
                     image: image.cloned(),

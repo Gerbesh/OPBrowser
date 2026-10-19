@@ -1,5 +1,9 @@
 # Page Reflow
 
+## Original DOM hit order now guards painted hyperlinks (20 October 2026)
+
+The Win32 painter still computes glyph/image hyperlink rectangles from the display list, but clicks now include the actual document coordinates and must pass the original Rust DOM hit map, computed `pointer-events` eligibility and matching ancestor `a[href]`. Regular image elements get generation-safe rectangles from the exact inline raster placement. Higher-z overlays block underlying navigation unless marked `pointer-events:none`. Multiple painted link rectangles are examined last-painted-first. The native display list remains the only renderer; browser engine CSS/layout/DOM are still first-party.
+
 ## Stacking-context-aware hit precedence (20 October 2026)
 
 `LayoutTree.paint_groups` already drives the original raster compositing order. Each `ClickRegion` now optionally records the same `PaintKey`, including inline text/fragment positions. The engine sorts regions per completed render by nested context precedence and connected DOM order, then reverse-scans the cached list on hover/press. DOM click hit testing applies the same order to its fresh layout, so a smaller obscured element no longer steals focus/clicks from the higher-z visual element. Region creation, transform offsets, nested scrolling and clipping continue to come from original layout.

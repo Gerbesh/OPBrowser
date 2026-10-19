@@ -123,6 +123,13 @@ pub enum Visibility {
     Hidden,
 }
 
+/// HTML hit-testing pointer behavior; inherits through the CSS cascade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerEvents {
+    Auto,
+    None,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextTransform {
     None,
@@ -432,6 +439,7 @@ pub struct ComputedStyle {
     pub vertical_align: VerticalAlign,
     pub white_space: WhiteSpace,
     pub visibility: Visibility,
+    pub pointer_events: PointerEvents,
     pub overflow: Overflow,
     pub overflow_x: Overflow,
     pub overflow_y: Overflow,
@@ -563,6 +571,7 @@ impl ComputedStyle {
             vertical_align: VerticalAlign::Baseline,
             white_space: WhiteSpace::Normal,
             visibility: Visibility::Visible,
+            pointer_events: PointerEvents::Auto,
             overflow: Overflow::Visible,
             overflow_x: Overflow::Visible,
             overflow_y: Overflow::Visible,
@@ -1612,6 +1621,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             vertical_align: initial.vertical_align,
             white_space: parent.white_space,
             visibility: parent.visibility,
+            pointer_events: parent.pointer_events,
             overflow: initial.overflow,
             overflow_x: initial.overflow_x,
             overflow_y: initial.overflow_y,
@@ -1973,6 +1983,13 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.visibility),
             Visibility::Visible,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "pointer-events", parse_pointer_events) {
+        style.pointer_events = resolve_inherited(
+            value,
+            parent_style.map(|parent| parent.pointer_events),
+            PointerEvents::Auto,
         );
     }
     let shorthand_overflow = winning_value(declarations, "overflow", parse_overflow);
@@ -2563,6 +2580,17 @@ fn parse_overflow(tokens: &[TokenKind]) -> Option<Specified<Overflow>> {
         "clip" => Some(Specified::Value(Overflow::Clip)),
         "scroll" => Some(Specified::Value(Overflow::Scroll)),
         "auto" => Some(Specified::Value(Overflow::Auto)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_pointer_events(tokens: &[TokenKind]) -> Option<Specified<PointerEvents>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "auto" => Some(Specified::Value(PointerEvents::Auto)),
+        "none" => Some(Specified::Value(PointerEvents::None)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
         "unset" => Some(Specified::Unset),

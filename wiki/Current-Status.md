@@ -1,5 +1,9 @@
 # Current Project Status
 
+## CSS pointer transparency and link click protection (20 October 2026)
+
+Normal HTML `pointer-events:none` now makes upper DOM elements transparent to pointer targeting, preserving inherited overrides. Valid painted text links and image links are verified through original DOM hit order before navigation; a covered link no longer navigates through the covering element, and the covering element's JavaScript click handler runs instead. Native inline image source identity was added for image-link hit regions. Tests and native Win32 link/image smoke all pass; public site compatibility statuses remain unchanged (YouTube textless; Reddit blank). Script preventDefault on link default actions, precise native cursor occlusion, keyboard Tab/focus-visible and full painted fragment hit semantics remain P0.
+
 ## Paint-order-aware native pointer target (20 October 2026)
 
 Rendered overlapping elements now use the original paint-group/stacking-context hierarchy to determine the target under a pointer, rather than the smallest intersecting rectangle. Positioned inline and block hit regions carry a paint key; parent contexts prevent high-z children escaping a low-z parent; ordinary DOM-order ties and negative contexts follow the current native painter. The actual JS click handler on the frontmost of two overlapping elements was tested successfully. Workspace, Windows startup, native link smoke and Release site checks pass. YouTube remains textless and Reddit blank. Full CSS hit-testing, pointer-events rules, replaced elements and keyboard focus remain open work.

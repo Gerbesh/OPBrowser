@@ -1,5 +1,5 @@
 use op_css::{
-    ComputedStyleMap, StyleCollection, StyleError, StyleInteractionState, StyleMap,
+    ComputedStyleMap, PointerEvents, StyleCollection, StyleError, StyleInteractionState, StyleMap,
     collect_author_styles_at_viewport, collect_author_styles_with_linked_at_viewport,
     collect_author_styles_with_linked_at_viewport_with_state, compute_styles,
 };
@@ -388,6 +388,13 @@ impl PreparedDocument {
                     && y >= region.y
                     && y < region.y.saturating_add(region.height)
                     && self.document.node(region.node).is_some()
+                    && self
+                        .computed_styles
+                        .style_for(region.node)
+                        .is_some_and(|style| {
+                            style.pointer_events == PointerEvents::Auto
+                                && style.visibility == op_css::Visibility::Visible
+                        })
             })
             .map(|region| region.node)
     }
@@ -923,6 +930,13 @@ impl Engine {
                     && x < region.x.saturating_add(region.width)
                     && y >= region.y
                     && y < region.y.saturating_add(region.height)
+                    && prepared
+                        .computed_styles
+                        .style_for(region.node)
+                        .is_some_and(|style| {
+                            style.pointer_events == PointerEvents::Auto
+                                && style.visibility == op_css::Visibility::Visible
+                        })
             })
             .map(|region| region.node);
         let Some(target) = target else {
@@ -1257,6 +1271,50 @@ impl Engine {
             mime_type: page.mime_type.clone(),
         });
         Ok(page)
+    }
+
+    /// Gate a native-painted link rectangle through the authoritative DOM hit
+    /// target. A covered link or pointer-events:none anchor must not navigate.
+    /// When another element covers the link, dispatch its ordinary click.
+    pub fn activate_link_at(
+        &mut self,
+        href: &str,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<Option<RenderedPage>, LoadError> {
+        let is_visible_link = self.active_document.as_ref().is_some_and(|page| {
+            let Some(mut node) = page.hit_target(x, y) else {
+                return false;
+            };
+            let mut hops = 0usize;
+            loop {
+                if let Some(element) = page.document.element(node)
+                    && element.tag_name == "a"
+                    && element
+                        .attributes
+                        .iter()
+                        .any(|attr| attr.name == "href" && attr.value == href)
+                {
+                    return true;
+                }
+                hops += 1;
+                if hops > 2048 {
+                    return false;
+                }
+                let Some(parent) = page.document.node(node).and_then(|item| item.parent) else {
+                    return false;
+                };
+                node = parent;
+            }
+        });
+        if is_visible_link {
+            self.release_press(width, height);
+            self.follow_link(href, width, height).map(Some)
+        } else {
+            Ok(self.click_at(x, y, width, height))
+        }
     }
 
     pub fn follow_link(
@@ -5092,6 +5150,216 @@ mod tests {
             engine.active_document.as_ref().unwrap().interaction.hovered,
             Some(expected),
             "{id}: press and release keep the intended native element hovered"
+        );
+    }
+
+    #[test]
+    fn native_link_activation_rejects_covered_anchor_and_routes_overlay_click() {
+        let root =
+            std::env::temp_dir().join(format!("opbrowser-occluded-link-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("destination.html"),
+            "<h1>Reached link target</h1>",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("index.html"),
+            "<body><div style='position:relative;height:110px'>\
+             <a id='link' href='destination.html' style='display:block;position:absolute;left:0;top:0;z-index:1;width:160px;height:75px'>A LINK</a>\
+             <div id='cover' style='position:absolute;left:0;top:0;z-index:9;width:160px;height:75px;background:lime'>COVER</div>\
+             </div><p id='status'>Not clicked</p><script>\
+             document.getElementById('cover').addEventListener('click',function(){document.getElementById('status').textContent='Cover clicked';});\
+             </script></body>",
+        ).unwrap();
+        let mut engine = Engine::new();
+        engine
+            .navigate(root.join("index.html").to_str().unwrap(), 600, 420)
+            .unwrap();
+        let (x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document.element(r.node).is_some_and(|e| {
+                        e.attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == "link")
+                    })
+                })
+                .expect("painted link rect");
+            (region.x + 12, region.y + 12)
+        };
+        let page = engine
+            .activate_link_at("destination.html", x, y, 600, 420)
+            .unwrap()
+            .expect("covered element must still receive DOM click");
+        assert!(contains_text(&page.display_list, "Cover clicked"));
+        assert_eq!(engine.navigation().entries().len(), 1);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_link_activation_can_navigate_through_pointer_events_none_overlay() {
+        let root =
+            std::env::temp_dir().join(format!("opbrowser-through-link-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("destination.html"),
+            "<h1>Reached link target</h1>",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("index.html"),
+            "<body><div style='position:relative;height:100px'>\
+             <a id='link' href='destination.html' style='display:block;position:absolute;left:0;top:0;z-index:1;width:160px;height:75px'>A LINK</a>\
+             <div style='position:absolute;pointer-events:none;left:0;top:0;z-index:9;width:160px;height:75px;background:lime'>PASS</div>\
+             </div></body>",
+        ).unwrap();
+        let mut engine = Engine::new();
+        engine
+            .navigate(root.join("index.html").to_str().unwrap(), 600, 420)
+            .unwrap();
+        let (x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document.element(r.node).is_some_and(|e| {
+                        e.attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == "link")
+                    })
+                })
+                .expect("painted link rect");
+            (region.x + 12, region.y + 12)
+        };
+        let target = engine
+            .activate_link_at("destination.html", x, y, 600, 420)
+            .unwrap()
+            .expect("link should navigate");
+        assert!(contains_text(&target.display_list, "Reached link target"));
+        assert_eq!(engine.navigation().entries().len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn image_link_uses_painted_image_dom_region_to_navigate() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/images/index.html");
+        let mut engine = Engine::new();
+        engine.navigate(path.to_str().unwrap(), 800, 600).unwrap();
+        let (x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document.element(r.node).is_some_and(|e| {
+                        e.tag_name == "img"
+                            && e.attributes
+                                .iter()
+                                .any(|a| a.name == "src" && a.value == "colors.png")
+                    })
+                })
+                .expect("image source is in native hit map");
+            (region.x + 10, region.y + 10)
+        };
+        let page = engine
+            .activate_link_at("../navigation/destination.html", x, y, 800, 600)
+            .unwrap()
+            .expect("linked image navigation");
+        assert!(contains_text(&page.display_list, "Link destination"));
+    }
+
+    #[test]
+    fn pointer_events_none_makes_front_layer_transparent_to_native_hits() {
+        let html = "<body><div style='position:relative;height:90px'>\
+            <div id='under' style='position:absolute;z-index:1;left:0;top:0;width:110px;height:65px;background:lime'>Under</div>\
+            <div id='overlay' style='position:absolute;z-index:9;left:0;top:0;width:110px;height:65px;pointer-events:none;background:red'>Overlay</div>\
+            </div><p id='out'>Before</p><script>\
+            document.getElementById('under').addEventListener('click',function(){document.getElementById('out').textContent='Under clicked';});\
+            document.getElementById('overlay').addEventListener('click',function(){document.getElementById('out').textContent='Wrong overlay clicked';});\
+            </script></body>";
+        let mut engine = Engine::new();
+        engine.set_html_page(html, 500, 350);
+        let (under, overlay, x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let find = |name: &str| {
+                page.hit_regions
+                    .iter()
+                    .find(|region| {
+                        page.document.element(region.node).is_some_and(|e| {
+                            e.attributes
+                                .iter()
+                                .any(|a| a.name == "id" && a.value == name)
+                        })
+                    })
+                    .expect("target region")
+            };
+            let bottom = find("under");
+            let top = find("overlay");
+            (bottom.node, top.node, bottom.x + 15, bottom.y + 15)
+        };
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(
+            page.computed_styles
+                .style_for(overlay)
+                .unwrap()
+                .pointer_events,
+            PointerEvents::None
+        );
+        assert_eq!(page.hit_target(x, y), Some(under));
+        let active = engine.press_at(x, y, 500, 350).unwrap();
+        assert!(!active.display_list.commands.is_empty());
+        assert_eq!(
+            engine.active_document.as_ref().unwrap().interaction.active,
+            Some(under)
+        );
+        let clicked = engine
+            .click_at(x, y, 500, 350)
+            .expect("underlay listener repaint");
+        assert!(contains_text(&clicked.display_list, "Under clicked"));
+        assert!(!contains_text(
+            &clicked.display_list,
+            "Wrong overlay clicked"
+        ));
+    }
+
+    #[test]
+    fn pointer_events_inherits_but_child_can_explicitly_restore_auto() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><div style='pointer-events:none;width:180px;height:100px'>\
+             <div id='child' style='pointer-events:auto;width:80px;height:45px'>Child</div>\
+             </div></body>",
+            500,
+            350,
+        );
+        let page = engine.active_document.as_ref().unwrap();
+        let region = page
+            .hit_regions
+            .iter()
+            .find(|r| {
+                page.document.element(r.node).is_some_and(|e| {
+                    e.attributes
+                        .iter()
+                        .any(|a| a.name == "id" && a.value == "child")
+                })
+            })
+            .expect("child pointer region");
+        assert_eq!(
+            page.computed_styles
+                .style_for(region.node)
+                .unwrap()
+                .pointer_events,
+            PointerEvents::Auto
+        );
+        assert_eq!(
+            page.hit_target(region.x + 10, region.y + 10),
+            Some(region.node)
         );
     }
 

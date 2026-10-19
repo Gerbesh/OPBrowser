@@ -109,7 +109,7 @@ fn queue_thumb_event(
         | NavigationEvent::PointerDown { .. }
         | NavigationEvent::PointerCancel
         | NavigationEvent::Click { .. }
-        | NavigationEvent::FollowLink(_) => {
+        | NavigationEvent::FollowLinkAt { .. } => {
             queued.push_back(event);
         }
         _ => {}
@@ -222,9 +222,8 @@ fn main() {
                 NavigationEvent::Navigate(source) => {
                     engine.navigate(&source, width, height).map(Some)
                 }
-                NavigationEvent::FollowLink(href) => {
-                    engine.release_press(width, height);
-                    engine.follow_link(&href, width, height).map(Some)
+                NavigationEvent::FollowLinkAt { href, x, y } => {
+                    engine.activate_link_at(&href, x, y, width, height)
                 }
                 NavigationEvent::Back => engine.go_back(width, height),
                 NavigationEvent::Forward => engine.go_forward(width, height),

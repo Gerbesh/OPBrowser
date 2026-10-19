@@ -1,5 +1,9 @@
 # CSS Syntax Foundation
 
+## HTML pointer-events matching (20 October 2026)
+
+Computed `pointer-events` is now an inherited enum with CSS HTML values `auto` and `none` plus cascade `inherit`, `initial`, `unset`. Original native DOM hit resolution skips disabled-by-`none` targets, while descendants with explicit `auto` remain selectable. It does not suppress painting. This is HTML hit-testing behavior, not the complete SVG pointer-events value set; dynamic style invalidation, focus handling and scripting event semantics still need broader standards work.
+
 ## Dynamic :active, ID-less hover and text source spans (19 October 2026)
 
 Original `:hover` is no longer restricted to blocks with `id`: normal rendered blocks and glyph-backed inline text/link spans have generation-safe DOM targets. `:active` now tracks native mouse-down and clears on click release, outside-page release and Windows capture-loss cancellation. The same original selector-state cascade handles ancestors and nested selectors. UTF-8 text origin spans are measured against the existing text geometry without creating inline CSS boxes. Keyboard-driven `:focus-visible`, CSS paint stacking order, full replaced-element hit tests and synchronizing the JavaScript selector API remain incomplete.

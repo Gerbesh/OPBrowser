@@ -328,6 +328,7 @@ pub(super) struct InlineChar<'a> {
 }
 
 pub(super) struct InlineImage {
+    pub node: Option<op_dom::NodeId>,
     pub width: i32,
     pub height: i32,
     pub image: Option<std::sync::Arc<op_image::RasterImage>>,
@@ -1203,15 +1204,29 @@ impl<'a, 'm> Lines<'a, 'm> {
                     if let Some(pixels) = image.image {
                         let (dx, dy) = self.inline_boxes.visual_offset(style.boxes);
                         let key = self.inline_boxes.paint_key(style.boxes);
+                        let image_x = x.saturating_add(dx);
+                        let image_y = (baseline
+                            - image.height
+                            - own_box.map_or(0, InlineBoxStyle::bottom_extra))
+                        .saturating_add(dy);
+                        if style.visible
+                            && let Some(node) = image.node
+                        {
+                            self.hit_regions.push(ClickRegion {
+                                node,
+                                paint_key: key,
+                                x: image_x,
+                                y: image_y,
+                                width: image.width,
+                                height: image.height,
+                            });
+                        }
                         self.order.push(
                             LayoutItem::Image(self.image_boxes.len()).with_optional_paint_key(key),
                         );
                         self.image_boxes.push(ImageBox {
-                            x: x.saturating_add(dx),
-                            y: (baseline
-                                - image.height
-                                - own_box.map_or(0, InlineBoxStyle::bottom_extra))
-                            .saturating_add(dy),
+                            x: image_x,
+                            y: image_y,
                             width: image.width,
                             height: image.height,
                             image: pixels,
