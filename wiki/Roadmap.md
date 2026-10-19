@@ -1,5 +1,9 @@
 # Roadmap
 
+## After native preventDefault integration (20 October 2026)
+
+Cancelable trusted native anchor clicks now call the original JavaScript event system before navigation. Remaining P0 interaction tasks: re-read source anchor/href after click mutations, implement programmatic `Element.click()` and keyboard Enter/Tab default actions, synchronize `:focus-visible` and focus events, prevent native pointer-release default actions when press/release targets differ, and reconcile native link hover cursors. Independent compatibility bottlenecks include modern JS bootstrap, CSS/layout/font fidelity, accurate accessibility semantics and a repeated live Pikabu timeout (23s/45s) needing isolated profiling. Browser is not considered ready for YouTube, Reddit or general modern-web use.
+
 ## Input and default link actions after pointer-events foundation (20 October 2026)
 
 HTML `pointer-events: auto|none` is now computed and inherited, including pointer-transparent ancestors with explicit-auto descendants; native loaded inline images participate in target picking, and hyperlink activation is validated against the topmost source-DOM anchor instead of being blindly trusted from Windows raster link regions. Next P0: reconcile native painted-link hover cursor with DOM selection, support all atomic/replaced hit regions, CSS paint-specific pointer regions and SVG values, dispatch cancelable JS click/default-action `preventDefault` before navigation, and implement keyboard Tab/focus-visible and synchronized DOM focus events. Broader JS/runtime and layout/browser compatibility are still prerequisites for YouTube/Reddit.

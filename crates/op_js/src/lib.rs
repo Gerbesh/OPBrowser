@@ -20,8 +20,9 @@ pub use parser::{
     VariableKind, parse_script,
 };
 pub use runtime::{
-    DomElementSnapshot, DomOperation, DomTextMutation, JsGcPauseHistogram, JsGcPhaseTimings,
-    JsGcReport, JsGcTelemetry, JsHeapReachability, JsHeapUsage, JsRuntime, TextResponse,
+    DomClickDispatch, DomElementSnapshot, DomOperation, DomTextMutation, JsGcPauseHistogram,
+    JsGcPhaseTimings, JsGcReport, JsGcTelemetry, JsHeapReachability, JsHeapUsage, JsRuntime,
+    TextResponse,
 };
 pub use value::{JsSymbol, JsValue, ObjectId};
 

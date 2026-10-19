@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## Cancelable native browser click default actions (20 October 2026)
+
+Native link clicks now execute the existing original JS capture/target/bubble dispatch before navigation. `JsRuntime::dispatch_dom_click_path_with_result` returns handler-delivery and `defaultPrevented` flags; the old bool API remains compatible. Target, capturing-ancestor and `onclick` listeners can cancel the default action via `preventDefault()` or legacy `event.returnValue=false`; an `onclick` property callback returning exactly false also cancels it. Passive handlers cannot cancel, and `addEventListener` return values are ignored. Engine mutations are committed before deciding whether to navigate; dispatch VM failure cancels default activation conservatively. Programmatic `Element.click()` still needs its own default-action pipeline, and script-mutated href/removed nodes and keyboard semantics remain follow-ups.
+
 ## Cross-layer JS/bootstrap diagnosis (19 October 2026)
 
 The new `Engine::active_dom_content_diagnostics` is read-only and emits aggregate numbers, separating parsed DOM content, suppressed text, script sources and disconnected nodes. It confirmed that Reddit's now-running inline script creates no visible body text, while YouTube contains CSS-hidden text and failed scripts. Increasing the maximum accepted scripts from 16 to 32 merely increased YouTube failures (4→7) and timed out Pikabu; the change was rolled back. Prioritize genuine bootstrap, Web APIs, DOM and CSS handling over unbounded script execution.

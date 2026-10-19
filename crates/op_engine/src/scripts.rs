@@ -942,9 +942,9 @@ pub(crate) fn dispatch_click(
     document: &mut Document,
     runtime: &mut JsRuntime,
     node: NodeId,
-) -> (bool, usize, Option<GcCheckpointPhases>) {
+) -> (bool, bool, usize, Option<GcCheckpointPhases>) {
     if document.element(node).is_none() {
-        return (false, 0, None);
+        return (false, false, 0, None);
     }
     let mut path = Vec::new();
     let mut current = Some(node);
@@ -958,12 +958,24 @@ pub(crate) fn dispatch_click(
         current = document.node(id).and_then(|n| n.parent);
     }
     if !runtime.has_dom_click_path_listener(&path) {
-        return (false, 0, None);
+        return (false, false, 0, None);
     }
-    let handled = runtime.dispatch_dom_click_path(&path).unwrap_or(false);
+    // Fail closed on VM dispatch errors: do not navigate after a failed
+    // cancelable browser event, but still commit partial DOM mutations.
+    let outcome = runtime
+        .dispatch_dom_click_path_with_result(&path)
+        .unwrap_or(op_js::DomClickDispatch {
+            handled: false,
+            default_prevented: true,
+        });
     let changed = apply_dom_operations(document, runtime);
     let checkpoint = collect_at_idle(document, runtime, false);
-    (handled, changed, checkpoint)
+    (
+        outcome.handled,
+        outcome.default_prevented,
+        changed,
+        checkpoint,
+    )
 }
 
 #[cfg(test)]

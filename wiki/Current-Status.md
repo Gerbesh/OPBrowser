@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Browser link navigation now respects DOM preventDefault (20 October 2026)
+
+Normal native links now dispatch original JavaScript click handlers before executing their default navigation. `preventDefault`, legacy `returnValue=false` and an `onclick` property returning `false` can cancel the page load; passive handlers and ordinary listener return values cannot. Rust workspace, 261 JS unit tests, Win32 startup and hyperlink/image smoke all pass. Public site probe statuses remain incomplete; **Pikabu timed out repeatedly at 23s and even at 45s**, an unresolved performance/compatibility diagnostic rather than a verified stable-baseline result. YouTube still paints no text and Reddit a blank viewport.
+
 ## CSS pointer transparency and link click protection (20 October 2026)
 
 Normal HTML `pointer-events:none` now makes upper DOM elements transparent to pointer targeting, preserving inherited overrides. Valid painted text links and image links are verified through original DOM hit order before navigation; a covered link no longer navigates through the covering element, and the covering element's JavaScript click handler runs instead. Native inline image source identity was added for image-link hit regions. Tests and native Win32 link/image smoke all pass; public site compatibility statuses remain unchanged (YouTube textless; Reddit blank). Script preventDefault on link default actions, precise native cursor occlusion, keyboard Tab/focus-visible and full painted fragment hit semantics remain P0.

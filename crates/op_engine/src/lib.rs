@@ -540,6 +540,7 @@ pub struct Engine {
     document_address: Option<String>,
     active_document: Option<PreparedDocument>,
     scrollbar_drag: Option<ScrollbarDrag>,
+    last_click_default_prevented: bool,
     network_completion_send: mpsc::Sender<NetworkCompletion>,
     network_completion_recv: mpsc::Receiver<NetworkCompletion>,
     generation: u64,
@@ -560,6 +561,7 @@ impl Engine {
             document_address: None,
             active_document: None,
             scrollbar_drag: None,
+            last_click_default_prevented: false,
         }
     }
 
@@ -861,6 +863,7 @@ impl Engine {
     /// Dispatch a DOM click to the smallest live native block or inline hit region.
     /// Coordinates are document pixels (already adjusted for toolbar/scroll).
     pub fn click_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<RenderedPage> {
+        self.last_click_default_prevented = false;
         let prepared = self.active_document.as_mut()?;
         let was_pressed = prepared.interaction.active.take().is_some();
         if was_pressed {
@@ -956,11 +959,13 @@ impl Engine {
             || (focused.is_some() && prepared.interaction.focus_visible);
         prepared.interaction.focused = focused;
         prepared.interaction.focus_visible = false;
-        let (handled, changes, checkpoint) = if let Some(runtime) = prepared.runtime.as_mut() {
-            scripts::dispatch_click(&mut prepared.document, runtime, target)
-        } else {
-            (false, 0, None)
-        };
+        let (handled, canceled, changes, checkpoint) =
+            if let Some(runtime) = prepared.runtime.as_mut() {
+                scripts::dispatch_click(&mut prepared.document, runtime, target)
+            } else {
+                (false, false, 0, None)
+            };
+        self.last_click_default_prevented = canceled;
         prepared.finish_gc_checkpoint(checkpoint);
         if !handled && changes == 0 && !focus_changed && !was_pressed {
             return None;
@@ -1309,11 +1314,13 @@ impl Engine {
                 node = parent;
             }
         });
-        if is_visible_link {
-            self.release_press(width, height);
-            self.follow_link(href, width, height).map(Some)
+        // Dispatch the cancelable, bubbling trusted click before its default
+        // link activation. Script mutations are retained on both branches.
+        let clicked_page = self.click_at(x, y, width, height);
+        if !is_visible_link || self.last_click_default_prevented {
+            Ok(clicked_page)
         } else {
-            Ok(self.click_at(x, y, width, height))
+            self.follow_link(href, width, height).map(Some)
         }
     }
 
@@ -5151,6 +5158,119 @@ mod tests {
             Some(expected),
             "{id}: press and release keep the intended native element hovered"
         );
+    }
+
+    #[test]
+    fn browser_link_default_action_respects_js_cancelation_and_passive_listeners() {
+        let root = std::env::temp_dir().join(format!(
+            "opbrowser-cancelable-native-link-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("destination.html"),
+            "<h1>Destination reached</h1>",
+        )
+        .unwrap();
+        let cases = [
+            (
+                "target-prevent",
+                "a.addEventListener('click',function(e){e.preventDefault();status.textContent='Prevented';});",
+                false,
+                "Prevented",
+            ),
+            (
+                "ancestor-capture-prevent",
+                "document.getElementById('outer').addEventListener('click',function(e){e.preventDefault();status.textContent='Captured';},true);",
+                false,
+                "Captured",
+            ),
+            (
+                "onclick-prevent",
+                "a.onclick=function(e){e.preventDefault();status.textContent='Property prevented';};",
+                false,
+                "Property prevented",
+            ),
+            (
+                "onclick-return-false",
+                "a.onclick=function(e){status.textContent='Return false canceled';return false;};",
+                false,
+                "Return false canceled",
+            ),
+            (
+                "listener-return-false-not-canceled",
+                "a.addEventListener('click',function(e){return false;});",
+                true,
+                "Destination reached",
+            ),
+            (
+                "return-value-prevent",
+                "a.addEventListener('click',function(e){e.returnValue=false;status.textContent='Legacy canceled';});",
+                false,
+                "Legacy canceled",
+            ),
+            (
+                "passive-prevent-ignored",
+                "a.addEventListener('click',function(e){e.preventDefault();},{passive:true});",
+                true,
+                "Destination reached",
+            ),
+            (
+                "stop-only-still-navigates",
+                "a.addEventListener('click',function(e){e.stopPropagation();});",
+                true,
+                "Destination reached",
+            ),
+            (
+                "plain-listener-navigates",
+                "a.addEventListener('click',function(e){status.textContent='Observed';});",
+                true,
+                "Destination reached",
+            ),
+        ];
+        for (label, js, should_navigate, expected_text) in cases {
+            let html = format!(
+                "<body><div id='outer'><a id='link' href='destination.html' style='display:block;width:175px;height:65px'>Native link</a></div><p id='status'>Idle</p><script>var a=document.getElementById('link');var status=document.getElementById('status');{js}</script></body>"
+            );
+            std::fs::write(root.join("index.html"), html).unwrap();
+            let mut engine = Engine::new();
+            engine
+                .navigate(root.join("index.html").to_str().unwrap(), 540, 360)
+                .unwrap();
+            let (x, y) = {
+                let page = engine.active_document.as_ref().unwrap();
+                let region = page
+                    .hit_regions
+                    .iter()
+                    .find(|r| {
+                        page.document.element(r.node).is_some_and(|e| {
+                            e.attributes
+                                .iter()
+                                .any(|attr| attr.name == "id" && attr.value == "link")
+                        })
+                    })
+                    .expect("clickable source link");
+                (region.x + 8, region.y + 8)
+            };
+            assert_eq!(engine.active_script_report().unwrap().failed, 0, "{label}");
+            let result = engine
+                .activate_link_at("destination.html", x, y, 540, 360)
+                .unwrap()
+                .expect("click or navigation paints");
+            assert!(
+                contains_text(&result.display_list, expected_text),
+                "{label}: expected {expected_text}"
+            );
+            assert_eq!(
+                engine.navigation().entries().len(),
+                if should_navigate { 2 } else { 1 },
+                "{label}"
+            );
+            if !should_navigate {
+                assert!(engine.last_click_default_prevented, "{label}");
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

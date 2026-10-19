@@ -1,5 +1,9 @@
 # Navigation
 
+## Native hyperlink default action honors JavaScript cancellation (20 October 2026)
+
+Real Win32 painted-text and linked-image activation now verifies the topmost source-DOM anchor, dispatches one trusted cancelable `click` with the original JavaScript event path, and navigates only when the event is not canceled. This lets client-side click handlers intercept anchors without unwanted full-page navigation. DOM changes from listeners are preserved on canceled clicks. Distinct native controls for Back, Forward and typed-URL navigation are unaffected. Script-initiated `Element.click()` default navigation, clicked anchor mutations, and keyboard activation remain P0 tasks.
+
 OPBrowser connects its engine-level navigation history to a native address bar,
 Go/Back/Forward/Reload buttons and keyboard shortcuts. The engine remains separate
 from Windows controls so the same history rules can later be used by tabs.

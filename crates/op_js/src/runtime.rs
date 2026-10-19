@@ -563,6 +563,13 @@ impl Drop for ActiveExecutionGuard {
     }
 }
 
+/// Result of a native (or programmatic) click listener dispatch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DomClickDispatch {
+    pub handled: bool,
+    pub default_prevented: bool,
+}
+
 #[derive(Debug)]
 pub struct JsRuntime {
     heap: Vec<JsObject>,
@@ -3463,16 +3470,43 @@ impl JsRuntime {
     /// Programmatic Element.click() uses the same original dispatch path,
     /// but is marked untrusted by the internal entrypoint.
     pub fn dispatch_dom_click_path(&mut self, path: &[usize]) -> Result<bool, JsError> {
+        Ok(self.dispatch_dom_click_path_with_result(path)?.handled)
+    }
+
+    /// The native browser must inspect cancellation before performing an
+    /// anchor's default navigation action.
+    pub fn dispatch_dom_click_path_with_result(
+        &mut self,
+        path: &[usize],
+    ) -> Result<DomClickDispatch, JsError> {
         self.dispatch_dom_click_path_with_trust(path, true)
+    }
+
+    fn click_dispatch_result(
+        &self,
+        event: ObjectId,
+        handled: bool,
+    ) -> Result<DomClickDispatch, JsError> {
+        Ok(DomClickDispatch {
+            handled,
+            default_prevented: self
+                .object(event)?
+                .properties
+                .get("defaultPrevented")
+                .is_some_and(JsValue::is_truthy),
+        })
     }
 
     fn dispatch_dom_click_path_with_trust(
         &mut self,
         path: &[usize],
         trusted: bool,
-    ) -> Result<bool, JsError> {
+    ) -> Result<DomClickDispatch, JsError> {
         if path.is_empty() || !self.has_dom_click_path_listener(path) {
-            return Ok(false);
+            return Ok(DomClickDispatch {
+                handled: false,
+                default_prevented: false,
+            });
         }
         let target = path[0];
         let target_object = self.dom_element_object(target)?;
@@ -3537,14 +3571,14 @@ impl JsRuntime {
             self.deliver_element_global_capture(event, "click", &mut steps)?;
             if self.event_propagation_stopped(event)? {
                 self.finish_event_dispatch(event)?;
-                return Ok(handled);
+                return self.click_dispatch_result(event, handled);
             }
         }
         for &node in path.iter().take(64).skip(1).rev() {
             handled |= self.deliver_element_listeners(event, node, "click", true, 1, &mut steps)?;
             if self.event_propagation_stopped(event)? {
                 self.finish_event_dispatch(event)?;
-                return Ok(handled);
+                return self.click_dispatch_result(event, handled);
             }
         }
         handled |= self.deliver_element_listeners(event, target, "click", true, 2, &mut steps)?;
@@ -3565,7 +3599,7 @@ impl JsRuntime {
             }
         }
         self.finish_event_dispatch(event)?;
-        Ok(handled)
+        self.click_dispatch_result(event, handled)
     }
 
     /// Bounded synchronous EventTarget.dispatchEvent for original DOM element
@@ -4429,6 +4463,55 @@ impl JsRuntime {
         }
     }
 
+    /// HTML event handler *properties* have an extra legacy rule:
+    /// returning exactly false cancels a cancelable event. addEventListener
+    /// callback return values are deliberately ignored.
+    fn call_isolated_event_property_handler(
+        &mut self,
+        handler: JsValue,
+        receiver: ObjectId,
+        event: ObjectId,
+        steps: &mut usize,
+    ) -> Result<(), JsError> {
+        let result = self.call_value(
+            handler,
+            JsValue::Object(receiver),
+            vec![JsValue::Object(event)],
+            steps,
+            1,
+        );
+        match result {
+            Ok(CallOutcome::Value(JsValue::Boolean(false))) => {
+                if self
+                    .object(event)?
+                    .properties
+                    .get("cancelable")
+                    .is_some_and(JsValue::is_truthy)
+                {
+                    self.object_mut(event)?
+                        .properties
+                        .insert("defaultPrevented".into(), JsValue::Boolean(true));
+                }
+                Ok(())
+            }
+            Ok(CallOutcome::Value(_)) => Ok(()),
+            Ok(CallOutcome::Thrown(value)) => {
+                if self.event_listener_errors.len() < 32 {
+                    self.event_listener_errors
+                        .push(JsError::exception(self.describe_thrown_value(&value)).to_string());
+                }
+                Ok(())
+            }
+            Err(error) if error.kind != JsErrorKind::ExecutionLimit => {
+                if self.event_listener_errors.len() < 32 {
+                    self.event_listener_errors.push(error.to_string());
+                }
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     /// The EventListener WebIDL callback can be a function or an object
     /// with a handleEvent method. Resolve handleEvent at delivery time,
     /// and call it with the listener object as 'this', not currentTarget.
@@ -4532,7 +4615,7 @@ impl JsRuntime {
                     && self.dom_onclick.get(&node) == Some(&callback)
                     && self.dom_onclick_registration.get(&node).copied() == Some(registration)
                 {
-                    self.call_isolated_event_handler(callback, receiver, event, steps)?;
+                    self.call_isolated_event_property_handler(callback, receiver, event, steps)?;
                     delivered = true;
                 }
                 if self.event_immediate_stopped(event)? {
