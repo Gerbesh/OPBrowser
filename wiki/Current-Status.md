@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Win32 Tab, focus-visible and Enter default activation (20 October 2026)
+
+Original OPBrowser now supports page Tab and Shift+Tab focus traversal in DOM/tabindex order, skipping hidden/disabled/negative-tabindex nodes. Keyboard focus activates the original CSS `:focus`, `:focus-visible` and `:focus-within` author cascade and gets a native 2px blue indicator for elements with hit geometry. Enter dispatches cancelable trusted JavaScript click before a focused link navigates; a canceled click retains the current page, and successful navigation refreshes address/history. The native URL field's Enter is unaffected; page clicks transfer Windows focus to the page. Full workspace/Win32 tests and native startup/link smoke pass. Auto-scroll-to-focused, complete control hit rectangles, focus/blur key events and browser-grade accessibility remain missing. YouTube still textless and Reddit blank. A fresh Pikabu run succeeded ~18.4s after previous 23s/45s timeouts; cause unresolved.
+
 ## Browser link navigation now respects DOM preventDefault (20 October 2026)
 
 Normal native links now dispatch original JavaScript click handlers before executing their default navigation. `preventDefault`, legacy `returnValue=false` and an `onclick` property returning `false` can cancel the page load; passive handlers and ordinary listener return values cannot. Rust workspace, 261 JS unit tests, Win32 startup and hyperlink/image smoke all pass. Public site probe statuses remain incomplete; **Pikabu timed out repeatedly at 23s and even at 45s**, an unresolved performance/compatibility diagnostic rather than a verified stable-baseline result. YouTube still paints no text and Reddit a blank viewport.

@@ -21,7 +21,7 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetCapture, GetKeyState, ReleaseCapture, SetCapture, SetFocus, TME_LEAVE,
-    TRACKMOUSEEVENT, TrackMouseEvent, VK_CONTROL, VK_F5, VK_L, VK_RETURN, VK_SHIFT,
+    TRACKMOUSEEVENT, TrackMouseEvent, VK_CONTROL, VK_F5, VK_L, VK_RETURN, VK_SHIFT, VK_TAB,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -59,6 +59,8 @@ pub enum NavigationEvent {
     Click { x: i32, y: i32 },
     PointerDown { x: i32, y: i32 },
     PointerCancel,
+    FocusNext { backwards: bool },
+    ActivateFocused,
     Hover { x: i32, y: i32 },
     Scroll { x: i32, y: i32, delta_y: i32 },
     HorizontalScroll { x: i32, y: i32, delta_x: i32 },
@@ -424,7 +426,10 @@ impl NativeBrowserWindow {
                     unsafe { SetCapture(self.hwnd) };
                     Some(NavigationEvent::ScrollbarDragStart { x, y: document_y })
                 } else if x >= 0 && x < client.right && y >= TOOLBAR_HEIGHT && y < client.bottom {
-                    unsafe { SetCapture(self.hwnd) };
+                    unsafe {
+                        SetFocus(self.hwnd);
+                        SetCapture(self.hwnd)
+                    };
                     POINTER_PRESS_CAPTURE.store(true, Ordering::SeqCst);
                     Some(NavigationEvent::PointerDown { x, y: document_y })
                 } else {
@@ -541,6 +546,18 @@ impl NativeBrowserWindow {
                     && message.hwnd == unsafe { GetDlgItem(self.hwnd, ADDRESS) } =>
             {
                 Some(NavigationEvent::Navigate(self.address()))
+            }
+            WM_KEYDOWN
+                if message.hwnd == self.hwnd
+                    && message.wParam == VK_TAB as usize
+                    && unsafe { GetKeyState(VK_CONTROL as i32) } >= 0 =>
+            {
+                Some(NavigationEvent::FocusNext {
+                    backwards: unsafe { GetKeyState(VK_SHIFT as i32) } < 0,
+                })
+            }
+            WM_KEYDOWN if message.hwnd == self.hwnd && message.wParam == VK_RETURN as usize => {
+                Some(NavigationEvent::ActivateFocused)
             }
             WM_KEYDOWN if message.wParam == VK_F5 as usize => Some(NavigationEvent::Reload),
             NAVIGATION_COMMAND if message.hwnd == self.hwnd => match message.wParam as i32 {
@@ -1569,6 +1586,39 @@ mod tests {
         assert_eq!(sample(24, 18), &[144, 130, 120]);
         assert_eq!(sample(24, 55), &[241, 237, 234]);
         assert_eq!(sample(16, 55), &[255, 255, 255]);
+    }
+
+    #[test]
+    fn native_page_keyboard_shortcuts_preserve_toolbar_address_input() {
+        let _window_lock = WINDOW_TEST_LOCK.lock().unwrap();
+        let window = NativeBrowserWindow::create("Keyboard focus test", DisplayList::default())
+            .expect("native window");
+        let mut key: MSG = unsafe { zeroed() };
+        key.hwnd = window.hwnd;
+        key.message = WM_KEYDOWN;
+        key.wParam = VK_TAB as usize;
+        assert!(matches!(
+            window.navigation_event(&key),
+            Some(NavigationEvent::FocusNext { .. })
+        ));
+        key.wParam = VK_RETURN as usize;
+        assert_eq!(
+            window.navigation_event(&key),
+            Some(NavigationEvent::ActivateFocused)
+        );
+        key.hwnd = unsafe { GetDlgItem(window.hwnd, ADDRESS) };
+        key.wParam = VK_TAB as usize;
+        assert_eq!(
+            window.navigation_event(&key),
+            None,
+            "Tab in address field is not a page shortcut"
+        );
+        key.wParam = VK_RETURN as usize;
+        assert!(matches!(
+            window.navigation_event(&key),
+            Some(NavigationEvent::Navigate(_))
+        ));
+        window.close();
     }
 
     #[test]

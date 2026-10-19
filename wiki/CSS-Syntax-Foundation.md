@@ -1,5 +1,9 @@
 # CSS Syntax Foundation
 
+## Interaction selectors with real keyboard modality (20 October 2026)
+
+`:focus-visible` no longer depends only on the static false default or mouse focus. Page Tab/Shift+Tab sets an explicit keyboard focus-visible state consumed by the same original CSS selector matcher, including `:focus-within` ancestors; mouse click clears focus-visible but keeps `:focus`. The HTML focus candidate order honors integer tabindex, natural links/controls and hidden/disabled exclusions. Unsupported: autofocus, script-based Element.focus()/blur() synchronization, full form semantics and auto-scroll-to-focus.
+
 ## HTML pointer-events matching (20 October 2026)
 
 Computed `pointer-events` is now an inherited enum with CSS HTML values `auto` and `none` plus cascade `inherit`, `initial`, `unset`. Original native DOM hit resolution skips disabled-by-`none` targets, while descendants with explicit `auto` remain selectable. It does not suppress painting. This is HTML hit-testing behavior, not the complete SVG pointer-events value set; dynamic style invalidation, focus handling and scripting event semantics still need broader standards work.

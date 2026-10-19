@@ -1,5 +1,9 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 20 October 2026: native keyboard focus compatibility checkpoint
+
+The native optimized Release run `artifacts/live_web/native-keyboard-focus-2026-10-20/` (ignored local artifacts) checked the same five anonymous URLs: Google rendered_with_js_errors (~1.8s), YouTube no_text_rendered (~2.9s), Reddit blank_viewport (~1.7s), DeviantArt rendered_with_js_errors (~14.6s), and Pikabu rendered_with_js_errors (~18.4s). Pikabu previously timed out repeatedly at 23s and even 45s, so its later successful load is evidence of variability, **not** a diagnosed fix. These probes do not issue keyboard input and do not certify page usability; the keyboard feature is verified by original Rust engine, real Win32 message and UI queue integration tests. YouTube textless and Reddit blank remain major unresolved JS/DOM/layout blockers.
+
 ## 20 October 2026: cancelable native link compatibility sample, Pikabu timeout
 
 Native Release 5-site run `artifacts/live_web/cancelable-native-links-2026-10-20/` (ignored local files): Google rendered_with_js_errors (2 failed JS, 6 paint commands), YouTube no_text_rendered (4 failed JS, 130 paint commands), Reddit blank_viewport (0 failed JS, 1 command), DeviantArt rendered_with_js_errors (3 failed JS, 2,821 commands), **Pikabu timeout at 23s**. Standalone Pikabu rerun with the same 23s limit also timed out, and an extended 45s standalone run still timed out. Previous sample loaded Pikabu in ~17s, so treat this as an unresolved real-site regression/performance diagnostic until controlled before/after comparisons establish whether it is network variability, content, or a local engine stall. This interaction update does not claim to fix modern JS/bootstrap or existing page rendering failures. Native click cancellation itself is covered by local Rust and Win32 regression tests, not by the five noninteractive web probes.

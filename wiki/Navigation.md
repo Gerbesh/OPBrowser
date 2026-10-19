@@ -1,5 +1,9 @@
 # Navigation
 
+## Keyboard Enter on focused anchors (20 October 2026)
+
+When the page's native Windows window has focus, Tab and Shift+Tab move across valid connected DOM focus targets, and Enter activates the current focused anchor using the original browser trusted cancelable click path. JavaScript can prevent the default hyperlink navigation; href is read after the handler runs. If navigation occurs, the worker treats the new address/history as a loaded page instead of an in-place reflow. Enter in the URL field continues to submit the typed address, not activate the page link. Clicking the viewport restores focus to the page HWND. No automatic offscreen-focus scroll or full keyboard DOM event system yet.
+
 ## Native hyperlink default action honors JavaScript cancellation (20 October 2026)
 
 Real Win32 painted-text and linked-image activation now verifies the topmost source-DOM anchor, dispatches one trusted cancelable `click` with the original JavaScript event path, and navigates only when the event is not canceled. This lets client-side click handlers intercept anchors without unwanted full-page navigation. DOM changes from listeners are preserved on canceled clicks. Distinct native controls for Back, Forward and typed-URL navigation are unaffected. Script-initiated `Element.click()` default navigation, clicked anchor mutations, and keyboard activation remain P0 tasks.

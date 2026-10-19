@@ -108,6 +108,8 @@ fn queue_thumb_event(
         | NavigationEvent::ScrollbarDragEnd
         | NavigationEvent::PointerDown { .. }
         | NavigationEvent::PointerCancel
+        | NavigationEvent::FocusNext { .. }
+        | NavigationEvent::ActivateFocused
         | NavigationEvent::Click { .. }
         | NavigationEvent::FollowLinkAt { .. } => {
             queued.push_back(event);
@@ -204,12 +206,19 @@ fn main() {
                 height,
             } = command;
             last_viewport = (width, height);
-            let reflow = matches!(
+            let keyboard_activate = matches!(event, NavigationEvent::ActivateFocused);
+            let before_navigation = (
+                engine.navigation().current_index(),
+                engine.navigation().entries().len(),
+            );
+            let mut reflow = matches!(
                 event,
                 NavigationEvent::Resize
                     | NavigationEvent::Click { .. }
                     | NavigationEvent::PointerDown { .. }
                     | NavigationEvent::PointerCancel
+                    | NavigationEvent::FocusNext { .. }
+                    | NavigationEvent::ActivateFocused
                     | NavigationEvent::Hover { .. }
                     | NavigationEvent::Scroll { .. }
                     | NavigationEvent::HorizontalScroll { .. }
@@ -232,6 +241,10 @@ fn main() {
                 NavigationEvent::Click { x, y } => Ok(engine.click_at(x, y, width, height)),
                 NavigationEvent::PointerDown { x, y } => Ok(engine.press_at(x, y, width, height)),
                 NavigationEvent::PointerCancel => Ok(engine.release_press(width, height)),
+                NavigationEvent::FocusNext { backwards } => {
+                    Ok(engine.focus_next(backwards, width, height))
+                }
+                NavigationEvent::ActivateFocused => engine.activate_focused(width, height),
                 NavigationEvent::Hover { x, y } => Ok(engine.hover_at(x, y, width, height)),
                 NavigationEvent::Scroll { x, y, delta_y } => {
                     let page = engine.scroll_at(x, y, delta_y, width, height);
@@ -257,6 +270,16 @@ fn main() {
                 NavigationEvent::Poll => continue,
             }
             .map_err(|error| error.to_string());
+            if keyboard_activate
+                && before_navigation
+                    != (
+                        engine.navigation().current_index(),
+                        engine.navigation().entries().len(),
+                    )
+            {
+                // Enter followed an anchor: present the full navigation and URL.
+                reflow = false;
+            }
             let history = engine.navigation();
             if responses
                 .send(LoadResult {
@@ -458,6 +481,8 @@ fn main() {
                 NavigationEvent::Resize | NavigationEvent::Click { .. }
                     | NavigationEvent::PointerDown { .. }
                     | NavigationEvent::PointerCancel
+                    | NavigationEvent::FocusNext { .. }
+                    | NavigationEvent::ActivateFocused
                     | NavigationEvent::Hover { .. }
                     | NavigationEvent::Scroll { .. }
                     | NavigationEvent::HorizontalScroll { .. }
@@ -496,6 +521,24 @@ fn main() {
 #[cfg(test)]
 mod overflow_tests {
     use super::*;
+
+    #[test]
+    fn queued_keyboard_tab_steps_and_enter_keep_their_order() {
+        let mut queue = std::collections::VecDeque::new();
+        queue_thumb_event(&mut queue, NavigationEvent::FocusNext { backwards: false });
+        queue_thumb_event(&mut queue, NavigationEvent::FocusNext { backwards: true });
+        queue_thumb_event(&mut queue, NavigationEvent::ActivateFocused);
+        assert_eq!(queue.len(), 3);
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::FocusNext { backwards: false })
+        );
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::FocusNext { backwards: true })
+        );
+        assert_eq!(queue.pop_front(), Some(NavigationEvent::ActivateFocused));
+    }
 
     #[test]
     fn pointer_hover_events_coalesce_to_latest_position_while_worker_is_busy() {

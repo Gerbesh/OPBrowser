@@ -1,5 +1,9 @@
 # Page Reflow
 
+## CSS focus-visible and fallback ring from keyboard focus (20 October 2026)
+
+Original retained `StyleInteractionState` now receives focused NodeIds from DOM/tabindex-based native keyboard movement. Recomputing the author cascade activates `:focus`, `:focus-visible` and ancestor `:focus-within`. For a keyboard-focused node with a cached native hit region, OPBrowser draws a 2px blue rectangle after the existing page display list as a fallback indicator independent of site styling. Mouse click switches focus visibility off; navigation creates a fresh focus state. Automatic scrolling and exact outline clipping or rings for targets with no hit box are still unsupported.
+
 ## Original DOM hit order now guards painted hyperlinks (20 October 2026)
 
 The Win32 painter still computes glyph/image hyperlink rectangles from the display list, but clicks now include the actual document coordinates and must pass the original Rust DOM hit map, computed `pointer-events` eligibility and matching ancestor `a[href]`. Regular image elements get generation-safe rectangles from the exact inline raster placement. Higher-z overlays block underlying navigation unless marked `pointer-events:none`. Multiple painted link rectangles are examined last-painted-first. The native display list remains the only renderer; browser engine CSS/layout/DOM are still first-party.

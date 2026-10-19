@@ -1,5 +1,9 @@
 # Roadmap
 
+## Next keyboard/accessibility tasks after first Tab navigation (20 October 2026)
+
+Done: bounded page Tab/Shift+Tab order including positive tabindex, original keyboard focus selectors, native visual focus fallback, Enter trusted cancelable anchor activation, input-routing isolation from URL bar and navigation-vs-reflow presentation. Next P0: scroll focused nodes into viewport and nested scroll containers; focus/blur/focusin/focusout and keydown/keyup DOM listeners with preventDefault; correct input/checkbox/select/textarea keyboard behavior; disabled fieldset and inert descendants; browser toolbar-to-page Tab cycling; outline clipping to stacking contexts; HTML/SVG accessibility targets. Continue JS startup, CSS/font/render conformance, and isolating intermittent Pikabu long load. YouTube and Reddit remain far from complete.
+
 ## After native preventDefault integration (20 October 2026)
 
 Cancelable trusted native anchor clicks now call the original JavaScript event system before navigation. Remaining P0 interaction tasks: re-read source anchor/href after click mutations, implement programmatic `Element.click()` and keyboard Enter/Tab default actions, synchronize `:focus-visible` and focus events, prevent native pointer-release default actions when press/release targets differ, and reconcile native link hover cursors. Independent compatibility bottlenecks include modern JS bootstrap, CSS/layout/font fidelity, accurate accessibility semantics and a repeated live Pikabu timeout (23s/45s) needing isolated profiling. Browser is not considered ready for YouTube, Reddit or general modern-web use.

@@ -28,7 +28,7 @@ struct NetworkCompletion {
     result: Result<op_net::LoadedTextResponse, String>,
 }
 
-use op_paint::{DisplayList, build_display_list};
+use op_paint::{Color, DisplayList, PaintCommand, build_display_list};
 mod images;
 mod scripts;
 mod styles;
@@ -399,6 +399,59 @@ impl PreparedDocument {
             .map(|region| region.node)
     }
 
+    /// Tab order: positive tabindex first (ascending), then natural focusables
+    /// and tabindex=0 in connected DOM order. Negative values are skipped.
+    fn keyboard_focus_order(&self) -> Vec<op_dom::NodeId> {
+        let mut ordered = Vec::new();
+        let mut stack = vec![(self.document.root(), false)];
+        let mut visited = 0usize;
+        while let Some((node, hidden_parent)) = stack.pop() {
+            visited += 1;
+            if visited > 16_384 {
+                break;
+            }
+            let mut hidden = hidden_parent;
+            if let Some(element) = self.document.element(node) {
+                let attribute = |key: &str| element.attributes.iter().find(|a| a.name == key);
+                hidden |= attribute("hidden").is_some();
+                hidden |= self.computed_styles.style_for(node).is_none_or(|style| {
+                    style.display == op_css::Display::None
+                        || style.visibility != op_css::Visibility::Visible
+                });
+                let disabled = attribute("disabled").is_some();
+                let hidden_input = element.tag_name == "input"
+                    && attribute("type").is_some_and(|a| a.value.eq_ignore_ascii_case("hidden"));
+                if !hidden && !disabled && !hidden_input {
+                    let natural = matches!(
+                        element.tag_name.as_str(),
+                        "button" | "input" | "select" | "textarea" | "summary"
+                    ) || (matches!(element.tag_name.as_str(), "a" | "area")
+                        && attribute("href").is_some());
+                    let explicit =
+                        attribute("tabindex").and_then(|a| a.value.trim().parse::<i32>().ok());
+                    if let Some(tabindex) = explicit.or_else(|| natural.then_some(0))
+                        && tabindex >= 0
+                    {
+                        ordered.push((tabindex, ordered.len(), node));
+                    }
+                }
+            }
+            if !hidden {
+                stack.extend(
+                    self.document
+                        .children(node)
+                        .iter()
+                        .rev()
+                        .map(|&child| (child, hidden)),
+                );
+            }
+        }
+        ordered.sort_by_key(|&(tabindex, order, _)| {
+            (if tabindex > 0 { 0 } else { 1 }, tabindex, order)
+        });
+        ordered.into_iter().map(|(_, _, node)| node).collect()
+    }
+
     /// Rebuild author matching and inline styles against the mutated real
     /// DOM, retaining originally loaded linked CSS and color profiles.
     fn refresh_styles(&mut self) {
@@ -518,10 +571,44 @@ impl PreparedDocument {
             *left = (*left).clamp(0, horizontal_limits.get(node).copied().unwrap_or(0));
             *left > 0
         });
+        let mut display_list = build_display_list(&layout, height);
+        // Author :focus-visible styles also apply via the computed cascade.
+        // Provide a native fallback indicator even on pages with no CSS.
+        if self.interaction.focus_visible
+            && let Some(focused) = self.interaction.focused
+            && let Some(region) = self
+                .hit_regions
+                .iter()
+                .find(|r| r.node == focused && r.width > 3 && r.height > 3)
+        {
+            let x = region.x;
+            let y = region.y;
+            let width = region.width;
+            let height = region.height;
+            let ring = Color {
+                r: 22,
+                g: 105,
+                b: 235,
+            };
+            for (x, y, width, height) in [
+                (x, y, width, 2),
+                (x, y.saturating_add(height - 2), width, 2),
+                (x, y, 2, height),
+                (x.saturating_add(width - 2), y, 2, height),
+            ] {
+                display_list.commands.push(PaintCommand::FillRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color: ring,
+                });
+            }
+        }
         RenderedPage {
             address: self.address.clone(),
             mime_type: self.mime_type.clone(),
-            display_list: build_display_list(&layout, height),
+            display_list,
         }
     }
 }
@@ -822,6 +909,86 @@ impl Engine {
 
     pub fn end_scrollbar_drag(&mut self) {
         self.scrollbar_drag = None;
+    }
+
+    /// Advance the native keyboard focus through the page's connected DOM.
+    pub fn focus_next(&mut self, backwards: bool, width: i32, height: i32) -> Option<RenderedPage> {
+        let page = self.active_document.as_mut()?;
+        let order = page.keyboard_focus_order();
+        if order.is_empty() {
+            return None;
+        }
+        let next = if let Some(index) = order
+            .iter()
+            .position(|&id| Some(id) == page.interaction.focused)
+        {
+            order[(index + if backwards { order.len() - 1 } else { 1 }) % order.len()]
+        } else if backwards {
+            *order.last()?
+        } else {
+            order[0]
+        };
+        page.interaction.focused = Some(next);
+        page.interaction.focus_visible = true;
+        page.interaction.active = None;
+        page.refresh_styles();
+        Some(page.render(width, height))
+    }
+
+    /// Enter activates the focused link or control without synthesizing a
+    /// pointer event. A cancelable trusted DOM click runs before navigation.
+    pub fn activate_focused(
+        &mut self,
+        width: i32,
+        height: i32,
+    ) -> Result<Option<RenderedPage>, LoadError> {
+        self.last_click_default_prevented = false;
+        let Some(page) = self.active_document.as_mut() else {
+            return Ok(None);
+        };
+        let Some(target) = page.interaction.focused else {
+            return Ok(None);
+        };
+        if page.document.element(target).is_none() {
+            return Ok(None);
+        }
+        let (handled, canceled, mutations, checkpoint) = if let Some(vm) = page.runtime.as_mut() {
+            scripts::dispatch_click(&mut page.document, vm, target)
+        } else {
+            (false, false, 0, None)
+        };
+        self.last_click_default_prevented = canceled;
+        page.finish_gc_checkpoint(checkpoint);
+        page.scripts.mutations += mutations;
+        if mutations > 0 {
+            page.refresh_styles();
+        }
+        // Read href from the actual DOM after listeners have run: handlers may
+        // change or remove the link before its default action.
+        let href = if !canceled {
+            page.document.element(target).and_then(|e| {
+                if e.tag_name == "a" || e.tag_name == "area" {
+                    e.attributes
+                        .iter()
+                        .find(|attr| attr.name == "href")
+                        .map(|attr| attr.value.clone())
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        };
+        if let Some(href) = href {
+            self.follow_link(&href, width, height).map(Some)
+        } else if handled || canceled || mutations > 0 {
+            Ok(self
+                .active_document
+                .as_mut()
+                .map(|page| page.render(width, height)))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Pointer press uses the same generation-safe native hit map as hover.
@@ -1457,6 +1624,177 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn keyboard_tab_order_skips_disabled_hidden_and_negative_tabindex() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><style>:focus-visible{color:red}</style>\
+             <a id='plain' href='next.html' style='display:block;width:120px;height:30px'>Plain</a>\
+             <div id='high' tabindex='5'>High</div>\
+             <div id='first' tabindex='1'>First</div>\
+             <button id='disabled' disabled>Disabled</button>\
+             <input id='hidden' type='hidden'>\
+             <a id='gone' href='next.html' style='display:none'>Gone</a>\
+             <a id='negative' href='next.html' tabindex='-1'>Negative</a>\
+             <div id='zero' tabindex='0'>Zero</div>\
+             <button id='last'>Last</button>\
+             </body>",
+            640,
+            480,
+        );
+        let current_id = |engine: &Engine| -> String {
+            let page = engine.active_document.as_ref().unwrap();
+            let focused = page.interaction.focused.unwrap();
+            page.document
+                .element(focused)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "id")
+                .unwrap()
+                .value
+                .clone()
+        };
+        for name in ["first", "high", "plain", "zero", "last", "first"] {
+            let rendered = engine.focus_next(false, 640, 480).unwrap();
+            assert_eq!(current_id(&engine), name);
+            let focused = engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .interaction
+                .focused
+                .unwrap();
+            assert!(
+                engine
+                    .active_document
+                    .as_ref()
+                    .unwrap()
+                    .interaction
+                    .focus_visible
+            );
+            assert_eq!(
+                engine
+                    .active_computed_styles()
+                    .unwrap()
+                    .style_for(focused)
+                    .unwrap()
+                    .color,
+                op_css::CssColor::RED,
+                "{name} should receive :focus-visible styling"
+            );
+            if name == "plain" {
+                assert!(
+                    rendered
+                        .display_list
+                        .commands
+                        .iter()
+                        .any(|command| matches!(
+                            command,
+                            PaintCommand::FillRect {
+                                color: Color {
+                                    r: 22,
+                                    g: 105,
+                                    b: 235
+                                },
+                                ..
+                            }
+                        ))
+                );
+            }
+        }
+        engine.focus_next(true, 640, 480);
+        assert_eq!(current_id(&engine), "last");
+        let (x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document.element(r.node).is_some_and(|e| {
+                        e.attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == "plain")
+                    })
+                })
+                .unwrap();
+            (region.x + 8, region.y + 8)
+        };
+        engine.click_at(x, y, 640, 480);
+        assert!(
+            !engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .interaction
+                .focus_visible
+        );
+        engine.set_html_page("<body>New page</body>", 640, 480);
+        assert!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .interaction
+                .focused
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn keyboard_enter_runs_click_handlers_then_cancelable_link_default() {
+        let root =
+            std::env::temp_dir().join(format!("opbrowser-keyboard-link-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("next.html"), "<h1>Keyboard destination</h1>").unwrap();
+        for (script, should_navigate) in [
+            (
+                "a.addEventListener('click',function(e){e.preventDefault();document.getElementById('status').textContent='Stopped';});",
+                false,
+            ),
+            (
+                "a.addEventListener('click',function(){document.getElementById('status').textContent='Visited';});",
+                true,
+            ),
+        ] {
+            std::fs::write(
+                root.join("index.html"),
+                format!("<body><style>a:focus-visible{{color:red}}</style>\
+                    <a id='a' href='next.html' style='display:block;width:130px;height:50px'>Link</a>\
+                    <p id='status'>Original</p><script>var a=document.getElementById('a');{script}</script></body>"),
+            ).unwrap();
+            let mut engine = Engine::new();
+            engine
+                .navigate(root.join("index.html").to_str().unwrap(), 640, 480)
+                .unwrap();
+            engine.focus_next(false, 640, 480).unwrap();
+            let result = engine.activate_focused(640, 480).unwrap().unwrap();
+            assert_eq!(
+                engine.navigation().entries().len(),
+                if should_navigate { 2 } else { 1 }
+            );
+            assert!(contains_text(
+                &result.display_list,
+                if should_navigate {
+                    "Keyboard destination"
+                } else {
+                    "Stopped"
+                },
+            ));
+            if !should_navigate {
+                assert!(
+                    engine
+                        .active_document
+                        .as_ref()
+                        .unwrap()
+                        .interaction
+                        .focus_visible
+                );
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn clicking_focusable_native_control_recomputes_focus_style_without_js_handler() {
