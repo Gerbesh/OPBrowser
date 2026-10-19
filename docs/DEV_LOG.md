@@ -3784,3 +3784,11 @@ This file is append-only project history.
 - Release diagnostic under ignored `artifacts/live_web/expression-await-five-2026-10-19/` on the same five public anonymous URLs still reports Google 2, YouTube 4, Pikabu 11, Reddit 1 and DeviantArt 3 initial script failures; Reddit white, YouTube no text. Reddit still rejects await in its complex script. Do not claim increased site compatibility without actual visible/interactable content. Historical pinned Test262 subsets: parser 523/1983 and broad runtime v2 78/179 attempted, last recorded earlier; pinned external test262 files are not present at C:\src\test262\test in this session, so no current upstream conformance percentage was measured.
 - NEXT: genuinely resumable try/finally and branching await semantics and fix actual first-viewport JS/DOM/style/layout blockers; profile GC from real navigation before premature completion claims.
 
+## 2026-10-19 - P0 ordered object literal and two-arm conditional awaits
+
+- Implemented object-literal data-field CPS extraction with previous-value capture, preserving evaluation order across Promise suspension and explicit garbage collection. Accessors and __proto__ with await remain guarded.
+- A ternary with exactly one direct await in each arm now selects the branch before awaiting; parser accounting recognizes two syntactic awaits but one runtime suspension. One-sided/nested branch awaits, logical RHS, loops and try/finally still reject.
+- Added runtime tests for pending-GC, evaluation order, selected-side effects, nested object values, awaited ternary tests and fail-closed cases, plus an original HTML -> JS -> DOM -> native text-paint integration test. Clippy and targeted tests passed.
+- Full Rust workspace tests, formatting, strict Clippy, Win32 smoke, generated graph/slicer verification and native Release probe build passed. Repeated five public HTTPS sites with 1300ms settling at ignored `artifacts/live_web/conditional-object-2026-10-19/`: JS failures Google 2, YouTube 4, Pikabu 11, Reddit 1, DeviantArt 3. YouTube paints zero text; Reddit remains blank. No verified visual-site improvement. Historical Test262 numbers were not rerun.
+
+

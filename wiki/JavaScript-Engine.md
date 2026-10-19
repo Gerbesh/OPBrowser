@@ -1,5 +1,10 @@
 # JavaScript Engine
 
+## Async object fields and two-arm ternary (19 October 2026)
+
+`{x:before(), y:await pending, z:after()}` now resumes ordinary data fields in their original evaluation order. `flag ? await a() : await b()` evaluates only one branch. Regression tests cover pending GC and native HTML/DOM/paint. Object accessors/prototype setters and arbitrary await in loops, one-sided branches, logical RHS and try/finally are unsupported.
+
+
 ## Original expression-level await lowering (19 October 2026)
 
 New `await_lowering.rs` decomposes the first awaited eager subexpression, captures operands evaluated before suspension and schedules its remainder through browser-owned Promise microtasks. Nested await arguments, arithmetic, arrays, sequences, constructor arguments and simple assignments are covered. The compiler-only `CallWithReceiver` expression emits a native VM call retaining the original receiver and function, rather than relying on mutable `Function.prototype.call` or function-owned `.call`. GC-safe pending continuation and real DOM-paint regression tests pass. Await in conditionally executed branches, short-circuit right operands, loops and `try/finally` remains deliberately rejected. This is bounded CPS lowering, not fully general async VM-frame suspension.

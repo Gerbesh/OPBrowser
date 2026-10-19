@@ -1,5 +1,10 @@
 # Roadmap
 
+## Await continuation update (19 October 2026)
+
+Object data properties and ternaries with direct awaits in both branches are now supported by the original Promise-microtask lowering. Next: real VM-frame resumability for skipped/one-sided logical and conditional branches, try/finally and loops; prioritize real-site content and profiling gates over synthetic-only success.
+
+
 ## Next native JavaScript continuation milestone (19 October 2026)
 
 Expression-level `await` now supports nested eager operands, calls and arrays while maintaining evaluation order, receiver identity and GC safety. For real-world compatibility this still needs a general async frame/suspend mechanism covering `try/catch/finally`, loops, conditional and short-circuit evaluation, plus first-viewport JS/DOM/layout repair. The same five-site live diagnostic still reports 2/4/11/1/3 initial script failures and no verified functional first viewport. Narrow Test262 arithmetic subsets must not be presented as overall engine-readiness percentages.

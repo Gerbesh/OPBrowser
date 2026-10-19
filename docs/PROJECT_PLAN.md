@@ -1,5 +1,10 @@
 # OPBrowser: active project plan
 
+## P0 bounded conditional and object awaits (19 October 2026)
+
+Ordinary object literal fields now preserve prior evaluations across suspension and GC. A ternary supports a direct await in **each** arm, selecting the branch before suspension. JS, GC and original HTML-to-native-paint tests pass. The unchanged five-site native Release probe still shows 2/4/11/1/3 JS failures (Google/YouTube/Pikabu/Reddit/DeviantArt), with Reddit blank and YouTube textless. Accessors, __proto__, one-sided/nested branch awaits, loop/try/finally and short-circuit-RHS awaits still reject; a full suspended VM frame and verified first paint remain P0.
+
+
 ## P0 original JS expression-await checkpoint (19 October 2026)
 
 The independent JS parser now lowers awaited values within bounded *eager* expressions, including binary/unary operators, positional function and method-call arguments, arrays, sequences, computed property keys, simple assignments, conditional tests and constructor arguments. Pre-await operands and getters are captured in evaluation order. A compiler-only `CallWithReceiver` emits the native receiver-preserving VM call opcode, not writable `function.call`. Explicit GC and HTML -> native paint tests pass. This is NOT a full paused-stack VM: awaited conditional branches, logical RHS, loops, try/finally, and certain object/assignment patterns still reject. Five-site repeat remains Google **2**, YouTube **4**, Pikabu **11**, Reddit **1**, DeviantArt **3** initial JS failures, with Reddit blank and YouTube textless. Next: semantics-correct suspend/resume through arbitrary try/loop control flow plus visible-site script/layout fixes.

@@ -16,7 +16,7 @@ op_engine::expression_await_updates_real_native_paint
 ```
 
 - [`op_js::Await`](../crates/op_js/src/parser.rs#L151)
-- [`op_js::split_statement`](../crates/op_js/src/await_lowering.rs#L398)
+- [`op_js::split_statement`](../crates/op_js/src/await_lowering.rs#L454)
 - [`op_js::CallWithReceiver`](../crates/op_js/src/bytecode.rs#L869)
 - [`op_js::Instruction::Call`](../crates/op_js/src/runtime.rs#L5673)
 - [`op_engine::expression_await_updates_real_native_paint`](../crates/op_engine/tests/scripts.rs#L5)

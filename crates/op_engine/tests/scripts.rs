@@ -26,6 +26,30 @@ fn expression_await_updates_real_native_paint() {
 }
 
 #[test]
+fn object_and_conditional_await_reach_original_native_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "async function update(){",
+            "var record={first:'OBJECT',value:await Promise.resolve('-AWAIT')};",
+            "var answer=true?await Promise.resolve('-BRANCH'):await Promise.resolve('FAIL');",
+            "document.getElementById('result').textContent=record.first+record.value+answer;",
+            "}",
+            "update();",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("OBJECT-AWAIT-BRANCH")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn async_await_microtask_changes_native_document_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

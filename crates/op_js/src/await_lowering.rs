@@ -1,7 +1,10 @@
 //! Bounded CPS lowering for async expressions. This is not a resumable VM
 //! frame: conditionally executed branches and try/finally require a separate
 //! interpreter continuation design and remain syntax errors at the call site.
-use crate::{AssignmentTarget, Expression, JsValue, Statement, VariableDeclarator, VariableKind};
+use crate::{
+    AssignmentTarget, Expression, JsValue, ObjectPropertyKind, Statement, VariableDeclarator,
+    VariableKind,
+};
 
 struct Split {
     before: Vec<Statement>,
@@ -318,6 +321,38 @@ fn split(expression: Expression, serial: &mut usize, resumed: &str) -> Option<Sp
                 after: Expression::ArrayLiteral(prior),
             })
         }
+        Expression::ObjectLiteral(properties) => {
+            // Object keys are static. Capture values preceding suspension
+            // in evaluation order; accessors and __proto__ remain unsupported.
+            if properties.iter().any(|property| {
+                property.kind != ObjectPropertyKind::Data || property.prototype_setter
+            }) {
+                return None;
+            }
+            let position = properties.iter().position(|property| {
+                let mut probe_serial = 0;
+                split(property.value.clone(), &mut probe_serial, resumed).is_some()
+            })?;
+            let mut before = Vec::new();
+            let mut remaining = properties.into_iter();
+            let mut prior = Vec::new();
+            for _ in 0..position {
+                let mut property = remaining.next().expect("prior object property");
+                property.value = capture(&mut before, property.value, serial);
+                prior.push(property);
+            }
+            let mut property = remaining.next().expect("await object property");
+            let mut part = split(property.value, serial, resumed)?;
+            before.append(&mut part.before);
+            property.value = part.after;
+            prior.push(property);
+            prior.extend(remaining);
+            Some(Split {
+                before,
+                awaited: part.awaited,
+                after: Expression::ObjectLiteral(prior),
+            })
+        }
         Expression::Sequence(expressions) => {
             let position = expressions.iter().position(|expr| {
                 let mut probe_serial = 0;
@@ -367,15 +402,36 @@ fn split(expression: Expression, serial: &mut usize, resumed: &str) -> Option<Sp
             consequent,
             alternate,
         } => {
-            let part = split(*test, serial, resumed)?;
+            if let Some(part) = split(*test.clone(), serial, resumed) {
+                return Some(Split {
+                    before: part.before,
+                    awaited: part.awaited,
+                    after: Expression::Conditional {
+                        test: Box::new(part.after),
+                        consequent,
+                        alternate,
+                    },
+                });
+            }
+            // Both arms suspend exactly once. Select before awaiting, never
+            // evaluating a skipped arm or adding a skip-path microtask.
+            let (Expression::Await(yes), Expression::Await(no)) = (*consequent, *alternate) else {
+                return None;
+            };
+            let mut probe_serial = 0;
+            if split(*yes.clone(), &mut probe_serial, resumed).is_some()
+                || split(*no.clone(), &mut probe_serial, resumed).is_some()
+            {
+                return None;
+            }
             Some(Split {
-                before: part.before,
-                awaited: part.awaited,
-                after: Expression::Conditional {
-                    test: Box::new(part.after),
-                    consequent,
-                    alternate,
+                before: Vec::new(),
+                awaited: Expression::Conditional {
+                    test,
+                    consequent: yes,
+                    alternate: no,
                 },
+                after: identifier(resumed.to_owned()),
             })
         }
         Expression::Logical { left, op, right } => {
@@ -440,12 +496,17 @@ fn split_statement(
 pub(crate) fn supports_awaits(statement: &Statement, expected: usize) -> bool {
     let mut serial = 0;
     let mut candidate = statement.clone();
-    for _ in 0..expected {
+    let mut extracted = 0;
+    while extracted < expected {
         let resumed = fresh(&mut serial, "result");
         let Some(part) = split_statement(candidate, &mut serial, &resumed) else {
             return false;
         };
+        // Two direct awaits in a conditional result in one suspension,
+        // because only one of the arms will be evaluated.
+        let absorbed = usize::from(matches!(part.awaited, Expression::Conditional { .. }));
         candidate = part.after;
+        extracted += 1 + absorbed;
     }
     let resumed = fresh(&mut serial, "result");
     split_statement(candidate, &mut serial, &resumed).is_none()

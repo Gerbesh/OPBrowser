@@ -1,5 +1,10 @@
 # Current Project Status
 
+## Object and two-arm conditional await update (19 October 2026)
+
+Original JS now resumes awaited ordinary object properties and chooses one direct-await ternary branch without running the other. GC, VM and original native-paint regressions pass. Five public-site checks still show 2/4/11/1/3 initial JS failures (Google/YouTube/Pikabu/Reddit/DeviantArt); YouTube lacks painted text and Reddit is blank. This is not a full suspended VM or modern-site compatibility pass.
+
+
 ## Expression-await compiler update (19 October 2026)
 
 The original JavaScript engine now resumes eager subexpressions containing `await` via Promise jobs, including arithmetic, arrays, assignments and awaited arguments. Evaluation-order capture and a native `CallWithReceiver` opcode preserve original method receivers even when `.call` is overwritten. Explicit GC and native rendered-pixel tests pass. Try/finally, loops and conditionally skipped `await` still require a general suspended-frame interpreter. Five live pages have initial script failures 2/4/11/1/3 (Google/YouTube/Pikabu/Reddit/DeviantArt), with Reddit blank and YouTube textless. No page-level compatibility pass is claimed.

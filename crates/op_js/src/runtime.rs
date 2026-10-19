@@ -16880,7 +16880,7 @@ mod tests {
             "async function f(){return true ? await 1 : 2;}",
             "async function f(){try{return await 1;}finally{var finished=true;}}",
             "async function f(){while(true){await 1;break;}}",
-            "async function f(){return {value:await 1};}",
+            "async function f(){return {__proto__:{},value:await 1};}",
         ] {
             assert!(vm.eval_script(script).is_err(), "must reject: {script}");
         }
@@ -16900,6 +16900,73 @@ mod tests {
         vm.collect_garbage_with_roots(&[]).unwrap();
         vm.eval_script("finish(2);").unwrap();
         assert_eq!(vm.global("result"), Some(&JsValue::Number(12.0)));
+    }
+
+    #[test]
+    fn object_literal_await_captures_values_before_suspension_and_gc() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var log='',finish,result='waiting';
+               var pending=new Promise(function(resolve){finish=resolve;});
+               function first(){log+='first;';return {base:7};}
+               function last(){log+='last;';return 4;}
+               async function work(){
+                 var entry={head:first(),middle:await pending,tail:last()};
+                 return entry.head.base+entry.middle+entry.tail;
+               }
+               work().then(function(n){result=n;});log+='sync;';"#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("first;sync;".into()))
+        );
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("finish(3)").unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Number(14.0)));
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("first;sync;last;".into()))
+        );
+        vm.eval_script(
+            r#"async function twice(){
+                 return {a:await Promise.resolve(2),b:await Promise.resolve(5)};
+               }
+               twice().then(function(e){result=e.a+e.b;});"#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Number(7.0)));
+        for script in [
+            "async function f(){return {__proto__: {}, value: await 1};}",
+            "async function f(){return {get x(){return 2;}, value: await 1};}",
+        ] {
+            assert!(vm.eval_script(script).is_err(), "unsupported: {script}");
+        }
+    }
+
+    #[test]
+    fn conditional_await_selects_exactly_one_branch() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var trace='',result='';
+               function take(name){trace+=name;return Promise.resolve(name);}
+               async function choose(flag){
+                 return flag ? await take('Y') : await take('N');
+               }
+               async function chooseAfterAwait(flag){
+                 return (await Promise.resolve(flag)) ? await take('T') : await take('F');
+               }
+               choose(true).then(function(x){result+=x;});
+               choose(false).then(function(x){result+=x;});
+               chooseAfterAwait(true).then(function(x){result+=x;});"#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("trace"), Some(&JsValue::String("YNT".into())));
+        assert_eq!(vm.global("result"), Some(&JsValue::String("YNT".into())));
+        assert!(
+            vm.eval_script("async function invalid(){return true ? await 1 : 2;}")
+                .is_err()
+        );
     }
 
     #[test]
