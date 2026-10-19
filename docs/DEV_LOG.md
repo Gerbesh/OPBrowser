@@ -3768,3 +3768,11 @@ This file is append-only project history.
 - Release original-engine five-site native 1300ms test: Google 2, YouTube 4, Pikabu 11, Reddit 1, DeviantArt 3 script failures. Reddit now fails at the real unsupported await but still paints a blank page; YouTube still paints zero text. Output is in ignored artifacts/live_web/async-five-2026-10-19/.
 - NEXT: actual await suspension/microtask continuations, script loading and first-viewport layout. No website is claimed functional.
 
+## 2026-10-19 - P0 direct await continuations and async arrows
+
+- Continued from published main 217c2c1. Original parser recognizes contextual async arrows and simple direct await variable initializers, expression statements and returns in async functions. It lowers a bounded chain of up to 32 awaits into Promise.resolve(...).then(lexicalArrow) jobs; pending Promises resume after later microtask checkpoints, not synchronously. Unsupported nested expression/if/try/loop await rejects explicitly. This is not a general suspended-stack VM.
+- Async arrows carry independent is_async/is_arrow flags into original bytecode and runtime. Lexical this/arguments and Promise return adoption/rejection survive. Unspellable internal continuation parameter names avoid page-script collisions.
+- New parser and original-VM regressions verify async arrow expressions, block bodies, invalid placements, delayed settlement over distinct JS jobs, multiple awaits, explicit thrown/rejected results, lexical contexts and pending fetch response completion after an explicit GC sweep. A genuine original HTML -> JS -> DOM -> Windows paint regression verifies text updates after two awaits.
+- Release real-network test on five unchanged priority URLs with 1300ms settle reports JS failures Google 2, YouTube 4, Pikabu 11, Reddit 1, DeviantArt 3. YouTube still paints 0 text, Reddit paints a white viewport. Opt-in Reddit source context now advances past async-arrow syntax to a complex await placement rejected by the limited lowering. A previous interim Pikabu timeout did not recur in the final five-site run. Diagnostic artifacts are gitignored at artifacts/live_web/await-arrows-five-2026-10-19/ and await-arrows-reddit-2026-10-19/.
+- Next: general await continuations through arbitrary expression/try/finally control flow and real-page script loading/layout; visual compatibility is not claimed.
+

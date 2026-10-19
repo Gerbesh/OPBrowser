@@ -145,8 +145,10 @@ pub enum Expression {
     Arrow {
         params: Vec<String>,
         body: Vec<Statement>,
+        is_async: bool,
     },
     Identifier(String),
+    Await(Box<Expression>),
     This,
     ObjectLiteral(Vec<ObjectProperty>),
     ArrayLiteral(Vec<Option<Expression>>),
@@ -253,6 +255,85 @@ pub enum BinaryOp {
     In,
 }
 
+/// Lower sequential awaits to real Promise reactions. Unsupported nested
+/// placements are rejected at parse time; no synchronous await is faked.
+fn lower_async_await(statements: Vec<Statement>) -> Vec<Statement> {
+    let mut prefix = Vec::new();
+    let mut remaining = statements.into_iter();
+    while let Some(statement) = remaining.next() {
+        match statement {
+            Statement::Variable {
+                kind,
+                mut declarations,
+            } if declarations.len() == 1
+                && matches!(declarations[0].initializer, Some(Expression::Await(_))) =>
+            {
+                let declaration = declarations.pop().expect("one await declaration");
+                let Some(Expression::Await(awaited)) = declaration.initializer else {
+                    unreachable!("guarded by direct await initializer")
+                };
+                // The callback parameter is not spellable by page scripts.
+                let private = "\0op-await-value".to_owned();
+                let mut tail = vec![Statement::Variable {
+                    kind,
+                    declarations: vec![VariableDeclarator {
+                        name: declaration.name,
+                        initializer: Some(Expression::Identifier(private.clone())),
+                    }],
+                }];
+                tail.extend(lower_async_await(remaining.collect()));
+                prefix.push(Statement::Return(Some(await_promise_chain(
+                    *awaited,
+                    Some(Expression::Arrow {
+                        params: vec![private],
+                        body: tail,
+                        is_async: false,
+                    }),
+                ))));
+                return prefix;
+            }
+            Statement::Expression(Expression::Await(awaited)) => {
+                let tail = lower_async_await(remaining.collect());
+                prefix.push(Statement::Return(Some(await_promise_chain(
+                    *awaited,
+                    Some(Expression::Arrow {
+                        params: vec!["\0op-await-discard".into()],
+                        body: tail,
+                        is_async: false,
+                    }),
+                ))));
+                return prefix;
+            }
+            Statement::Return(Some(Expression::Await(awaited))) => {
+                prefix.push(Statement::Return(Some(await_promise_chain(*awaited, None))));
+                return prefix;
+            }
+            other => prefix.push(other),
+        }
+    }
+    prefix
+}
+
+fn await_promise_chain(value: Expression, continuation: Option<Expression>) -> Expression {
+    let resolved = Expression::Call {
+        callee: Box::new(Expression::Member {
+            object: Box::new(Expression::Identifier("Promise".into())),
+            property: Box::new(Expression::Literal(JsValue::String("resolve".into()))),
+        }),
+        arguments: vec![value],
+    };
+    match continuation {
+        Some(callback) => Expression::Call {
+            callee: Box::new(Expression::Member {
+                object: Box::new(resolved),
+                property: Box::new(Expression::Literal(JsValue::String("then".into()))),
+            }),
+            arguments: vec![callback],
+        },
+        None => resolved,
+    }
+}
+
 pub fn parse_script(source: &str) -> Result<Program, JsError> {
     Parser::new(tokenize(source)?).parse_program()
 }
@@ -264,6 +345,7 @@ struct Parser {
     breakable_depth: usize,
     function_depth: usize,
     in_async_function: bool,
+    await_count: usize,
     labels: Vec<(String, bool)>,
 }
 
@@ -276,6 +358,7 @@ impl Parser {
             breakable_depth: 0,
             function_depth: 0,
             in_async_function: false,
+            await_count: 0,
             labels: Vec::new(),
         }
     }
@@ -871,6 +954,8 @@ impl Parser {
         let saved_breakable_depth = self.breakable_depth;
         let saved_labels = std::mem::take(&mut self.labels);
         let saved_async = self.in_async_function;
+        let saved_await_count = self.await_count;
+        self.await_count = 0;
         self.in_async_function = is_async;
         self.loop_depth = 0;
         self.breakable_depth = 0;
@@ -884,7 +969,25 @@ impl Parser {
                         "expected '}' after function body",
                     ));
                 }
-                body.push(self.statement()?);
+                let before_await = self.await_count;
+                let statement = self.statement()?;
+                if self.await_count != before_await {
+                    let direct = match &statement {
+                        Statement::Variable { declarations, .. } if declarations.len() == 1 => {
+                            matches!(&declarations[0].initializer, Some(Expression::Await(_)))
+                        }
+                        Statement::Expression(Expression::Await(_))
+                        | Statement::Return(Some(Expression::Await(_))) => true,
+                        _ => false,
+                    };
+                    if self.await_count != before_await + 1 || !direct {
+                        return Err(JsError::syntax(
+                            self.current().start,
+                            "await is only supported in a direct initializer, statement or return",
+                        ));
+                    }
+                }
+                body.push(statement);
             }
             self.advance();
             Ok(())
@@ -894,7 +997,13 @@ impl Parser {
         self.breakable_depth = saved_breakable_depth;
         self.labels = saved_labels;
         self.in_async_function = saved_async;
+        self.await_count = saved_await_count;
         result?;
+        let body = if is_async {
+            lower_async_await(body)
+        } else {
+            body
+        };
         Ok((params, body))
     }
 
@@ -958,7 +1067,10 @@ impl Parser {
     /// Only plain identifiers are accepted as arrow parameters for now.
     /// Lookahead leaves grouped expressions unchanged unless => follows.
     fn arrow_parameters(&self) -> Option<(Vec<String>, usize)> {
-        let start = self.index;
+        self.arrow_parameters_at(self.index)
+    }
+
+    fn arrow_parameters_at(&self, start: usize) -> Option<(Vec<String>, usize)> {
         if let TokenKind::Identifier(name) = &self.tokens.get(start)?.kind
             && matches!(self.tokens.get(start + 1)?.kind, TokenKind::Arrow)
         {
@@ -998,28 +1110,83 @@ impl Parser {
         &mut self,
         params: Vec<String>,
         body_start: usize,
+        is_async: bool,
     ) -> Result<Expression, JsError> {
         self.index = body_start;
-        let body = if self.take(&TokenKind::LeftBrace) {
+        let saved_async = self.in_async_function;
+        let saved_count = self.await_count;
+        self.in_async_function = is_async;
+        self.await_count = 0;
+        let parsed = if self.take(&TokenKind::LeftBrace) {
             let saved_loop = self.loop_depth;
             let saved_breakable = self.breakable_depth;
             let saved_labels = std::mem::take(&mut self.labels);
             self.loop_depth = 0;
             self.breakable_depth = 0;
             self.function_depth += 1;
-            let parsed = self.block_statement();
+            let result = (|| {
+                let mut body = Vec::new();
+                while !self.check(&TokenKind::RightBrace) {
+                    if self.check(&TokenKind::Eof) {
+                        return Err(JsError::syntax(
+                            self.current().start,
+                            "expected '}' after arrow body",
+                        ));
+                    }
+                    let before = self.await_count;
+                    let statement = self.statement()?;
+                    if self.await_count != before {
+                        let direct = match &statement {
+                            Statement::Variable { declarations, .. } if declarations.len() == 1 => {
+                                matches!(&declarations[0].initializer, Some(Expression::Await(_)))
+                            }
+                            Statement::Expression(Expression::Await(_))
+                            | Statement::Return(Some(Expression::Await(_))) => true,
+                            _ => false,
+                        };
+                        if self.await_count != before + 1 || !direct {
+                            return Err(JsError::syntax(
+                                self.current().start,
+                                "await is only supported in a direct initializer, statement or return",
+                            ));
+                        }
+                    }
+                    body.push(statement);
+                }
+                self.advance();
+                Ok(body)
+            })();
             self.function_depth -= 1;
             self.loop_depth = saved_loop;
             self.breakable_depth = saved_breakable;
             self.labels = saved_labels;
-            let Statement::Block(body) = parsed? else {
-                unreachable!("block parser returns a block");
-            };
-            body
+            result
         } else {
-            vec![Statement::Return(Some(self.assignment()?))]
+            let before = self.await_count;
+            self.assignment().and_then(|value| {
+                if self.await_count != before
+                    && (self.await_count != before + 1 || !matches!(value, Expression::Await(_)))
+                {
+                    return Err(JsError::syntax(
+                        self.current().start,
+                        "await is only supported in a direct initializer, statement or return",
+                    ));
+                }
+                Ok(vec![Statement::Return(Some(value))])
+            })
         };
-        Ok(Expression::Arrow { params, body })
+        self.in_async_function = saved_async;
+        self.await_count = saved_count;
+        let body = parsed?;
+        Ok(Expression::Arrow {
+            params,
+            body: if is_async {
+                lower_async_await(body)
+            } else {
+                body
+            },
+            is_async,
+        })
     }
 
     fn sequence(&mut self) -> Result<Expression, JsError> {
@@ -1035,8 +1202,19 @@ impl Parser {
     }
 
     fn assignment(&mut self) -> Result<Expression, JsError> {
+        if matches!(&self.current().kind, TokenKind::Identifier(name) if name == "async")
+            && let Some((params, body_start)) = self.arrow_parameters_at(self.index + 1)
+        {
+            if params.iter().any(|param| param == "await") {
+                return Err(JsError::syntax(
+                    self.current().start,
+                    "await cannot be an async parameter",
+                ));
+            }
+            return self.arrow_function(params, body_start, true);
+        }
         if let Some((params, body_start)) = self.arrow_parameters() {
-            return self.arrow_function(params, body_start);
+            return self.arrow_function(params, body_start, false);
         }
         let left = self.conditional()?;
         let compound = if self.take(&TokenKind::Equal) {
@@ -1340,6 +1518,16 @@ impl Parser {
     }
 
     fn unary(&mut self) -> Result<Expression, JsError> {
+        if self.in_async_function
+            && matches!(&self.current().kind, TokenKind::Identifier(name) if name == "await")
+        {
+            let offset = self.advance().start;
+            self.await_count += 1;
+            if self.await_count > 32 {
+                return Err(JsError::syntax(offset, "await chain budget exceeded"));
+            }
+            return Ok(Expression::Await(Box::new(self.unary()?)));
+        }
         let update = if self.take(&TokenKind::PlusPlus) {
             Some(UpdateOp::Increment)
         } else if self.take(&TokenKind::MinusMinus) {
@@ -1516,9 +1704,6 @@ impl Parser {
                     is_async: true,
                 })
             }
-            TokenKind::Identifier(name) if name == "await" && self.in_async_function => Err(
-                JsError::syntax(token.start, "await suspension is not supported yet"),
-            ),
             TokenKind::Identifier(name) => Ok(Expression::Identifier(name)),
             TokenKind::This => Ok(Expression::This),
             TokenKind::New => self.new_expression(token.start),
@@ -1933,7 +2118,7 @@ mod tests {
     }
 
     #[test]
-    fn async_function_parser_preserves_contextual_keyword_and_rejects_await() {
+    fn async_function_parser_validates_bounded_await_subset() {
         let program = parse_script(
             "async function work(x) { return x; } let callback=async function(x){return x+1;};",
         )
@@ -1949,13 +2134,45 @@ mod tests {
             declarations[0].initializer,
             Some(Expression::Function { is_async: true, .. })
         ));
-        assert!(parse_script("async function f() { return await Promise.resolve(3); }").is_err());
+        assert!(parse_script("async function f() { return await Promise.resolve(3); }").is_ok());
+        assert!(
+            parse_script("async function f() { const x=await Promise.resolve(3); return x+1; }")
+                .is_ok()
+        );
+        assert!(
+            parse_script("async function f() { if (true) { await Promise.resolve(3); } }").is_err()
+        );
+        assert!(
+            parse_script("async function f() { const x=await Promise.resolve(3)+1; }").is_err()
+        );
+        assert!(parse_script("async function f() { const a=await 1, b=2; }").is_err());
+        assert!(parse_script("async function f() { return await await 1; }").is_err());
+        assert!(
+            parse_script(
+                "async function f() { async function nested(){ return await 2; } return nested(); }"
+            )
+            .is_ok()
+        );
         assert!(parse_script("async function f(await) {return 1;}").is_err());
         assert!(
             parse_script("async function f() { function inner() { return 5; } return inner(); }")
                 .is_ok()
         );
         assert!(parse_script("var async=3; async+2;").is_ok());
+    }
+
+    #[test]
+    fn async_arrow_syntax_is_contextual_and_rejects_unsupported_await_positions() {
+        assert!(
+            parse_script("var f=async x=>x*2; var g=async (x,y)=>{const z=await x;return z+y;};")
+                .is_ok()
+        );
+        assert!(parse_script("var g=async()=>await Promise.resolve(9);").is_ok());
+        assert!(parse_script("var result=(async e=>e+e)('abc');").is_ok());
+        assert!(parse_script("var async=7; var f=async=>async+1;").is_ok());
+        assert!(parse_script("var g=async(await)=>1;").is_err());
+        assert!(parse_script("var g=async()=>{if(true){await 1;}};").is_err());
+        assert!(parse_script("var g=async()=>await Promise.resolve(1)+2;").is_err());
     }
 
     #[test]

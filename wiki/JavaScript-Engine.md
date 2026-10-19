@@ -3,6 +3,10 @@
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 
+## Sequential await and async arrow subset (19 October 2026)
+
+The parser accepts `async x => expression`, `async (x,y) => expression`, async arrow blocks and direct awaits. Simple `const/let/var x = await value`, `await value;`, and `return await value` become Promise.resolve/.then continuations, suspended on pending Promises. Original GC retains closures until network/Promise settlement. Lexical arrow this/arguments and rejection are regression-tested. Nested expressions, loops/try and complex control-flow awaits still reject rather than pretending to run synchronously; this is not a full suspended-stack VM. Reddit's new blocker is an unsupported complex await after the async-arrow parser barrier.
+
 ## Bounded async functions and Promise settlement (19 October 2026)
 
 The original parser interprets contextual `async` preceding `function`. Declarations and expressions compile to original closure bytecode flagged as async. Without `await`, calls return real self-hosted Promises, adopt returned Promises and reject thrown JS values or VM runtime errors. Async functions have no constructible prototype. Real `await` suspension, async arrows and complete ECMAScript async scheduling remain unsupported: the parser rejects `await` in async bodies rather than synchronously faking it. Two focused parser/VM tests pass. Reddit's diagnostic advances to this `await` blocker; live rendering remains unchanged.

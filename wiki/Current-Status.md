@@ -3,6 +3,10 @@
 Last reviewed: **16 October 2026**. The [published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki) tracks the main repository's `wiki/` sources. This is a development snapshot, not a
 claim that OPBrowser is ready for everyday browsing.
 
+## Sequential await and async arrows (19 October 2026)
+
+OPBrowser's independent JS engine resumes sequential direct awaits via real Promise microtasks, including pending network replies through GC. Async arrows now support ordinary parameters, block bodies, lexical this/arguments and direct awaits. The native HTML -> DOM -> paint regression passes after two awaits. Complex nested/conditional await is still unsupported. Five-site live JS failures remain 2/4/11/1/3 (Google/YouTube/Pikabu/Reddit/DeviantArt), with Reddit blank and YouTube textless. This is an engine milestone, not proof of functional websites.
+
 ## Bounded async function checkpoint (19 October 2026)
 
 Original Rust JS handles `async function` declarations and expressions when no `await` occurs. Calls settle browser-owned Promises, including returned-promise adoption and error rejection. Actual `await` suspension remains unsupported and rejects at parse time. Native five-site checks record JS errors 2/4/11/1/3 (Google/YouTube/Pikabu/Reddit/DeviantArt); Reddit is still blank and YouTube still paints zero text. This is a syntax/semantics checkpoint, not a successful website rendering.

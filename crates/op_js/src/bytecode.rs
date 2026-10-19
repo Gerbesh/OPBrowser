@@ -816,6 +816,7 @@ impl Compiler {
                 }
             }
             Expression::Identifier(name) => self.code.push(Instruction::Load(name.clone())),
+            Expression::Await(_) => unreachable!("await must be lowered before bytecode"),
             Expression::This => self.code.push(Instruction::Load("this".into())),
             Expression::ObjectLiteral(properties) => {
                 let mut property_kinds = Vec::with_capacity(properties.len());
@@ -872,8 +873,12 @@ impl Compiler {
                 }
                 self.code.push(Instruction::Construct(arguments.len()));
             }
-            Expression::Arrow { params, body } => {
-                let template = compile_function_template(None, params, body, true, false);
+            Expression::Arrow {
+                params,
+                body,
+                is_async,
+            } => {
+                let template = compile_function_template(None, params, body, true, *is_async);
                 self.code.push(Instruction::CreateFunction(template));
             }
             Expression::Function {

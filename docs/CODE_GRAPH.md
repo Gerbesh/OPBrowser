@@ -61,6 +61,10 @@ remains incomplete.
 
 `op_js::parser` marks contextual `async function` declarations and expressions via `is_async`, rejecting `await` until real suspension is available. `op_js::bytecode::FunctionTemplate` propagates the marker through original closure allocation. `op_js::runtime::call_user_function` executes a no-await body in the native VM and uses the existing self-hosted `Promise.resolve`/`Promise.reject` for value adoption and rejection. Standard Error objects represent runtime failures; execution-budget errors remain hard stops. Async functions have no own `prototype`, and `new` rejects. This is not a complete async scheduler.
 
+## Sequential await and async arrows (19 October 2026)
+
+`op_js::parser::Parser` recognizes contextual async arrows and `Expression::Await` only inside async functions. Per-function/arrow validation rejects unsupported nested expressions, loops, try and non-direct awaits (maximum 32). `lower_async_await` rewrites straight-line awaits into `Promise.resolve(...).then(lexicalArrow)` continuations, recursively preserving following statements; NUL-prefixed internal callback variables are not spellable by page scripts. `op_js::bytecode::FunctionTemplate` carries separate is_arrow/is_async flags and original GC traces all retained closure environments. The original FIFO Promise microtasks resume pending fetch replies after GC. A native engine test verifies HTML -> authoritative DOM mutations -> paint text after two awaits. This is not a generally resumable JS VM frame.
+
 ## Namespace-aware DOM node creation and error diagnostics (17 October 2026)
 
 `op_dom::ElementData::namespace_uri: Option<String>` now survives

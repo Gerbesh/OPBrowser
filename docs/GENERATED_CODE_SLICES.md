@@ -17,8 +17,8 @@ op_engine::parse_and_execute
 ```
 
 - [`op_js::PlusEqual`](../crates/op_js/src/lexer.rs#L53)
-- [`op_js::CompoundAssignment`](../crates/op_js/src/parser.rs#L200)
-- [`op_js::Sequence`](../crates/op_js/src/parser.rs#L199)
+- [`op_js::CompoundAssignment`](../crates/op_js/src/parser.rs#L202)
+- [`op_js::Sequence`](../crates/op_js/src/parser.rs#L201)
 - [`op_js::Dup2`](../crates/op_js/src/bytecode.rs#L78)
 - [`op_js::Dup2`](../crates/op_js/src/runtime.rs#L5870)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L410)
@@ -76,7 +76,7 @@ op_js::ToForOfValues
 op_engine::parse_and_execute
 ```
 
-- [`op_js::for_statement`](../crates/op_js/src/parser.rs#L316)
+- [`op_js::for_statement`](../crates/op_js/src/parser.rs#L399)
 - [`op_js::for_of_statement`](../crates/op_js/src/bytecode.rs#L169)
 - [`op_js::ToForOfValues`](../crates/op_js/src/runtime.rs#L5518)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L410)
@@ -96,7 +96,7 @@ op_engine::parse_and_execute
 ```
 
 - [`op_js::QuestionQuestion`](../crates/op_js/src/lexer.rs#L94)
-- [`op_js::nullish`](../crates/op_js/src/parser.rs#L1081)
+- [`op_js::nullish`](../crates/op_js/src/parser.rs#L1259)
 - [`op_js::JumpIfNullish`](../crates/op_js/src/bytecode.rs#L86)
 - [`op_js::JumpIfNullish`](../crates/op_js/src/runtime.rs#L5916)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L410)
@@ -1127,7 +1127,7 @@ op_dom::append_child
 op_paint::build_display_list
 ```
 
-- [`op_js::comparison`](../crates/op_js/src/parser.rs#L1220)
+- [`op_js::comparison`](../crates/op_js/src/parser.rs#L1398)
 - [`op_js::binary_with_coercion`](../crates/op_js/src/runtime.rs#L1955)
 - [`op_js::query_descendants`](../crates/op_js/src/runtime.rs#L4130)
 - [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3403)
@@ -1323,7 +1323,7 @@ op_paint::build_display_list
 ```
 
 - [`op_js::tokenize`](../crates/op_js/src/lexer.rs#L101)
-- [`op_js::conditional`](../crates/op_js/src/parser.rs#L1041)
+- [`op_js::conditional`](../crates/op_js/src/parser.rs#L1219)
 - [`op_js::compile_program`](../crates/op_js/src/bytecode.rs#L106)
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L422)
 - [`op_js::typeof_value`](../crates/op_js/src/runtime.rs#L1819)
@@ -1477,7 +1477,7 @@ op_js::apply_binary
 - [`op_engine::active_script_diagnostics`](../crates/op_engine/src/lib.rs#L349)
 - [`op_browser::script_diag_`](../crates/op_browser/src/bin/live_site_probe.rs#L184)
 - [`op_js::Caret`](../crates/op_js/src/lexer.rs#L84)
-- [`op_js::bitwise_xor`](../crates/op_js/src/parser.rs#L1181)
+- [`op_js::bitwise_xor`](../crates/op_js/src/parser.rs#L1359)
 - [`op_js::to_int32`](../crates/op_js/src/runtime.rs#L10575)
 - [`op_js::apply_binary`](../crates/op_js/src/runtime.rs#L2046)
 

@@ -67,6 +67,10 @@ post fragments incorrectly;
 5. **Add visual comparison and interaction checks** only once pages
    render enough content; block/403 cases require independent verification.
 
+## 19 October 2026: sequential-await and async-arrow follow-up
+
+The original engine now runs direct sequential awaits on the Promise microtask queue, including pending fetch replies across GC, and parses async arrow syntax. Five anonymous public HTTPS URLs with unchanged 1280x720 native pixel and 1300ms settle settings were checked under ignored `artifacts/live_web/await-arrows-five-2026-10-19/`: Google **2**, YouTube **4**, Pikabu **11**, Reddit **1**, DeviantArt **3** failed scripts. Reddit remains white and YouTube textless. Opt-in bounded diagnostic under `artifacts/live_web/await-arrows-reddit-2026-10-19/` identifies the new Reddit obstacle as unsupported complex-await placement after successful async-arrow parsing. No modern site is certified functional. An earlier interim Pikabu timeout cleared on this final five-site run.
+
 ## 19 October 2026: async declaration unblocks parsing only
 
 Original no-`await` `async function` syntax now uses the native VM and existing Promise jobs. Five anonymous live HTTPS URLs were retested at 1280×720 and 1300ms settling, under ignored `artifacts/live_web/async-five-2026-10-19/`. JS failures: Google **2**, YouTube **4**, Pikabu **11**, Reddit **1**, DeviantArt **3**. YouTube remains a textless skeleton; Reddit remains white. Reddit's parse error moved from the async declaration to `await suspension is not supported yet`. This is parser progress, **not** a visual compatibility pass. Native await scheduling, dynamic scripts and layout remain outstanding.

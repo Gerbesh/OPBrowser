@@ -10,6 +10,10 @@ OPBrowser aims to be an independent Windows browser with an original Rust web/Ja
 
 **G3 budget-pressure checkpoint:** automatic idle GC now observes object and lexical-environment arena headroom as well as live allocations. Three regressions pass for low-budget and repeated allocation bursts; long-run RSS remains pending.
 
+## P0 await microtasks and native pixels (19 October 2026)
+
+Original async arrows and direct sequential awaits now execute via browser-owned Promise jobs. A pending fetch survives GC, and multiple awaits produce real native DOM text pixels. General expression and try/loop await suspension remain incomplete. Five real URLs show 2/4/11/1/3 JS failures, Reddit blank and YouTube textless. Next: full async frame continuations and real layout/script-loading integration.
+
 ## P0 async and visible-page checkpoint (19 October 2026)
 
 Original JS supports ordinary `async function` syntax and Promise settlement **without `await`**. A repeat five-site test records 2/4/11/1/3 failed scripts for Google/YouTube/Pikabu/Reddit/DeviantArt, with Reddit still white and YouTube zero-text. Reddit advances to a genuine unsupported `await` barrier. Next: `await` continuations and microtasks, dynamic scripts and real first viewport pixels. Do not mistake an improved parser diagnostic for web functionality.

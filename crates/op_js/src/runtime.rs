@@ -16736,6 +16736,106 @@ mod tests {
     }
 
     #[test]
+    fn async_await_resumes_after_pending_promise_across_jobs() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var settle;var order='';\
+             var pending=new Promise(function(resolve){settle=resolve;});\
+             async function work(n){\
+               order+='start;';\
+               const value=await pending;\
+               order+='resumed;';\
+               await Promise.resolve('next');\
+               return value+n;\
+             }\
+             work(2).then(function(v){order+='done:'+v+';';});\
+             order+='sync;';",
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("order"),
+            Some(&JsValue::String("start;sync;".into()))
+        );
+        vm.eval_script("settle(5);").unwrap();
+        assert_eq!(
+            vm.global("order"),
+            Some(&JsValue::String("start;sync;resumed;done:7;".into()))
+        );
+    }
+
+    #[test]
+    fn async_await_preserves_lexical_this_arguments_and_rejection() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var output='';\
+             var receiver={base:10, run:async function(n){\
+               const increment=await Promise.resolve(3);\
+               return this.base+arguments[0]+increment;\
+             }};\
+             receiver.run(2).then(function(value){output+='value:'+value+';';});\
+             async function fail(){await Promise.resolve(1);throw 'broken';}\
+             fail().catch(function(reason){output+='fail:'+reason+';';});\
+             async function reject(){return await Promise.reject('oops');}\
+             reject().catch(function(reason){output+='reject:'+reason+';';});",
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("output"),
+            Some(&JsValue::String("reject:oops;value:15;fail:broken;".into()))
+        );
+    }
+
+    #[test]
+    fn async_arrows_preserve_lexical_binding_and_promise_scheduling() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var doubled,joined,withAwait,lexical;\
+             var f=async x=>x*2;\
+             f(4).then(function(x){doubled=x;});\
+             (async e=>e+e)('abc').then(function(x){joined=x;});\
+             var g=async (x,y)=>{const z=await Promise.resolve(x);return z+y;};\
+             g(3,7).then(function(x){withAwait=x;});\
+             var holder={base:20, run:function(x){\
+                var arrow=async y=>{const z=await Promise.resolve(y);return this.base+x+z;};\
+                return arrow(2);\
+             }};\
+             holder.run(5).then(function(x){lexical=x;});",
+        )
+        .unwrap();
+        assert_eq!(vm.global("doubled"), Some(&JsValue::Number(8.0)));
+        assert_eq!(vm.global("joined"), Some(&JsValue::String("abcabc".into())));
+        assert_eq!(vm.global("withAwait"), Some(&JsValue::Number(10.0)));
+        assert_eq!(vm.global("lexical"), Some(&JsValue::Number(27.0)));
+        assert!(vm.eval_script("new (async x=>x)()").is_err());
+    }
+
+    #[test]
+    fn async_await_fetch_survives_gc_and_resumes_from_host_completion() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            "var state='waiting';\
+             async function load(){\
+               const response=await fetch('async-data.txt');\
+               const text=await response.text();\
+               state='loaded:'+text;\
+             }\
+             load();",
+        )
+        .unwrap();
+        let requests = vm.take_text_requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(vm.global("state"), Some(&JsValue::String("waiting".into())));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(!vm.complete_text_request(requests[0].id, Ok("payload".into())));
+        assert_eq!(
+            vm.global("state"),
+            Some(&JsValue::String("loaded:payload".into()))
+        );
+        vm.collect_garbage_with_roots(&[]).unwrap();
+    }
+
+    #[test]
     fn pending_promise_settles_later_and_adopts_returned_promise() {
         let mut vm = JsRuntime::new();
         vm.eval_script(

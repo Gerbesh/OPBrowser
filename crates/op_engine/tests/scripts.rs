@@ -2,6 +2,30 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn async_await_microtask_changes_native_document_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "async function paint(){",
+            "const part=await Promise.resolve('ASYNC');",
+            "await Promise.resolve('PIXELS');",
+            "document.getElementById('result').textContent=part+'-AWAIT-PASS';",
+            "}",
+            "paint();",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("ASYNC-AWAIT-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn namespace_aware_svg_creation_survives_host_commit_and_native_paint() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

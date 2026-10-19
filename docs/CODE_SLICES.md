@@ -16,6 +16,10 @@ feature-flow checker**, not a whole-program AST/data-flow slicer; these
 hand-maintained architectural narratives remain the deeper explanation.
 See also [Generated Code Graph](GENERATED_CODE_GRAPH.md).
 
+## S93 - Await and async arrows through native pixels
+
+An original async function awaits `fetch(url)`, then `response.text()`: contextual JS parser await checks -> straight-line Promise.then lowering -> original bytecode lexical-arrow closure -> FIFO microtasks -> host network response -> GC-rooted continuation -> JavaScript DOM mutation -> authoritative document and native Windows paint. VM tests verify pending/multiple awaits, async-arrow expression/body syntax and lexical this/arguments, Promise rejection, and fetch completion across explicit GC. An HTML-to-paint integration test verifies native pixels after two awaits. This is a bounded subset; complex expression, if/try/loop awaits are rejected. Live Reddit progresses through async-arrow syntax to unsupported complex await but remains white, while YouTube still renders no text.
+
 ## S92 - Original async function to self-hosted Promise reaction
 
 Page JavaScript `async function f(x) { return x + 2; }` enters `op_js::parser` -> `op_js::bytecode` flags a closure -> `op_js::runtime` runs the no-`await` body -> the browser-owned `Promise.resolve` adopts the result and delivers `.then` on the existing bounded microtask queue. Throw and invalid references reject; `new f()` fails. Two parser/VM regressions exercise outcomes. Live Reddit now reaches the unsupported `await` rather than failing at the function declaration, but still renders white; no visual/site compatibility is certified. Full await continuations remain next.
