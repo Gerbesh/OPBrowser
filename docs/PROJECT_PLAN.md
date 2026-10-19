@@ -1,5 +1,10 @@
 # OPBrowser: active project plan
 
+## P0 blank-viewport root-cause census (19 October 2026)
+
+Added a privacy-preserving, read-only connected-DOM census in `op_engine` and per-site values in the native Release probe. Counts DOM elements, form/iframe/input/script structure, body text, CSS-suppressed text, visible candidates and source-only text, without copying page strings or URLs. Real Reddit is now proven to have **zero nonwhitespace text nodes in its body**, despite executing its one script successfully; its markup contains one form, four input elements and no external script tags. The response may be a service/interstitial shell, but this measurement alone does not prove why. YouTube has 13 body text nodes, all CSS-suppressed, 9 external scripts, 35 CSS parser errors and 4 JS failures. Raising the script quota from 16 to 32 made YouTube errors increase from 4 to 7 without painting text and caused Pikabu to time out; reverted. Next: targeted script/bootstrap loading and CSS/DOM reconstruction, never mask absent content with fake pixels.
+
+
 ## P0 live Reddit parser-unblock and guarded async control flow (19 October 2026)
 
 Original Rust async lowering now supports awaited if-tests, terminal return/throw branches (including nested if), template substitutions with pre-await stringification, awaited throw expressions, and **ordered multi-declarator let/const/var initializers**. Parser diagnostics retain the exact source byte offset of the await and label the unsupported statement category. JS VM/GC and HTML -> native paint regressions pass. A repeat real-HTTPS native probe changes Reddit from **0 executed / 1 failed script** to **1 executed / 0 failed**, with no DOM mutations, **0 text** and a white viewport. This is a parser/JS execution milestone, NOT working Reddit. The other four site script failure counts remain Google 2 / YouTube 4 / Pikabu 11 / DeviantArt 3. P0 still requires resumable loop/try/finally and nonterminal branch frames, real content/layout correctness and on-demand profiling.

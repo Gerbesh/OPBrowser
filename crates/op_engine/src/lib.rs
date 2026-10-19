@@ -145,6 +145,120 @@ impl NavigationState {
     }
 }
 
+/// Privacy-preserving, read-only document census for diagnosing blank pages.
+/// No page text, attributes, scripts, selectors, or resource URLs are recorded.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DomContentDiagnostics {
+    pub connected_nodes: usize,
+    pub elements: usize,
+    pub body_elements: usize,
+    pub script_elements: usize,
+    pub stylesheet_elements: usize,
+    pub external_script_elements: usize,
+    pub form_elements: usize,
+    pub input_elements: usize,
+    pub iframe_elements: usize,
+    pub main_elements: usize,
+    pub image_elements: usize,
+    pub text_nodes: usize,
+    pub body_text_nodes: usize,
+    pub body_text_chars: usize,
+    pub potentially_visible_text_nodes: usize,
+    pub css_hidden_text_nodes: usize,
+    pub source_text_nodes: usize,
+    pub scanned_limit_reached: bool,
+}
+
+fn document_content_diagnostics(
+    document: &op_dom::Document,
+    styles: &ComputedStyleMap,
+) -> DomContentDiagnostics {
+    const MAX_NODES: usize = 100_000;
+    let mut result = DomContentDiagnostics::default();
+    // Traverse connected nodes only. Ignored script/head/style text must
+    // never be counted as missing paint content.
+    let mut stack = vec![(document.root(), false, false, false)];
+    while let Some((id, in_body, invisible, nonvisual_source)) = stack.pop() {
+        if result.connected_nodes >= MAX_NODES {
+            result.scanned_limit_reached = true;
+            break;
+        }
+        let Some(node) = document.node(id) else {
+            continue;
+        };
+        result.connected_nodes += 1;
+        let mut body = in_body;
+        let mut hidden = invisible;
+        let mut source = nonvisual_source;
+        match &node.kind {
+            op_dom::NodeKind::Element(element) => {
+                result.elements += 1;
+                let tag = element.tag_name.as_str();
+                if tag.eq_ignore_ascii_case("body") {
+                    result.body_elements += 1;
+                    body = true;
+                }
+                if matches!(tag, "script" | "noscript" | "style" | "template" | "head") {
+                    source = true;
+                }
+                if tag.eq_ignore_ascii_case("script") {
+                    result.script_elements += 1;
+                    if element
+                        .attributes
+                        .iter()
+                        .any(|attribute| attribute.name == "src")
+                    {
+                        result.external_script_elements += 1;
+                    }
+                }
+                if tag.eq_ignore_ascii_case("form") {
+                    result.form_elements += 1;
+                }
+                if tag.eq_ignore_ascii_case("input") {
+                    result.input_elements += 1;
+                }
+                if tag.eq_ignore_ascii_case("iframe") {
+                    result.iframe_elements += 1;
+                }
+                if tag.eq_ignore_ascii_case("main") {
+                    result.main_elements += 1;
+                }
+                if tag.eq_ignore_ascii_case("style") {
+                    result.stylesheet_elements += 1;
+                }
+                if tag.eq_ignore_ascii_case("img") {
+                    result.image_elements += 1;
+                }
+                if let Some(style) = styles.style_for(id) {
+                    hidden |= style.display == op_css::Display::None
+                        || style.visibility != op_css::Visibility::Visible
+                        || style.opacity <= 0.0;
+                }
+            }
+            op_dom::NodeKind::Text(text) if text.chars().any(|c| !c.is_whitespace()) => {
+                result.text_nodes += 1;
+                if body {
+                    result.body_text_nodes += 1;
+                    result.body_text_chars =
+                        result.body_text_chars.saturating_add(text.chars().count());
+                    if source {
+                        result.source_text_nodes += 1;
+                    } else if hidden {
+                        result.css_hidden_text_nodes += 1;
+                    } else {
+                        result.potentially_visible_text_nodes += 1;
+                    }
+                }
+            }
+            _ => {}
+        }
+        for &child in document.children(id).iter().rev() {
+            stack.push((child, body, hidden, source));
+        }
+    }
+    result
+}
+
 #[derive(Debug)]
 pub struct RenderedPage {
     pub address: String,
@@ -354,6 +468,16 @@ impl Engine {
     /// from JS wrappers and VM-side DOM metadata collected by the JS GC.
     pub fn active_document_node_slots(&self) -> Option<usize> {
         Some(self.active_document.as_ref()?.document.reserved_slots())
+    }
+
+    /// Read-only and bounded census of connected DOM content.
+    /// No page text or attributes are returned.
+    pub fn active_dom_content_diagnostics(&self) -> Option<DomContentDiagnostics> {
+        let page = self.active_document.as_ref()?;
+        Some(document_content_diagnostics(
+            &page.document,
+            &page.computed_styles,
+        ))
     }
 
     pub fn active_document_gc_telemetry(&self) -> Option<op_dom::DomGcTelemetry> {
@@ -1073,6 +1197,45 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn blank_page_census_distinguishes_source_css_hidden_and_visible_body_text() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<html><head><title>Unpainted title</title><style>.hide{display:none}</style></head><body><script>var marker=1;</script><div class='hide'>Hidden words</div><p>Visible words</p><form><input></form><iframe></iframe></body></html>",
+            640,
+            480,
+        );
+        let stats = engine.active_dom_content_diagnostics().unwrap();
+        assert_eq!(stats.body_elements, 1);
+        assert_eq!(stats.script_elements, 1);
+        assert_eq!(stats.form_elements, 1);
+        assert_eq!(stats.input_elements, 1);
+        assert_eq!(stats.iframe_elements, 1);
+        assert_eq!(stats.potentially_visible_text_nodes, 1);
+        assert_eq!(stats.css_hidden_text_nodes, 1);
+        assert_eq!(stats.source_text_nodes, 0); // parser consumes script source
+        assert!(!stats.scanned_limit_reached);
+        engine.set_html_page("<body><p>Other page</p></body>", 640, 480);
+        let clean = engine.active_dom_content_diagnostics().unwrap();
+        assert_eq!(clean.script_elements, 0);
+        assert_eq!(clean.potentially_visible_text_nodes, 1);
+        assert_eq!(clean.css_hidden_text_nodes, 0);
+    }
+
+    #[test]
+    fn connected_dom_census_ignores_detached_text_even_if_native_slot_survives() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><section id='gone'><p>Detached text</p></section><p>Visible text</p><script>document.getElementById('gone').remove();</script></body>",
+            640,
+            480,
+        );
+        let census = engine.active_dom_content_diagnostics().unwrap();
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        assert_eq!(census.potentially_visible_text_nodes, 1);
+        assert_eq!(census.body_text_nodes, 1);
+    }
 
     #[test]
     fn real_web_parser_diagnostics_capture_js_failure_and_skip_reasons() {

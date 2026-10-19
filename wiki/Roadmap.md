@@ -1,5 +1,10 @@
 # Roadmap
 
+## Real-site blank-viewport investigation (19 October 2026)
+
+Native DOM census now shows two distinct failures: Reddit lacks connected body text, YouTube has CSS-suppressed body text with significant CSS and JS failures. The measured 32-script experiment was reversed due to YouTube errors and Pikabu timeout. Next P0: inspect permitted bootstrap/resource timing and missing first-paint DOM output on Reddit, then narrow YouTube's CSS and JS blockers with focused regression tests. Full JS VM resumability remains a separate important milestone, not a substitute for actual page pixels.
+
+
 ## Async control-flow and real-page diagnostic checkpoint (19 October 2026)
 
 The original engine supports awaited if tests, branches that always return/throw, awaited template and throw values, and multi-declaration await initializers. Its improved bounded parser diagnostics identified an actual live Reddit blocker; Reddit now executes its initial script (1/0) but remains white. Next P0 is real suspend/resume through nonterminal if bodies, loops and try/finally with correct lexical scopes, followed by script/DOM/layout first-viewport repair and interactive CPU/wall profiling. Do not equate script execution with visual or interaction correctness.

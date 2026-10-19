@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## S98 - Native blank-page diagnosis: connected DOM through CSS to probe
+
+HTTPS navigation -> original HTML parser -> original JS and authoritative connected `op_dom::Document` -> computed `display`/`visibility`/`opacity` -> read-only bounded `DomContentDiagnostics` -> `live_site_probe` emits numeric structural counters beside native paint totals. This cross-layer slice distinguishes absent body text (Reddit 0) from CSS-hidden body text (YouTube 13) without pretending either site is functional. Detached DOM and JS script source do not inflate paint candidates. An experimental global JS script-quota increase was measured to harm Pikabu and was reverted.
+
+
 ## S97 - Awaited if, template/throw and multi-binding source to native pixels
 
 Original HTML `<script>` -> `op_js::parser` tracks await offsets and validates if-tests/terminal branches/multiple declarators -> original `await_lowering` preserves left-to-right initializer and template-string evaluation, branches return/throw via Promise microtask CPS -> GC retains live continuation -> JS mutates authoritative DOM -> `op_engine` outputs native painted text. The native five-site probe now executes Reddit's inline script without parser errors, but its viewport is still white with zero text or DOM mutations, and no modern site is certified functional. Nonterminal if branches, loops and try/finally need true suspended VM frames.

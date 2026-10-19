@@ -1,5 +1,10 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 19 October 2026: blank first-viewport origin, structural census
+
+Original native Release on `reddit,youtube,google` (gitignored `artifacts/live_web/dom-census-extended-2026-10-19/`) adds bounded numeric DOM diagnostics, no saved raw HTML/script/CSS. Reddit: **156 connected nodes, 69 elements, 0 body text nodes, 1 form, 4 inputs, 1 main, 0 external scripts, 0 DOM mutations, 0 painted text**; its one inline script executes, but no feed content exists to paint. This might be an intermediate service response; not enough evidence to classify anti-bot behavior definitively. YouTube: **470 nodes, 13 body text nodes, all suppressed by computed styling, 9 external scripts, 35 stylesheet errors, 4 JS errors, 0 painted text**. Google: 38 nodes and 3 text paint commands, still partial. Negative experiment: doubling the script quota 16→32 yielded YouTube 24 executed / 7 failed / 0 painted text and a 23-second Pikabu timeout; the production cap stays 16. Next fix must target the actual load/bootstrap and CSS/layout failures, not an arbitrary larger script budget.
+
+
 ## 19 October 2026: live Reddit initial-script execution unblocked
 
 A Rust-native Release rerun with 1300 ms settle on the same five anonymous HTTPS services (gitignored `artifacts/live_web/branch-multidecl-five-2026-10-19/`) records Google **2**, YouTube **4**, Pikabu **11**, Reddit **0**, DeviantArt **3** failed initial scripts. Reddit advances from zero executed and one syntax-failed script to **one executed, zero failed**, after supporting multiple variable declarations containing await. Its DOM mutation count remains **0**, paint **1 command**, text **0**, nonwhite pixels **0**: it is still a white viewport, not a usable Reddit page. YouTube is still textless and the other pages remain unverified/malformed. This is a genuine targeted JavaScript execution improvement with no claimed visual/site acceptance. Opt-in diagnostic context remains bounded, and no authentication or anti-bot workaround was attempted.

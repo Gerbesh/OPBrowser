@@ -196,6 +196,29 @@ fn run() -> Result<(), String> {
         "native_dom_slots",
         engine.active_document_node_slots().unwrap_or(0),
     );
+    if let Some(dom) = engine.active_dom_content_diagnostics() {
+        report("dom_connected_nodes", dom.connected_nodes);
+        report("dom_elements", dom.elements);
+        report("dom_body_elements", dom.body_elements);
+        report("dom_script_elements", dom.script_elements);
+        report("dom_external_script_elements", dom.external_script_elements);
+        report("dom_style_elements", dom.stylesheet_elements);
+        report("dom_form_elements", dom.form_elements);
+        report("dom_input_elements", dom.input_elements);
+        report("dom_iframe_elements", dom.iframe_elements);
+        report("dom_main_elements", dom.main_elements);
+        report("dom_image_elements", dom.image_elements);
+        report("dom_text_nodes", dom.text_nodes);
+        report("dom_body_text_nodes", dom.body_text_nodes);
+        report("dom_body_text_chars", dom.body_text_chars);
+        report(
+            "dom_potentially_visible_text_nodes",
+            dom.potentially_visible_text_nodes,
+        );
+        report("dom_css_hidden_text_nodes", dom.css_hidden_text_nodes);
+        report("dom_source_text_nodes", dom.source_text_nodes);
+        report("dom_scan_limited", dom.scanned_limit_reached);
+    }
     if let Some(errors) = engine.active_event_listener_errors() {
         report("event_listener_diagnostics_count", errors.len());
         for (index, error) in errors.iter().take(16).enumerate() {

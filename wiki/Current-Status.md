@@ -1,5 +1,10 @@
 # Current Project Status
 
+## Blank-page DOM census and real-site bottlenecks (19 October 2026)
+
+On-demand structural diagnostics now distinguish absent connected body content from CSS-suppressed text, including JS-driven native DOM changes. Reddit executes one initial script with no failure, but its connected body contains **no nonwhitespace text** (one form, four inputs, no external script tags): no feed can be painted yet. YouTube has 13 hidden body text nodes, 35 CSS errors and 4 JS errors. A measured doubling of the original script quota harmed performance and errors, so it was reverted. Modern-site readiness is unchanged; screenshots still do not pass.
+
+
 ## Live Reddit JS startup unblocked, no rendered content (19 October 2026)
 
 New original JS await lowering covers if conditions, terminating if branches, throw expressions, template literals and multi-declarator variable initializers. Full native Rust tests, GC and DOM-to-paint checks pass. The same public five-site Release probe reports initial script failures Google **2**, YouTube **4**, Pikabu **11**, Reddit **0**, DeviantArt **3**. Reddit now executes its one startup script without error but has **zero DOM mutations and a white screen**; YouTube has zero painted text. There is still **no certified functional modern site**.

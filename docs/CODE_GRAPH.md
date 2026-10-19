@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 19 October 2026: read-only real-site DOM content diagnostics
+
+`op_engine::DomContentDiagnostics` is assembled on demand by `document_content_diagnostics`, walking generation-checked, **connected** `op_dom::Document` nodes with a 100,000-node safety bound and `op_css::ComputedStyleMap`. It separates script/head/template/noscript text from CSS-suppressed and potentially visible text and counts form/input/iframe/main/script tag categories. `Engine::active_dom_content_diagnostics` exposes only numerical counters; `op_browser::live_site_probe` adds them to bounded per-site output. No JS, CSS or HTML sources, attribute values or user content are retained. Native regression tests cover CSS-hidden text, parser-consumed scripts, detached-node exclusion and navigation reset.
+
+
 ## 19 October 2026: guarded async if, template, throw, multi-declarator lowerer and diagnostics
 
 `op_js::parser` keeps scoped `await_offsets` to report offending operator bytes and statement categories. `op_js::await_lowering::split_statement` handles if-tests and throw, `split` preserves eager template substitutions by coercing earlier fields before a Promise checkpoint, and recursive guarded `lower_terminating_branch` lowers if arms only when they unconditionally return/throw. `expression_await_count` and `statement_await_count` validate the supported syntax budget and fail closed for loops/try. Multi-binding variable declarations with await split into ordered single bindings before the original Promise CPS machinery. Captured cells survive original JS GC, and `op_engine` verifies real DOM text reaches native paint.
