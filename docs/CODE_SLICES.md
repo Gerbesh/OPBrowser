@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## S99 - Responsive media from original CSS tokens to Win32 pixels
+
+HTML navigation and linked or inline CSS -> original CSS tokenizer -> bounded screen `@media` condition evaluator using actual viewport width/height -> nested selector parsing and author cascade -> original computed style and layout -> native display list and pixels. Changing browser viewport triggers a style recascade on reflow without re-fetching source. CSS state selectors participate in matching, with initial `:hover/:focus/:active` false and supported checked/disabled attributes recognized. Unit/integration tests verify widths, orientation, nested `@supports`, unknown-feature rejection, form states and repaint after resize. Five live sites remain visually unverified, including textless YouTube and blank Reddit.
+
+
 ## S98 - Native blank-page diagnosis: connected DOM through CSS to probe
 
 HTTPS navigation -> original HTML parser -> original JS and authoritative connected `op_dom::Document` -> computed `display`/`visibility`/`opacity` -> read-only bounded `DomContentDiagnostics` -> `live_site_probe` emits numeric structural counters beside native paint totals. This cross-layer slice distinguishes absent body text (Reddit 0) from CSS-hidden body text (YouTube 13) without pretending either site is functional. Detached DOM and JS script source do not inflate paint candidates. An experimental global JS script-quota increase was measured to harm Pikabu and was reverted.

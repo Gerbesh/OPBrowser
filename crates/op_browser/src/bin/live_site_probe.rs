@@ -9,6 +9,26 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+/// Fixed categories only. CSS parse messages can contain author-supplied
+/// pseudo-class/property names, which should never be echoed by a site probe.
+fn style_error_category(message: &str) -> &'static str {
+    match message {
+        "unsupported @media condition was ignored" => "unsupported @media condition",
+        "unsupported @font-face rule was ignored" => "unsupported @font-face",
+        "unsupported @container rule was ignored" => "unsupported @container",
+        "unsupported @keyframes rule was ignored" => "unsupported @keyframes",
+        "unsupported @layer rule was ignored" => "unsupported @layer",
+        "unsupported @property rule was ignored" => "unsupported @property",
+        "unsupported @scope rule was ignored" => "unsupported @scope",
+        "unsupported @import rule was ignored" => "unsupported @import",
+        "unsupported @charset rule was ignored" => "unsupported @charset",
+        "unsupported @namespace rule was ignored" => "unsupported @namespace",
+        other if other.starts_with("unsupported pseudo-class") => "unsupported pseudo-class",
+        other if other.starts_with("unsupported pseudo-element") => "unsupported pseudo-element",
+        _ => "other CSS parser error",
+    }
+}
+
 fn report(key: &str, value: impl std::fmt::Display) {
     let sanitized = value.to_string().replace(['\t', '\r', '\n'], " ");
     println!("OP_SITE\t{key}\t{sanitized}");
@@ -192,6 +212,22 @@ fn run() -> Result<(), String> {
         "style_errors",
         engine.active_style_errors().map_or(0, |r| r.len()),
     );
+    // Report aggregate counts by fixed parser categories: never
+    // include source snippets, selectors, attributes or stylesheets.
+    if let Some(errors) = engine.active_style_errors() {
+        let mut counts = std::collections::BTreeMap::<&str, usize>::new();
+        for error in errors {
+            *counts
+                .entry(style_error_category(&error.error.message))
+                .or_default() += 1;
+        }
+        for (index, (message, count)) in counts.into_iter().take(12).enumerate() {
+            report(
+                &format!("style_error_kind_{index}"),
+                format!("{count}x {message}"),
+            );
+        }
+    }
     report(
         "native_dom_slots",
         engine.active_document_node_slots().unwrap_or(0),
@@ -266,5 +302,26 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("OP_SITE_ERROR: {error}");
         std::process::exit(2);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::style_error_category;
+
+    #[test]
+    fn css_probe_categories_do_not_echo_author_selectors() {
+        assert_eq!(
+            style_error_category("unsupported pseudo-class :aSecretToken"),
+            "unsupported pseudo-class"
+        );
+        assert_eq!(
+            style_error_category("unsupported pseudo-element ::private-foo"),
+            "unsupported pseudo-element"
+        );
+        assert_eq!(
+            style_error_category("property password has invalid var() syntax"),
+            "other CSS parser error"
+        );
     }
 }

@@ -1,6 +1,6 @@
 use op_css::{
-    ComputedStyleMap, StyleCollection, StyleError, StyleMap, collect_author_styles,
-    collect_author_styles_with_linked, compute_styles,
+    ComputedStyleMap, StyleCollection, StyleError, StyleMap, collect_author_styles_at_viewport,
+    collect_author_styles_with_linked_at_viewport, compute_styles,
 };
 use op_layout::{
     ImageResources, layout_document_with_axis_scrolling,
@@ -273,6 +273,7 @@ struct PreparedDocument {
     document: op_dom::Document,
     images: images::PageImages,
     style_collection: StyleCollection,
+    style_viewport: (i32, i32),
     computed_styles: ComputedStyleMap,
     stylesheet_addresses: std::collections::HashMap<op_dom::NodeId, String>,
     linked_stylesheet_texts: std::collections::HashMap<op_dom::NodeId, String>,
@@ -296,8 +297,12 @@ impl PreparedDocument {
     /// Rebuild author matching and inline styles against the mutated real
     /// DOM, retaining originally loaded linked CSS and color profiles.
     fn refresh_styles(&mut self) {
-        self.style_collection =
-            collect_author_styles_with_linked(&self.document, &self.linked_stylesheet_texts);
+        self.style_collection = collect_author_styles_with_linked_at_viewport(
+            &self.document,
+            &self.linked_stylesheet_texts,
+            self.style_viewport.0,
+            self.style_viewport.1,
+        );
         if !self.color_profiles.is_empty() {
             let mut converted = std::collections::HashMap::new();
             self.style_collection
@@ -355,6 +360,10 @@ impl PreparedDocument {
     }
 
     fn render(&mut self, width: i32, height: i32) -> RenderedPage {
+        if self.style_viewport != (width, height) {
+            self.style_viewport = (width, height);
+            self.refresh_styles();
+        }
         let layout = layout_document_with_axis_scrolling(
             &self.document,
             width,
@@ -551,7 +560,8 @@ impl Engine {
     ) -> DisplayList {
         let (document, _script_report, _runtime, _diagnostics) =
             scripts::parse_and_execute(html, None, None);
-        let style_collection = collect_author_styles(&document);
+        let style_collection =
+            collect_author_styles_at_viewport(&document, viewport_width, viewport_height);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let layout = layout_document_with_computed_styles_and_viewport_metrics(
             &document,
@@ -571,7 +581,7 @@ impl Engine {
         viewport_height: i32,
     ) -> Result<RenderedPage, LoadError> {
         Ok(self
-            .prepare_source(source)?
+            .prepare_source(source, viewport_width, viewport_height)?
             .render(viewport_width, viewport_height))
     }
 
@@ -579,7 +589,7 @@ impl Engine {
     pub fn set_html_page(&mut self, html: &str, width: i32, height: i32) -> DisplayList {
         let (document, script_report, runtime, diagnostics) =
             scripts::parse_and_execute(html, None, None);
-        let style_collection = collect_author_styles(&document);
+        let style_collection = collect_author_styles_at_viewport(&document, width, height);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let mut prepared = PreparedDocument {
             address: String::new(),
@@ -587,6 +597,7 @@ impl Engine {
             document,
             images: images::PageImages::default(),
             style_collection,
+            style_viewport: (width, height),
             computed_styles,
             stylesheet_addresses: std::collections::HashMap::new(),
             linked_stylesheet_texts: std::collections::HashMap::new(),
@@ -1051,7 +1062,7 @@ impl Engine {
         width: i32,
         height: i32,
     ) -> Result<RenderedPage, LoadError> {
-        let mut prepared = self.prepare_source(source)?;
+        let mut prepared = self.prepare_source(source, width, height)?;
         let page = prepared.render(width, height);
         self.generation = self.generation.wrapping_add(1);
         self.network_active = 0;
@@ -1130,13 +1141,22 @@ impl Engine {
         Ok(Some(page))
     }
 
-    fn prepare_source(&self, source: &str) -> Result<PreparedDocument, LoadError> {
+    fn prepare_source(
+        &self,
+        source: &str,
+        viewport_width: i32,
+        viewport_height: i32,
+    ) -> Result<PreparedDocument, LoadError> {
         let loaded: LoadedDocument = self.network.load_document(source)?;
         let (document, script_report, runtime, diagnostics) =
             scripts::parse_and_execute(&loaded.text, Some(&self.network), Some(&loaded.address));
         let linked_stylesheets = styles::load(&self.network, &document, &loaded.address);
-        let mut style_collection =
-            collect_author_styles_with_linked(&document, &linked_stylesheets.texts);
+        let mut style_collection = collect_author_styles_with_linked_at_viewport(
+            &document,
+            &linked_stylesheets.texts,
+            viewport_width,
+            viewport_height,
+        );
         let profiles = styles::load_color_profiles(
             &self.network,
             &document,
@@ -1173,6 +1193,7 @@ impl Engine {
             document,
             images,
             style_collection,
+            style_viewport: (viewport_width, viewport_height),
             computed_styles,
             stylesheet_addresses: linked_stylesheets.addresses,
             linked_stylesheet_texts: linked_stylesheets.texts,
@@ -1197,6 +1218,50 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn responsive_media_reflow_recomputes_styles_for_actual_viewport() {
+        let mut engine = Engine::new();
+        let html = "<body><style>@media (max-width: 600px) { p{display:none} } @media (min-width: 601px){p{display:block}}</style><p>Responsive</p></body>";
+        let narrow = engine.set_html_page(html, 500, 500);
+        assert!(!narrow.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, .. } if text == "Responsive"
+        )));
+        let page = engine.active_document.as_ref().unwrap();
+        let target = (0..page.document.reserved_slots())
+            .filter_map(|slot| page.document.node_id(slot))
+            .find(|node| {
+                page.document
+                    .element(*node)
+                    .is_some_and(|e| e.tag_name == "p")
+            })
+            .unwrap();
+        assert_eq!(
+            engine
+                .active_computed_styles()
+                .unwrap()
+                .style_for(target)
+                .unwrap()
+                .display,
+            op_css::Display::None
+        );
+        let wide = engine.reflow(900, 500).unwrap();
+        assert!(wide.display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Text { text, .. } if text == "Responsive"
+        )));
+        assert_eq!(
+            engine
+                .active_computed_styles()
+                .unwrap()
+                .style_for(target)
+                .unwrap()
+                .display,
+            op_css::Display::Block
+        );
+        assert_eq!(engine.active_style_errors().unwrap().len(), 0);
+    }
 
     #[test]
     fn blank_page_census_distinguishes_source_css_hidden_and_visible_body_text() {

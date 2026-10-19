@@ -1,5 +1,10 @@
 # Current Project Status
 
+## CSS media queries and static UI state selectors (19 October 2026)
+
+Native screen `@media` conditions now follow actual viewport dimensions and refresh on resize; common form/state pseudo-classes parse and participate in static initial matching. Real YouTube CSS errors fall **35→22**, Pikabu **532→114**, DeviantArt **676→170**. These measure parser coverage, not verified visual quality: YouTube still paints zero text, Reddit is blank, and Pikabu/DeviantArt native text counts changed considerably. Dynamic focus/hover, complex media, `@font-face`, `@container`, scripts and layout remain important P0 work. CSS diagnostics emit only fixed error classes.
+
+
 ## Blank-page DOM census and real-site bottlenecks (19 October 2026)
 
 On-demand structural diagnostics now distinguish absent connected body content from CSS-suppressed text, including JS-driven native DOM changes. Reddit executes one initial script with no failure, but its connected body contains **no nonwhitespace text** (one form, four inputs, no external script tags): no feed can be painted yet. YouTube has 13 hidden body text nodes, 35 CSS errors and 4 JS errors. A measured doubling of the original script quota harmed performance and errors, so it was reverted. Modern-site readiness is unchanged; screenshots still do not pass.

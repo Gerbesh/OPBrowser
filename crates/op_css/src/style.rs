@@ -1,7 +1,7 @@
 use crate::{
     AttributeMatcher, AttributeSelector, Combinator, CssError, Declaration, NthSelector,
     PseudoClass, PseudoElement, RelativeSelector, Selector, SimpleSelector, Specificity, StyleRule,
-    TokenKind, parse_declaration_list, parse_stylesheet,
+    TokenKind, parse_declaration_list, parse_stylesheet, parse_stylesheet_at_viewport,
 };
 use op_dom::{Document, NodeId, NodeKind};
 use std::collections::HashMap;
@@ -151,6 +151,31 @@ pub fn collect_author_styles_with_linked(
     document: &Document,
     linked_stylesheets: &HashMap<NodeId, String>,
 ) -> StyleCollection {
+    collect_author_styles_with_linked_internal(document, linked_stylesheets, None)
+}
+
+pub fn collect_author_styles_at_viewport(
+    document: &Document,
+    width: i32,
+    height: i32,
+) -> StyleCollection {
+    collect_author_styles_with_linked_internal(document, &HashMap::new(), Some((width, height)))
+}
+
+pub fn collect_author_styles_with_linked_at_viewport(
+    document: &Document,
+    linked_stylesheets: &HashMap<NodeId, String>,
+    width: i32,
+    height: i32,
+) -> StyleCollection {
+    collect_author_styles_with_linked_internal(document, linked_stylesheets, Some((width, height)))
+}
+
+fn collect_author_styles_with_linked_internal(
+    document: &Document,
+    linked_stylesheets: &HashMap<NodeId, String>,
+    viewport: Option<(i32, i32)>,
+) -> StyleCollection {
     let mut errors = Vec::new();
     let mut rules = Vec::new();
     let mut next_source_order = 0;
@@ -159,6 +184,7 @@ pub fn collect_author_styles_with_linked(
         document,
         document.root(),
         linked_stylesheets,
+        viewport,
         &mut rules,
         &mut errors,
         &mut next_source_order,
@@ -200,6 +226,7 @@ fn collect_stylesheet_rules(
     document: &Document,
     node: NodeId,
     linked_stylesheets: &HashMap<NodeId, String>,
+    viewport: Option<(i32, i32)>,
     rules: &mut Vec<CollectedRule>,
     errors: &mut Vec<StyleError>,
     next_source_order: &mut usize,
@@ -213,7 +240,7 @@ fn collect_stylesheet_rules(
     });
 
     if let Some(css) = css {
-        append_parsed_rules(node, &css, rules, errors, next_source_order);
+        append_parsed_rules(node, &css, viewport, rules, errors, next_source_order);
     }
 
     for child in document.children(node) {
@@ -221,6 +248,7 @@ fn collect_stylesheet_rules(
             document,
             *child,
             linked_stylesheets,
+            viewport,
             rules,
             errors,
             next_source_order,
@@ -231,11 +259,15 @@ fn collect_stylesheet_rules(
 fn append_parsed_rules(
     node: NodeId,
     css: &str,
+    viewport: Option<(i32, i32)>,
     rules: &mut Vec<CollectedRule>,
     errors: &mut Vec<StyleError>,
     next_source_order: &mut usize,
 ) {
-    let parsed = parse_stylesheet(css);
+    let parsed = viewport.map_or_else(
+        || parse_stylesheet(css),
+        |(width, height)| parse_stylesheet_at_viewport(css, width, height),
+    );
     errors.extend(
         parsed
             .errors
@@ -687,6 +719,40 @@ fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) 
             element.tag_name.eq_ignore_ascii_case("a")
                 && attribute_value(element, "href") == Some("")
         }),
+        // Until the original hit-test/focus state is threaded into selector
+        // matching, these interaction states correctly match no elements at
+        // initial paint. This still lets :not(:hover) and selector lists parse.
+        PseudoClass::Hover
+        | PseudoClass::Active
+        | PseudoClass::Focus
+        | PseudoClass::FocusVisible
+        | PseudoClass::FocusWithin => false,
+        PseudoClass::Disabled => document.element(node).is_some_and(|element| {
+            supports_disabled_state(element) && attribute_value(element, "disabled").is_some()
+        }),
+        PseudoClass::Enabled => document.element(node).is_some_and(|element| {
+            supports_disabled_state(element) && attribute_value(element, "disabled").is_none()
+        }),
+        PseudoClass::Checked => document.element(node).is_some_and(|element| {
+            (element.tag_name.eq_ignore_ascii_case("input")
+                && matches!(
+                    attribute_value(element, "type")
+                        .unwrap_or("text")
+                        .to_ascii_lowercase()
+                        .as_str(),
+                    "checkbox" | "radio"
+                )
+                && attribute_value(element, "checked").is_some())
+                || (element.tag_name.eq_ignore_ascii_case("option")
+                    && attribute_value(element, "selected").is_some())
+        }),
+        PseudoClass::ReadOnly => document.element(node).is_some_and(|element| {
+            attribute_value(element, "readonly").is_some()
+                || (!matches!(
+                    element.tag_name.to_ascii_lowercase().as_str(),
+                    "input" | "textarea"
+                ) && attribute_value(element, "contenteditable") != Some("true"))
+        }),
         PseudoClass::Required => document.element(node).is_some_and(|element| {
             supports_required_state(element) && attribute_value(element, "required").is_some()
         }),
@@ -698,6 +764,13 @@ fn pseudo_class_matches(document: &Document, node: NodeId, pseudo: PseudoClass) 
                 && attribute_value(element, "open").is_some()
         }),
     }
+}
+
+fn supports_disabled_state(element: &op_dom::ElementData) -> bool {
+    matches!(
+        element.tag_name.to_ascii_lowercase().as_str(),
+        "input" | "button" | "select" | "textarea" | "fieldset" | "option" | "optgroup"
+    )
 }
 
 fn supports_required_state(element: &op_dom::ElementData) -> bool {
@@ -1010,6 +1083,34 @@ mod tests {
     }
 
     #[test]
+    fn interactive_pseudos_parse_without_painting_untouched_hover_and_match_form_attributes() {
+        let document = parse_document(
+            "<body><button id='button'>Go</button><input id='disabled' disabled><input id='tick' type='checkbox' checked><input id='plain' type='checkbox'><p id='paragraph'>Text</p></body>",
+        );
+        let matches = |id: &str, selector: &str| {
+            let parsed = parse_stylesheet(&format!("{selector} {{ color:red }}"));
+            assert!(parsed.errors.is_empty(), "{selector}: {:?}", parsed.errors);
+            selector_matches(
+                &document,
+                element_by_id(&document, id),
+                &parsed.value.rules[0].selectors[0],
+            )
+        };
+        assert!(!matches("button", "button:hover"));
+        assert!(!matches("button", "button:focus-visible"));
+        assert!(!matches("button", "button:active"));
+        assert!(matches("button", "button:not(:hover)"));
+        assert!(matches("button", "button:enabled"));
+        assert!(!matches("button", "button:disabled"));
+        assert!(matches("disabled", "input:disabled"));
+        assert!(!matches("disabled", "input:enabled"));
+        assert!(matches("tick", "input:checked"));
+        assert!(!matches("plain", "input:checked"));
+        assert!(matches("paragraph", "p:read-only"));
+        assert!(!matches("plain", "input:read-only"));
+    }
+
+    #[test]
     fn matches_has_from_anchor_across_descendants_children_and_following_siblings() {
         let document = parse_document(
             "<main id='anchor'><section><span class='deep'></span></section><b class='direct'></b></main>
@@ -1310,7 +1411,7 @@ mod tests {
     #[test]
     fn reports_css_errors_without_losing_valid_author_styles() {
         let document = parse_document(
-            "<style>.ok { color: red; broken } :hover { color: black } p { margin: 1px }</style>
+            "<style>.ok { color: red; broken } :no-such-state { color: black } p { margin: 1px }</style>
              <p class='ok' style='padding: ; width: 20px'>x</p>",
         );
         let p = first_element_by_tag(&document, "p");

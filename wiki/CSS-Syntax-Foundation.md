@@ -1,5 +1,10 @@
 # CSS Syntax Foundation
 
+## Viewport-aware screen media and initial state matching (19 October 2026)
+
+The OPBrowser-owned CSS parser now evaluates `@media` rules against the actual viewport: screen/all vs print, comma-separated alternatives, `and` conditions, px min/max/exact width or height, and orientation. Nested `@supports` retains rule order; unknown media features are rejected with an explicit diagnostic rather than applying false CSS. Author cascade includes inline and linked styles. Recognized pseudo-classes include `:hover`, `:active`, `:focus`, `:focus-visible`, `:focus-within` (currently false at initial paint), and the initial form-attribute subset `:enabled`, `:disabled`, `:checked`, `:read-only`. Pointer/focus state, preferences and container queries are not implemented. Error diagnostics use fixed, non-author-derived labels.
+
+
 OPBrowser owns CSS tokenization, selector/declaration parsing, author matching, cascade and
 the current computed-style subset in `op_css`. Supported values now feed layout and paint;
 this page records the syntax/matching boundary rather than a parser-only prototype.

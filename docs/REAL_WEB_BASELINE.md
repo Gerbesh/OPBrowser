@@ -1,5 +1,10 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 19 October 2026: live screen media and CSS state selectors
+
+Measured original native Release at 1280×720 with 1300ms settling. After bounded viewport-aware `@media` parsing, YouTube CSS parse errors fell **35→22** (13 previously ignored @media). After recognizing static pseudo-class states, Pikabu CSS errors fell **532→114**, DeviantArt **676→170** (ignored artifacts `artifacts/live_web/media-and-pseudo-2026-10-19/`). YouTube still has **4 JS failures and 0 text primitives**; Reddit has 0 JS failures and remains blank. Pikabu's text primitives changed from **799→691**, DeviantArt **2493→806** compared with the media-only probe: these are changed native renders, **not** reference-verified visual improvements. No hidden CSS source was retained; error diagnostics now emit only fixed categories. Unsupported dynamic hover/focus and complex/media preference features remain to be implemented before compatibility claims.
+
+
 ## 19 October 2026: blank first-viewport origin, structural census
 
 Original native Release on `reddit,youtube,google` (gitignored `artifacts/live_web/dom-census-extended-2026-10-19/`) adds bounded numeric DOM diagnostics, no saved raw HTML/script/CSS. Reddit: **156 connected nodes, 69 elements, 0 body text nodes, 1 form, 4 inputs, 1 main, 0 external scripts, 0 DOM mutations, 0 painted text**; its one inline script executes, but no feed content exists to paint. This might be an intermediate service response; not enough evidence to classify anti-bot behavior definitively. YouTube: **470 nodes, 13 body text nodes, all suppressed by computed styling, 9 external scripts, 35 stylesheet errors, 4 JS errors, 0 painted text**. Google: 38 nodes and 3 text paint commands, still partial. Negative experiment: doubling the script quota 16→32 yielded YouTube 24 executed / 7 failed / 0 painted text and a 23-second Pikabu timeout; the production cap stays 16. Next fix must target the actual load/bootstrap and CSS/layout failures, not an arbitrary larger script budget.

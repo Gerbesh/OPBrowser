@@ -1,5 +1,10 @@
 # Page Reflow
 
+## Screen media queries update computed styles on resize (19 October 2026)
+
+The authoritative page now tracks the viewport used to compute its author stylesheet. Changing width or height through native reflow triggers a fresh original CSS cascade for supported screen `@media` queries before layout and painting. Identical viewport renders avoid this extra refresh. Tests verify that a CSS-hidden paragraph becomes visible when the window crosses a min/max-width breakpoint; no page source or images are refetched solely for the style recascade.
+
+
 Changing the window width now rewraps text and images without loading the document
 or image sources again. Height changes update the background and scroll bounds.
 The same path also supports the in-memory startup page.

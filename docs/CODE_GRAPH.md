@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 19 October 2026: viewport-aware original CSS media cascade and state pseudo-classes
+
+`op_css::parser::parse_stylesheet_at_viewport` binds a screen viewport to nested `@media` parsing; `media_query_matches` conservatively evaluates simple width/height/orientation queries and propagates unknown conditions as errors instead of applying them. `op_css::style::collect_author_styles_with_linked_at_viewport` preserves original author declaration order for inline and linked CSS; `op_engine::PreparedDocument.style_viewport` triggers re-cascade only when its viewport changes. `PseudoClass` and `pseudo_class_matches` now recognize static form attributes and initial false interaction states; input-driven hover/focus still require event integration. `live_site_probe::style_error_category` produces fixed privacy-safe group labels instead of returning arbitrary selector names from CSS parser errors.
+
+
 ## 19 October 2026: read-only real-site DOM content diagnostics
 
 `op_engine::DomContentDiagnostics` is assembled on demand by `document_content_diagnostics`, walking generation-checked, **connected** `op_dom::Document` nodes with a 100,000-node safety bound and `op_css::ComputedStyleMap`. It separates script/head/template/noscript text from CSS-suppressed and potentially visible text and counts form/input/iframe/main/script tag categories. `Engine::active_dom_content_diagnostics` exposes only numerical counters; `op_browser::live_site_probe` adds them to bounded per-site output. No JS, CSS or HTML sources, attribute values or user content are retained. Native regression tests cover CSS-hidden text, parser-consumed scripts, detached-node exclusion and navigation reset.

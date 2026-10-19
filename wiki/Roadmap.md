@@ -1,5 +1,10 @@
 # Roadmap
 
+## Responsive CSS and first-paint state matching (19 October 2026)
+
+Original viewport-aware screen `@media` handling and bounded common state pseudo-classes now pass tests and work through native reflow. Next: link actual hit-test/focus/disabled behavior into dynamic selector recalculation; support more media features and `@font-face` without unsafe assumptions; pursue native first-paint layout/scripting failures on YouTube and absent Reddit feed. CSS parser error count reductions do not certify visual compatibility. Compare screenshots to a trustworthy browser oracle before declaring any site supported.
+
+
 ## Real-site blank-viewport investigation (19 October 2026)
 
 Native DOM census now shows two distinct failures: Reddit lacks connected body text, YouTube has CSS-suppressed body text with significant CSS and JS failures. The measured 32-script experiment was reversed due to YouTube errors and Pikabu timeout. Next P0: inspect permitted bootstrap/resource timing and missing first-paint DOM output on Reddit, then narrow YouTube's CSS and JS blockers with focused regression tests. Full JS VM resumability remains a separate important milestone, not a substitute for actual page pixels.

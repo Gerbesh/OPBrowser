@@ -19,10 +19,13 @@ pub use computed::{
     MarginEdges, MarginValue, Overflow, PaddingEdges, Position, TableLayout, TextAlign,
     TextDecorationLine, TextTransform, VerticalAlign, Visibility, WhiteSpace, compute_styles,
 };
-pub use parser::{parse_color_profiles, parse_declaration_list, parse_stylesheet};
+pub use parser::{
+    parse_color_profiles, parse_declaration_list, parse_stylesheet, parse_stylesheet_at_viewport,
+};
 pub use style::{
     MatchedDeclaration, StyleCollection, StyleError, StyleMap, StyleSource, collect_author_styles,
-    collect_author_styles_with_linked, selector_matches,
+    collect_author_styles_at_viewport, collect_author_styles_with_linked,
+    collect_author_styles_with_linked_at_viewport, selector_matches,
 };
 pub use tokenizer::tokenize;
 
@@ -108,6 +111,15 @@ pub enum PseudoClass {
     Empty,
     Link,
     Visited,
+    Hover,
+    Active,
+    Focus,
+    FocusVisible,
+    FocusWithin,
+    Enabled,
+    Disabled,
+    Checked,
+    ReadOnly,
     Required,
     Optional,
     Open,

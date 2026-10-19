@@ -5,10 +5,28 @@ use crate::{
 };
 
 pub fn parse_stylesheet(input: &str) -> ParseResult<Stylesheet> {
+    parse_stylesheet_with_media_viewport(input, None)
+}
+
+/// Parse screen media conditions against the actual CSS viewport dimensions.
+/// Unknown media features fail closed rather than applying unrelated styles.
+pub fn parse_stylesheet_at_viewport(
+    input: &str,
+    width: i32,
+    height: i32,
+) -> ParseResult<Stylesheet> {
+    parse_stylesheet_with_media_viewport(input, Some((width, height)))
+}
+
+fn parse_stylesheet_with_media_viewport(
+    input: &str,
+    viewport: Option<(i32, i32)>,
+) -> ParseResult<Stylesheet> {
     let tokenized = tokenize(input);
     let mut parser = Parser {
         tokens: &tokenized.tokens,
         errors: tokenized.errors,
+        viewport,
     };
     let rules = parser.parse_rule_list();
     ParseResult {
@@ -108,6 +126,7 @@ pub fn parse_declaration_list(input: &str) -> ParseResult<Vec<Declaration>> {
     let mut parser = Parser {
         tokens: &tokenized.tokens,
         errors: tokenized.errors,
+        viewport: None,
     };
     let declarations = parser.parse_declarations(&tokenized.tokens);
     ParseResult {
@@ -119,6 +138,7 @@ pub fn parse_declaration_list(input: &str) -> ParseResult<Vec<Declaration>> {
 struct Parser<'a> {
     tokens: &'a [Token],
     errors: Vec<CssError>,
+    viewport: Option<(i32, i32)>,
 }
 
 impl Parser<'_> {
@@ -139,6 +159,42 @@ impl Parser<'_> {
             }
 
             if let TokenKind::AtKeyword(name) = &self.tokens[index].kind {
+                if name.eq_ignore_ascii_case("media") {
+                    let start = self.tokens[index].start;
+                    let Some(open) = find_rule_block_start(self.tokens, index + 1) else {
+                        self.errors.push(CssError {
+                            offset: start,
+                            message: "@media is missing an opening block".into(),
+                        });
+                        break;
+                    };
+                    let Some(close) = find_matching_close_curly(self.tokens, open) else {
+                        self.errors.push(CssError {
+                            offset: start,
+                            message: "unterminated @media block".into(),
+                        });
+                        break;
+                    };
+                    match media_query_matches(&self.tokens[index + 1..open], self.viewport) {
+                        Some(true) => {
+                            let mut nested = Parser {
+                                tokens: &self.tokens[open + 1..close],
+                                errors: Vec::new(),
+                                viewport: self.viewport,
+                            };
+                            rules.extend(nested.parse_rule_list());
+                            self.errors.extend(nested.errors);
+                        }
+                        Some(false) => {}
+                        None => self.errors.push(CssError {
+                            offset: start,
+                            message: "unsupported @media condition was ignored".into(),
+                        }),
+                    }
+                    index = close + 1;
+                    continue;
+                }
+
                 if name.eq_ignore_ascii_case("supports") {
                     let start = self.tokens[index].start;
                     let Some(open) = find_rule_block_start(self.tokens, index + 1) else {
@@ -159,6 +215,7 @@ impl Parser<'_> {
                         let mut nested = Parser {
                             tokens: &self.tokens[open + 1..close],
                             errors: Vec::new(),
+                            viewport: self.viewport,
                         };
                         rules.extend(nested.parse_rule_list());
                         self.errors.extend(nested.errors);
@@ -170,9 +227,24 @@ impl Parser<'_> {
                 let start = self.tokens[index].start;
                 index = skip_at_rule(self.tokens, index);
                 if !name.eq_ignore_ascii_case("color-profile") {
+                    let reason = match name.to_ascii_lowercase().as_str() {
+                        "media" => "unsupported @media rule was ignored",
+                        "layer" => "unsupported @layer rule was ignored",
+                        "font-face" => "unsupported @font-face rule was ignored",
+                        "keyframes" | "-webkit-keyframes" => {
+                            "unsupported @keyframes rule was ignored"
+                        }
+                        "container" => "unsupported @container rule was ignored",
+                        "property" => "unsupported @property rule was ignored",
+                        "scope" => "unsupported @scope rule was ignored",
+                        "import" => "unsupported @import rule was ignored",
+                        "charset" => "unsupported @charset rule was ignored",
+                        "namespace" => "unsupported @namespace rule was ignored",
+                        _ => "at-rule is not supported yet and was ignored",
+                    };
                     self.errors.push(CssError {
                         offset: start,
-                        message: "at-rule is not supported yet and was ignored".into(),
+                        message: reason.into(),
                     });
                 }
                 continue;
@@ -243,6 +315,134 @@ impl Parser<'_> {
             start = if end < tokens.len() { end + 1 } else { end };
         }
         declarations
+    }
+}
+
+/// A screen-only subset of CSS media queries. None means the condition uses
+/// syntax/features we cannot evaluate and must not be applied speculatively.
+fn media_query_matches(tokens: &[Token], viewport: Option<(i32, i32)>) -> Option<bool> {
+    let mut group_start = 0;
+    let mut parens = 0usize;
+    let mut unknown = false;
+    for index in 0..=tokens.len() {
+        let separator = if index == tokens.len() {
+            true
+        } else {
+            match tokens[index].kind {
+                TokenKind::OpenParen | TokenKind::Function(_) => {
+                    parens += 1;
+                    false
+                }
+                TokenKind::CloseParen => {
+                    parens = parens.saturating_sub(1);
+                    false
+                }
+                TokenKind::Comma if parens == 0 => true,
+                _ => false,
+            }
+        };
+        if separator {
+            match one_media_query_matches(&tokens[group_start..index], viewport) {
+                Some(true) => return Some(true),
+                Some(false) => {}
+                None => unknown = true,
+            }
+            group_start = index + 1;
+        }
+    }
+    if unknown { None } else { Some(false) }
+}
+
+fn one_media_query_matches(tokens: &[Token], viewport: Option<(i32, i32)>) -> Option<bool> {
+    let parts: Vec<_> = tokens
+        .iter()
+        .filter(|token| !matches!(token.kind, TokenKind::Whitespace))
+        .map(|token| &token.kind)
+        .collect();
+    let mut index = 0;
+    let mut inverted = false;
+    if matches!(parts.get(index), Some(TokenKind::Ident(word)) if word.eq_ignore_ascii_case("not"))
+    {
+        inverted = true;
+        index += 1;
+    } else if matches!(parts.get(index), Some(TokenKind::Ident(word)) if word.eq_ignore_ascii_case("only"))
+    {
+        index += 1;
+    }
+    let mut matches_screen = true;
+    if let Some(TokenKind::Ident(word)) = parts.get(index) {
+        if word.eq_ignore_ascii_case("screen") || word.eq_ignore_ascii_case("all") {
+            index += 1;
+        } else if word.eq_ignore_ascii_case("print") {
+            matches_screen = false;
+            index += 1;
+        } else {
+            return None;
+        }
+    }
+    if index == parts.len() && index == 0 {
+        return None;
+    }
+    let mut had_feature = false;
+    while index < parts.len() {
+        if had_feature || index > 0 {
+            if matches!(parts.get(index), Some(TokenKind::Ident(word)) if word.eq_ignore_ascii_case("and"))
+            {
+                index += 1;
+            } else if !matches!(parts.get(index), Some(TokenKind::OpenParen)) {
+                return None;
+            }
+        }
+        if !matches!(parts.get(index), Some(TokenKind::OpenParen)) {
+            return None;
+        }
+        let open = index;
+        let end =
+            ((open + 1)..parts.len()).find(|&pos| matches!(parts[pos], TokenKind::CloseParen))?;
+        let [TokenKind::Ident(feature), TokenKind::Colon, value] = &parts[open + 1..end] else {
+            return None;
+        };
+        let (width, height) = viewport?;
+        let feature_matches = if feature.eq_ignore_ascii_case("orientation") {
+            match value {
+                TokenKind::Ident(orientation) if orientation.eq_ignore_ascii_case("landscape") => {
+                    width >= height
+                }
+                TokenKind::Ident(orientation) if orientation.eq_ignore_ascii_case("portrait") => {
+                    height > width
+                }
+                _ => return None,
+            }
+        } else {
+            let requested = match value {
+                TokenKind::Dimension { number, unit } if unit.eq_ignore_ascii_case("px") => {
+                    number.parse::<f64>().ok()?
+                }
+                TokenKind::Number(number) if number == "0" => 0.0,
+                _ => return None,
+            };
+            let actual = if feature.ends_with("width") {
+                f64::from(width)
+            } else if feature.ends_with("height") {
+                f64::from(height)
+            } else {
+                return None;
+            };
+            match feature.to_ascii_lowercase().as_str() {
+                "min-width" | "min-height" => actual >= requested,
+                "max-width" | "max-height" => actual <= requested,
+                "width" | "height" => actual == requested,
+                _ => return None,
+            }
+        };
+        matches_screen &= feature_matches;
+        index = end + 1;
+        had_feature = true;
+    }
+    if inverted {
+        Some(!matches_screen)
+    } else {
+        Some(matches_screen)
     }
 }
 
@@ -896,6 +1096,15 @@ fn parse_pseudo_class(tokens: &[Token], start: usize) -> Result<(SimpleSelector,
                 "empty" => PseudoClass::Empty,
                 "link" => PseudoClass::Link,
                 "visited" => PseudoClass::Visited,
+                "hover" => PseudoClass::Hover,
+                "active" => PseudoClass::Active,
+                "focus" => PseudoClass::Focus,
+                "focus-visible" => PseudoClass::FocusVisible,
+                "focus-within" => PseudoClass::FocusWithin,
+                "enabled" => PseudoClass::Enabled,
+                "disabled" => PseudoClass::Disabled,
+                "checked" => PseudoClass::Checked,
+                "read-only" => PseudoClass::ReadOnly,
                 "required" => PseudoClass::Required,
                 "optional" => PseudoClass::Optional,
                 "open" => PseudoClass::Open,
@@ -1418,6 +1627,47 @@ mod tests {
     use super::*;
 
     #[test]
+    fn media_rules_match_screen_viewport_and_preserve_nested_order() {
+        let css = r#"
+            .card{color:black}
+            @media screen and (min-width: 700px) { .card{color:blue} }
+            @media (max-width: 699px) { .card{color:red} }
+            @media print { .card{color:green} }
+            @media screen and (orientation:landscape) {
+                @supports (color: red) { .card{background-color:yellow} }
+            }
+        "#;
+        let narrow = parse_stylesheet_at_viewport(css, 600, 900);
+        assert!(narrow.errors.is_empty(), "{:?}", narrow.errors);
+        assert_eq!(narrow.value.rules.len(), 2);
+        let wide = parse_stylesheet_at_viewport(css, 900, 600);
+        assert!(wide.errors.is_empty(), "{:?}", wide.errors);
+        assert_eq!(wide.value.rules.len(), 3);
+        assert_eq!(wide.value.rules[1].declarations[0].name, "color");
+        assert_eq!(wide.value.rules[2].declarations[0].name, "background-color");
+    }
+
+    #[test]
+    fn media_queries_fail_closed_on_unknown_features_and_support_or_not() {
+        let css = r#"
+            @media print, (min-width: 700px) { p{color:blue} }
+            @media not print { p{color:red} }
+            @media screen and (unsupported-feature: 3px) { p{color:yellow} }
+            @media (min-width: 850px) { p{color:green} }
+        "#;
+        let parsed = parse_stylesheet_at_viewport(css, 800, 600);
+        assert_eq!(parsed.value.rules.len(), 2);
+        assert_eq!(parsed.errors.len(), 1);
+        assert_eq!(
+            parsed.errors[0].message,
+            "unsupported @media condition was ignored"
+        );
+        let without_viewport = parse_stylesheet("@media (min-width: 1px){p{color:red}}");
+        assert_eq!(without_viewport.value.rules.len(), 0);
+        assert_eq!(without_viewport.errors.len(), 1);
+    }
+
+    #[test]
     fn parses_selector_groups_combinators_specificity_and_declarations() {
         let parsed = parse_stylesheet(
             "article.card > p.note, #hero { Color: red; margin: 10px 20px !important; }",
@@ -1919,7 +2169,7 @@ mod tests {
     #[test]
     fn malformed_rule_does_not_poison_following_rule() {
         let parsed = parse_stylesheet(
-            ".ok { color: red; bad } :hover { color: black } p.note { width: 20px }",
+            ".ok { color: red; bad } :no-such-state { color: black } p.note { width: 20px }",
         );
         assert_eq!(parsed.value.rules.len(), 2);
         assert_eq!(parsed.value.rules[0].selectors[0].specificity.classes, 1);
@@ -1930,10 +2180,12 @@ mod tests {
 
     #[test]
     fn unsupported_at_rules_are_ignored_without_poisoning_following_rules() {
-        let parsed = parse_stylesheet("@media screen { p { color:red } } h1 { color: blue }");
+        let parsed = parse_stylesheet(
+            "@container card (min-width: 10px) { p { color:red } } h1 { color: blue }",
+        );
         assert_eq!(parsed.value.rules.len(), 1);
         assert_eq!(parsed.errors.len(), 1);
-        assert!(parsed.errors[0].message.contains("at-rule"));
+        assert!(parsed.errors[0].message.contains("@container"));
     }
 
     #[test]
