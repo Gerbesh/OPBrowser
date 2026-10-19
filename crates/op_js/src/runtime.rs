@@ -16876,8 +16876,8 @@ mod tests {
         .unwrap();
         assert_eq!(vm.global("message"), Some(&JsValue::String("nope".into())));
         for script in [
-            "async function f(){return false && await Promise.resolve(1);}",
-            "async function f(){return true ? await 1 : 2;}",
+            "async function f(){return (await false) && await Promise.resolve(1);}",
+            "async function f(){return (await true) ? await 1 : 2;}",
             "async function f(){try{return await 1;}finally{var finished=true;}}",
             "async function f(){while(true){await 1;break;}}",
             "async function f(){return {__proto__:{},value:await 1};}",
@@ -16964,9 +16964,81 @@ mod tests {
         assert_eq!(vm.global("trace"), Some(&JsValue::String("YNT".into())));
         assert_eq!(vm.global("result"), Some(&JsValue::String("YNT".into())));
         assert!(
-            vm.eval_script("async function invalid(){return true ? await 1 : 2;}")
+            vm.eval_script("async function invalid(){return (await true) ? await 1 : 2;}")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn one_sided_return_await_resumes_only_chosen_branch_across_gc() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var resolveLater,log='',yes='pending',no='pending';
+               var pending=new Promise(function(resolve){resolveLater=resolve;});
+               function yesArm(){log+='Y';return pending;}
+               function noArm(){log+='N';return 4;}
+               async function choose(flag){
+                 return flag ? await yesArm() : noArm();
+               }
+               choose(false).then(function(x){no=x;});
+               choose(true).then(function(x){yes=x;});
+               log+='S';"#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("log"), Some(&JsValue::String("NYS".into())));
+        assert_eq!(vm.global("no"), Some(&JsValue::Number(4.0)));
+        assert_eq!(vm.global("yes"), Some(&JsValue::String("pending".into())));
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("resolveLater(8)").unwrap();
+        assert_eq!(vm.global("yes"), Some(&JsValue::Number(8.0)));
+
+        vm.eval_script(
+            r#"async function chooseOther(flag){
+                  return flag ? 12 : await Promise.resolve(5);
+               }
+               chooseOther(true).then(function(x){yes=x;});
+               chooseOther(false).then(function(x){no=x;});
+               async function rejected(){return true ? await Promise.reject('x') : 2;}
+               rejected().catch(function(e){log+=e;});"#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("yes"), Some(&JsValue::Number(12.0)));
+        assert_eq!(vm.global("no"), Some(&JsValue::Number(5.0)));
+        assert_eq!(vm.global("log"), Some(&JsValue::String("NYSx".into())));
+    }
+
+    #[test]
+    fn short_circuit_return_await_preserves_values_and_skips_jobs() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var calls=0,report='';
+               function initial(v){calls+=1;return v;}
+               function take(){calls+=100;return Promise.resolve(17);}
+               async function andValue(v){return initial(v) && await take();}
+               async function orValue(v){return initial(v) || await take();}
+               async function nullishValue(v){return initial(v) ?? await take();}
+               andValue(0).then(function(v){report+='a'+v+';';});
+               andValue('go').then(function(v){report+='b'+v+';';});
+               orValue('keep').then(function(v){report+='c'+v+';';});
+               orValue(false).then(function(v){report+='d'+v+';';});
+               nullishValue(0).then(function(v){report+='e'+v+';';});
+               nullishValue(null).then(function(v){report+='f'+v+';';});
+               nullishValue(undefined).then(function(v){report+='g'+v+';';});"#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("report"),
+            Some(&JsValue::String("a0;ckeep;e0;b17;d17;f17;g17;".into()))
+        );
+        assert_eq!(vm.global("calls"), Some(&JsValue::Number(407.0)));
+        for script in [
+            "async function invalid(){return (await 1) && await 2;}",
+            "async function invalid(){return true && await await 2;}",
+            "async function invalid(){try{return true && await 2;}finally{}}",
+            "async function invalid(){return true ? await 2 : await 3 + 1;}",
+        ] {
+            assert!(vm.eval_script(script).is_err(), "must reject: {script}");
+        }
     }
 
     #[test]

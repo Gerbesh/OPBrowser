@@ -1,5 +1,10 @@
 # JavaScript Engine
 
+## Branch-aware direct return awaits (19 October 2026)
+
+The browser-owned async lowerer now recognizes `return flag ? await a() : b` and `return value &&/||/?? await expression` with one direct await. It compiles conditional return paths so the unselected path never awaits or runs its operand. `??` distinguishes only null/undefined, while ordinary `&&` and `||` preserve operand values. GC, VM scheduling and native HTML-to-paint regressions pass; non-returning branches and general `if`/loop/`try/finally` awaits still require a full continuation mechanism.
+
+
 ## Async object fields and two-arm ternary (19 October 2026)
 
 `{x:before(), y:await pending, z:after()}` now resumes ordinary data fields in their original evaluation order. `flag ? await a() : await b()` evaluates only one branch. Regression tests cover pending GC and native HTML/DOM/paint. Object accessors/prototype setters and arbitrary await in loops, one-sided branches, logical RHS and try/finally are unsupported.

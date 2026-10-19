@@ -2,8 +2,8 @@
 //! frame: conditionally executed branches and try/finally require a separate
 //! interpreter continuation design and remain syntax errors at the call site.
 use crate::{
-    AssignmentTarget, Expression, JsValue, ObjectPropertyKind, Statement, VariableDeclarator,
-    VariableKind,
+    AssignmentTarget, BinaryOp, Expression, JsValue, LogicalOp, ObjectPropertyKind, Statement,
+    VariableDeclarator, VariableKind,
 };
 
 struct Split {
@@ -490,11 +490,69 @@ fn split_statement(
     }
 }
 
+/// Lower a returning short-circuit or one-sided conditional without
+/// scheduling an await job on the branch that did not run. Rewriting the
+/// return itself keeps the skipped-path Promise timing intact.
+fn lower_return_branch(statement: &Statement, serial: &mut usize) -> Option<Vec<Statement>> {
+    let Statement::Return(Some(value)) = statement else {
+        return None;
+    };
+    let mut prefix = Vec::new();
+    let (test, yes, no) = match value.clone() {
+        Expression::Conditional {
+            test,
+            consequent,
+            alternate,
+        } => {
+            // Both awaited arms already use the expression-level lowerer.
+            let left_await = matches!(consequent.as_ref(), Expression::Await(_));
+            let right_await = matches!(alternate.as_ref(), Expression::Await(_));
+            if left_await == right_await {
+                return None;
+            }
+            (*test, *consequent, *alternate)
+        }
+        Expression::Logical { left, op, right }
+            if matches!(right.as_ref(), Expression::Await(_)) =>
+        {
+            let saved = capture(&mut prefix, *left, serial);
+            match op {
+                LogicalOp::And => (saved.clone(), *right, saved),
+                LogicalOp::Or => (saved.clone(), saved, *right),
+                LogicalOp::Nullish => (
+                    Expression::Binary {
+                        left: Box::new(saved.clone()),
+                        op: BinaryOp::Equal,
+                        right: Box::new(Expression::Literal(JsValue::Null)),
+                    },
+                    *right,
+                    saved,
+                ),
+            }
+        }
+        _ => return None,
+    };
+    let consequent = lower_sequence(vec![Statement::Return(Some(yes))], serial);
+    let alternate = lower_sequence(vec![Statement::Return(Some(no))], serial);
+    prefix.push(Statement::If {
+        test,
+        consequent: Box::new(Statement::Block(consequent)),
+        alternate: Some(Box::new(Statement::Block(alternate))),
+    });
+    Some(prefix)
+}
+
 /// Validate count of await nodes actually extractable in this statement.
 /// A leftover await in a short-circuit RHS, loop, try or unsupported target
 /// must not accidentally compile into the unreachable bytecode Await variant.
 pub(crate) fn supports_awaits(statement: &Statement, expected: usize) -> bool {
     let mut serial = 0;
+    // A single direct await in one returning branch is supported without
+    // adding a Promise job to the branch that short-circuits.
+    if expected == 1 && lower_return_branch(statement, &mut serial).is_some() {
+        return true;
+    }
+    serial = 0;
     let mut candidate = statement.clone();
     let mut extracted = 0;
     while extracted < expected {
@@ -521,6 +579,10 @@ fn lower_sequence(statements: Vec<Statement>, serial: &mut usize) -> Vec<Stateme
     let mut prefix = Vec::new();
     let mut remaining = statements.into_iter();
     while let Some(statement) = remaining.next() {
+        if let Some(branch) = lower_return_branch(&statement, serial) {
+            prefix.extend(branch);
+            return prefix;
+        }
         let resumed = fresh(serial, "result");
         if let Some(part) = split_statement(statement.clone(), serial, &resumed) {
             prefix.extend(part.before);

@@ -1,5 +1,10 @@
 # Current Project Status
 
+## Branch-aware returning awaits (19 October 2026)
+
+Original JS now supports a direct await on one side of a returning ternary, and short-circuit `&&`, `||`, `??` awaits as return operands. The other branch returns without waiting and is not evaluated. The full Rust suite, strict lint, startup smoke and native pixels pass. Live five-site repeat remains 2/4/11/1/3 initial script failures (Google/YouTube/Pikabu/Reddit/DeviantArt), with YouTube textless and Reddit blank. No modern-site compatibility is claimed.
+
+
 ## Object and two-arm conditional await update (19 October 2026)
 
 Original JS now resumes awaited ordinary object properties and chooses one direct-await ternary branch without running the other. GC, VM and original native-paint regressions pass. Five public-site checks still show 2/4/11/1/3 initial JS failures (Google/YouTube/Pikabu/Reddit/DeviantArt); YouTube lacks painted text and Reddit is blank. This is not a full suspended VM or modern-site compatibility pass.

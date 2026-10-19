@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 19 October 2026: branch-aware async return lowering
+
+`op_js::await_lowering::lower_return_branch` maps direct one-sided ternary await and returning logical `&&`, `||`, `??` RHS awaits into an original `Statement::If` with independently lowered return arms. A NUL-prefixed local capture evaluates a logical left operand once, with equality-to-null deciding `??`; bypassed branches return directly without a Promise microtask. `supports_awaits` admits only one direct source await for this path; tests protect timing, GC preservation and the `op_engine` native-paint path. It is not a generic suspended interpreter frame and does not handle `try/finally` or awaits in loops.
+
+
 ## 19 October 2026: object fields and two-arm awaited conditional
 
 `op_js::await_lowering::split` captures preceding ordinary object property values and defers `Instruction::CreateObject` until resumption. For a ternary with one direct await in each arm, it selects the correct arm before awaiting and `supports_awaits` counts two source awaits as one runtime suspension. VM GC tests and original `op_engine` native paint integration cover the path; general branching/loop/try/finally continuations remain outside this bounded transform.

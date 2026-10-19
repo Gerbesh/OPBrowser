@@ -1,5 +1,10 @@
 # OPBrowser: active project plan
 
+## P0 short-circuit and one-sided return awaits (19 October 2026)
+
+The original JS lowerer now handles `return flag ? await a() : b`, `return flag ? a : await b()`, and `return value &&/||/?? await expression` where the awaited operand is direct and sole. The compiler emits actual conditional return paths, avoiding Promise jobs on skipped branches, retaining left-hand side identity/truthiness/nullish semantics. Focused JS/GC and native text paint regressions pass. Not covered: variable-initializer and expression-statement one-sided branches, awaited conditions, more deeply nested branch expressions, loops, and try/finally. On five unchanged public URLs the initial JS failures remain **2/4/11/1/3** (Google/YouTube/Pikabu/Reddit/DeviantArt); YouTube paints no text and Reddit stays blank, so no real-site improvement is certified.
+
+
 ## P0 bounded conditional and object awaits (19 October 2026)
 
 Ordinary object literal fields now preserve prior evaluations across suspension and GC. A ternary supports a direct await in **each** arm, selecting the branch before suspension. JS, GC and original HTML-to-native-paint tests pass. The unchanged five-site native Release probe still shows 2/4/11/1/3 JS failures (Google/YouTube/Pikabu/Reddit/DeviantArt), with Reddit blank and YouTube textless. Accessors, __proto__, one-sided/nested branch awaits, loop/try/finally and short-circuit-RHS awaits still reject; a full suspended VM frame and verified first paint remain P0.

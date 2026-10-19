@@ -1,5 +1,10 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 19 October 2026: returning short-circuit and one-sided await
+
+Native Release with 1300ms settling on the same five public URLs, archived only under ignored `artifacts/live_web/one-sided-await-2026-10-19/`: initial JS failures Google **2**, YouTube **4**, Pikabu **11**, Reddit **1**, DeviantArt **3**. YouTube remains a textless skeleton and Reddit white. Object/one-arm logical async regressions reach genuine native text pixels, but these public results do **not** establish a repaired first viewport. No site authentication, scripts archiving, or challenge bypass was performed.
+
+
 ## 19 October 2026: nested-expression await follow-up
 
 Original native release probe (1300 ms settle, same five anonymously accessible real URLs) stored ignored artifacts under `artifacts/live_web/expression-await-five-2026-10-19/`. Google: **2** initial JS failures; YouTube: **4**, still zero text; Pikabu: **11**; Reddit: **1**, still white; DeviantArt: **3**. A bounded opt-in Reddit snippet still reports unsupported await placement within its complex script; this subset does not imply bypassing any site protection or usable content. DOM native pixel tests pass for a synthetic method-call argument await and normal chained awaits. The external Test262 test tree is unavailable in this workstation session; documented historical parser/runtime subset percentages must not be represented as fresh measurements.

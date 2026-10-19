@@ -1,5 +1,10 @@
 # Roadmap
 
+## Return-branch await checkpoint (19 October 2026)
+
+One-sided returning ternaries and returning short-circuit RHS expressions now suspend only on the taken branch. Remaining P0: awaits nested in conditions and arbitrary expression/statement positions, `if`/loops/`try/finally` with real resumable interpreter frames, and real-site script loading/layout blockers. Same five sites still show 2/4/11/1/3 JS failures; synthetic success does not count as a working browser page.
+
+
 ## Await continuation update (19 October 2026)
 
 Object data properties and ternaries with direct awaits in both branches are now supported by the original Promise-microtask lowering. Next: real VM-frame resumability for skipped/one-sided logical and conditional branches, try/finally and loops; prioritize real-site content and profiling gates over synthetic-only success.

@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## S96 - One-sided async return and logical RHS to native paint
+
+Inline HTML script -> original parser recognizes direct `return flag ? await a() : b` or `return x ?? await y` -> `lower_return_branch` emits original conditional bytecode with one runtime await path -> Promise jobs only for the executed await -> JS mutates authoritative DOM -> `op_engine` verifies native painted text. VM tests cover selected/unselected branches, `&&`, `||`, `??`, null/undefined, GC across pending Promise and fail-closed nested/try cases. Five real sites remain incorrect; no readiness gain is inferred from a synthetic fixture.
+
+
 ## S95 - Object and two-arm conditional awaits to native text paint
 
 Inline HTML async JavaScript -> validated original parser -> ordered object property captures or branch selection in `await_lowering` -> Promise microtask -> native DOM mutation -> `PaintCommand::Text`. The tests validate pending GC, prior side effects, non-selected branches and unsupported unsafe placements. No broader real-site compatibility is claimed.

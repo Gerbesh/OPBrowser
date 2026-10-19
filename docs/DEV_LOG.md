@@ -3791,4 +3791,11 @@ This file is append-only project history.
 - Added runtime tests for pending-GC, evaluation order, selected-side effects, nested object values, awaited ternary tests and fail-closed cases, plus an original HTML -> JS -> DOM -> native text-paint integration test. Clippy and targeted tests passed.
 - Full Rust workspace tests, formatting, strict Clippy, Win32 smoke, generated graph/slicer verification and native Release probe build passed. Repeated five public HTTPS sites with 1300ms settling at ignored `artifacts/live_web/conditional-object-2026-10-19/`: JS failures Google 2, YouTube 4, Pikabu 11, Reddit 1, DeviantArt 3. YouTube paints zero text; Reddit remains blank. No verified visual-site improvement. Historical Test262 numbers were not rerun.
 
+## 2026-10-19 - P0 one-sided returning awaits and returning short-circuit expressions
+
+- Original Rust CPS lowerer now recognizes `return test ? await a : b`, `return test ? a : await b` and `return left &&/||/?? await rhs` with one direct await. Compiles real `if` return paths rather than eagerly awaiting skipped operands. Logical left is captured only once, with JS nullish semantics for `??`.
+- Added focused VM scheduling tests for both ternary directions, pending Promise across forced GC, rejection, `&&`, `||`, `??`, null/undefined and eager side-effect counts. Updated old negative expectations to assert still-unsupported awaited conditions/nested and try/finally instead of newly supported syntax. Native `op_engine` HTML-to-DOM-to-paint test asserts actual text pixels.
+- Entire Rust workspace suite, Clippy strict, formatting and Win32 smoke passed. An intermittent localhost WinHTTP OS 12030 failure passed on targeted retry before the full green run. The refreshed Release probe on the same five real URLs shows unchanged JS failures 2/4/11/1/3; YouTube still paints no text and Reddit remains blank. Results remain gitignored at `artifacts/live_web/one-sided-await-2026-10-19/`.
+- This bounded optimization is limited to return operands; arbitrary conditional expressions, statement branches, loops, try/finally and genuine suspended VM frames remain P0. No current external Test262 conformance run was performed.
+
 

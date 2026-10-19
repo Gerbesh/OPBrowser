@@ -50,6 +50,29 @@ fn object_and_conditional_await_reach_original_native_paint() {
 }
 
 #[test]
+fn one_sided_and_short_circuit_await_reach_original_native_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "async function label(flag){return flag?await Promise.resolve('BRANCH'):'SKIP';}",
+            "async function suffix(value){return value??await Promise.resolve('-NULLISH');}",
+            "label(true).then(function(value){return suffix(null).then(function(tail){",
+            "document.getElementById('result').textContent=value+tail;",
+            "});});",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("BRANCH-NULLISH")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn async_await_microtask_changes_native_document_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(
