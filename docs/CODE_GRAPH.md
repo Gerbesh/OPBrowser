@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 19 October 2026: expression-level async continuations and call receiver
+
+New `crates/op_js/src/await_lowering.rs` is an original bounded continuation-passing transform imported by `op_js::parser`. It extracts the first await from eager AST expressions, emits ordered `const` captures for operands evaluated before the pause, and resumes the remaining expression through the existing self-hosted Promise and lexical-arrow microtask machinery. `Expression::CallWithReceiver` is compiler-only and generates original `Instruction::Call { has_receiver: true }`; it preserves method identity and `this` even when a function's writable `.call` property is replaced. The parser validates the number of extractable awaits; unsupported branch/try/loop placement rejects before bytecode compilation. Captured JS objects/closures are traced by the original GC. The native engine tests verify a post-await DOM text mutation reaches Win32 paint. This is not a general interpreter-frame suspension mechanism.
+
 Last updated: 2026-10-16
 
 This document is the maintained human-readable code/dependency graph. It is updated

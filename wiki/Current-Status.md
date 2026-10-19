@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Expression-await compiler update (19 October 2026)
+
+The original JavaScript engine now resumes eager subexpressions containing `await` via Promise jobs, including arithmetic, arrays, assignments and awaited arguments. Evaluation-order capture and a native `CallWithReceiver` opcode preserve original method receivers even when `.call` is overwritten. Explicit GC and native rendered-pixel tests pass. Try/finally, loops and conditionally skipped `await` still require a general suspended-frame interpreter. Five live pages have initial script failures 2/4/11/1/3 (Google/YouTube/Pikabu/Reddit/DeviantArt), with Reddit blank and YouTube textless. No page-level compatibility pass is claimed.
+
 Last reviewed: **16 October 2026**. The [published GitHub Wiki](https://github.com/Gerbesh/OPBrowser/wiki) tracks the main repository's `wiki/` sources. This is a development snapshot, not a
 claim that OPBrowser is ready for everyday browsing.
 

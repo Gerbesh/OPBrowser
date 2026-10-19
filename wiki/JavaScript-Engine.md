@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## Original expression-level await lowering (19 October 2026)
+
+New `await_lowering.rs` decomposes the first awaited eager subexpression, captures operands evaluated before suspension and schedules its remainder through browser-owned Promise microtasks. Nested await arguments, arithmetic, arrays, sequences, constructor arguments and simple assignments are covered. The compiler-only `CallWithReceiver` expression emits a native VM call retaining the original receiver and function, rather than relying on mutable `Function.prototype.call` or function-owned `.call`. GC-safe pending continuation and real DOM-paint regression tests pass. Await in conditionally executed branches, short-circuit right operands, loops and `try/finally` remains deliberately rejected. This is bounded CPS lowering, not fully general async VM-frame suspension.
+
 `op_js` is OPBrowser's original ECMAScript implementation. It does not embed V8,
 SpiderMonkey, JavaScriptCore, QuickJS or another JavaScript engine.
 

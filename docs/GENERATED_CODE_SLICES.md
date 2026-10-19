@@ -3,6 +3,26 @@
 > Generated from `tools/code_slices.json` and validated against live Rust files.
 > This is a curated vertical feature map, **not** an AST/call/data-flow slicer.
 
+## S94 — Original nested-await expressions through receiver-safe JS VM into pixels
+
+Status: **Bounded eager await expressions, GC and actual DOM-to-native-paint integration tested**.
+
+```text
+op_js::Await
+op_js::split_statement
+op_js::CallWithReceiver
+op_js::Instruction::Call
+op_engine::expression_await_updates_real_native_paint
+```
+
+- [`op_js::Await`](../crates/op_js/src/parser.rs#L151)
+- [`op_js::split_statement`](../crates/op_js/src/await_lowering.rs#L398)
+- [`op_js::CallWithReceiver`](../crates/op_js/src/bytecode.rs#L869)
+- [`op_js::Instruction::Call`](../crates/op_js/src/runtime.rs#L5673)
+- [`op_engine::expression_await_updates_real_native_paint`](../crates/op_engine/tests/scripts.rs#L5)
+
+Conditional branches, short-circuit RHS, loops and try/finally await still unsupported; public Reddit blank and YouTube textless.
+
 ## S86 — Compound and comma JS expressions into browser DOM
 
 Status: **Original VM, full expression and native DOM integration tested**.
@@ -17,8 +37,8 @@ op_engine::parse_and_execute
 ```
 
 - [`op_js::PlusEqual`](../crates/op_js/src/lexer.rs#L53)
-- [`op_js::CompoundAssignment`](../crates/op_js/src/parser.rs#L202)
-- [`op_js::Sequence`](../crates/op_js/src/parser.rs#L201)
+- [`op_js::CompoundAssignment`](../crates/op_js/src/parser.rs#L208)
+- [`op_js::Sequence`](../crates/op_js/src/parser.rs#L207)
 - [`op_js::Dup2`](../crates/op_js/src/bytecode.rs#L78)
 - [`op_js::Dup2`](../crates/op_js/src/runtime.rs#L5870)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L410)
@@ -76,7 +96,7 @@ op_js::ToForOfValues
 op_engine::parse_and_execute
 ```
 
-- [`op_js::for_statement`](../crates/op_js/src/parser.rs#L399)
+- [`op_js::for_statement`](../crates/op_js/src/parser.rs#L326)
 - [`op_js::for_of_statement`](../crates/op_js/src/bytecode.rs#L169)
 - [`op_js::ToForOfValues`](../crates/op_js/src/runtime.rs#L5518)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L410)
@@ -96,7 +116,7 @@ op_engine::parse_and_execute
 ```
 
 - [`op_js::QuestionQuestion`](../crates/op_js/src/lexer.rs#L94)
-- [`op_js::nullish`](../crates/op_js/src/parser.rs#L1259)
+- [`op_js::nullish`](../crates/op_js/src/parser.rs#L1179)
 - [`op_js::JumpIfNullish`](../crates/op_js/src/bytecode.rs#L86)
 - [`op_js::JumpIfNullish`](../crates/op_js/src/runtime.rs#L5916)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L410)
@@ -185,8 +205,8 @@ op_js::JsRuntime
 op_engine::Engine
 ```
 
-- [`op_js::parse_script`](../crates/op_js/src/lib.rs#L19)
-- [`op_js::JsRuntime`](../crates/op_js/src/lib.rs#L23)
+- [`op_js::parse_script`](../crates/op_js/src/lib.rs#L20)
+- [`op_js::JsRuntime`](../crates/op_js/src/lib.rs#L24)
 - [`op_engine::Engine`](../crates/op_engine/src/lib.rs#L294)
 
 Classic inline and bounded same-origin external scripts now update textContent by id. Async/defer, document.write, module scripts and full DOM/Web APIs remain unsupported.
@@ -1127,7 +1147,7 @@ op_dom::append_child
 op_paint::build_display_list
 ```
 
-- [`op_js::comparison`](../crates/op_js/src/parser.rs#L1398)
+- [`op_js::comparison`](../crates/op_js/src/parser.rs#L1318)
 - [`op_js::binary_with_coercion`](../crates/op_js/src/runtime.rs#L1955)
 - [`op_js::query_descendants`](../crates/op_js/src/runtime.rs#L4130)
 - [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3403)
@@ -1323,7 +1343,7 @@ op_paint::build_display_list
 ```
 
 - [`op_js::tokenize`](../crates/op_js/src/lexer.rs#L101)
-- [`op_js::conditional`](../crates/op_js/src/parser.rs#L1219)
+- [`op_js::conditional`](../crates/op_js/src/parser.rs#L1139)
 - [`op_js::compile_program`](../crates/op_js/src/bytecode.rs#L106)
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L422)
 - [`op_js::typeof_value`](../crates/op_js/src/runtime.rs#L1819)
@@ -1477,7 +1497,7 @@ op_js::apply_binary
 - [`op_engine::active_script_diagnostics`](../crates/op_engine/src/lib.rs#L349)
 - [`op_browser::script_diag_`](../crates/op_browser/src/bin/live_site_probe.rs#L184)
 - [`op_js::Caret`](../crates/op_js/src/lexer.rs#L84)
-- [`op_js::bitwise_xor`](../crates/op_js/src/parser.rs#L1359)
+- [`op_js::bitwise_xor`](../crates/op_js/src/parser.rs#L1279)
 - [`op_js::to_int32`](../crates/op_js/src/runtime.rs#L10575)
 - [`op_js::apply_binary`](../crates/op_js/src/runtime.rs#L2046)
 

@@ -16781,7 +16781,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             vm.global("output"),
-            Some(&JsValue::String("reject:oops;value:15;fail:broken;".into()))
+            Some(&JsValue::String("value:15;fail:broken;reject:oops;".into()))
         );
     }
 
@@ -16833,6 +16833,73 @@ mod tests {
             Some(&JsValue::String("loaded:payload".into()))
         );
         vm.collect_garbage_with_roots(&[]).unwrap();
+    }
+
+    #[test]
+    fn await_nested_in_method_arguments_preserves_receiver_getter_and_evaluation_order() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var log=''; var complete;var result;             var pending=new Promise(function(resolve){complete=resolve;});             function first(){log+='first;';return 3;}             var receiver={base:10};             Object.defineProperty(receiver,'method',{get:function(){               log+='getter;';return function(a,b){log+='call:'+this.base+';';return a+b+this.base;};             }});             async function work(){               const answer=receiver.method(first(),await pending)*2;               log+='body:'+answer+';';return answer;             }             work().then(function(value){result=value;log+='then;';});             log+='sync;';",
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("getter;first;sync;".into()))
+        );
+        vm.eval_script("complete(4);").unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Number(34.0)));
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String(
+                "getter;first;sync;call:10;body:34;then;".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn nested_awaits_in_binary_arrays_and_assignments_settle_in_order() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var result,side=0;             async function sum(){               const value=(await Promise.resolve(5))*(2+await Promise.resolve(4));               const entries=[side++,await Promise.resolve(3),side++];               side=await Promise.resolve(side+1);               return value+entries[1]+side;             }             sum().then(function(v){result=v;});",
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Number(36.0)));
+        assert_eq!(vm.global("side"), Some(&JsValue::Number(3.0)));
+    }
+
+    #[test]
+    fn nested_await_rejection_and_unsupported_control_flow_are_not_faked() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var message='';             async function fail(){return 10+(await Promise.reject('nope'));}             fail().catch(function(error){message=error;});",
+        )
+        .unwrap();
+        assert_eq!(vm.global("message"), Some(&JsValue::String("nope".into())));
+        for script in [
+            "async function f(){return false && await Promise.resolve(1);}",
+            "async function f(){return true ? await 1 : 2;}",
+            "async function f(){try{return await 1;}finally{var finished=true;}}",
+            "async function f(){while(true){await 1;break;}}",
+            "async function f(){return {value:await 1};}",
+        ] {
+            assert!(vm.eval_script(script).is_err(), "must reject: {script}");
+        }
+    }
+
+    #[test]
+    fn await_method_arguments_bypass_polluted_call_and_survive_gc() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            "var finish,result='waiting';             var pending=new Promise(function(resolve){finish=resolve;});             async function run(){               var object={base:6,calculate:function(a,b){return this.base+a+b;}};               object.calculate.call=function(){throw 'poisoned call';};               return object.calculate(await pending,await Promise.resolve(4));             }             run().then(function(value){result=value;},function(e){result='bad:'+e;});",
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("result"),
+            Some(&JsValue::String("waiting".into()))
+        );
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("finish(2);").unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Number(12.0)));
     }
 
     #[test]

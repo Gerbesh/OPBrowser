@@ -3,6 +3,7 @@
 //! This crate intentionally owns the JavaScript implementation. It does not embed a
 //! third-party ECMAScript engine.
 
+mod await_lowering;
 mod bytecode;
 mod error;
 mod json;

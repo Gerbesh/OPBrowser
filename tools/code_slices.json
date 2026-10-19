@@ -2,6 +2,34 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S94",
+      "title": "Original nested-await expressions through receiver-safe JS VM into pixels",
+      "status": "Bounded eager await expressions, GC and actual DOM-to-native-paint integration tested",
+      "steps": [
+        {
+          "path": "crates/op_js/src/parser.rs",
+          "symbol": "Await"
+        },
+        {
+          "path": "crates/op_js/src/await_lowering.rs",
+          "symbol": "split_statement"
+        },
+        {
+          "path": "crates/op_js/src/bytecode.rs",
+          "symbol": "CallWithReceiver"
+        },
+        {
+          "path": "crates/op_js/src/runtime.rs",
+          "symbol": "Instruction::Call"
+        },
+        {
+          "path": "crates/op_engine/tests/scripts.rs",
+          "symbol": "expression_await_updates_real_native_paint"
+        }
+      ],
+      "limitation": "Conditional branches, short-circuit RHS, loops and try/finally await still unsupported; public Reddit blank and YouTube textless."
+    },
+    {
       "id": "S86",
       "title": "Compound and comma JS expressions into browser DOM",
       "status": "Original VM, full expression and native DOM integration tested",

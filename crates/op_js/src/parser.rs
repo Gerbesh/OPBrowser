@@ -160,6 +160,12 @@ pub enum Expression {
         callee: Box<Expression>,
         arguments: Vec<Expression>,
     },
+    /// Compiler-only invocation with an already evaluated receiver and callee.
+    CallWithReceiver {
+        receiver: Box<Expression>,
+        callee: Box<Expression>,
+        arguments: Vec<Expression>,
+    },
     New {
         callee: Box<Expression>,
         arguments: Vec<Expression>,
@@ -253,85 +259,6 @@ pub enum BinaryOp {
     GreaterEqual,
     InstanceOf,
     In,
-}
-
-/// Lower sequential awaits to real Promise reactions. Unsupported nested
-/// placements are rejected at parse time; no synchronous await is faked.
-fn lower_async_await(statements: Vec<Statement>) -> Vec<Statement> {
-    let mut prefix = Vec::new();
-    let mut remaining = statements.into_iter();
-    while let Some(statement) = remaining.next() {
-        match statement {
-            Statement::Variable {
-                kind,
-                mut declarations,
-            } if declarations.len() == 1
-                && matches!(declarations[0].initializer, Some(Expression::Await(_))) =>
-            {
-                let declaration = declarations.pop().expect("one await declaration");
-                let Some(Expression::Await(awaited)) = declaration.initializer else {
-                    unreachable!("guarded by direct await initializer")
-                };
-                // The callback parameter is not spellable by page scripts.
-                let private = "\0op-await-value".to_owned();
-                let mut tail = vec![Statement::Variable {
-                    kind,
-                    declarations: vec![VariableDeclarator {
-                        name: declaration.name,
-                        initializer: Some(Expression::Identifier(private.clone())),
-                    }],
-                }];
-                tail.extend(lower_async_await(remaining.collect()));
-                prefix.push(Statement::Return(Some(await_promise_chain(
-                    *awaited,
-                    Some(Expression::Arrow {
-                        params: vec![private],
-                        body: tail,
-                        is_async: false,
-                    }),
-                ))));
-                return prefix;
-            }
-            Statement::Expression(Expression::Await(awaited)) => {
-                let tail = lower_async_await(remaining.collect());
-                prefix.push(Statement::Return(Some(await_promise_chain(
-                    *awaited,
-                    Some(Expression::Arrow {
-                        params: vec!["\0op-await-discard".into()],
-                        body: tail,
-                        is_async: false,
-                    }),
-                ))));
-                return prefix;
-            }
-            Statement::Return(Some(Expression::Await(awaited))) => {
-                prefix.push(Statement::Return(Some(await_promise_chain(*awaited, None))));
-                return prefix;
-            }
-            other => prefix.push(other),
-        }
-    }
-    prefix
-}
-
-fn await_promise_chain(value: Expression, continuation: Option<Expression>) -> Expression {
-    let resolved = Expression::Call {
-        callee: Box::new(Expression::Member {
-            object: Box::new(Expression::Identifier("Promise".into())),
-            property: Box::new(Expression::Literal(JsValue::String("resolve".into()))),
-        }),
-        arguments: vec![value],
-    };
-    match continuation {
-        Some(callback) => Expression::Call {
-            callee: Box::new(Expression::Member {
-                object: Box::new(resolved),
-                property: Box::new(Expression::Literal(JsValue::String("then".into()))),
-            }),
-            arguments: vec![callback],
-        },
-        None => resolved,
-    }
 }
 
 pub fn parse_script(source: &str) -> Result<Program, JsError> {
@@ -971,21 +898,16 @@ impl Parser {
                 }
                 let before_await = self.await_count;
                 let statement = self.statement()?;
-                if self.await_count != before_await {
-                    let direct = match &statement {
-                        Statement::Variable { declarations, .. } if declarations.len() == 1 => {
-                            matches!(&declarations[0].initializer, Some(Expression::Await(_)))
-                        }
-                        Statement::Expression(Expression::Await(_))
-                        | Statement::Return(Some(Expression::Await(_))) => true,
-                        _ => false,
-                    };
-                    if self.await_count != before_await + 1 || !direct {
-                        return Err(JsError::syntax(
-                            self.current().start,
-                            "await is only supported in a direct initializer, statement or return",
-                        ));
-                    }
+                if self.await_count != before_await
+                    && !crate::await_lowering::supports_awaits(
+                        &statement,
+                        self.await_count - before_await,
+                    )
+                {
+                    return Err(JsError::syntax(
+                        self.current().start,
+                        "unsupported await placement in control flow or expression",
+                    ));
                 }
                 body.push(statement);
             }
@@ -1000,7 +922,7 @@ impl Parser {
         self.await_count = saved_await_count;
         result?;
         let body = if is_async {
-            lower_async_await(body)
+            crate::await_lowering::lower_async_await(body)
         } else {
             body
         };
@@ -1135,21 +1057,16 @@ impl Parser {
                     }
                     let before = self.await_count;
                     let statement = self.statement()?;
-                    if self.await_count != before {
-                        let direct = match &statement {
-                            Statement::Variable { declarations, .. } if declarations.len() == 1 => {
-                                matches!(&declarations[0].initializer, Some(Expression::Await(_)))
-                            }
-                            Statement::Expression(Expression::Await(_))
-                            | Statement::Return(Some(Expression::Await(_))) => true,
-                            _ => false,
-                        };
-                        if self.await_count != before + 1 || !direct {
-                            return Err(JsError::syntax(
-                                self.current().start,
-                                "await is only supported in a direct initializer, statement or return",
-                            ));
-                        }
+                    if self.await_count != before
+                        && !crate::await_lowering::supports_awaits(
+                            &statement,
+                            self.await_count - before,
+                        )
+                    {
+                        return Err(JsError::syntax(
+                            self.current().start,
+                            "unsupported await placement in control flow or expression",
+                        ));
                     }
                     body.push(statement);
                 }
@@ -1165,7 +1082,10 @@ impl Parser {
             let before = self.await_count;
             self.assignment().and_then(|value| {
                 if self.await_count != before
-                    && (self.await_count != before + 1 || !matches!(value, Expression::Await(_)))
+                    && !crate::await_lowering::supports_awaits(
+                        &Statement::Return(Some(value.clone())),
+                        self.await_count - before,
+                    )
                 {
                     return Err(JsError::syntax(
                         self.current().start,
@@ -1181,7 +1101,7 @@ impl Parser {
         Ok(Expression::Arrow {
             params,
             body: if is_async {
-                lower_async_await(body)
+                crate::await_lowering::lower_async_await(body)
             } else {
                 body
             },
@@ -2142,11 +2062,9 @@ mod tests {
         assert!(
             parse_script("async function f() { if (true) { await Promise.resolve(3); } }").is_err()
         );
-        assert!(
-            parse_script("async function f() { const x=await Promise.resolve(3)+1; }").is_err()
-        );
+        assert!(parse_script("async function f() { const x=await Promise.resolve(3)+1; }").is_ok());
         assert!(parse_script("async function f() { const a=await 1, b=2; }").is_err());
-        assert!(parse_script("async function f() { return await await 1; }").is_err());
+        assert!(parse_script("async function f() { return await await 1; }").is_ok());
         assert!(
             parse_script(
                 "async function f() { async function nested(){ return await 2; } return nested(); }"
@@ -2172,7 +2090,7 @@ mod tests {
         assert!(parse_script("var async=7; var f=async=>async+1;").is_ok());
         assert!(parse_script("var g=async(await)=>1;").is_err());
         assert!(parse_script("var g=async()=>{if(true){await 1;}};").is_err());
-        assert!(parse_script("var g=async()=>await Promise.resolve(1)+2;").is_err());
+        assert!(parse_script("var g=async()=>await Promise.resolve(1)+2;").is_ok());
     }
 
     #[test]

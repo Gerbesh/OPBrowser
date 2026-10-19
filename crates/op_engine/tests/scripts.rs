@@ -2,6 +2,30 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn expression_await_updates_real_native_paint() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "var receiver={prefix:'PAINT',format:function(x){return this.prefix+x;}};",
+            "async function update(){",
+            "var result=receiver.format(await Promise.resolve('-EXPRESSION-PASS'));",
+            "document.getElementById('result').textContent=result;",
+            "}",
+            "update();",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("PAINT-EXPRESSION-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn async_await_microtask_changes_native_document_pixels() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

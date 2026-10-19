@@ -866,6 +866,21 @@ impl Compiler {
                     has_receiver,
                 });
             }
+            Expression::CallWithReceiver {
+                receiver,
+                callee,
+                arguments,
+            } => {
+                self.expression(receiver);
+                self.expression(callee);
+                for argument in arguments {
+                    self.expression(argument);
+                }
+                self.code.push(Instruction::Call {
+                    argument_count: arguments.len(),
+                    has_receiver: true,
+                });
+            }
             Expression::New { callee, arguments } => {
                 self.expression(callee);
                 for argument in arguments {

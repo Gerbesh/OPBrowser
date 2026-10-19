@@ -1,5 +1,9 @@
 # OPBrowser: active project plan
 
+## P0 original JS expression-await checkpoint (19 October 2026)
+
+The independent JS parser now lowers awaited values within bounded *eager* expressions, including binary/unary operators, positional function and method-call arguments, arrays, sequences, computed property keys, simple assignments, conditional tests and constructor arguments. Pre-await operands and getters are captured in evaluation order. A compiler-only `CallWithReceiver` emits the native receiver-preserving VM call opcode, not writable `function.call`. Explicit GC and HTML -> native paint tests pass. This is NOT a full paused-stack VM: awaited conditional branches, logical RHS, loops, try/finally, and certain object/assignment patterns still reject. Five-site repeat remains Google **2**, YouTube **4**, Pikabu **11**, Reddit **1**, DeviantArt **3** initial JS failures, with Reddit blank and YouTube textless. Next: semantics-correct suspend/resume through arbitrary try/loop control flow plus visible-site script/layout fixes.
+
 Updated 2026-10-16. This file contains **decisions, priorities, acceptance gates and current status only**, not a running implementation diary. Completed M0-M4.35 milestone narratives remain recoverable from Git history and are tracked in [DEV_LOG.md](DEV_LOG.md). Measured test history is in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Product goal and constraints

@@ -1,5 +1,9 @@
 # Roadmap
 
+## Next native JavaScript continuation milestone (19 October 2026)
+
+Expression-level `await` now supports nested eager operands, calls and arrays while maintaining evaluation order, receiver identity and GC safety. For real-world compatibility this still needs a general async frame/suspend mechanism covering `try/catch/finally`, loops, conditional and short-circuit evaluation, plus first-viewport JS/DOM/layout repair. The same five-site live diagnostic still reports 2/4/11/1/3 initial script failures and no verified functional first viewport. Narrow Test262 arithmetic subsets must not be presented as overall engine-readiness percentages.
+
 OPBrowser aims to be an independent Windows browser with an original Rust web/JavaScript engine. The success criterion is **usable, stable real pages**, not the count of EventTarget methods.
 
 **G3 timeout checkpoint (13 October 2026):** orphan AbortSignal.timeout deadlines no longer pin dead signals. An abort observer, pending fetch or reachable AbortSignal.any composite preserves an active timeout. Five focused regressions pass; the full 30-minute memory proof remains open.

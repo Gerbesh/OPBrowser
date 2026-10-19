@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S94 - Nested await expressions through original VM and painted pixels
+
+Source `async function f(){const n=method(a(), await pending) * 2; ...}` enters `op_js::parser` -> `op_js::await_lowering::split` performs left-to-right eager operand capture -> `Expression::CallWithReceiver` invokes the saved function with the saved `this` directly through `op_js::bytecode::Instruction::Call` -> Promise microtask continuation survives explicit JS GC -> original JS DOM mutation -> authoritative native document and Win32 rasterized text. Regressions cover getter/argument timing, multiple awaited arguments, a poisoned writable `.call`, nested arithmetic/arrays/assignment, rejected Promises, unsupported control flow, GC and HTML-to-paint. Five unchanged live pages still show JS failures 2/4/11/1/3; no verified coherent first viewport. Conditional branch, try/finally and loop await still require full VM continuations.
+
 Last updated: 2026-10-16
 
 A code slice is an end-to-end path through the architecture that produces one

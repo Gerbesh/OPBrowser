@@ -1,5 +1,9 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 19 October 2026: nested-expression await follow-up
+
+Original native release probe (1300 ms settle, same five anonymously accessible real URLs) stored ignored artifacts under `artifacts/live_web/expression-await-five-2026-10-19/`. Google: **2** initial JS failures; YouTube: **4**, still zero text; Pikabu: **11**; Reddit: **1**, still white; DeviantArt: **3**. A bounded opt-in Reddit snippet still reports unsupported await placement within its complex script; this subset does not imply bypassing any site protection or usable content. DOM native pixel tests pass for a synthetic method-call argument await and normal chained awaits. The external Test262 test tree is unavailable in this workstation session; documented historical parser/runtime subset percentages must not be represented as fresh measurements.
+
 **Baseline date:** 2026-10-15. [Detailed 20-site results](live_web/2026-10-15/REPORT.md) |
 [Raw per-site diagnostics](live_web/2026-10-15/results.json).
 
