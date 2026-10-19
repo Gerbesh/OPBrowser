@@ -1,6 +1,6 @@
 # OPBrowser compatibility
 
-- Test262 parser v1: **34.64%** (687/1983), upstream c8c798898646638cd0c24879f8e0374e847e7d74
+- Test262 parser v1: **35.25%** (699/1983), upstream c8c798898646638cd0c24879f8e0374e847e7d74
 - Test262 runtime v1: **93.41%** (85/91 attempted); 0 explicitly skipped; pinned revision verified=True. Narrow classic-script sample only.
 - Test262 runtime v2: **51.96%** (93/179 attempted); 110 explicitly skipped among 289 listed in 25 families; pinned revision verified=True. Not full ECMAScript coverage.
 - WPT static v1: **97.00%** (194/200), upstream 97fe10c5d0e12e4a9d90f77b8db0602c64f3ad2d
