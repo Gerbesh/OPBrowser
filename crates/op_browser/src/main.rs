@@ -104,7 +104,12 @@ fn queue_thumb_event(
                 queued.push_back(NavigationEvent::Hover { x, y });
             }
         }
-        NavigationEvent::ScrollbarDragStart { .. } | NavigationEvent::ScrollbarDragEnd => {
+        NavigationEvent::ScrollbarDragStart { .. }
+        | NavigationEvent::ScrollbarDragEnd
+        | NavigationEvent::PointerDown { .. }
+        | NavigationEvent::PointerCancel
+        | NavigationEvent::Click { .. }
+        | NavigationEvent::FollowLink(_) => {
             queued.push_back(event);
         }
         _ => {}
@@ -203,6 +208,8 @@ fn main() {
                 event,
                 NavigationEvent::Resize
                     | NavigationEvent::Click { .. }
+                    | NavigationEvent::PointerDown { .. }
+                    | NavigationEvent::PointerCancel
                     | NavigationEvent::Hover { .. }
                     | NavigationEvent::Scroll { .. }
                     | NavigationEvent::HorizontalScroll { .. }
@@ -216,6 +223,7 @@ fn main() {
                     engine.navigate(&source, width, height).map(Some)
                 }
                 NavigationEvent::FollowLink(href) => {
+                    engine.release_press(width, height);
                     engine.follow_link(&href, width, height).map(Some)
                 }
                 NavigationEvent::Back => engine.go_back(width, height),
@@ -223,6 +231,8 @@ fn main() {
                 NavigationEvent::Reload => engine.reload(width, height),
                 NavigationEvent::Resize => Ok(engine.reflow(width, height)),
                 NavigationEvent::Click { x, y } => Ok(engine.click_at(x, y, width, height)),
+                NavigationEvent::PointerDown { x, y } => Ok(engine.press_at(x, y, width, height)),
+                NavigationEvent::PointerCancel => Ok(engine.release_press(width, height)),
                 NavigationEvent::Hover { x, y } => Ok(engine.hover_at(x, y, width, height)),
                 NavigationEvent::Scroll { x, y, delta_y } => {
                     let page = engine.scroll_at(x, y, delta_y, width, height);
@@ -447,6 +457,8 @@ fn main() {
             let reflow = matches!(
                 event,
                 NavigationEvent::Resize | NavigationEvent::Click { .. }
+                    | NavigationEvent::PointerDown { .. }
+                    | NavigationEvent::PointerCancel
                     | NavigationEvent::Hover { .. }
                     | NavigationEvent::Scroll { .. }
                     | NavigationEvent::HorizontalScroll { .. }
@@ -504,6 +516,36 @@ mod overflow_tests {
     }
 
     #[test]
+    fn busy_worker_retains_pointer_press_release_order_without_hover_flood() {
+        let mut queue = std::collections::VecDeque::new();
+        queue_thumb_event(&mut queue, NavigationEvent::PointerDown { x: 42, y: 35 });
+        for x in 43..300 {
+            queue_thumb_event(&mut queue, NavigationEvent::Hover { x, y: 35 });
+        }
+        queue_thumb_event(&mut queue, NavigationEvent::Click { x: 73, y: 35 });
+        assert_eq!(queue.len(), 3);
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::PointerDown { x: 42, y: 35 })
+        );
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::Hover { x: 299, y: 35 })
+        );
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::Click { x: 73, y: 35 })
+        );
+        queue_thumb_event(&mut queue, NavigationEvent::PointerDown { x: 2, y: 3 });
+        queue_thumb_event(&mut queue, NavigationEvent::PointerCancel);
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::PointerDown { x: 2, y: 3 })
+        );
+        assert_eq!(queue.pop_front(), Some(NavigationEvent::PointerCancel));
+    }
+
+    #[test]
     fn r12c_busy_drag_queue_coalesces_moves_without_losing_capture_edges() {
         let mut queue = std::collections::VecDeque::new();
         queue_thumb_event(
@@ -525,9 +567,9 @@ mod overflow_tests {
         );
         assert_eq!(queue.pop_front(), Some(NavigationEvent::ScrollbarDragEnd));
         queue_thumb_event(&mut queue, NavigationEvent::Click { x: 1, y: 2 });
-        assert!(
-            queue.is_empty(),
-            "unrelated clicks are not queued as drag input"
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::Click { x: 1, y: 2 })
         );
     }
 

@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 19 October 2026: block and glyph-run DOM hit regions to pointer-active CSS
+
+`op_layout::flow` emits `ClickRegion` for every native block and from `inline::Lines.hit_regions`; an `InlineChar.origin` carries the owning inline DOM NodeId, and `PreparedText.origin_spans` measures UTF-8 text-prefix glyph widths without changing text wrapping or painted `TextBox` boundaries. `OutputStart.clicks` makes translated hit rectangles follow positioned and scrolled output; original overflow clipping applies to the same regions. `op_engine::PreparedDocument.hit_target` shares cached hit testing for hover and press; `Engine::press_at/release_press` drives `StyleInteractionState.active`, and click dispatch clears active before handling scrollbar and DOM targets. `op_platform_win` handles capture and off-window cancellation through `PointerDown/PointerCancel`; `op_browser` queues ordered press/release events and coalesces hover. Remaining painted stacking/inline atomic coverage is incomplete.
+
 ## 19 October 2026: UI event to original CSS interaction state
 
 `op_platform_win::NavigationEvent::Hover` is sourced from Win32 mouse movement and leave tracking. `op_browser::main` coalesces pending pointer moves and delivers them to `op_engine::Engine::hover_at`. `PreparedDocument.hit_regions` caches the generation-safe `op_layout::ClickRegion` subset during native render, so a no-op cursor movement avoids layout/style recalculation. `PreparedDocument.interaction: op_css::StyleInteractionState` records hovered, focused and reserved active/focus-visible state, prunes detached targets at GC checkpoints, and passes input state to `collect_author_styles_with_linked_at_viewport_with_state`. Recursive selector matching and `compute_styles` update the authoritative CSS cascade before native paint. Click dispatch updates mouse focus on supported focusable blocks. Dynamic JS selector API and complete hit testing remain future work.

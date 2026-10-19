@@ -1,5 +1,9 @@
 # CSS Syntax Foundation
 
+## Dynamic :active, ID-less hover and text source spans (19 October 2026)
+
+Original `:hover` is no longer restricted to blocks with `id`: normal rendered blocks and glyph-backed inline text/link spans have generation-safe DOM targets. `:active` now tracks native mouse-down and clears on click release, outside-page release and Windows capture-loss cancellation. The same original selector-state cascade handles ancestors and nested selectors. UTF-8 text origin spans are measured against the existing text geometry without creating inline CSS boxes. Keyboard-driven `:focus-visible`, CSS paint stacking order, full replaced-element hit tests and synchronizing the JavaScript selector API remain incomplete.
+
 ## Mouse hover and focus author matching (19 October 2026)
 
 The original selector matcher now consumes explicit native `StyleInteractionState` without global state: `:hover` includes the actual hovered target and its DOM ancestors, `:focus` checks the focused element, and `:focus-within` checks its ancestors. Nested `:not/:is/:has`, combinators and filtered nth-child selectors use the same input state. The no-input APIs retain an all-inactive initial snapshot for deterministic CSS tests. HTML form disabled/checked/read-only checks still use attributes. Press-time `:active` and keyboard `:focus-visible` are not wired; JavaScript's selector matching remains a separate implementation path.

@@ -1,5 +1,9 @@
 # Page Reflow
 
+## Native hit regions follow overflow and positioned transforms (19 October 2026)
+
+The original layout now exposes hit rectangles for all ordinary block elements, plus inline text/link spans mapped onto the text painter's measured glyph runs. Click regions move with relative-position transforms and nested scroll offsets and are clipped by overflow scopes; creating these regions does not split text into new line boxes. The engine reuses the last hit map for mouse hover and press and recalculates styles only when needed. CSS stacking-aware topmost-hit selection and inline atomic targets are not yet complete.
+
 ## CSS hover/focus recascade without unnecessary layout (19 October 2026)
 
 Native Win32 motion is translated to document coordinates and hit-tested against the ID-bearing block rectangles cached by the previous OPBrowser layout. When the target changes, the browser recomputes the original CSS cascade and redraws; moving inside the same target returns no new frame. Pointer-leave clears hover, and queued moves while layout is busy collapse to the latest position. Mouse clicks on supported focusable blocks update `:focus`. Full hit-testing for inline and ID-less elements remains unsupported.

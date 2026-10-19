@@ -1,5 +1,9 @@
 # Roadmap
 
+## Next input/rendering milestones after expanded native hit testing (19 October 2026)
+
+Ordinary ID-less blocks and inline text/link source spans now support real native hover, and pointer press/release drives CSS `:active` without changing the line-break algorithm. Next P0: hit-test according to actual painted stacking/clip hierarchy, cover replaced and atomic inline elements, bound/coalesce worker input under load, implement keyboard focus-visible, and expose synchronized DOM/JS focus and selector state. Independent modern-web readiness blockers: JS VM/event loop, missing bootstrap DOM, font loading and layout correctness. Current Release sites are not fully supported.
+
 ## CSS interaction state after native hover/focus support (19 October 2026)
 
 Hover and mouse-focused CSS state now work through the existing original ID-block hit regions, nested selector matching, and native Win32 event dispatch, with transition-only repaint and coalesced queued motion. Next P0 is hit-testing for ordinary inline, ID-less and nested elements, correct pointer press/release `:active`, focus navigation with keyboard `:focus-visible` and API consistency with DOM scripting; improve low-latency style invalidation. Page bootstrap/CSS font/layout and full JS compatibility are independent open obstacles; no modern site is certified usable.

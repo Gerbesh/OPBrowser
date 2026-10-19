@@ -290,6 +290,7 @@ struct OutputStart {
     text: usize,
     images: usize,
     order: usize,
+    clicks: usize,
     fragments: usize,
     deferred: usize,
 }
@@ -621,6 +622,26 @@ impl<'a> Context<'a, '_> {
                 .map(|item| item.offset(self.text.len(), self.images_out.len())),
         );
         let positioned = lines.positioned.clone();
+        self.click_regions.extend(lines.hit_regions);
+        // Inline glyph boxes already have accurate line-wrap and positioning.
+        // Reuse their DOM-backed fragments for hover/click hit testing.
+        self.click_regions.extend(
+            lines
+                .fragments
+                .iter()
+                .filter(|fragment| {
+                    fragment.width > 0
+                        && fragment.height > 0
+                        && self.document.element(fragment.node).is_some()
+                })
+                .map(|fragment| ClickRegion {
+                    node: fragment.node,
+                    x: fragment.x,
+                    y: fragment.y,
+                    width: fragment.width,
+                    height: fragment.height,
+                }),
+        );
         self.inline_fragments.extend(lines.fragments);
         self.decorations.extend(lines.decorations);
         self.text.extend(lines.text_boxes);
@@ -718,6 +739,7 @@ impl<'a> Context<'a, '_> {
             text: self.text.len(),
             images: self.images_out.len(),
             order: self.order.len(),
+            clicks: self.click_regions.len(),
             fragments: self.inline_fragments.len(),
             deferred: self.deferred_inline.len(),
         }
@@ -745,6 +767,10 @@ impl<'a> Context<'a, '_> {
     fn translate_outputs_since(&mut self, start: OutputStart, dx: i32, dy: i32) {
         if dx == 0 && dy == 0 {
             return;
+        }
+        for region in &mut self.click_regions[start.clicks..] {
+            region.x = region.x.saturating_add(dx);
+            region.y = region.y.saturating_add(dy);
         }
         for fragment in &mut self.inline_fragments[start.fragments..] {
             fragment.x = fragment.x.saturating_add(dx);
@@ -1370,10 +1396,6 @@ impl<'a> Context<'a, '_> {
         };
         if scroll_top != 0 || scroll_left != 0 {
             self.translate_outputs_since(child_output_start, -scroll_left, -scroll_top);
-            for region in &mut self.click_regions[child_click_start..] {
-                region.x = region.x.saturating_sub(scroll_left);
-                region.y = region.y.saturating_sub(scroll_top);
-            }
             for scope in &mut self.overflow_scopes[child_scope_start..] {
                 scope.rect.x = scope.rect.x.saturating_sub(scroll_left);
                 scope.rect.y = scope.rect.y.saturating_sub(scroll_top);
@@ -1456,12 +1478,7 @@ impl<'a> Context<'a, '_> {
             });
         }
 
-        if let BlockContent::Element(node) = content
-            && self
-                .document
-                .element(node)
-                .is_some_and(|e| e.attributes.iter().any(|a| a.name == "id"))
-        {
+        if let BlockContent::Element(node) = content {
             let (dx, dy) = if style.position == Position::Relative {
                 relative_position_offset(style, containing_width, containing_height)
             } else {
@@ -2083,6 +2100,7 @@ impl<'a> Context<'a, '_> {
                     Item::Char(InlineChar {
                         ch,
                         href,
+                        origin: None,
                         style: inherited.inline,
                     })
                 })),
@@ -4442,13 +4460,21 @@ impl<'a> Context<'a, '_> {
             return;
         };
         match &node.kind {
-            NodeKind::Text(text) => items.extend(text.chars().map(|ch| {
-                Item::Char(InlineChar {
-                    ch,
-                    href,
-                    style: inherited.inline,
-                })
-            })),
+            NodeKind::Text(text) => {
+                let origin = node.parent.and_then(|parent| {
+                    let element = self.document.element(parent)?;
+                    (self.element_display(parent, &element.tag_name) == Display::Inline)
+                        .then_some(parent)
+                });
+                items.extend(text.chars().map(|ch| {
+                    Item::Char(InlineChar {
+                        ch,
+                        href,
+                        origin,
+                        style: inherited.inline,
+                    })
+                }));
+            }
             NodeKind::Element(element) => {
                 let tag = element.tag_name.as_str();
                 let display = self.element_display(id, tag);
@@ -4916,6 +4942,7 @@ impl<'a> Context<'a, '_> {
                     Item::Char(InlineChar {
                         ch,
                         href,
+                        origin: None,
                         style: style.inline,
                     })
                 })),
@@ -5016,6 +5043,7 @@ impl<'a> Context<'a, '_> {
                         Item::Char(InlineChar {
                             ch,
                             href,
+                            origin: None,
                             style: style.inline,
                         })
                     }),

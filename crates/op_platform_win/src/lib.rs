@@ -8,7 +8,9 @@ use std::sync::{OnceLock, RwLock};
 
 use op_paint::{Color, DisplayList, PaintCommand};
 mod raster;
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
+use windows_sys::Win32::Foundation::{
+    ERROR_CLASS_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM,
+};
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateFontW, CreateSolidBrush,
     DEFAULT_CHARSET, DEFAULT_PITCH, DeleteObject, EndPaint, FF_DONTCARE, FW_BOLD, FW_NORMAL,
@@ -28,6 +30,7 @@ static PAINTED_ONCE: AtomicBool = AtomicBool::new(false);
 static PAINTED_IMAGES: AtomicUsize = AtomicUsize::new(0);
 static SCROLL_Y: AtomicI32 = AtomicI32::new(0);
 static THUMB_DRAG_ACTIVE: AtomicBool = AtomicBool::new(false);
+static POINTER_PRESS_CAPTURE: AtomicBool = AtomicBool::new(false);
 static THUMB_DRAG_LAST_Y: AtomicI32 = AtomicI32::new(0);
 static LINK_REGIONS: OnceLock<RwLock<Vec<LinkRegion>>> = OnceLock::new();
 
@@ -47,12 +50,15 @@ const RESIZE_TIMER: usize = 2;
 const WM_MOUSELEAVE: u32 = 0x02A3;
 const NAVIGATION_COMMAND: u32 = WM_APP + 1;
 const CANCEL_THUMB_DRAG: u32 = WM_APP + 2;
+const CANCEL_POINTER_PRESS: u32 = WM_APP + 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NavigationEvent {
     Navigate(String),
     FollowLink(String),
     Click { x: i32, y: i32 },
+    PointerDown { x: i32, y: i32 },
+    PointerCancel,
     Hover { x: i32, y: i32 },
     Scroll { x: i32, y: i32, delta_y: i32 },
     HorizontalScroll { x: i32, y: i32, delta_x: i32 },
@@ -94,6 +100,7 @@ impl NativeBrowserWindow {
         PAINTED_ONCE.store(false, Ordering::SeqCst);
         SCROLL_Y.store(0, Ordering::SeqCst);
         THUMB_DRAG_ACTIVE.store(false, Ordering::SeqCst);
+        POINTER_PRESS_CAPTURE.store(false, Ordering::SeqCst);
         set_display_list(display_list);
 
         let class_name = wide("OPBrowserMainWindow");
@@ -118,7 +125,7 @@ impl NativeBrowserWindow {
                 lpszClassName: class_name.as_ptr(),
             };
 
-            if RegisterClassW(&class) == 0 {
+            if RegisterClassW(&class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS {
                 return Err("RegisterClassW failed".into());
             }
 
@@ -416,6 +423,10 @@ impl NativeBrowserWindow {
                     THUMB_DRAG_ACTIVE.store(true, Ordering::SeqCst);
                     unsafe { SetCapture(self.hwnd) };
                     Some(NavigationEvent::ScrollbarDragStart { x, y: document_y })
+                } else if x >= 0 && x < client.right && y >= TOOLBAR_HEIGHT && y < client.bottom {
+                    unsafe { SetCapture(self.hwnd) };
+                    POINTER_PRESS_CAPTURE.store(true, Ordering::SeqCst);
+                    Some(NavigationEvent::PointerDown { x, y: document_y })
                 } else {
                     None
                 }
@@ -460,6 +471,10 @@ impl NativeBrowserWindow {
                     unsafe { ReleaseCapture() };
                     return Some(NavigationEvent::ScrollbarDragEnd);
                 }
+                let was_pressed = POINTER_PRESS_CAPTURE.swap(false, Ordering::SeqCst);
+                if was_pressed && unsafe { GetCapture() } == self.hwnd {
+                    unsafe { ReleaseCapture() };
+                }
                 let x = (message.lParam as u16 as i16) as i32;
                 let y = ((message.lParam >> 16) as u16 as i16) as i32;
                 if let Some(href) = self.link_at_client_point(x, y) {
@@ -474,6 +489,7 @@ impl NativeBrowserWindow {
                             x,
                             y: y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst),
                         })
+                        .or_else(|| was_pressed.then_some(NavigationEvent::PointerCancel))
                 }
             }
             WM_MOUSEWHEEL | WM_MOUSEHWHEEL if message.hwnd == self.hwnd => {
@@ -541,6 +557,9 @@ impl NativeBrowserWindow {
             }
             CANCEL_THUMB_DRAG if message.hwnd == self.hwnd => {
                 Some(NavigationEvent::ScrollbarDragEnd)
+            }
+            CANCEL_POINTER_PRESS if message.hwnd == self.hwnd => {
+                Some(NavigationEvent::PointerCancel)
             }
             _ => None,
         }
@@ -711,10 +730,15 @@ unsafe extern "system" fn window_proc(
             if THUMB_DRAG_ACTIVE.swap(false, Ordering::SeqCst) {
                 unsafe { PostMessageW(hwnd, CANCEL_THUMB_DRAG, 0, 0) };
             }
+            if POINTER_PRESS_CAPTURE.swap(false, Ordering::SeqCst) {
+                unsafe { PostMessageW(hwnd, CANCEL_POINTER_PRESS, 0, 0) };
+            }
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         WM_CANCELMODE => {
-            if THUMB_DRAG_ACTIVE.load(Ordering::SeqCst) {
+            if THUMB_DRAG_ACTIVE.load(Ordering::SeqCst)
+                || POINTER_PRESS_CAPTURE.load(Ordering::SeqCst)
+            {
                 unsafe { ReleaseCapture() };
             }
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
@@ -1397,6 +1421,9 @@ fn wide(value: &str) -> Vec<u16> {
 mod tests {
     use super::*;
 
+    // Native windows share class registration, capture and display-list state.
+    static WINDOW_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn r12e_horizontal_scrollbar_paints_real_gdi_track_and_thumb() {
         let bar = PaintCommand::HorizontalScrollbar {
@@ -1540,7 +1567,46 @@ mod tests {
     }
 
     #[test]
+    fn native_pointer_capture_reports_press_and_cancel_after_off_page_release() {
+        let _window_lock = WINDOW_TEST_LOCK.lock().unwrap();
+        let window = NativeBrowserWindow::create("Press capture test", DisplayList::default())
+            .expect("native window");
+        let message_at = |message, x: i16, y: i16| -> MSG {
+            let mut msg: MSG = unsafe { zeroed() };
+            msg.hwnd = window.hwnd;
+            msg.message = message;
+            msg.lParam = ((u32::from(y as u16) << 16) | u32::from(x as u16)) as LPARAM;
+            msg
+        };
+        let inside_y = (TOOLBAR_HEIGHT + 16) as i16;
+        assert_eq!(
+            window.navigation_event(&message_at(WM_LBUTTONDOWN, 70, inside_y)),
+            Some(NavigationEvent::PointerDown { x: 70, y: 16 })
+        );
+        assert!(POINTER_PRESS_CAPTURE.load(Ordering::SeqCst));
+        assert_eq!(unsafe { GetCapture() }, window.hwnd);
+        assert_eq!(
+            window.navigation_event(&message_at(WM_LBUTTONUP, 70, inside_y)),
+            Some(NavigationEvent::Click { x: 70, y: 16 })
+        );
+        assert!(!POINTER_PRESS_CAPTURE.load(Ordering::SeqCst));
+        assert_ne!(unsafe { GetCapture() }, window.hwnd);
+
+        assert_eq!(
+            window.navigation_event(&message_at(WM_LBUTTONDOWN, 70, inside_y)),
+            Some(NavigationEvent::PointerDown { x: 70, y: 16 })
+        );
+        assert_eq!(
+            window.navigation_event(&message_at(WM_LBUTTONUP, -4, 5)),
+            Some(NavigationEvent::PointerCancel)
+        );
+        assert!(!POINTER_PRESS_CAPTURE.load(Ordering::SeqCst));
+        window.close();
+    }
+
+    #[test]
     fn native_controls_dispatch_navigation_and_repaint() {
+        let _window_lock = WINDOW_TEST_LOCK.lock().unwrap();
         let window =
             NativeBrowserWindow::create("OPBrowser UI test", DisplayList::default()).unwrap();
         window.set_navigation_state(true, true, true, false);

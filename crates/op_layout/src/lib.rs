@@ -427,7 +427,7 @@ impl ScrollContainer {
     }
 }
 
-/// Hit rectangles for the initial click-event block target subset.
+/// Generation-safe hit rectangles for native blocks and measured inline fragments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClickRegion {
     pub node: NodeId,

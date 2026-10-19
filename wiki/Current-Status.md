@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Native inline hover, ID-less targets and mouse :active (19 October 2026)
+
+Now functional in the original Win32/Rust browser: normal blocks without `id` and inline text/link hover, source-node glyph hit regions, viewport clipping and scroll translations, mouse `:active` press/release/cancel, capture-loss cleanup, and ordered worker press/click events alongside coalesced hover. Real Windows and full workspace tests pass; browser and link smoke pass. Real pages retain previous partial/blank classifications (YouTube textless, Reddit blank). Full painted z-index hit testing, all replaced/atomic inline elements, JS event synchronization and keyboard focus-visible remain pending.
+
 ## Original native hover/focus event integration (19 October 2026)
 
 The original Rust browser now responds to pointer hover and mouse focus on the current ID-bearing block hit-region subset. DOM generation-safe state drives CSS `:hover`, `:focus` and `:focus-within` through nested selector and ancestor matching. Window leave clears hover; movement repeats do not trigger layout, and queued motion coalesces. Full Rust, Windows UI, Clippy and native smoke checks pass. The five noninteractive live-site classifications and JS/CSS failure counts remain unchanged: YouTube textless, Reddit blank, Google/Pikabu/DeviantArt partial. Full browser-level hover support awaits complete hit-testing and keyboard state.

@@ -297,6 +297,22 @@ impl PreparedDocument {
             .map_or(&self.scroll_offsets, |vm| vm.dom_scroll_offsets())
     }
 
+    fn hit_target(&self, x: i32, y: i32) -> Option<op_dom::NodeId> {
+        self.hit_regions
+            .iter()
+            .filter(|region| {
+                region.width > 0
+                    && region.height > 0
+                    && x >= region.x
+                    && x < region.x.saturating_add(region.width)
+                    && y >= region.y
+                    && y < region.y.saturating_add(region.height)
+                    && self.document.node(region.node).is_some()
+            })
+            .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
+            .map(|region| region.node)
+    }
+
     /// Rebuild author matching and inline styles against the mutated real
     /// DOM, retaining originally loaded linked CSS and color profiles.
     fn refresh_styles(&mut self) {
@@ -720,25 +736,34 @@ impl Engine {
         self.scrollbar_drag = None;
     }
 
-    /// Update :hover matching from the last committed native block hit map.
+    /// Pointer press uses the same generation-safe native hit map as hover.
+    /// Does not run JS click handlers until the release event.
+    pub fn press_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<RenderedPage> {
+        let page = self.active_document.as_mut()?;
+        let target = page.hit_target(x, y);
+        if page.interaction.active == target && page.style_viewport == (width, height) {
+            return None;
+        }
+        page.interaction.active = target;
+        page.interaction.hovered = target;
+        page.refresh_styles();
+        Some(page.render(width, height))
+    }
+
+    /// Cancel a pointer press when capture is lost or the release misses the page.
+    pub fn release_press(&mut self, width: i32, height: i32) -> Option<RenderedPage> {
+        let page = self.active_document.as_mut()?;
+        page.interaction.active.take()?;
+        page.refresh_styles();
+        Some(page.render(width, height))
+    }
+
+    /// Update :hover matching from the last committed native DOM hit map.
     /// No layout work occurs while the pointer stays over the same target.
     /// Coordinates are document pixels; negative values clear the state.
     pub fn hover_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<RenderedPage> {
         let prepared = self.active_document.as_mut()?;
-        let target = prepared
-            .hit_regions
-            .iter()
-            .filter(|region| {
-                region.width > 0
-                    && region.height > 0
-                    && x >= region.x
-                    && x < region.x.saturating_add(region.width)
-                    && y >= region.y
-                    && y < region.y.saturating_add(region.height)
-                    && prepared.document.node(region.node).is_some()
-            })
-            .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
-            .map(|region| region.node);
+        let target = prepared.hit_target(x, y);
         if prepared.interaction.hovered == target && prepared.style_viewport == (width, height) {
             return None;
         }
@@ -747,10 +772,14 @@ impl Engine {
         Some(prepared.render(width, height))
     }
 
-    /// Dispatch an initial DOM click to the smallest live block hit region.
+    /// Dispatch a DOM click to the smallest live native block or inline hit region.
     /// Coordinates are document pixels (already adjusted for toolbar/scroll).
     pub fn click_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<RenderedPage> {
         let prepared = self.active_document.as_mut()?;
+        let was_pressed = prepared.interaction.active.take().is_some();
+        if was_pressed {
+            prepared.refresh_styles();
+        }
         let layout = layout_document_with_axis_scrolling(
             &prepared.document,
             width,
@@ -817,7 +846,13 @@ impl Engine {
                     && y < region.y.saturating_add(region.height)
             })
             .min_by_key(|region| i64::from(region.width) * i64::from(region.height))
-            .map(|region| region.node)?;
+            .map(|region| region.node);
+        let Some(target) = target else {
+            if was_pressed {
+                return Some(prepared.render(width, height));
+            }
+            return None;
+        };
         let focused = prepared.document.element(target).and_then(|element| {
             let tag = element.tag_name.as_str();
             (matches!(tag, "input" | "button" | "select" | "textarea")
@@ -835,7 +870,7 @@ impl Engine {
             (false, 0, None)
         };
         prepared.finish_gc_checkpoint(checkpoint);
-        if !handled && changes == 0 && !focus_changed {
+        if !handled && changes == 0 && !focus_changed && !was_pressed {
             return None;
         }
         prepared.scripts.mutations += changes;
@@ -1334,6 +1369,155 @@ mod tests {
         assert_eq!(
             engine.active_document.as_ref().unwrap().interaction.focused,
             None
+        );
+    }
+
+    #[test]
+    fn pointer_active_style_changes_on_press_and_clears_on_release_or_click() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><style>article{display:block;width:180px;height:65px;color:blue}article:active{color:red}</style><article>Press and release</article></body>",
+            640,
+            480,
+        );
+        let (node, x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document
+                        .element(r.node)
+                        .is_some_and(|e| e.tag_name == "article")
+                })
+                .expect("native ID-less article hit box");
+            (region.node, region.x + 8, region.y + 8)
+        };
+        let normal = engine
+            .active_computed_styles()
+            .unwrap()
+            .style_for(node)
+            .unwrap()
+            .color;
+        assert!(engine.press_at(x, y, 640, 480).is_some());
+        assert!(engine.press_at(x, y, 640, 480).is_none());
+        assert_ne!(
+            engine
+                .active_computed_styles()
+                .unwrap()
+                .style_for(node)
+                .unwrap()
+                .color,
+            normal
+        );
+        assert!(engine.release_press(640, 480).is_some());
+        assert_eq!(
+            engine
+                .active_computed_styles()
+                .unwrap()
+                .style_for(node)
+                .unwrap()
+                .color,
+            normal
+        );
+        assert!(engine.release_press(640, 480).is_none());
+
+        assert!(engine.press_at(x, y, 640, 480).is_some());
+        assert!(engine.click_at(x, y, 640, 480).is_some());
+        assert_eq!(
+            engine.active_document.as_ref().unwrap().interaction.active,
+            None
+        );
+        assert_eq!(
+            engine
+                .active_computed_styles()
+                .unwrap()
+                .style_for(node)
+                .unwrap()
+                .color,
+            normal
+        );
+        engine.press_at(x, y, 640, 480);
+        engine.set_html_page("<body>Next navigation</body>", 640, 480);
+        assert_eq!(
+            engine.active_document.as_ref().unwrap().interaction.active,
+            None
+        );
+    }
+
+    #[test]
+    fn idless_block_and_inline_link_are_native_hover_targets() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><style>article{display:block;width:220px;height:65px;color:blue}article:hover{color:red}a:hover{color:red}</style><article>Ordinary block</article><p>Text <a href='/next'>Inline link</a> end</p></body>",
+            640,
+            480,
+        );
+        for tag in ["article", "a"] {
+            let (target, x, y, before) = {
+                let page = engine.active_document.as_ref().unwrap();
+                let region = page
+                    .hit_regions
+                    .iter()
+                    .find(|region| {
+                        page.document
+                            .element(region.node)
+                            .is_some_and(|element| element.tag_name == tag)
+                            && region.width > 2
+                            && region.height > 2
+                    })
+                    .unwrap_or_else(|| panic!("no native {tag} hit region"));
+                let color = page.computed_styles.style_for(region.node).unwrap().color;
+                (
+                    region.node,
+                    region.x + region.width / 2,
+                    region.y + region.height / 2,
+                    color,
+                )
+            };
+            assert!(engine.hover_at(x, y, 640, 480).is_some(), "{tag}");
+            let page = engine.active_document.as_ref().unwrap();
+            assert_eq!(page.interaction.hovered, Some(target), "{tag}");
+            assert_ne!(
+                page.computed_styles.style_for(target).unwrap().color,
+                before
+            );
+            assert!(engine.hover_at(-1, -1, 640, 480).is_some());
+        }
+    }
+
+    #[test]
+    fn clipped_inline_hit_region_stays_inside_its_scroll_container() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><style>div{width:48px;height:18px;overflow:hidden;white-space:nowrap}span{color:blue}span:hover{color:red}</style><div><span>Very long unwrapped inline fragment</span></div></body>",
+            500,
+            300,
+        );
+        let page = engine.active_document.as_ref().unwrap();
+        let container = page
+            .hit_regions
+            .iter()
+            .find(|r| {
+                page.document
+                    .element(r.node)
+                    .is_some_and(|e| e.tag_name == "div")
+            })
+            .expect("container geometry");
+        let child = page
+            .hit_regions
+            .iter()
+            .find(|r| {
+                page.document
+                    .element(r.node)
+                    .is_some_and(|e| e.tag_name == "span")
+            })
+            .expect("inline fragment geometry");
+        assert!(child.width > 0);
+        assert!(child.x >= container.x);
+        assert!(child.x.saturating_add(child.width) <= container.x.saturating_add(container.width));
+        assert!(
+            child.y.saturating_add(child.height) <= container.y.saturating_add(container.height)
         );
     }
 

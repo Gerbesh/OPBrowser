@@ -1,6 +1,6 @@
 use super::{
-    BoxDecoration, DecorationBorder, DecorationPaintLayer, FontStyle, FontWeight, ImageBox,
-    LayoutItem, LinkSpan, TextBox, TextColor, TextDecoration, TextMeasurer, TextMetrics,
+    BoxDecoration, ClickRegion, DecorationBorder, DecorationPaintLayer, FontStyle, FontWeight,
+    ImageBox, LayoutItem, LinkSpan, TextBox, TextColor, TextDecoration, TextMeasurer, TextMetrics,
 };
 use op_css::{Direction, PseudoElement, TextAlign, TextTransform, VerticalAlign, WhiteSpace};
 
@@ -323,6 +323,7 @@ pub(super) struct FirstLinePaint {
 pub(super) struct InlineChar<'a> {
     pub ch: char,
     pub href: Option<&'a str>,
+    pub origin: Option<op_dom::NodeId>,
     pub style: InlineStyle,
 }
 
@@ -385,9 +386,16 @@ enum BoxItem<'a> {
     Positioned(usize, InlineStyle),
 }
 
+struct InlineHitSpan {
+    start: usize,
+    end: usize,
+    node: op_dom::NodeId,
+}
+
 struct PreparedText {
     text: String,
     links: Vec<LinkSpan>,
+    origin_spans: Vec<InlineHitSpan>,
     width: i32,
     style: InlineStyle,
     metrics: TextMetrics,
@@ -419,6 +427,7 @@ pub(super) struct Lines<'a, 'm> {
     pub order: Vec<LayoutItem>,
     pub positioned: Vec<PositionedStatic>,
     pub fragments: Vec<InlineFragment>,
+    pub hit_regions: Vec<ClickRegion>,
     /// Baseline of the final line in local layout coordinates.
     pub last_baseline: Option<i32>,
     first_line_paint: Option<FirstLinePaint>,
@@ -451,6 +460,7 @@ impl<'a, 'm> Lines<'a, 'm> {
             order: Vec::new(),
             positioned: Vec::new(),
             fragments: Vec::new(),
+            hit_regions: Vec::new(),
             last_baseline: None,
             first_line_paint: None,
         }
@@ -491,6 +501,7 @@ impl<'a, 'm> Lines<'a, 'm> {
                             self.pending_space = Some(InlineChar {
                                 ch: ' ',
                                 href: ch.href,
+                                origin: ch.origin,
                                 style: ch.style,
                             });
                         }
@@ -870,10 +881,25 @@ impl<'a, 'm> Lines<'a, 'm> {
         let width = self.content_width(chars);
         let mut text = String::new();
         let mut links: Vec<LinkSpan> = Vec::new();
+        let mut origin_spans: Vec<InlineHitSpan> = Vec::new();
         let mut capitalize_next = true;
         for ch in chars {
             let start = text.len();
             append_transformed_char(&mut text, ch.ch, style.text_transform, &mut capitalize_next);
+            if let Some(node) = ch.origin {
+                if let Some(last) = origin_spans.last_mut()
+                    && last.end == start
+                    && last.node == node
+                {
+                    last.end = text.len();
+                } else if origin_spans.len() < 256 {
+                    origin_spans.push(InlineHitSpan {
+                        start,
+                        end: text.len(),
+                        node,
+                    });
+                }
+            }
             if let Some(href) = ch.href {
                 if let Some(last) = links.last_mut()
                     && last.end == start
@@ -895,6 +921,7 @@ impl<'a, 'm> Lines<'a, 'm> {
         PreparedText {
             text,
             links,
+            origin_spans,
             width,
             style,
             metrics,
@@ -905,21 +932,19 @@ impl<'a, 'm> Lines<'a, 'm> {
 
     fn record_fragment(&mut self, id: usize, decoration: usize) {
         let style = self.inline_boxes.style(id);
-        if style.positioned {
-            let bounds = &self.decorations[decoration];
-            self.fragments.push(InlineFragment {
-                node: style.node,
-                direction: style.direction,
-                x: bounds.x,
-                y: bounds.y,
-                width: bounds.width,
-                height: bounds.height,
-                border_left: style.border_left.width,
-                border_right: style.border_right.width,
-                border_top: style.border_top.width,
-                border_bottom: style.border_bottom.width,
-            });
-        }
+        let bounds = &self.decorations[decoration];
+        self.fragments.push(InlineFragment {
+            node: style.node,
+            direction: style.direction,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
+            border_left: style.border_left.width,
+            border_right: style.border_right.width,
+            border_top: style.border_top.width,
+            border_bottom: style.border_bottom.width,
+        });
     }
 
     fn flush(&mut self, forced: bool) {
@@ -1285,6 +1310,40 @@ impl<'a, 'm> Lines<'a, 'm> {
                     let key = self.inline_boxes.paint_key(text.style.boxes);
                     self.order
                         .push(LayoutItem::Text(self.text_boxes.len()).with_optional_paint_key(key));
+                    if text.style.visible {
+                        for span in &text.origin_spans {
+                            let measure_prefix = |measurer: &mut dyn TextMeasurer, bytes: usize| {
+                                let prefix = &text.text[..bytes];
+                                let metrics = measurer.measure(
+                                    prefix,
+                                    text.style.font_size,
+                                    text.style.weight,
+                                    text.style.font_style,
+                                );
+                                spaced_width(
+                                    metrics.width,
+                                    prefix,
+                                    text.style.letter_spacing,
+                                    text.style.word_spacing,
+                                )
+                                .clamp(0, text.width)
+                            };
+                            let left = measure_prefix(self.measurer, span.start);
+                            let right = measure_prefix(self.measurer, span.end);
+                            if right > left {
+                                self.hit_regions.push(ClickRegion {
+                                    node: span.node,
+                                    x: x.saturating_add(dx).saturating_add(left),
+                                    y: (baseline - text.metrics.ascent).saturating_add(dy),
+                                    width: right - left,
+                                    height: text
+                                        .metrics
+                                        .ascent
+                                        .saturating_add(text.metrics.descent),
+                                });
+                            }
+                        }
+                    }
                     self.text_boxes.push(TextBox {
                         x: x.saturating_add(dx),
                         y: (baseline - text.metrics.ascent).saturating_add(dy),

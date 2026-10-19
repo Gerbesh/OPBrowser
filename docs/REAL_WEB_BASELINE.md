@@ -1,5 +1,9 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 19 October 2026: ID-less/inline hit mapping and native press lifecycle
+
+Five public Release probes at ignored `artifacts/live_web/full-hit-and-active-2026-10-19/` retain the same classifications: Google partial with 2 JS failures, YouTube **zero painted text** with 4 JS failures, Reddit **blank viewport** with 0 failed scripts, Pikabu partial with 11 failures, DeviantArt partial with 3 failures. Prior CSS parser errors remain 0/22/1/114/170 respectively. These noninteractive probes cannot certify hover, active pixels or full website compatibility; native Rust and Windows UI regressions exercise those paths separately. The new hit regions preserve old text-wrap tests, unlike the discarded approach that generated CSS boxes for every inline element. Stacking-aware precise hit-testing and comprehensive replaced-element DOM targets still need work.
+
 ## 19 October 2026: native mouse hover / focus compatibility check
 
 Native Release baseline rerun on five public anonymous sites (gitignored `artifacts/live_web/native-pointer-states-2026-10-19/`) after pointer-to-style integration: Google 0 CSS / 2 JS failures, YouTube 22 CSS / 4 JS failures and no painted text, Reddit 1 CSS / 0 JS failures and white viewport, Pikabu 114 CSS / 11 JS failures, DeviantArt 170 CSS / 3 JS failures. Categories unchanged from preceding CSS stage. Hover and mouse click style changes have targeted Rust/Win32 tests but are not exercised by noninteractive HTTPS probes. Native block ID hit regions only, not general element picking; do not imply full `:hover` site conformance. Interactive reftest and keyboard/focus-visible follow-up required.

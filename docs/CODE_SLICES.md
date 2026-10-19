@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S101 - Ordinary inline glyph hover and native mouse active state
+
+Original HTML DOM -> CSS/layout -> block click regions regardless of ID, plus per-text-run DOM origin spans -> native text glyph prefix measurement -> generation-safe inline target rectangles -> coordinate transforms and overflow clipping -> cached hit regions -> Win32 hover/mousedown/capture/mouseup -> browser worker coalesces motion but retains press/release edges -> original CSS `:hover/:active` recascade and native painting. A separate existing link-hit path still navigates on mouse release; native click DOM events are dispatched only on release. End-to-end native tests confirm ID-less block and inline link hover, active color changes and cancellation, clipping, layout stability, Windows capture and link smoke.
+
 ## S100 - Mouse movement and focus to native hover pixels
 
 Win32 `WM_MOUSEMOVE`/leave -> window-owned `NavigationEvent::Hover` -> busy queue coalesces redundant movement -> browser worker calls `Engine::hover_at` -> picks smallest connected ID-bearing block hit-region cached by last original layout -> `StyleInteractionState` changes only on target transition -> original CSS matcher resolves ancestors and nested selectors -> computed colors update -> native layout/paint reflects the change. Native click on an ID-bearing focusable block with `tabindex` updates `:focus` without JS handlers. Tests verify hover entry, no-op repeats, exit, focus reset on navigation, ancestor and nested CSS selectors and queue coalescing. This is bounded hit-testing, not full inline/pointer/keyboard event support.
