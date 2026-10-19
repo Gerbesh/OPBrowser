@@ -264,6 +264,25 @@ pub enum BinaryOp {
 pub fn parse_script(source: &str) -> Result<Program, JsError> {
     Parser::new(tokenize(source)?).parse_program()
 }
+fn unsupported_await_location(statement: &Statement) -> &'static str {
+    match statement {
+        Statement::Try { .. } => "try/catch/finally",
+        Statement::While { .. }
+        | Statement::DoWhile { .. }
+        | Statement::For { .. }
+        | Statement::ForOf { .. }
+        | Statement::ForIn { .. } => "loop",
+        Statement::If { .. } => "if branch or test",
+        Statement::Block(_) => "nested block",
+        Statement::Switch { .. } => "switch",
+        Statement::Labeled { .. } => "labeled statement",
+        Statement::Variable { .. } => "variable initializer",
+        Statement::Return(_) => "return expression",
+        Statement::Throw(_) => "throw expression",
+        Statement::Expression(_) => "expression",
+        _ => "statement",
+    }
+}
 
 struct Parser {
     tokens: Vec<Token>,
@@ -273,6 +292,7 @@ struct Parser {
     function_depth: usize,
     in_async_function: bool,
     await_count: usize,
+    await_offsets: Vec<usize>,
     labels: Vec<(String, bool)>,
 }
 
@@ -286,6 +306,7 @@ impl Parser {
             function_depth: 0,
             in_async_function: false,
             await_count: 0,
+            await_offsets: Vec::new(),
             labels: Vec::new(),
         }
     }
@@ -882,6 +903,7 @@ impl Parser {
         let saved_labels = std::mem::take(&mut self.labels);
         let saved_async = self.in_async_function;
         let saved_await_count = self.await_count;
+        let saved_await_offsets = std::mem::take(&mut self.await_offsets);
         self.await_count = 0;
         self.in_async_function = is_async;
         self.loop_depth = 0;
@@ -905,8 +927,14 @@ impl Parser {
                     )
                 {
                     return Err(JsError::syntax(
-                        self.current().start,
-                        "unsupported await placement in control flow or expression",
+                        self.await_offsets
+                            .get(before_await)
+                            .copied()
+                            .unwrap_or(self.current().start),
+                        format!(
+                            "unsupported await placement in {}",
+                            unsupported_await_location(&statement)
+                        ),
                     ));
                 }
                 body.push(statement);
@@ -920,6 +948,7 @@ impl Parser {
         self.labels = saved_labels;
         self.in_async_function = saved_async;
         self.await_count = saved_await_count;
+        self.await_offsets = saved_await_offsets;
         result?;
         let body = if is_async {
             crate::await_lowering::lower_async_await(body)
@@ -1037,6 +1066,7 @@ impl Parser {
         self.index = body_start;
         let saved_async = self.in_async_function;
         let saved_count = self.await_count;
+        let saved_await_offsets = std::mem::take(&mut self.await_offsets);
         self.in_async_function = is_async;
         self.await_count = 0;
         let parsed = if self.take(&TokenKind::LeftBrace) {
@@ -1064,8 +1094,14 @@ impl Parser {
                         )
                     {
                         return Err(JsError::syntax(
-                            self.current().start,
-                            "unsupported await placement in control flow or expression",
+                            self.await_offsets
+                                .get(before)
+                                .copied()
+                                .unwrap_or(self.current().start),
+                            format!(
+                                "unsupported await placement in {}",
+                                unsupported_await_location(&statement)
+                            ),
                         ));
                     }
                     body.push(statement);
@@ -1088,7 +1124,10 @@ impl Parser {
                     )
                 {
                     return Err(JsError::syntax(
-                        self.current().start,
+                        self.await_offsets
+                            .get(before)
+                            .copied()
+                            .unwrap_or(self.current().start),
                         "await is only supported in a direct initializer, statement or return",
                     ));
                 }
@@ -1097,6 +1136,7 @@ impl Parser {
         };
         self.in_async_function = saved_async;
         self.await_count = saved_count;
+        self.await_offsets = saved_await_offsets;
         let body = parsed?;
         Ok(Expression::Arrow {
             params,
@@ -1443,6 +1483,7 @@ impl Parser {
         {
             let offset = self.advance().start;
             self.await_count += 1;
+            self.await_offsets.push(offset);
             if self.await_count > 32 {
                 return Err(JsError::syntax(offset, "await chain budget exceeded"));
             }
@@ -2063,7 +2104,11 @@ mod tests {
             parse_script("async function f() { if (true) { await Promise.resolve(3); } }").is_err()
         );
         assert!(parse_script("async function f() { const x=await Promise.resolve(3)+1; }").is_ok());
-        assert!(parse_script("async function f() { const a=await 1, b=2; }").is_err());
+        assert!(parse_script("async function f() { const a=await 1, b=2; }").is_ok());
+        assert!(
+            parse_script("async function f() { try { const a=await 1, b=2; } finally {} }")
+                .is_err()
+        );
         assert!(parse_script("async function f() { return await await 1; }").is_ok());
         assert!(
             parse_script(
@@ -2077,6 +2122,16 @@ mod tests {
                 .is_ok()
         );
         assert!(parse_script("var async=3; async+2;").is_ok());
+    }
+
+    #[test]
+    fn unsupported_await_diagnostics_point_at_the_actual_operator() {
+        let source = "async function f(){try{let x=1;await Promise.resolve(2);}finally{}}";
+        let error = parse_script(source).unwrap_err();
+        assert_eq!(error.offset, source.find("await").unwrap());
+        assert!(error.message.contains("try/catch/finally"));
+        let nested = "async function g(){const a=0,b=await 1;return b;}";
+        assert!(parse_script(nested).is_ok());
     }
 
     #[test]

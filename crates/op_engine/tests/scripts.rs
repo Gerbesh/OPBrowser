@@ -2,6 +2,56 @@ use op_engine::Engine;
 use op_net::{LoadError, NetworkContext};
 
 #[test]
+fn async_multideclaration_await_reaches_original_native_text() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "async function paint(){",
+            "const first='MULTI', middle=await Promise.resolve('-AWAIT'), last='-PIXELS';",
+            "document.getElementById('result').textContent=first+middle+last;",
+            "}",
+            "paint();",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("MULTI-AWAIT-PIXELS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn async_if_return_template_and_await_test_reach_original_pixels() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='result'>WAIT</p><script>",
+            "async function fromBranch(flag){",
+            "if(flag){return `TEMPLATE-${await Promise.resolve('PAINT')}`;}",
+            "return 'FAIL';}",
+            "async function decide(){",
+            "if(await Promise.resolve(true)){return fromBranch(true);}",
+            "return 'WRONG';}",
+            "decide().then(function(value){",
+            "document.getElementById('result').textContent=value;",
+            "});",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text { text, .. }
+            if text.contains("TEMPLATE-PAINT")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn expression_await_updates_real_native_paint() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(

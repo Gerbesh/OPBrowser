@@ -1,5 +1,10 @@
 # Roadmap
 
+## Async control-flow and real-page diagnostic checkpoint (19 October 2026)
+
+The original engine supports awaited if tests, branches that always return/throw, awaited template and throw values, and multi-declaration await initializers. Its improved bounded parser diagnostics identified an actual live Reddit blocker; Reddit now executes its initial script (1/0) but remains white. Next P0 is real suspend/resume through nonterminal if bodies, loops and try/finally with correct lexical scopes, followed by script/DOM/layout first-viewport repair and interactive CPU/wall profiling. Do not equate script execution with visual or interaction correctness.
+
+
 ## Return-branch await checkpoint (19 October 2026)
 
 One-sided returning ternaries and returning short-circuit RHS expressions now suspend only on the taken branch. Remaining P0: awaits nested in conditions and arbitrary expression/statement positions, `if`/loops/`try/finally` with real resumable interpreter frames, and real-site script loading/layout blockers. Same five sites still show 2/4/11/1/3 JS failures; synthetic success does not count as a working browser page.

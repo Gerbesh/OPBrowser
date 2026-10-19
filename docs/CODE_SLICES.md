@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## S97 - Awaited if, template/throw and multi-binding source to native pixels
+
+Original HTML `<script>` -> `op_js::parser` tracks await offsets and validates if-tests/terminal branches/multiple declarators -> original `await_lowering` preserves left-to-right initializer and template-string evaluation, branches return/throw via Promise microtask CPS -> GC retains live continuation -> JS mutates authoritative DOM -> `op_engine` outputs native painted text. The native five-site probe now executes Reddit's inline script without parser errors, but its viewport is still white with zero text or DOM mutations, and no modern site is certified functional. Nonterminal if branches, loops and try/finally need true suspended VM frames.
+
+
 ## S96 - One-sided async return and logical RHS to native paint
 
 Inline HTML script -> original parser recognizes direct `return flag ? await a() : b` or `return x ?? await y` -> `lower_return_branch` emits original conditional bytecode with one runtime await path -> Promise jobs only for the executed await -> JS mutates authoritative DOM -> `op_engine` verifies native painted text. VM tests cover selected/unselected branches, `&&`, `||`, `??`, null/undefined, GC across pending Promise and fail-closed nested/try cases. Five real sites remain incorrect; no readiness gain is inferred from a synthetic fixture.

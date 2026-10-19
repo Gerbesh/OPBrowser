@@ -1,5 +1,10 @@
 # Current Project Status
 
+## Live Reddit JS startup unblocked, no rendered content (19 October 2026)
+
+New original JS await lowering covers if conditions, terminating if branches, throw expressions, template literals and multi-declarator variable initializers. Full native Rust tests, GC and DOM-to-paint checks pass. The same public five-site Release probe reports initial script failures Google **2**, YouTube **4**, Pikabu **11**, Reddit **0**, DeviantArt **3**. Reddit now executes its one startup script without error but has **zero DOM mutations and a white screen**; YouTube has zero painted text. There is still **no certified functional modern site**.
+
+
 ## Branch-aware returning awaits (19 October 2026)
 
 Original JS now supports a direct await on one side of a returning ternary, and short-circuit `&&`, `||`, `??` awaits as return operands. The other branch returns without waiting and is not evaluated. The full Rust suite, strict lint, startup smoke and native pixels pass. Live five-site repeat remains 2/4/11/1/3 initial script failures (Google/YouTube/Pikabu/Reddit/DeviantArt), with YouTube textless and Reddit blank. No modern-site compatibility is claimed.

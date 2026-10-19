@@ -1,5 +1,10 @@
 # OPBrowser: active project plan
 
+## P0 live Reddit parser-unblock and guarded async control flow (19 October 2026)
+
+Original Rust async lowering now supports awaited if-tests, terminal return/throw branches (including nested if), template substitutions with pre-await stringification, awaited throw expressions, and **ordered multi-declarator let/const/var initializers**. Parser diagnostics retain the exact source byte offset of the await and label the unsupported statement category. JS VM/GC and HTML -> native paint regressions pass. A repeat real-HTTPS native probe changes Reddit from **0 executed / 1 failed script** to **1 executed / 0 failed**, with no DOM mutations, **0 text** and a white viewport. This is a parser/JS execution milestone, NOT working Reddit. The other four site script failure counts remain Google 2 / YouTube 4 / Pikabu 11 / DeviantArt 3. P0 still requires resumable loop/try/finally and nonterminal branch frames, real content/layout correctness and on-demand profiling.
+
+
 ## P0 short-circuit and one-sided return awaits (19 October 2026)
 
 The original JS lowerer now handles `return flag ? await a() : b`, `return flag ? a : await b()`, and `return value &&/||/?? await expression` where the awaited operand is direct and sole. The compiler emits actual conditional return paths, avoiding Promise jobs on skipped branches, retaining left-hand side identity/truthiness/nullish semantics. Focused JS/GC and native text paint regressions pass. Not covered: variable-initializer and expression-statement one-sided branches, awaited conditions, more deeply nested branch expressions, loops, and try/finally. On five unchanged public URLs the initial JS failures remain **2/4/11/1/3** (Google/YouTube/Pikabu/Reddit/DeviantArt); YouTube paints no text and Reddit stays blank, so no real-site improvement is certified.

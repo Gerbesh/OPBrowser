@@ -17042,6 +17042,202 @@ mod tests {
     }
 
     #[test]
+    fn async_await_if_test_resumes_and_runs_following_statements() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var settle, log='', answer='waiting';
+               var pending=new Promise(function(resolve){settle=resolve;});
+               async function work(){
+                 log+='before;';
+                 if (await pending) {log+='yes;';} else {log+='no;';}
+                 log+='after;';
+                 return 7;
+               }
+               work().then(function(x){answer=x;log+='resolved;';});
+               log+='sync;';"#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("before;sync;".into()))
+        );
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("settle(false)").unwrap();
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("before;sync;no;after;resolved;".into()))
+        );
+        assert_eq!(vm.global("answer"), Some(&JsValue::Number(7.0)));
+    }
+
+    #[test]
+    fn async_throw_await_rejects_after_microtask_checkpoint() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var log='',finish;
+               var pending=new Promise(function(resolve){finish=resolve;});
+               async function fail(){log+='start;';throw await pending;}
+               fail().catch(function(value){log+='caught:'+value+';';});
+               log+='sync;';"#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("start;sync;".into()))
+        );
+        vm.eval_script("finish('broken')").unwrap();
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("start;sync;caught:broken;".into()))
+        );
+    }
+
+    #[test]
+    fn async_template_substitutions_preserve_prior_side_effects() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var log='',finish,result='waiting';
+               var pending=new Promise(function(resolve){finish=resolve;});
+               function first(){log+='first;';return 'A';}
+               function second(){log+='second;';return 'C';}
+               async function build(){
+                 return `pre:${first()}:${await pending}:${second()}:post`;
+               }
+               build().then(function(value){result=value;});
+               log+='sync;';"#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("first;sync;".into()))
+        );
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("finish('B')").unwrap();
+        assert_eq!(
+            vm.global("result"),
+            Some(&JsValue::String("pre:A:B:C:post".into()))
+        );
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("first;sync;second;".into()))
+        );
+    }
+
+    #[test]
+    fn async_if_return_branches_preserve_fallthrough_and_pending_gc() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var resolveLater,log='',yes='waiting',no='waiting';
+               var pending=new Promise(function(resolve){resolveLater=resolve;});
+               async function choose(flag) {
+                 if(flag) {
+                   log+='before-await;';
+                   const data=await pending;
+                   log+='resumed;';
+                   return data+2;
+                 }
+                 log+='else-path;';
+                 return 9;
+               }
+               choose(true).then(function(v){yes=v;});
+               choose(false).then(function(v){no=v;});
+               log+='sync;';"#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("no"), Some(&JsValue::Number(9.0)));
+        assert_eq!(vm.global("yes"), Some(&JsValue::String("waiting".into())));
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String("before-await;else-path;sync;".into()))
+        );
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("resolveLater(5)").unwrap();
+        assert_eq!(vm.global("yes"), Some(&JsValue::Number(7.0)));
+        assert_eq!(
+            vm.global("log"),
+            Some(&JsValue::String(
+                "before-await;else-path;sync;resumed;".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn async_if_nested_return_and_throw_await() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var output='';
+               async function nested(flag) {
+                 if (flag) {
+                   if (flag===1) {return await Promise.resolve(3);}
+                   else {return 9;}
+                 }
+                 return 0;
+               }
+               async function both(flag) {
+                 if (flag) {return await Promise.resolve(4);}
+                 else {throw await Promise.resolve('bad');}
+               }
+               nested(1).then(function(x){output+='a'+x+';';});
+               nested(2).then(function(x){output+='b'+x+';';});
+               nested(0).then(function(x){output+='c'+x+';';});
+               both(true).then(function(x){output+='d'+x+';';});
+               both(false).catch(function(e){output+='e'+e+';';});"#,
+        )
+        .unwrap();
+        assert_eq!(
+            vm.global("output"),
+            Some(&JsValue::String("b9;c0;a3;d4;ebad;".into()))
+        );
+        for script in [
+            "async function f(){if (true) {await 1;} return 2;}",
+            "async function f(){if (true) {const x=await 1;} return 2;}",
+            "async function f(){while (true) {if (true) return await 1;}}",
+            "async function f(){try {if (true) return await 1;} finally {}}",
+        ] {
+            assert!(vm.eval_script(script).is_err(), "must reject: {script}");
+        }
+    }
+
+    #[test]
+    fn async_multideclarator_await_preserves_order_gc_and_following_bindings() {
+        let mut vm = JsRuntime::new();
+        vm.eval_script(
+            r#"var settle,count=0,answer='waiting';
+               var pending=new Promise(function(resolve){settle=resolve;});
+               function first(){count+=1;return 2;}
+               function last(){count+=10;return 4;}
+               async function work() {
+                 const a=first(),b=await pending,c=last();
+                 return a+b+c;
+               }
+               work().then(function(x){answer=x;});"#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("count"), Some(&JsValue::Number(1.0)));
+        assert_eq!(
+            vm.global("answer"),
+            Some(&JsValue::String("waiting".into()))
+        );
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        vm.eval_script("settle(5)").unwrap();
+        assert_eq!(vm.global("count"), Some(&JsValue::Number(11.0)));
+        assert_eq!(vm.global("answer"), Some(&JsValue::Number(11.0)));
+        vm.eval_script(
+            r#"async function second(){
+                 let a=await Promise.resolve(3),b=a+1,c=await Promise.resolve(5);
+                 return a+b+c;
+               }
+               second().then(function(value){answer=value;});"#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("answer"), Some(&JsValue::Number(12.0)));
+        assert!(
+            vm.eval_script("async function invalid(){try{const a=0,b=await 2;}finally{}}")
+                .is_err()
+        );
+    }
+
+    #[test]
     fn pending_promise_settles_later_and_adopts_returned_promise() {
         let mut vm = JsRuntime::new();
         vm.eval_script(

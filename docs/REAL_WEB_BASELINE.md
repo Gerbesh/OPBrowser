@@ -1,5 +1,10 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 19 October 2026: live Reddit initial-script execution unblocked
+
+A Rust-native Release rerun with 1300 ms settle on the same five anonymous HTTPS services (gitignored `artifacts/live_web/branch-multidecl-five-2026-10-19/`) records Google **2**, YouTube **4**, Pikabu **11**, Reddit **0**, DeviantArt **3** failed initial scripts. Reddit advances from zero executed and one syntax-failed script to **one executed, zero failed**, after supporting multiple variable declarations containing await. Its DOM mutation count remains **0**, paint **1 command**, text **0**, nonwhite pixels **0**: it is still a white viewport, not a usable Reddit page. YouTube is still textless and the other pages remain unverified/malformed. This is a genuine targeted JavaScript execution improvement with no claimed visual/site acceptance. Opt-in diagnostic context remains bounded, and no authentication or anti-bot workaround was attempted.
+
+
 ## 19 October 2026: returning short-circuit and one-sided await
 
 Native Release with 1300ms settling on the same five public URLs, archived only under ignored `artifacts/live_web/one-sided-await-2026-10-19/`: initial JS failures Google **2**, YouTube **4**, Pikabu **11**, Reddit **1**, DeviantArt **3**. YouTube remains a textless skeleton and Reddit white. Object/one-arm logical async regressions reach genuine native text pixels, but these public results do **not** establish a repaired first viewport. No site authentication, scripts archiving, or challenge bypass was performed.

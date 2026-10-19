@@ -1,5 +1,10 @@
 # JavaScript Engine
 
+## Guarded awaited branches, template/throw and multi-variable declarations (19 October 2026)
+
+The original JS parser and Promise CPS pipeline now handle `if (await test)`, nested if arms that guarantee return/throw, `throw await p`, awaited template substitutions and ordered `const a=before(), b=await pending, c=after()`. The parser preserves the byte position of the unsupported await and categorizes its statement kind. GC/VM/native-pixel regressions are green. A live Reddit script previously rejected on an awaited variable initializer now executes (1 executed / 0 failed), but the actual page stays blank and produces no DOM mutations. Nonterminal if branches, loops, try/finally and full ECMAScript scheduling remain unsupported.
+
+
 ## Branch-aware direct return awaits (19 October 2026)
 
 The browser-owned async lowerer now recognizes `return flag ? await a() : b` and `return value &&/||/?? await expression` with one direct await. It compiles conditional return paths so the unselected path never awaits or runs its operand. `??` distinguishes only null/undefined, while ordinary `&&` and `||` preserve operand values. GC, VM scheduling and native HTML-to-paint regressions pass; non-returning branches and general `if`/loop/`try/finally` awaits still require a full continuation mechanism.

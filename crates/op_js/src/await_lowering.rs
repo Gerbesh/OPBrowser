@@ -289,6 +289,48 @@ fn split(expression: Expression, serial: &mut usize, resumed: &str) -> Option<Sp
                 },
             })
         }
+        Expression::Template {
+            quasis,
+            expressions,
+        } => {
+            // Template substitutions are stringified immediately, before
+            // evaluating later substitutions. Capture cooked strings rather
+            // than raw objects, whose toString would otherwise run after await.
+            let position = expressions.iter().position(|expression| {
+                let mut probe = 0;
+                split(expression.clone(), &mut probe, resumed).is_some()
+            })?;
+            let mut before = Vec::new();
+            let mut remaining = expressions.into_iter();
+            let mut prior = Vec::new();
+            for _ in 0..position {
+                let expression = remaining.next().expect("previous template substitution");
+                prior.push(capture(
+                    &mut before,
+                    Expression::Template {
+                        quasis: vec![String::new(), String::new()],
+                        expressions: vec![expression],
+                    },
+                    serial,
+                ));
+            }
+            let mut part = split(
+                remaining.next().expect("await template substitution"),
+                serial,
+                resumed,
+            )?;
+            before.append(&mut part.before);
+            prior.push(part.after);
+            prior.extend(remaining);
+            Some(Split {
+                before,
+                awaited: part.awaited,
+                after: Expression::Template {
+                    quasis,
+                    expressions: prior,
+                },
+            })
+        }
         Expression::ArrayLiteral(elements) => {
             let position = elements.iter().position(|element| {
                 let mut probe_serial = 0;
@@ -470,6 +512,26 @@ fn split_statement(
             let part = split(expression, serial, resumed)?;
             Some(reconstruct(part, |expr| Statement::Return(Some(expr))))
         }
+        Statement::Throw(expression) => {
+            let part = split(expression, serial, resumed)?;
+            Some(reconstruct(part, Statement::Throw))
+        }
+        Statement::If {
+            test,
+            consequent,
+            alternate,
+        } => {
+            let part = split(test, serial, resumed)?;
+            Some(StatementSplit {
+                before: part.before,
+                awaited: part.awaited,
+                after: Statement::If {
+                    test: part.after,
+                    consequent,
+                    alternate,
+                },
+            })
+        }
         Statement::Variable {
             kind,
             mut declarations,
@@ -487,6 +549,140 @@ fn split_statement(
             })
         }
         _ => None,
+    }
+}
+
+/// Count awaits belonging to this function, excluding nested closures
+/// that have their own async lowering. Parser's count is the independent gate.
+fn expression_await_count(expression: &Expression) -> usize {
+    match expression {
+        Expression::Await(argument) => 1 + expression_await_count(argument),
+        Expression::ForOfValues(value)
+        | Expression::ForInKeys(value)
+        | Expression::Unary {
+            argument: value, ..
+        } => expression_await_count(value),
+        Expression::Template { expressions, .. } => {
+            expressions.iter().map(expression_await_count).sum()
+        }
+        Expression::ObjectLiteral(properties) => properties
+            .iter()
+            .map(|property| expression_await_count(&property.value))
+            .sum(),
+        Expression::ArrayLiteral(elements) => {
+            elements.iter().flatten().map(expression_await_count).sum()
+        }
+        Expression::Member { object, property }
+        | Expression::Binary {
+            left: object,
+            right: property,
+            ..
+        }
+        | Expression::Logical {
+            left: object,
+            right: property,
+            ..
+        } => expression_await_count(object) + expression_await_count(property),
+        Expression::Call { callee, arguments } | Expression::New { callee, arguments } => {
+            expression_await_count(callee)
+                + arguments.iter().map(expression_await_count).sum::<usize>()
+        }
+        Expression::CallWithReceiver {
+            receiver,
+            callee,
+            arguments,
+        } => {
+            expression_await_count(receiver)
+                + expression_await_count(callee)
+                + arguments.iter().map(expression_await_count).sum::<usize>()
+        }
+        Expression::Update { target, .. } => target_await_count(target),
+        Expression::Conditional {
+            test,
+            consequent,
+            alternate,
+        } => {
+            expression_await_count(test)
+                + expression_await_count(consequent)
+                + expression_await_count(alternate)
+        }
+        Expression::Assignment { target, value }
+        | Expression::CompoundAssignment { target, value, .. } => {
+            target_await_count(target) + expression_await_count(value)
+        }
+        Expression::Sequence(expressions) => expressions.iter().map(expression_await_count).sum(),
+        Expression::Literal(_)
+        | Expression::RegExp { .. }
+        | Expression::Arrow { .. }
+        | Expression::Function { .. }
+        | Expression::Identifier(_)
+        | Expression::This => 0,
+    }
+}
+
+fn target_await_count(target: &AssignmentTarget) -> usize {
+    match target {
+        AssignmentTarget::Identifier(_) => 0,
+        AssignmentTarget::Member { object, property } => {
+            expression_await_count(object) + expression_await_count(property)
+        }
+    }
+}
+
+fn statement_await_count(statement: &Statement) -> usize {
+    match statement {
+        Statement::Expression(expression) | Statement::Throw(expression) => {
+            expression_await_count(expression)
+        }
+        Statement::Return(expression) => expression.as_ref().map_or(0, expression_await_count),
+        Statement::Variable { declarations, .. } => declarations
+            .iter()
+            .filter_map(|declaration| declaration.initializer.as_ref())
+            .map(expression_await_count)
+            .sum(),
+        Statement::Block(statements) => statements.iter().map(statement_await_count).sum(),
+        Statement::If {
+            test,
+            consequent,
+            alternate,
+        } => {
+            expression_await_count(test)
+                + statement_await_count(consequent)
+                + alternate.as_deref().map_or(0, statement_await_count)
+        }
+        // Non-branch control flow cannot suspend until real VM frames exist.
+        // The parser still counts these awaits, so the mismatch rejects them.
+        _ => 0,
+    }
+}
+
+fn terminates_branch(statement: &Statement) -> bool {
+    match statement {
+        Statement::Return(_) | Statement::Throw(_) => true,
+        Statement::Block(statements) => statements.last().is_some_and(terminates_branch),
+        Statement::If {
+            consequent,
+            alternate: Some(alternate),
+            ..
+        } => terminates_branch(consequent) && terminates_branch(alternate),
+        _ => false,
+    }
+}
+
+fn supports_branch_awaits(statement: &Statement, expected: usize) -> bool {
+    match statement {
+        Statement::Block(statements) => statements.iter().all(|inner| {
+            let count = statement_await_count(inner);
+            count == 0 || supports_awaits(inner, count)
+        }),
+        _ => supports_awaits(statement, expected),
+    }
+}
+
+fn lower_terminating_branch(statement: Statement, serial: &mut usize) -> Statement {
+    match statement {
+        Statement::Block(statements) => Statement::Block(lower_sequence(statements, serial)),
+        statement => Statement::Block(lower_sequence(vec![statement], serial)),
     }
 }
 
@@ -546,6 +742,53 @@ fn lower_return_branch(statement: &Statement, serial: &mut usize) -> Option<Vec<
 /// A leftover await in a short-circuit RHS, loop, try or unsupported target
 /// must not accidentally compile into the unreachable bytecode Await variant.
 pub(crate) fn supports_awaits(statement: &Statement, expected: usize) -> bool {
+    if let Statement::Variable { kind, declarations } = statement
+        && declarations.len() > 1
+    {
+        let mut total = 0;
+        for declaration in declarations {
+            let count = declaration
+                .initializer
+                .as_ref()
+                .map_or(0, expression_await_count);
+            total += count;
+            if count > 0
+                && !supports_awaits(
+                    &Statement::Variable {
+                        kind: *kind,
+                        declarations: vec![declaration.clone()],
+                    },
+                    count,
+                )
+            {
+                return false;
+            }
+        }
+        return total == expected;
+    }
+    // A branch which awaits may be lowered independently only when it
+    // unconditionally returns/throws. Other paths still fall through to the
+    // original caller's remaining statements without a synthetic scope.
+    if let Statement::If {
+        test,
+        consequent,
+        alternate,
+    } = statement
+    {
+        let yes_count = statement_await_count(consequent);
+        let no_count = alternate.as_deref().map_or(0, statement_await_count);
+        if yes_count + no_count > 0 {
+            return expression_await_count(test) == 0
+                && expected == yes_count + no_count
+                && (yes_count == 0
+                    || (terminates_branch(consequent)
+                        && supports_branch_awaits(consequent, yes_count)))
+                && (no_count == 0
+                    || alternate.as_deref().is_some_and(|branch| {
+                        terminates_branch(branch) && supports_branch_awaits(branch, no_count)
+                    }));
+        }
+    }
     let mut serial = 0;
     // A single direct await in one returning branch is supported without
     // adding a Promise job to the branch that short-circuits.
@@ -579,6 +822,47 @@ fn lower_sequence(statements: Vec<Statement>, serial: &mut usize) -> Vec<Stateme
     let mut prefix = Vec::new();
     let mut remaining = statements.into_iter();
     while let Some(statement) = remaining.next() {
+        if let Statement::Variable { kind, declarations } = statement.clone()
+            && declarations.len() > 1
+            && declarations.iter().any(|declaration| {
+                declaration
+                    .initializer
+                    .as_ref()
+                    .is_some_and(|value| expression_await_count(value) > 0)
+            })
+        {
+            // Splitting a declaration list retains its left-to-right order
+            // and lets the existing single-declaration continuation resume
+            // later initializers instead of eagerly evaluating them.
+            let mut split = declarations
+                .into_iter()
+                .map(|declaration| Statement::Variable {
+                    kind,
+                    declarations: vec![declaration],
+                })
+                .collect::<Vec<_>>();
+            split.extend(remaining);
+            prefix.extend(lower_sequence(split, serial));
+            return prefix;
+        }
+        if let Statement::If {
+            test,
+            consequent,
+            alternate,
+        } = statement.clone()
+        {
+            let yes_count = statement_await_count(&consequent);
+            let no_count = alternate.as_deref().map_or(0, statement_await_count);
+            if expression_await_count(&test) == 0 && yes_count + no_count > 0 {
+                prefix.push(Statement::If {
+                    test,
+                    consequent: Box::new(lower_terminating_branch(*consequent, serial)),
+                    alternate: alternate
+                        .map(|branch| Box::new(lower_terminating_branch(*branch, serial))),
+                });
+                continue;
+            }
+        }
         if let Some(branch) = lower_return_branch(&statement, serial) {
             prefix.extend(branch);
             return prefix;

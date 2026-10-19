@@ -3799,3 +3799,11 @@ This file is append-only project history.
 - This bounded optimization is limited to return operands; arbitrary conditional expressions, statement branches, loops, try/finally and genuine suspended VM frames remain P0. No current external Test262 conformance run was performed.
 
 
+## 2026-10-19 - P0 guarded if/await, template/throw CPS and multi-declarator live Reddit unblock
+
+- Implemented original JS CPS lowering for awaited if tests, throw expressions and template substitutions with pre-await stringification and correct evaluation order.
+- Added awaited nested if branches only when those branches unconditionally return/throw. Nonterminal branches, loops and try/finally still reject rather than silently corrupting control flow.
+- Added ordered multi-binding declarations containing await, preserving initializer side effects across Promise jobs. Tests cover multiple awaits, pending GC, rejected Promises, nested if branches and actual original HTML -> DOM -> Win32 painted text.
+- Parser diagnostics now retain the offending await byte offset and the unsupported statement category through nested functions and async arrows. This identified the live Reddit blocker in a variable declaration.
+- Release native 1300ms five-site HTTPS test at gitignored artifacts/live_web/branch-multidecl-five-2026-10-19/: initial JS failures Google 2, YouTube 4, Pikabu 11, Reddit 0 (formerly 1), DeviantArt 3. Reddit advances 0 executed/1 failed -> 1 executed/0 failed, but remains white with zero DOM mutations, zero text and one paint command. No site compatibility is claimed.
+- Full Rust suite, strict Clippy and startup smoke passed. Remaining P0 includes real suspend/resume through nonterminal if/loop/try/finally, correct var/lexical scopes, real-page layout and profiling. External Test262 was not rerun.

@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 19 October 2026: guarded async if, template, throw, multi-declarator lowerer and diagnostics
+
+`op_js::parser` keeps scoped `await_offsets` to report offending operator bytes and statement categories. `op_js::await_lowering::split_statement` handles if-tests and throw, `split` preserves eager template substitutions by coercing earlier fields before a Promise checkpoint, and recursive guarded `lower_terminating_branch` lowers if arms only when they unconditionally return/throw. `expression_await_count` and `statement_await_count` validate the supported syntax budget and fail closed for loops/try. Multi-binding variable declarations with await split into ordered single bindings before the original Promise CPS machinery. Captured cells survive original JS GC, and `op_engine` verifies real DOM text reaches native paint.
+
+
 ## 19 October 2026: branch-aware async return lowering
 
 `op_js::await_lowering::lower_return_branch` maps direct one-sided ternary await and returning logical `&&`, `||`, `??` RHS awaits into an original `Statement::If` with independently lowered return arms. A NUL-prefixed local capture evaluates a logical left operand once, with equality-to-null deciding `??`; bypassed branches return directly without a Promise microtask. `supports_awaits` admits only one direct source await for this path; tests protect timing, GC preservation and the `op_engine` native-paint path. It is not a generic suspended interpreter frame and does not handle `try/finally` or awaits in loops.
