@@ -407,6 +407,17 @@ fn main() {
                     reload = result.reload;
                     let mut page_loaded = false;
                     let stale_size = result.viewport != window.viewport_size();
+                    if resize_smoke {
+                        eprintln!(
+                            "Resize smoke: result={:?}, actual={:?}, phase={}, stale={}, back={}, clicked={}",
+                            result.viewport,
+                            window.viewport_size(),
+                            resize_phase,
+                            stale_size,
+                            back,
+                            link_smoke_clicked
+                        );
+                    }
                     match result.page {
                         Ok(Some(page)) => {
                             awaiting_navigation |= !result.reflow;
@@ -487,6 +498,7 @@ fn main() {
                     }
                     window.set_navigation_state(back, forward, reload, busy);
                     if resize_smoke && page_loaded && resize_phase == 0 && smoke_exit == 0 {
+                        eprintln!("Resize smoke: enqueue initial triple resize");
                         resize_phase = 1;
                         window.resize_viewport(640, 500);
                         window.resize_viewport(480, 500);
@@ -498,6 +510,9 @@ fn main() {
                         && smoke_exit == 0
                     {
                         if window.click_first_link() {
+                            if resize_smoke {
+                                eprintln!("Resize smoke: click queued at {:?}", presented_viewport);
+                            }
                             link_smoke_clicked = true;
                             if resize_smoke {
                                 resize_phase = 2;
@@ -559,6 +574,9 @@ fn main() {
                     | NavigationEvent::ScrollbarDragMove { .. }
                     | NavigationEvent::ScrollbarDragEnd
             );
+            if resize_smoke && event == NavigationEvent::Resize {
+                eprintln!("Resize smoke: native Resize event at {width}x{height}");
+            }
             if commands
                 .send(LoadCommand {
                     event,
@@ -572,6 +590,7 @@ fn main() {
                 window.set_navigation_state(back, forward, reload, busy);
                 if resize_smoke && resize_phase == 1 && reflow && width == 800 {
                     // Change size while the worker owns an older viewport request.
+                    eprintln!("Resize smoke: resize 800 -> 480 -> 320 while request in flight");
                     window.resize_viewport(480, 500);
                     window.resize_viewport(320, 500);
                 }
