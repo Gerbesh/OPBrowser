@@ -105,6 +105,13 @@ fn queue_thumb_event(
                 queued.push_back(NavigationEvent::Hover { x, y });
             }
         }
+        NavigationEvent::Resize => {
+            // A busy render must not swallow the latest native window size.
+            // All pending resize events use the current viewport when replayed.
+            if !queued.contains(&NavigationEvent::Resize) {
+                queued.push_back(NavigationEvent::Resize);
+            }
+        }
         NavigationEvent::ScrollbarDragStart { .. }
         | NavigationEvent::ScrollbarDragEnd
         | NavigationEvent::PointerDown { .. }
@@ -503,6 +510,18 @@ fn main() {
                         window.resize_viewport(640, 500);
                         window.resize_viewport(480, 500);
                         window.resize_viewport(800, 500);
+                        // Send the wide request explicitly, then shrink while
+                        // the worker owns it. The stale-size path must retry
+                        // at 320px even if Win32 coalesces WM_SIZE timers.
+                        let (width, height) = window.viewport_size();
+                        busy = commands.send(LoadCommand {
+                            event: NavigationEvent::Resize,
+                            width,
+                            height,
+                        }).is_ok();
+                        window.set_navigation_state(back, forward, reload, busy);
+                        window.resize_viewport(480, 500);
+                        window.resize_viewport(320, 500);
                     } else if (link_smoke
                         || (resize_smoke && resize_phase == 1 && presented_viewport.0 == 320))
                         && page_loaded
@@ -531,14 +550,16 @@ fn main() {
                     }
                     // Serialize native capture events through the render worker.
                     // Starting the next command re-arms the UI's Poll timer.
-                    if let Some(next) = queued_thumb_events.pop_front() {
-                        let (width, height) = window.viewport_size();
-                        busy = commands.send(LoadCommand {
-                            event: next,
-                            width,
-                            height,
-                        }).is_ok();
-                        window.set_navigation_state(back, forward, reload, busy);
+                    if !busy {
+                        if let Some(next) = queued_thumb_events.pop_front() {
+                            let (width, height) = window.viewport_size();
+                            busy = commands.send(LoadCommand {
+                                event: next,
+                                width,
+                                height,
+                            }).is_ok();
+                            window.set_navigation_state(back, forward, reload, busy);
+                        }
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => {}
@@ -588,12 +609,6 @@ fn main() {
                 busy = true;
                 window.set_status(if reflow { "Layout..." } else { "Loading..." });
                 window.set_navigation_state(back, forward, reload, busy);
-                if resize_smoke && resize_phase == 1 && reflow && width == 800 {
-                    // Change size while the worker owns an older viewport request.
-                    eprintln!("Resize smoke: resize 800 -> 480 -> 320 while request in flight");
-                    window.resize_viewport(480, 500);
-                    window.resize_viewport(320, 500);
-                }
             }
         }
     });
@@ -609,6 +624,17 @@ fn main() {
 #[cfg(test)]
 mod overflow_tests {
     use super::*;
+
+    #[test]
+    fn busy_native_resize_is_coalesced_not_lost() {
+        let mut queued = std::collections::VecDeque::new();
+        queue_thumb_event(&mut queued, NavigationEvent::Resize);
+        queue_thumb_event(&mut queued, NavigationEvent::Hover { x: 5, y: 6 });
+        queue_thumb_event(&mut queued, NavigationEvent::Resize);
+        assert_eq!(queued.len(), 2);
+        assert_eq!(queued.pop_front(), Some(NavigationEvent::Resize));
+        assert_eq!(queued.pop_front(), Some(NavigationEvent::Hover { x: 5, y: 6 }));
+    }
 
     #[test]
     fn native_link_smoke_waits_for_history_instead_of_failing_on_intermediate_reflow() {
