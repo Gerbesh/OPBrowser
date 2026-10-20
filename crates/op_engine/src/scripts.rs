@@ -958,6 +958,9 @@ pub(crate) fn dispatch_focus_change(
         }
         path
     };
+    // The active element must be queryable from every focus/blur handler.
+    // No focused element resolves to document.body, as in HTML documents.
+    let _ = runtime.sync_native_active_element(next.map(|node| node.index()));
     if let Some(previous) = previous {
         let path = path_for(previous);
         if !path.is_empty() {
@@ -975,6 +978,37 @@ pub(crate) fn dispatch_focus_change(
     let changed = apply_dom_operations(document, runtime);
     let checkpoint = collect_at_idle(document, runtime, false);
     (changed, checkpoint)
+}
+
+/// Dispatch native keydown/keyup before the browser performs Tab/Enter
+/// default actions. Script DOM operations commit even if the key is canceled.
+pub(crate) fn dispatch_keyboard_event(
+    document: &mut Document,
+    runtime: &mut JsRuntime,
+    target: NodeId,
+    input: op_js::NativeKeyboardInput<'_>,
+) -> (bool, usize, Option<GcCheckpointPhases>) {
+    let mut path = Vec::new();
+    let mut cursor = Some(target);
+    while let Some(node) = cursor {
+        if path.len() >= 64 {
+            break;
+        }
+        if document.element(node).is_some() {
+            path.push(node.index());
+        }
+        cursor = document.node(node).and_then(|item| item.parent);
+    }
+    let canceled = if path.is_empty() {
+        false
+    } else {
+        runtime
+            .dispatch_dom_keyboard_path(&path, input)
+            .map_or(true, |result| result.default_prevented)
+    };
+    let changed = apply_dom_operations(document, runtime);
+    let checkpoint = collect_at_idle(document, runtime, false);
+    (canceled, changed, checkpoint)
 }
 
 /// Dispatch the click to the hit element and its attached DOM ancestors.

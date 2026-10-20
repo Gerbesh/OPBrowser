@@ -22,7 +22,7 @@ pub use parser::{
 pub use runtime::{
     DomClickDispatch, DomElementSnapshot, DomOperation, DomTextMutation, JsGcPauseHistogram,
     JsGcPhaseTimings, JsGcReport, JsGcTelemetry, JsHeapReachability, JsHeapUsage, JsRuntime,
-    TextResponse,
+    NativeKeyboardInput, TextResponse,
 };
 pub use value::{JsSymbol, JsValue, ObjectId};
 

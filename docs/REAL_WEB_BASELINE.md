@@ -1,5 +1,9 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 20 October 2026: synchronized focus and KeyboardEvent baseline
+
+Native Release run in ignored `artifacts/live_web/native-key-events-2026-10-20/`: Google `rendered_with_js_errors` (2 failed JS, ~1.97 s), YouTube `no_text_rendered` (4 failures, ~3.16 s), Reddit `blank_viewport` (0 failed JS, ~1.64 s), DeviantArt `rendered_with_js_errors` (3 failures, ~16.23 s), Pikabu `rendered_with_js_errors` (11 failures, ~19.42 s). High-level outcomes remain as before. These noninteractive probes cannot verify keyboard/mouse events; dedicated engine/Win32 DOM tests demonstrate cancellation and activeElement. No claim of complete YouTube/Reddit compatibility or a solved Pikabu latency problem.
+
 ## 20 October 2026: focus reveal and DOM focus event Release sample
 
 Anonymous native Release suite in ignored `artifacts/live_web/focus-reveal-events-2026-10-20/`: Google rendered_with_js_errors (2 failed, 394 ms), YouTube no_text_rendered (4 failed, 1,561 ms), Reddit blank_viewport (0 failed, 252 ms), Pikabu rendered_with_js_errors (11 failed, 14,697 ms), DeviantArt rendered_with_js_errors (3 failed, 12,482 ms). These noninteractive load probes cannot exercise Tab/Shift+Tab or focus/blur listeners and do not certify modern website functionality. Nested CSS scroll, real native Win32 document scroll and DOM event propagation have dedicated offline tests. One existing engine interval self-cancel timing test failed during an initial concurrent full-workspace pass but passed in isolation and on full-suite rerun. Timing flakiness remains a monitoring item; no claim of a root-cause fix.

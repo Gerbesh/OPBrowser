@@ -28,6 +28,7 @@ struct NetworkCompletion {
     result: Result<op_net::LoadedTextResponse, String>,
 }
 
+pub use op_js::NativeKeyboardInput;
 use op_paint::{Color, DisplayList, PaintCommand, build_display_list};
 mod images;
 mod scripts;
@@ -1054,6 +1055,86 @@ impl Engine {
         Some(page.render(width, height))
     }
 
+    /// Native keyboard events are cancelable in the original JS DOM. Run
+    /// listeners first; Tab and Enter only execute their defaults if allowed.
+    pub fn keyboard_event(
+        &mut self,
+        input: op_js::NativeKeyboardInput<'_>,
+        width: i32,
+        height: i32,
+    ) -> Result<Option<RenderedPage>, LoadError> {
+        let mut changed = false;
+        let mut canceled = false;
+        if let Some(page) = self.active_document.as_mut() {
+            let target = page.interaction.focused.or_else(|| {
+                // An unfocused HTML document routes keyboard listeners through
+                // body, rather than a stale/native non-element root handle.
+                let mut stack = vec![page.document.root()];
+                let mut visited = 0usize;
+                while let Some(node) = stack.pop() {
+                    visited += 1;
+                    if visited > 8192 {
+                        break;
+                    }
+                    if page
+                        .document
+                        .element(node)
+                        .is_some_and(|el| el.tag_name == "body")
+                    {
+                        return Some(node);
+                    }
+                    stack.extend(page.document.children(node).iter().rev().copied());
+                }
+                None
+            });
+            if let Some(target) = target
+                && let Some(vm) = page.runtime.as_mut()
+            {
+                let (prevented, mutations, checkpoint) =
+                    scripts::dispatch_keyboard_event(&mut page.document, vm, target, input);
+                canceled = prevented;
+                changed = mutations > 0;
+                page.scripts.mutations += mutations;
+                page.finish_gc_checkpoint(checkpoint);
+                if changed {
+                    page.refresh_styles();
+                }
+            }
+        }
+        if input.down && !canceled && !input.ctrl {
+            if input.key == "Tab" {
+                return Ok(self.focus_next(input.shift, width, height).or_else(|| {
+                    if changed {
+                        self.active_document
+                            .as_mut()
+                            .map(|p| p.render(width, height))
+                    } else {
+                        None
+                    }
+                }));
+            }
+            if input.key == "Enter" {
+                let activated = self.activate_focused(width, height)?;
+                return Ok(activated.or_else(|| {
+                    if changed {
+                        self.active_document
+                            .as_mut()
+                            .map(|p| p.render(width, height))
+                    } else {
+                        None
+                    }
+                }));
+            }
+        }
+        Ok(if changed {
+            self.active_document
+                .as_mut()
+                .map(|page| page.render(width, height))
+        } else {
+            None
+        })
+    }
+
     /// Enter activates the focused link or control without synthesizing a
     /// pointer event. A cancelable trusted DOM click runs before navigation.
     pub fn activate_focused(
@@ -1243,8 +1324,28 @@ impl Engine {
         });
         let focus_changed = prepared.interaction.focused != focused
             || (focused.is_some() && prepared.interaction.focus_visible);
+        let previous_focus = prepared.interaction.focused;
         prepared.interaction.focused = focused;
         prepared.interaction.focus_visible = false;
+        let focus_mutations = if previous_focus != focused {
+            if let Some(runtime) = prepared.runtime.as_mut() {
+                let (changes, checkpoint) = scripts::dispatch_focus_change(
+                    &mut prepared.document,
+                    runtime,
+                    previous_focus,
+                    focused,
+                );
+                prepared.finish_gc_checkpoint(checkpoint);
+                changes
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+        if focus_mutations > 0 {
+            prepared.refresh_styles();
+        }
         let (handled, canceled, changes, checkpoint) =
             if let Some(runtime) = prepared.runtime.as_mut() {
                 scripts::dispatch_click(&mut prepared.document, runtime, target)
@@ -1253,10 +1354,10 @@ impl Engine {
             };
         self.last_click_default_prevented = canceled;
         prepared.finish_gc_checkpoint(checkpoint);
-        if !handled && changes == 0 && !focus_changed && !was_pressed {
+        if !handled && changes == 0 && focus_mutations == 0 && !focus_changed && !was_pressed {
             return None;
         }
-        prepared.scripts.mutations += changes;
+        prepared.scripts.mutations += changes + focus_mutations;
         if changes > 0 || focus_changed {
             prepared.refresh_styles();
         }
@@ -1993,6 +2094,186 @@ mod tests {
                 .focused
                 .is_none()
         );
+    }
+
+    #[test]
+    fn keydown_without_focused_element_bubbles_from_body_and_exposes_modifiers() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><p id='out'>Waiting</p><script>            document.addEventListener('keydown',function(e){              if(e.key==='A'){document.getElementById('out').textContent=e.code+' '+e.ctrlKey+' '+e.repeat+' '+(document.activeElement===document.body);}            });</script></body>",
+            520, 350,
+        );
+        let frame = engine
+            .keyboard_event(
+                op_js::NativeKeyboardInput {
+                    key: "A",
+                    code: "KeyA",
+                    down: true,
+                    shift: true,
+                    ctrl: true,
+                    repeat: true,
+                },
+                520,
+                350,
+            )
+            .unwrap()
+            .expect("body should receive keyboard listeners before focus");
+        assert!(contains_text(&frame.display_list, "KeyA true true true"));
+        assert!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .interaction
+                .focused
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn native_keyboard_events_can_cancel_tab_and_enter_before_default_action() {
+        let root = std::env::temp_dir().join(format!(
+            "opbrowser-native-key-events-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("next.html"), "<h1>Key destination</h1>").unwrap();
+        std::fs::write(root.join("index.html"),
+            "<body><a id='one' href='next.html' style='display:block;width:180px;height:45px'>First</a>\
+             <a id='two' href='next.html' style='display:block;width:180px;height:45px'>Second</a>\
+             <p id='out'>Idle</p><script>\
+             var first=document.getElementById('one');var out=document.getElementById('out');\
+             first.addEventListener('keydown',function(e){\
+                if(e.key==='Tab'){e.preventDefault();out.textContent='Tab blocked '+e.code+' '+(document.activeElement===first);}\
+                if(e.key==='Enter'){e.preventDefault();out.textContent='Enter blocked '+e.code;}\
+             });\
+             first.addEventListener('keyup',function(e){if(e.key==='Tab'){out.textContent='Up '+e.key+' '+e.code+' '+e.shiftKey;}});\
+             </script></body>").unwrap();
+        let mut engine = Engine::new();
+        engine
+            .navigate(root.join("index.html").to_str().unwrap(), 640, 400)
+            .unwrap();
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        engine.focus_next(false, 640, 400);
+        let first = engine.active_document.as_ref().unwrap().interaction.focused;
+        let tab = engine
+            .keyboard_event(
+                op_js::NativeKeyboardInput {
+                    key: "Tab",
+                    code: "Tab",
+                    down: true,
+                    shift: false,
+                    ctrl: false,
+                    repeat: false,
+                },
+                640,
+                400,
+            )
+            .unwrap()
+            .expect("canceled Tab mutation must repaint");
+        assert!(contains_text(&tab.display_list, "Tab blocked Tab true"));
+        assert_eq!(
+            engine.active_document.as_ref().unwrap().interaction.focused,
+            first
+        );
+        let up = engine
+            .keyboard_event(
+                op_js::NativeKeyboardInput {
+                    key: "Tab",
+                    code: "Tab",
+                    down: false,
+                    shift: true,
+                    ctrl: false,
+                    repeat: false,
+                },
+                640,
+                400,
+            )
+            .unwrap()
+            .expect("keyup listener should paint");
+        assert!(contains_text(&up.display_list, "Up Tab Tab true"));
+        let entered = engine
+            .keyboard_event(
+                op_js::NativeKeyboardInput {
+                    key: "Enter",
+                    code: "Enter",
+                    down: true,
+                    shift: false,
+                    ctrl: false,
+                    repeat: false,
+                },
+                640,
+                400,
+            )
+            .unwrap()
+            .expect("canceled Enter should repaint");
+        assert!(contains_text(&entered.display_list, "Enter blocked Enter"));
+        assert_eq!(
+            engine.navigation().entries().len(),
+            1,
+            "keydown prevention stops default link navigation"
+        );
+        engine.focus_next(false, 640, 400);
+        let result = engine
+            .keyboard_event(
+                op_js::NativeKeyboardInput {
+                    key: "Enter",
+                    code: "Enter",
+                    down: true,
+                    shift: false,
+                    ctrl: false,
+                    repeat: false,
+                },
+                640,
+                400,
+            )
+            .unwrap()
+            .expect("uncanceled Enter should navigate");
+        assert!(contains_text(&result.display_list, "Key destination"));
+        assert_eq!(engine.navigation().entries().len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn mouse_focus_transitions_update_active_element_before_focus_and_click_handlers() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><button id='first' style='display:block;width:130px;height:42px'>First</button>\
+             <button id='second' style='display:block;width:130px;height:42px'>Second</button>\
+             <p id='out'>Unchanged</p><script>\
+             var first=document.getElementById('first');var second=document.getElementById('second');\
+             var log=(document.activeElement===document.body)?'body;':'missing;';\
+             first.addEventListener('focus',function(){log=log+'focus1='+(document.activeElement===first)+';';});\
+             first.addEventListener('blur',function(){log=log+'blur1='+(document.activeElement===second)+';';});\
+             second.addEventListener('focusin',function(){log=log+'focusin2='+(document.activeElement===second)+';';});\
+             second.addEventListener('click',function(){document.getElementById('out').textContent=log+'click2';});\
+             </script></body>",
+            560, 390,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let point = |engine: &Engine, name: &str| {
+            let page = engine.active_document.as_ref().unwrap();
+            let r = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document.element(r.node).is_some_and(|e| {
+                        e.attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == name)
+                    })
+                })
+                .unwrap();
+            (r.x + 8, r.y + 8)
+        };
+        let (x, y) = point(&engine, "first");
+        engine.click_at(x, y, 560, 390);
+        let (x, y) = point(&engine, "second");
+        let after = engine.click_at(x, y, 560, 390).unwrap();
+        assert!(contains_text(
+            &after.display_list,
+            "body;focus1=true;blur1=true;focusin2=true;click2"
+        ));
     }
 
     #[test]

@@ -3888,3 +3888,14 @@ This file is append-only project history.
 - Tests: nested two-level overflow scrolling, pre-clipped target still not clickable, root document focus bounds with reverse traversal, real Win32 downward/upward viewport reveal without repeated jitter, JS focus capture/target/bubble ordering and listener DOM mutation. Full workspace, Clippy and native browser/link smoke passed.
 - Five public Release sites remain Google/DeviantArt/Pikabu partial, YouTube without text and Reddit blank. An existing interval self-cancel test failed once during a full workspace run, passed on isolated retry and on full-suite rerun; timing flakiness not diagnosed.
 - Remaining: mouse focus event parity, relatedTarget and document.activeElement, keydown/keyup cancellation/defaults, full forms and robust scroll anchoring, comprehensive web compatibility.
+
+## 2026-10-20 - P0 synchronized DOM activeElement and cancelable page KeyboardEvent input
+
+- Added original VM document.activeElement as a read-only live host-synchronized element reference with body as the initial/no-focus target; scripts cannot assign a fake reference. Focus transition dispatch synchronizes it before blur/focusout/focus/focusin callbacks.
+- Engine native pointer click now sends actual focus change events and applies DOM mutations before its normal trusted click handler, preserving focus-visible modality behavior.
+- Introduced compact op_js::NativeKeyboardInput and shared original EventTarget dispatch for browser-owned, trusted, cancelable, bubbling keydown/keyup. Event fields include key, code, shiftKey, ctrlKey, repeat, currently with alt/meta false. No ready-made JS or browser engine.
+- Win32 WM_KEYDOWN/WM_KEYUP on the page HWND produce ordered NavigationEvent::KeyDown/KeyUp. Native address field Enter, Ctrl+L and F5 remain intact; F5 precedence was explicitly regression-tested. Worker queues key events and passes input through public op_engine re-export, avoiding direct browser-shell dependency on op_js.
+- Engine calls JS key listeners and applies DOM mutations before Tab or Enter defaults; a canceled keydown prevents Tab focus movement or Enter link activation. Unfocused page keys dispatch from body to document listeners.
+- Added local HTML regressions for canceled Tab/Enter, uncanceled Enter navigation, keyup fields, modifier/repeat metadata and unfocused body bubbling; mouse focus transitions verify document.activeElement seen inside focus/blur and click; Win32 and worker ordering tests added.
+- All workspace tests, strict Clippy, native startup/link/image smoke, Release probe build and five-site noninteractive baseline pass. Google/DeviantArt/Pikabu partial, YouTube textless, Reddit blank, without claiming full compatibility.
+- Remaining: Element.focus/blur, relatedTarget, removal of focused element, full text input/IME/keyboard defaults, alt/meta, and modern JS/layout work.

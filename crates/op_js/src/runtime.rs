@@ -570,6 +570,17 @@ pub struct DomClickDispatch {
     pub default_prevented: bool,
 }
 
+/// Native keyboard metadata used for trusted browser-originated events.
+#[derive(Debug, Clone, Copy)]
+pub struct NativeKeyboardInput<'a> {
+    pub key: &'a str,
+    pub code: &'a str,
+    pub down: bool,
+    pub shift: bool,
+    pub ctrl: bool,
+    pub repeat: bool,
+}
+
 #[derive(Debug)]
 pub struct JsRuntime {
     heap: Vec<JsObject>,
@@ -1215,6 +1226,7 @@ impl JsRuntime {
                 ("dispatchEvent".into(), JsValue::Object(dispatch_listener)),
                 ("body".into(), JsValue::Null),
                 ("documentElement".into(), JsValue::Null),
+                ("activeElement".into(), JsValue::Null),
                 ("addEventListener".into(), JsValue::Object(add_listener)),
                 (
                     "removeEventListener".into(),
@@ -3289,6 +3301,25 @@ impl JsRuntime {
         }
     }
 
+    /// Native focus owns document.activeElement. Do not let script assignment
+    /// replace this read-only live reference with a stale DOM wrapper.
+    pub fn sync_native_active_element(&mut self, node: Option<usize>) -> Result<(), JsError> {
+        let value = match node {
+            Some(index) => JsValue::Object(self.dom_element_object(index)?),
+            None => self
+                .dom_document
+                .and_then(|id| self.object(id).ok())
+                .and_then(|doc| doc.properties.get("body").cloned())
+                .unwrap_or(JsValue::Null),
+        };
+        if let Some(document) = self.dom_document {
+            self.object_mut(document)?
+                .properties
+                .insert("activeElement".into(), value);
+        }
+        Ok(())
+    }
+
     /// Expose the parser-owned html root as document.documentElement.
     pub fn set_dom_document_element_node(&mut self, node: usize) -> Result<(), JsError> {
         let object = self.dom_element_object(node)?;
@@ -3309,6 +3340,13 @@ impl JsRuntime {
                 .insert("body".into(), JsValue::Object(object));
         }
         self.dom_attached.insert(node);
+        if let Some(document) = self.dom_document
+            && self.object(document)?.properties.get("activeElement") == Some(&JsValue::Null)
+        {
+            self.object_mut(document)?
+                .properties
+                .insert("activeElement".into(), JsValue::Object(object));
+        }
         Ok(())
     }
     pub fn resolve_dom_node(&self, node: usize) -> usize {
@@ -3502,7 +3540,7 @@ impl JsRuntime {
         path: &[usize],
         trusted: bool,
     ) -> Result<DomClickDispatch, JsError> {
-        self.dispatch_dom_native_event_path(path, "click", true, true, trusted)
+        self.dispatch_dom_native_event_path(path, "click", true, true, trusted, None)
     }
 
     /// Host-generated focus transitions reuse the original EventTarget
@@ -3517,8 +3555,26 @@ impl JsRuntime {
             matches!(name, "focusin" | "focusout"),
             false,
             true,
+            None,
         )?;
         Ok(())
+    }
+
+    /// A browser-owned keyboard event, delivered through the same listener
+    /// path as click while exposing the KeyboardEvent fields used by pages.
+    pub fn dispatch_dom_keyboard_path(
+        &mut self,
+        path: &[usize],
+        input: NativeKeyboardInput<'_>,
+    ) -> Result<DomClickDispatch, JsError> {
+        self.dispatch_dom_native_event_path(
+            path,
+            if input.down { "keydown" } else { "keyup" },
+            true,
+            true,
+            true,
+            Some((input.key, input.code, input.shift, input.ctrl, input.repeat)),
+        )
     }
 
     fn dispatch_dom_native_event_path(
@@ -3528,6 +3584,7 @@ impl JsRuntime {
         bubbles: bool,
         cancelable: bool,
         trusted: bool,
+        keyboard: Option<(&str, &str, bool, bool, bool)>,
     ) -> Result<DomClickDispatch, JsError> {
         if path.is_empty() || (event_type == "click" && !self.has_dom_click_path_listener(path)) {
             return Ok(DomClickDispatch {
@@ -3590,6 +3647,16 @@ impl JsRuntime {
                 ("__stopImmediatePropagation".into(), JsValue::Boolean(false)),
             ]),
         )?;
+        if let Some((key, code, shift, ctrl, repeat)) = keyboard {
+            let properties = &mut self.object_mut(event)?.properties;
+            properties.insert("key".into(), JsValue::String(key.into()));
+            properties.insert("code".into(), JsValue::String(code.into()));
+            properties.insert("shiftKey".into(), JsValue::Boolean(shift));
+            properties.insert("ctrlKey".into(), JsValue::Boolean(ctrl));
+            properties.insert("altKey".into(), JsValue::Boolean(false));
+            properties.insert("metaKey".into(), JsValue::Boolean(false));
+            properties.insert("repeat".into(), JsValue::Boolean(repeat));
+        }
         self.install_element_event_path(event, path)?;
         let mut steps = 0;
         let mut handled = true;
@@ -10064,7 +10131,9 @@ impl JsRuntime {
         {
             return Err(JsError::type_error("location navigation is not supported"));
         }
-        if self.dom_document == Some(*id) && matches!(key, "URL" | "documentURI" | "baseURI") {
+        if self.dom_document == Some(*id)
+            && matches!(key, "URL" | "documentURI" | "baseURI" | "activeElement")
+        {
             return Ok(());
         }
         if let Some(setter) = self.accessor_at(*id, key, "set")? {

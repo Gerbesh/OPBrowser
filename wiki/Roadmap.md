@@ -1,5 +1,9 @@
 # Roadmap
 
+## After activeElement and cancelable native key input (20 October 2026)
+
+Done: DOM document.activeElement initialization and host focus synchronization, focus/blur/focusin/focusout on both Tab and mouse clicks, original KeyboardEvent keydown/keyup dispatch with capture/bubble and preventDefault suppression of Tab/Enter defaults; full Rust/Win32 test matrix. Next P0: JS Element.focus()/blur() and document.activeElement for detached/disabled targets, focus-relatedTarget and autofocus, correct DOM keypress/WM_CHAR/composition and IME editing, backspace/arrow key default actions for real inputs, modifier completeness and long-lived event listener performance. Independent modern-web problems remain JavaScript bootstrap, font/layout fidelity and page painting (YouTube no text, Reddit blank).
+
 ## After Tab focus auto-scroll and JS focus event support (20 October 2026)
 
 Done: un-clipped keyboard focus geometry separate from native click targets, nested overflow and root viewport scroll-into-view, and trusted original JS focus/blur/focusin/focusout from Tab. Next P0: mouse-induced focus/blur transitions, correct document.activeElement and relatedTarget, cancelable keyboard keydown/keyup with preventDefault before Tab/Enter actions, scroll anchoring while layouts change, tabindex/inert/fieldset edge cases, real form controls, CSS outlines and accessibility keyboard testing. Independent bootstrap, JS VM DOM conformance, fonts/layout and general modern-site support remain major gaps. An existing interval timing test was flaky on an initial parallel run and merits focused test hardening.

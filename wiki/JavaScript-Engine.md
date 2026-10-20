@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## Original KeyboardEvent delivery and read-only activeElement (20 October 2026)
+
+Native page events now use original EventTarget dispatch for trusted cancelable/bubbling keydown/keyup with key, code, ctrlKey, shiftKey and repeat; listener once/passive, preventDefault and capture/bubble rules share the existing runtime. Host-driven activeElement changes update the original document property before focus/blur handlers, and the initial/no-focus reference is body. Native mouse click focus transitions use the same blur/focusout/focus/focusin JS path as Tab, before the click. Keyboard changes made by JavaScript update the retained DOM before default handling. An un-canceled Tab performs traversal and scroll-into-view; Enter activates through the existing cancelable click/default-link pipeline. Programmatic element.focus/blur, relatedTarget, focused-node detach, alt/meta modifiers and advanced editing events remain incomplete.
+
 ## Native focus DOM events (20 October 2026)
 
 The original JS EventTarget dispatcher now handles trusted noncancelable `focus`/`blur` (capture and target only), and `focusin`/`focusout` (capture, target and bubble) from native Tab transitions. Each old/new focus sequence is delivered through bounded original DOM ancestry; original once/passive listener registrations are reused, and mutations from handlers apply before the browser restyles/repaints. This extends the existing click/default-action dispatcher rather than adding another VM or event system. Mouse click focus changes, relatedTarget, document.activeElement synchronization, keyboard keydown/keyup and form default actions are still open.

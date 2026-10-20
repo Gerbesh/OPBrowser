@@ -1,5 +1,9 @@
 # CSS Syntax Foundation
 
+## Focus selector parity with original DOM activeElement (20 October 2026)
+
+Original CSS :focus/:focus-within/:focus-visible state now stays aligned with the host-driven JS document.activeElement reference, not just Tab's internal selection. Mouse focus transitions update the active element and fire focus/blur-related DOM events before click callbacks, while keyboard-driven changes retain visible focus styling and auto-scroll. The document property is read-only to scripts. Programmatic Element.focus/blur and detailed focus/caret/IME semantics still require implementation.
+
 ## Interaction selectors with real keyboard modality (20 October 2026)
 
 `:focus-visible` no longer depends only on the static false default or mouse focus. Page Tab/Shift+Tab sets an explicit keyboard focus-visible state consumed by the same original CSS selector matcher, including `:focus-within` ancestors; mouse click clears focus-visible but keeps `:focus`. The HTML focus candidate order honors integer tabindex, natural links/controls and hidden/disabled exclusions. Unsupported: autofocus, script-based Element.focus()/blur() synchronization, full form semantics and auto-scroll-to-focus.

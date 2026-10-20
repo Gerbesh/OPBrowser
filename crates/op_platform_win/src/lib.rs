@@ -21,7 +21,7 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetCapture, GetKeyState, ReleaseCapture, SetCapture, SetFocus, TME_LEAVE,
-    TRACKMOUSEEVENT, TrackMouseEvent, VK_CONTROL, VK_F5, VK_L, VK_RETURN, VK_SHIFT, VK_TAB,
+    TRACKMOUSEEVENT, TrackMouseEvent, VK_CONTROL, VK_F5, VK_L, VK_RETURN, VK_SHIFT,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
@@ -55,17 +55,58 @@ const CANCEL_POINTER_PRESS: u32 = WM_APP + 3;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NavigationEvent {
     Navigate(String),
-    FollowLinkAt { href: String, x: i32, y: i32 },
-    Click { x: i32, y: i32 },
-    PointerDown { x: i32, y: i32 },
+    FollowLinkAt {
+        href: String,
+        x: i32,
+        y: i32,
+    },
+    Click {
+        x: i32,
+        y: i32,
+    },
+    PointerDown {
+        x: i32,
+        y: i32,
+    },
     PointerCancel,
-    FocusNext { backwards: bool },
+    FocusNext {
+        backwards: bool,
+    },
     ActivateFocused,
-    Hover { x: i32, y: i32 },
-    Scroll { x: i32, y: i32, delta_y: i32 },
-    HorizontalScroll { x: i32, y: i32, delta_x: i32 },
-    ScrollbarDragStart { x: i32, y: i32 },
-    ScrollbarDragMove { y: i32 },
+    KeyDown {
+        key: String,
+        code: String,
+        shift: bool,
+        ctrl: bool,
+        repeat: bool,
+    },
+    KeyUp {
+        key: String,
+        code: String,
+        shift: bool,
+        ctrl: bool,
+    },
+    Hover {
+        x: i32,
+        y: i32,
+    },
+    Scroll {
+        x: i32,
+        y: i32,
+        delta_y: i32,
+    },
+    HorizontalScroll {
+        x: i32,
+        y: i32,
+        delta_x: i32,
+    },
+    ScrollbarDragStart {
+        x: i32,
+        y: i32,
+    },
+    ScrollbarDragMove {
+        y: i32,
+    },
     ScrollbarDragEnd,
     Back,
     Forward,
@@ -572,19 +613,33 @@ impl NativeBrowserWindow {
             {
                 Some(NavigationEvent::Navigate(self.address()))
             }
-            WM_KEYDOWN
+            WM_KEYDOWN if message.wParam == VK_F5 as usize => Some(NavigationEvent::Reload),
+            WM_KEYDOWN | WM_KEYUP
                 if message.hwnd == self.hwnd
-                    && message.wParam == VK_TAB as usize
-                    && unsafe { GetKeyState(VK_CONTROL as i32) } >= 0 =>
+                    && !(message.wParam == VK_L as usize
+                        && unsafe { GetKeyState(VK_CONTROL as i32) } < 0) =>
             {
-                Some(NavigationEvent::FocusNext {
-                    backwards: unsafe { GetKeyState(VK_SHIFT as i32) } < 0,
+                let shift = unsafe { GetKeyState(VK_SHIFT as i32) } < 0;
+                let ctrl = unsafe { GetKeyState(VK_CONTROL as i32) } < 0;
+                native_key_name(message.wParam, shift).map(|(key, code)| {
+                    if message.message == WM_KEYDOWN {
+                        NavigationEvent::KeyDown {
+                            key,
+                            code,
+                            shift,
+                            ctrl,
+                            repeat: (message.lParam as u32 & (1 << 30)) != 0,
+                        }
+                    } else {
+                        NavigationEvent::KeyUp {
+                            key,
+                            code,
+                            shift,
+                            ctrl,
+                        }
+                    }
                 })
             }
-            WM_KEYDOWN if message.hwnd == self.hwnd && message.wParam == VK_RETURN as usize => {
-                Some(NavigationEvent::ActivateFocused)
-            }
-            WM_KEYDOWN if message.wParam == VK_F5 as usize => Some(NavigationEvent::Reload),
             NAVIGATION_COMMAND if message.hwnd == self.hwnd => match message.wParam as i32 {
                 BACK => Some(NavigationEvent::Back),
                 FORWARD => Some(NavigationEvent::Forward),
@@ -610,6 +665,37 @@ impl NativeBrowserWindow {
             _ => None,
         }
     }
+}
+
+/// Keyboard semantics for original page input (address edit remains native).
+fn native_key_name(vk: usize, shift: bool) -> Option<(String, String)> {
+    let named = match vk as u32 {
+        9 => Some(("Tab", "Tab")),
+        13 => Some(("Enter", "Enter")),
+        27 => Some(("Escape", "Escape")),
+        8 => Some(("Backspace", "Backspace")),
+        32 => Some((" ", "Space")),
+        37 => Some(("ArrowLeft", "ArrowLeft")),
+        38 => Some(("ArrowUp", "ArrowUp")),
+        39 => Some(("ArrowRight", "ArrowRight")),
+        40 => Some(("ArrowDown", "ArrowDown")),
+        46 => Some(("Delete", "Delete")),
+        _ => None,
+    };
+    if let Some((key, code)) = named {
+        return Some((key.to_owned(), code.to_owned()));
+    }
+    let ch = u8::try_from(vk).ok()?;
+    if ch.is_ascii_uppercase() {
+        return Some((
+            ((if shift { ch } else { ch.to_ascii_lowercase() }) as char).to_string(),
+            format!("Key{}", ch as char),
+        ));
+    }
+    if ch.is_ascii_digit() {
+        return Some(((ch as char).to_string(), format!("Digit{}", ch as char)));
+    }
+    None
 }
 
 fn scroll_document_delta(hwnd: HWND, delta_y: i32) {
@@ -1657,18 +1743,26 @@ mod tests {
         let mut key: MSG = unsafe { zeroed() };
         key.hwnd = window.hwnd;
         key.message = WM_KEYDOWN;
-        key.wParam = VK_TAB as usize;
+        key.wParam = 9;
         assert!(matches!(
             window.navigation_event(&key),
-            Some(NavigationEvent::FocusNext { .. })
+            Some(NavigationEvent::KeyDown { ref key, .. }) if key == "Tab"
         ));
         key.wParam = VK_RETURN as usize;
-        assert_eq!(
+        assert!(matches!(
             window.navigation_event(&key),
-            Some(NavigationEvent::ActivateFocused)
-        );
+            Some(NavigationEvent::KeyDown { ref key, .. }) if key == "Enter"
+        ));
+        key.message = WM_KEYUP;
+        assert!(matches!(
+            window.navigation_event(&key),
+            Some(NavigationEvent::KeyUp { ref key, .. }) if key == "Enter"
+        ));
+        key.message = WM_KEYDOWN;
+        key.wParam = VK_F5 as usize;
+        assert_eq!(window.navigation_event(&key), Some(NavigationEvent::Reload));
         key.hwnd = unsafe { GetDlgItem(window.hwnd, ADDRESS) };
-        key.wParam = VK_TAB as usize;
+        key.wParam = 9;
         assert_eq!(
             window.navigation_event(&key),
             None,

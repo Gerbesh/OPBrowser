@@ -111,6 +111,8 @@ fn queue_thumb_event(
         | NavigationEvent::PointerCancel
         | NavigationEvent::FocusNext { .. }
         | NavigationEvent::ActivateFocused
+        | NavigationEvent::KeyDown { .. }
+        | NavigationEvent::KeyUp { .. }
         | NavigationEvent::Click { .. }
         | NavigationEvent::FollowLinkAt { .. } => {
             queued.push_back(event);
@@ -208,8 +210,10 @@ fn main() {
                 height,
             } = command;
             last_viewport = (width, height);
-            let keyboard_focus = matches!(event, NavigationEvent::FocusNext { .. });
-            let keyboard_activate = matches!(event, NavigationEvent::ActivateFocused);
+            let keyboard_focus = matches!(event, NavigationEvent::FocusNext { .. })
+                || matches!(event, NavigationEvent::KeyDown { ref key, .. } if key == "Tab");
+            let keyboard_activate = matches!(event, NavigationEvent::ActivateFocused)
+                || matches!(event, NavigationEvent::KeyDown { ref key, .. } if key == "Enter");
             let before_navigation = (
                 engine.navigation().current_index(),
                 engine.navigation().entries().len(),
@@ -222,6 +226,8 @@ fn main() {
                     | NavigationEvent::PointerCancel
                     | NavigationEvent::FocusNext { .. }
                     | NavigationEvent::ActivateFocused
+                    | NavigationEvent::KeyDown { .. }
+                    | NavigationEvent::KeyUp { .. }
                     | NavigationEvent::Hover { .. }
                     | NavigationEvent::Scroll { .. }
                     | NavigationEvent::HorizontalScroll { .. }
@@ -248,6 +254,41 @@ fn main() {
                     Ok(engine.focus_next(backwards, width, height))
                 }
                 NavigationEvent::ActivateFocused => engine.activate_focused(width, height),
+                NavigationEvent::KeyDown {
+                    ref key,
+                    ref code,
+                    shift,
+                    ctrl,
+                    repeat,
+                } => engine.keyboard_event(
+                    op_engine::NativeKeyboardInput {
+                        key,
+                        code,
+                        down: true,
+                        shift,
+                        ctrl,
+                        repeat,
+                    },
+                    width,
+                    height,
+                ),
+                NavigationEvent::KeyUp {
+                    ref key,
+                    ref code,
+                    shift,
+                    ctrl,
+                } => engine.keyboard_event(
+                    op_engine::NativeKeyboardInput {
+                        key,
+                        code,
+                        down: false,
+                        shift,
+                        ctrl,
+                        repeat: false,
+                    },
+                    width,
+                    height,
+                ),
                 NavigationEvent::Hover { x, y } => Ok(engine.hover_at(x, y, width, height)),
                 NavigationEvent::Scroll { x, y, delta_y } => {
                     let page = engine.scroll_at(x, y, delta_y, width, height);
@@ -493,6 +534,8 @@ fn main() {
                     | NavigationEvent::PointerCancel
                     | NavigationEvent::FocusNext { .. }
                     | NavigationEvent::ActivateFocused
+                    | NavigationEvent::KeyDown { .. }
+                    | NavigationEvent::KeyUp { .. }
                     | NavigationEvent::Hover { .. }
                     | NavigationEvent::Scroll { .. }
                     | NavigationEvent::HorizontalScroll { .. }
@@ -531,6 +574,50 @@ fn main() {
 #[cfg(test)]
 mod overflow_tests {
     use super::*;
+
+    #[test]
+    fn worker_keeps_real_keydown_keyup_and_cancelable_enter_in_order() {
+        let mut queue = std::collections::VecDeque::new();
+        queue_thumb_event(
+            &mut queue,
+            NavigationEvent::KeyDown {
+                key: "Tab".into(),
+                code: "Tab".into(),
+                shift: true,
+                ctrl: false,
+                repeat: false,
+            },
+        );
+        queue_thumb_event(
+            &mut queue,
+            NavigationEvent::KeyUp {
+                key: "Tab".into(),
+                code: "Tab".into(),
+                shift: true,
+                ctrl: false,
+            },
+        );
+        queue_thumb_event(
+            &mut queue,
+            NavigationEvent::KeyDown {
+                key: "Enter".into(),
+                code: "Enter".into(),
+                shift: false,
+                ctrl: false,
+                repeat: false,
+            },
+        );
+        assert_eq!(queue.len(), 3);
+        assert!(
+            matches!(queue.pop_front(), Some(NavigationEvent::KeyDown { ref key, shift: true, .. }) if key == "Tab")
+        );
+        assert!(
+            matches!(queue.pop_front(), Some(NavigationEvent::KeyUp { ref key, .. }) if key == "Tab")
+        );
+        assert!(
+            matches!(queue.pop_front(), Some(NavigationEvent::KeyDown { ref key, .. }) if key == "Enter")
+        );
+    }
 
     #[test]
     fn queued_keyboard_tab_steps_and_enter_keep_their_order() {

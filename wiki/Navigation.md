@@ -1,5 +1,9 @@
 # Navigation
 
+## Native keyboard events gate Tab and Enter defaults (20 October 2026)
+
+Page keydown/keyup now passes through native Windows input -> ordered browser worker -> original cancelable JavaScript DOM KeyboardEvent path. If keydown listeners preventDefault, neither Tab moves focus nor Enter activates a link; keyboard event DOM changes remain. Without cancelation, Tab/Shift+Tab scrolls focused elements into view and Enter runs trusted click/default navigation, updating the address/history. Mouse focus changes update document.activeElement and dispatch focus events before click. Ctrl+L, F5 and entering a URL in the toolbar remain handled separately by native chrome.
+
 ## Keyboard focus reveal and browser viewport (20 October 2026)
 
 Tab and Shift+Tab still follow native DOM/tabindex order. Their selected target now scrolls into view through original nested CSS overflow containers and then the Windows root document, without altering hit-test clipping or navigation history. The worker passes optional focus document coordinates only alongside the keyboard-focus repaint. Native Enter hyperlink default activation and the toolbar address field remain unchanged. Focus transitions invoke JS blur/focusout/focus/focusin listeners with normal capture/bubble phases; keydown/keyup support is still pending.

@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Browser DOM activeElement, native keydown/keyup and cancelable Tab/Enter (20 October 2026)
+
+The original OPBrowser JS DOM now tracks document.activeElement (body initially; focused element following native Tab/mouse). Mouse-triggered focus/blur/focusin/focusout events run before the click, with listener DOM mutations retained. Win32 page keydown/keyup events reach the original JS dispatcher with key/code/shiftKey/ctrlKey/repeat metadata and normal event propagation. JavaScript preventDefault in keydown blocks Tab movement and Enter link activation, while non-canceled defaults still work. Address-field Enter, Ctrl+L and F5 are preserved. Full Rust, Win32, Clippy and native smoke tests pass. Public rendering remains partial Google/Pikabu/DeviantArt, textless YouTube, blank Reddit. Pending: real form editing/IME, script focus()/blur(), relatedTarget and removal of focused nodes, full browser keyboard standards.
+
 ## Tab reveals offscreen focus; JS blur/focus transitions (20 October 2026)
 
 Original Rust DOM focus now scrolls nested CSS overflow containers and the native Windows root viewport to show the keyboard-selected element, including reverse Tab to earlier content. Separate pre-clip `focus_regions` prevent hidden elements becoming clickable by accident. Tab focus transitions now deliver trusted `blur`, `focusout`, `focus`, `focusin` JavaScript events with capture/target/bubble behavior and retained DOM mutations. Dedicated Win32, engine and JS event tests pass, as do full workspace/Clippy/native smoke tests. Remaining keyboard/browser gaps: keydown/keyup, mouse-induced focus event parity, relatedTarget, document.activeElement, form controls and autofocus. YouTube textless; Reddit blank. Pikabu partially rendered in the latest Release sample.
