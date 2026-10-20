@@ -33,6 +33,36 @@ impl TextEditor {
         }
     }
 
+    /// The web-exposed selection uses UTF-16 code units; the native editor
+    /// uses Unicode scalar indices. Positions in the middle of a surrogate
+    /// pair are rounded back to the containing scalar to keep UTF-8 valid.
+    pub fn set_utf16_selection(&mut self, value: &str, start: usize, end: usize, backward: bool) {
+        let to_scalar = |utf16: usize| -> usize {
+            let mut offset = 0;
+            for (index, ch) in value.chars().enumerate() {
+                if offset + ch.len_utf16() > utf16 {
+                    return index;
+                }
+                offset += ch.len_utf16();
+            }
+            value.chars().count()
+        };
+        let start = to_scalar(start);
+        let end = to_scalar(end).max(start);
+        self.anchor = if backward { end } else { start };
+        self.caret = if backward { start } else { end };
+    }
+
+    pub fn selection_utf16(&self, value: &str) -> (usize, usize, bool) {
+        let offset =
+            |scalar: usize| -> usize { value.chars().take(scalar).map(char::len_utf16).sum() };
+        (
+            offset(self.caret.min(self.anchor)),
+            offset(self.caret.max(self.anchor)),
+            self.caret < self.anchor,
+        )
+    }
+
     pub fn edit(&mut self, value: &str, edit: Edit) -> (String, bool) {
         let total = value.chars().count();
         self.caret = self.caret.min(total);
@@ -134,5 +164,11 @@ mod tests {
         e.edit(&s, Edit::SelectAll);
         let (s, _) = e.edit(&s, Edit::Insert("猫".into()));
         assert_eq!(s, "猫");
+        e.set_utf16_selection("a😊b", 1, 3, true);
+        assert_eq!(e.selection_utf16("a😊b"), (1, 3, true));
+        let (after, _) = e.edit("a😊b", Edit::Insert("猫".into()));
+        assert_eq!(after, "a猫b");
+        e.set_utf16_selection("a😊b", 2, 2, false);
+        assert_eq!(e.selection_utf16("a😊b"), (1, 1, false));
     }
 }

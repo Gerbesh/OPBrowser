@@ -1,8 +1,12 @@
 # JavaScript Engine
 
+## HTML text selection interoperation (20 October 2026)
+
+Applicable first-party text input and textarea proxies support selectionStart, selectionEnd, selectionDirection and setSelectionRange(). Script coordinates are UTF-16 offsets and map into safe Unicode scalar positions in OPBrowser's native text editor; subsequent typing, replacement and input events synchronize back to the script. Non-text input types expose null selection getters. Visual highlighting, click-to-caret, IME and complete selection standard conformance are not yet implemented.
+
 ## Form value reflection and beforeinput/input DOM events (20 October 2026)
 
-Original element proxies now expose bounded input/textarea `.value` getters/setters; native edit commits synchronize source DOM attributes and VM state. Original EventTarget dispatch delivers cancelable bubbling `beforeinput` and noncancelable bubbling `input`. A keydown listener's preventDefault prevents subsequent Windows WM_CHAR insertion. This is native DOM event functionality, not a claimed change in overall ECMAScript conformance. Missing complete InputEvent.data/inputType, selectionStart/End, composition, change/submit, constraint validation and form-specific default actions.
+Original element proxies now expose bounded input/textarea `.value` getters/setters; native edit commits synchronize source DOM attributes and VM state. Original EventTarget dispatch delivers cancelable bubbling `beforeinput` and noncancelable bubbling `input`. A keydown listener's preventDefault prevents subsequent Windows WM_CHAR insertion. This is native DOM event functionality, not a claimed change in overall ECMAScript conformance. Missing complete InputEvent.data/inputType, visual and full-range selection behavior, composition, change/submit, constraint validation and form-specific default actions.
 
 ## JavaScript Element.focus()/blur() lifecycle (20 October 2026)
 

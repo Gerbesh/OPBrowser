@@ -654,6 +654,43 @@ impl PreparedDocument {
                 self.refresh_styles();
             }
         }
+        // Programmatic selection changes must reach the native editor before
+        // the next key, paint or caret movement.
+        if let Some(focused) = self.interaction.focused
+            && let Some((start, end, direction)) = self
+                .runtime
+                .as_ref()
+                .and_then(|vm| vm.dom_control_selection(focused.index()))
+            && let Some(element) = self.document.element(focused)
+        {
+            let tag = element.tag_name.as_str();
+            let initial = if tag == "textarea" {
+                self.document
+                    .children(focused)
+                    .iter()
+                    .filter_map(|id| {
+                        self.document.node(*id).and_then(|node| match &node.kind {
+                            op_dom::NodeKind::Text(text) => Some(text.as_str()),
+                            _ => None,
+                        })
+                    })
+                    .collect::<String>()
+            } else {
+                String::new()
+            };
+            let value = element
+                .attributes
+                .iter()
+                .find(|a| a.name == "value")
+                .map_or(initial.as_str(), |a| a.value.as_str());
+            let editor = self
+                .editor
+                .get_or_insert_with(|| forms::TextEditor::new(focused, value));
+            if editor.node != focused {
+                *editor = forms::TextEditor::new(focused, value);
+            }
+            editor.set_utf16_selection(value, start, end, direction == 2);
+        }
         if self.style_viewport != (width, height) {
             self.style_viewport = (width, height);
             self.refresh_styles();
@@ -1251,7 +1288,15 @@ impl Engine {
         if editor.node != focused {
             *editor = forms::TextEditor::new(focused, &value);
         }
+        if let Some((start, end, direction)) = page
+            .runtime
+            .as_ref()
+            .and_then(|vm| vm.dom_control_selection(focused.index()))
+        {
+            editor.set_utf16_selection(&value, start, end, direction == 2);
+        }
         let (next, edited) = editor.edit(&value, action);
+        let selection = editor.selection_utf16(&next);
         if edited {
             if let Some(vm) = page.runtime.as_mut() {
                 let (cancel, mutation, checkpoint) =
@@ -1285,6 +1330,12 @@ impl Engine {
                     .map(|a| (a.name.clone(), a.value.clone()))
                     .collect();
                 vm.sync_dom_attributes(focused.index(), attrs);
+                vm.sync_native_control_selection(
+                    focused.index(),
+                    selection.0,
+                    selection.1,
+                    selection.2,
+                );
                 let (_, mutations, checkpoint) =
                     scripts::dispatch_text_input_event(&mut page.document, vm, focused, false);
                 page.scripts.mutations += mutations;
@@ -1293,6 +1344,13 @@ impl Engine {
                     page.refresh_styles();
                 }
             }
+        } else if let Some(vm) = page.runtime.as_mut() {
+            vm.sync_native_control_selection(
+                focused.index(),
+                selection.0,
+                selection.1,
+                selection.2,
+            );
         }
         Some(page.render(width, height))
     }
@@ -2317,6 +2375,30 @@ mod tests {
             )),
             "focused text field should show a caret"
         );
+    }
+
+    #[test]
+    fn javascript_utf16_selection_controls_native_replacement_and_live_caret() {
+        let mut engine = Engine::new();
+        let list = engine.set_html_page(
+            "<body><input id='q' value='A😊B'><p id='out'>old</p><script>\
+             var q=document.getElementById('q');q.focus();\
+             q.setSelectionRange(1,3,'backward');\
+             document.getElementById('out').textContent=\
+             q.selectionStart+'|'+q.selectionEnd+'|'+q.selectionDirection;\
+             q.addEventListener('input',function(){document.getElementById('out').textContent=\
+             q.value+'|'+q.selectionStart+'|'+q.selectionEnd;});\
+             </script></body>",
+            600,
+            380,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        assert!(contains_text(&list, "1|3|backward"));
+        let frame = engine.text_input("猫", 600, 380).unwrap();
+        assert!(contains_text(&frame.display_list, "A猫B|2|2"));
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(page.editor.as_ref().unwrap().caret, 2);
+        assert_eq!(page.editor.as_ref().unwrap().anchor, 2);
     }
 
     #[test]

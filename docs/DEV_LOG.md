@@ -3932,3 +3932,10 @@ This file is append-only project history.
 - The resize CI failure also exposed a production event-loss bug: while an engine command was active, the native event queue silently discarded `NavigationEvent::Resize`. Queue and deduplicate resize requests, then replay against the current viewport when the worker is free.
 - Make the native resize smoke explicitly submit its wide request and immediately shrink the real Win32 client area to 320px. This deterministically tests stale-viewport discard, text rewrap and image hyperlink navigation instead of depending on the 120ms WM_SIZE debounce timing.
 - Drain pending native events only when no new render command has already been scheduled. Added a regression test for coalesced busy resize events.
+
+## 2026-10-20 - P0 live HTML text selection APIs and Unicode-native editor bridge
+
+- Added first-party DOM selectionStart/selectionEnd/selectionDirection and setSelectionRange() for editable text/search/tel/url/password input and textarea. JS indices are UTF-16 code units, with constrained indices and no external JS engine.
+- Original native TextEditor maps UTF-16 offsets to safe Rust scalar positions (rounding incomplete surrogate pairs down), and maps native selection back to UTF-16 after editing. Engine synchronizes native and script selections before edits, input handlers and original paint.
+- Added a real HTML+JS/native regression selecting an emoji at offsets 1..3 in backward direction and replacing it, checking input listener observes the new collapsed UTF-16 caret; scalar boundary unit coverage also added.
+- Retained clear P0 limitations: no visual selection highlight/click-to-caret, clipboard, IME, setRangeText or comprehensive web selection conformance. Full independent browser/JS readiness not remeasured.

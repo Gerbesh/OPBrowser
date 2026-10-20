@@ -172,6 +172,7 @@ enum BuiltinFunction {
     DomClick,
     DomFocus,
     DomBlur,
+    DomSetSelectionRange,
     DomDispatchEvent,
     DomEventConstructor,
     DomCreateEvent,
@@ -627,6 +628,8 @@ pub struct JsRuntime {
     dom_pending_parents: HashMap<usize, usize>,
     dom_document_root: Option<usize>,
     dom_attributes: HashMap<usize, HashMap<String, String>>,
+    // UTF-16 indices. Direction: 0=none, 1=forward, 2=backward.
+    dom_text_selections: HashMap<usize, (usize, usize, u8)>,
     dom_class_lists: HashMap<usize, ObjectId>,
     dom_node_lists: HashMap<usize, ObjectId>,
     dom_html_collections: HashMap<usize, ObjectId>,
@@ -789,6 +792,7 @@ impl Default for JsRuntime {
             dom_pending_parents: HashMap::new(),
             dom_document_root: None,
             dom_attributes: HashMap::new(),
+            dom_text_selections: HashMap::new(),
             dom_class_lists: HashMap::new(),
             dom_node_lists: HashMap::new(),
             dom_html_collections: HashMap::new(),
@@ -3052,6 +3056,75 @@ impl JsRuntime {
             .insert(node, attributes.into_iter().collect());
     }
 
+    fn control_text_length(&self, node: usize) -> Option<usize> {
+        let tag = self.dom_tags.get(&node)?.as_str();
+        if tag != "textarea" {
+            if tag != "input" {
+                return None;
+            }
+            let kind = self
+                .dom_attributes
+                .get(&node)
+                .and_then(|attrs| attrs.get("type"))
+                .map_or("text", String::as_str);
+            if !matches!(kind, "text" | "search" | "tel" | "url" | "password") {
+                return None;
+            }
+        }
+        let value = self
+            .dom_attributes
+            .get(&node)
+            .and_then(|attrs| attrs.get("value"))
+            .map(String::as_str)
+            .or_else(|| {
+                if tag == "textarea" {
+                    self.dom_text.get(&node).map(String::as_str)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or("");
+        Some(value.encode_utf16().count())
+    }
+
+    pub fn dom_control_selection(&self, node: usize) -> Option<(usize, usize, u8)> {
+        let len = self.control_text_length(node)?;
+        let (start, end, direction) = self
+            .dom_text_selections
+            .get(&node)
+            .copied()
+            .unwrap_or((len, len, 0));
+        let start = start.min(len);
+        Some((start, end.min(len).max(start), direction))
+    }
+
+    pub fn sync_native_control_selection(
+        &mut self,
+        node: usize,
+        start: usize,
+        end: usize,
+        backward: bool,
+    ) {
+        if let Some(len) = self.control_text_length(node) {
+            let start = start.min(len);
+            let end = end.min(len).max(start);
+            self.dom_text_selections.insert(
+                node,
+                (
+                    start,
+                    end,
+                    if backward {
+                        2
+                    } else if start != end {
+                        1
+                    } else {
+                        0
+                    },
+                ),
+            );
+        }
+    }
+
     /// Real HTML parser root, not an Element. Only paths reaching this node
     /// should propagate further to document and window.
     /// Page-owned scroll positions in CSS pixels. Once layout has run,
@@ -4506,6 +4579,10 @@ impl JsRuntime {
             .insert("length".into(), JsValue::Number(1.0));
         let focus = self.allocate_lifecycle_method("focus", BuiltinFunction::DomFocus)?;
         let blur = self.allocate_lifecycle_method("blur", BuiltinFunction::DomBlur)?;
+        let set_selection = self.allocate_lifecycle_method(
+            "setSelectionRange",
+            BuiltinFunction::DomSetSelectionRange,
+        )?;
         let click = self.allocate_lifecycle_method("click", BuiltinFunction::DomClick)?;
         self.object_mut(click)?
             .properties
@@ -4578,6 +4655,7 @@ impl JsRuntime {
                 ("click".into(), JsValue::Object(click)),
                 ("focus".into(), JsValue::Object(focus)),
                 ("blur".into(), JsValue::Object(blur)),
+                ("setSelectionRange".into(), JsValue::Object(set_selection)),
                 ("dispatchEvent".into(), JsValue::Object(dispatch)),
                 ("setAttribute".into(), JsValue::Object(set_attr)),
                 ("getAttribute".into(), JsValue::Object(get_attr)),
@@ -8263,6 +8341,41 @@ impl JsRuntime {
             }
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
+        if builtin == BuiltinFunction::DomSetSelectionRange {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error(
+                    "setSelectionRange needs a text control",
+                ));
+            };
+            let ObjectKind::DomElement(node) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error(
+                    "setSelectionRange needs a text control",
+                ));
+            };
+            let Some(len) = self.control_text_length(node) else {
+                return Err(JsError::type_error(
+                    "setSelectionRange unsupported for this element",
+                ));
+            };
+            let offset = |arg: Option<&JsValue>| -> usize {
+                let value = arg.map_or(0.0, JsValue::to_number);
+                if value.is_nan() {
+                    0
+                } else {
+                    (value.max(0.0) as usize).min(len)
+                }
+            };
+            let end = offset(arguments.get(1));
+            let start = offset(arguments.first()).min(end);
+            let direction = match arguments.get(2).map(JsValue::to_js_string).as_deref() {
+                Some("forward") => 1,
+                Some("backward") => 2,
+                _ => 0,
+            };
+            self.dom_text_selections
+                .insert(node, (start, end, direction));
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
         if builtin == BuiltinFunction::DomClick {
             let JsValue::Object(receiver) = this_value else {
                 return Err(JsError::type_error("click requires an element"));
@@ -9038,6 +9151,7 @@ impl JsRuntime {
             | BuiltinFunction::DomClick
             | BuiltinFunction::DomFocus
             | BuiltinFunction::DomBlur
+            | BuiltinFunction::DomSetSelectionRange
             | BuiltinFunction::DomDispatchEvent
             | BuiltinFunction::DomEventConstructor
             | BuiltinFunction::DomCreateEvent
@@ -9809,6 +9923,35 @@ impl JsRuntime {
                         return Ok(JsValue::Boolean(!prevented));
                     }
                     ObjectKind::DomElement(node) | ObjectKind::DomText(node) => {
+                        if matches!(kind, ObjectKind::DomElement(_))
+                            && matches!(
+                                key,
+                                "selectionStart" | "selectionEnd" | "selectionDirection"
+                            )
+                        {
+                            if let Some((start, end, direction)) = self.dom_control_selection(node)
+                            {
+                                return Ok(match key {
+                                    "selectionStart" => JsValue::Number(start as f64),
+                                    "selectionEnd" => JsValue::Number(end as f64),
+                                    _ => JsValue::String(
+                                        match direction {
+                                            1 => "forward",
+                                            2 => "backward",
+                                            _ => "none",
+                                        }
+                                        .into(),
+                                    ),
+                                });
+                            }
+                            if self
+                                .dom_tags
+                                .get(&node)
+                                .is_some_and(|tag| tag == "input" || tag == "textarea")
+                            {
+                                return Ok(JsValue::Null);
+                            }
+                        }
                         if key == "value"
                             && matches!(kind, ObjectKind::DomElement(_))
                             && self
@@ -10404,7 +10547,41 @@ impl JsRuntime {
                 .is_some_and(|tag| tag == "input" || tag == "textarea")
         {
             let text = value.to_js_string().chars().take(4096).collect::<String>();
+            let end = text.encode_utf16().count();
             self.stage_dom_attribute(node, "value", text)?;
+            self.dom_text_selections.insert(node, (end, end, 0));
+            return Ok(());
+        }
+        if matches!(
+            key,
+            "selectionStart" | "selectionEnd" | "selectionDirection"
+        ) && let ObjectKind::DomElement(node) = self.object(*id)?.kind
+            && let Some((mut start, mut end, mut direction)) = self.dom_control_selection(node)
+        {
+            if key == "selectionDirection" {
+                direction = match value.to_js_string().as_str() {
+                    "forward" => 1,
+                    "backward" => 2,
+                    _ => 0,
+                };
+            } else {
+                let len = self.control_text_length(node).unwrap_or(0);
+                let number = value.to_number();
+                let position = if number.is_nan() {
+                    0
+                } else {
+                    (number.max(0.0) as usize).min(len)
+                };
+                if key == "selectionStart" {
+                    start = position;
+                    end = end.max(start);
+                } else {
+                    end = position;
+                    start = start.min(end);
+                }
+            }
+            self.dom_text_selections
+                .insert(node, (start, end, direction));
             return Ok(());
         }
         if let ObjectKind::DomElement(node) = self.object(*id)?.kind

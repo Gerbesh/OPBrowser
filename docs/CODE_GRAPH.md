@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 20 October 2026: DOM UTF-16 text selection to native editor and back
+
+Original op_js input/textarea selectionStart/selectionEnd/selectionDirection and setSelectionRange() -> UTF-16 selection state in JsRuntime (selected applicable input types) -> PreparedDocument::render and Engine::edit_focused -> op_engine::forms::TextEditor conversion to scalar-indexed caret/anchor without splitting surrogate pairs -> native insertion/replacement -> synchronized VM selection state before bubbling input handlers -> original DOM text pixels and caret. Separate selection movement through native arrows and Home/End also reports back to VM. Unsupported input types report null selection getters. Limited visual selection remains a future step.
+
 ## 20 October 2026: original WM_CHAR to editable source DOM + rasterized caret
 
 Windows page HWND `WM_CHAR` (UTF-16 single code unit or surrogate pair) -> ordered `NavigationEvent::TextInput` -> `op_browser` worker -> `op_engine::Engine::text_input` -> `forms::TextEditor` bounded Unicode scalar-based value/caret/anchor transitions -> original JS `beforeinput` (cancelable) -> real DOM `value` attribute and VM snapshot synchronization -> original bubbling `input` listeners / DOM mutations -> `op_layout::flow` inline glyph/hit-region generation from edited input or textarea value, with inline placeholder, password masking and bounded synthetic width -> `PreparedDocument::render` original op_paint text, native field outline and caret. `keyboard_event` uses the same form editor after cancelable keydown for Backspace/Delete/arrows/Home/End/Ctrl+A and textarea Enter; canceled keydown prevents the following WM_CHAR. The separate Windows address EDIT control is unaffected. The deep-span stress regression runs on an explicit 16MiB test thread, not a modified production stack.
