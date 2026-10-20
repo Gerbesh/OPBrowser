@@ -3919,3 +3919,10 @@ This file is append-only project history.
 - Added offline HTML regression tests covering mouse click focus, typed Cyrillic/emoji, Unicode Backspace and replacement selection, readonly, event cancelation, script .value and textarea Enter, plus `examples/forms/index.html` manual demo.
 - The existing 128-level inline stress test had a Windows test-thread stack overflow under default harness settings; it now uses a 16MiB dedicated test thread (without changing actual layout behavior). Full workspace tests, Clippy, native startup/link/image smoke and Release 5-site baseline pass.
 - Deliberate limitations: simplified inline form layout and approximate caret; no visual selection highlighting, mouse click-to-caret, clipboard, IME composition, JS selection APIs, complete multiline wrapping/scrolling or real form submission/validation. JS readiness percentage not newly measured.
+
+## 2026-10-20 - CI: wait for native hyperlink navigation through intermediate reflows
+
+- Repair Windows native smoke driver sequencing after hover and pointer-state integration: reflow responses no longer count as a failed link navigation while the queued native click is still in flight.
+- The resize smoke now waits for the target 320px viewport before checking text wrapping and clicking the resized image link; intermediate 800px frames are not failures.
+- Bound link and resize smoke waits to 10 seconds so actual missed navigation is reported as a timeout instead of either a false early failure or a hung GitHub job.
+- Add a regression unit test for smoke completion gating; retain full image hyperlink and resize smoke checks in CI rather than skipping them.
