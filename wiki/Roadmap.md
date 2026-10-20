@@ -1,5 +1,9 @@
 # Roadmap
 
+## After Tab focus auto-scroll and JS focus event support (20 October 2026)
+
+Done: un-clipped keyboard focus geometry separate from native click targets, nested overflow and root viewport scroll-into-view, and trusted original JS focus/blur/focusin/focusout from Tab. Next P0: mouse-induced focus/blur transitions, correct document.activeElement and relatedTarget, cancelable keyboard keydown/keyup with preventDefault before Tab/Enter actions, scroll anchoring while layouts change, tabindex/inert/fieldset edge cases, real form controls, CSS outlines and accessibility keyboard testing. Independent bootstrap, JS VM DOM conformance, fonts/layout and general modern-site support remain major gaps. An existing interval timing test was flaky on an initial parallel run and merits focused test hardening.
+
 ## Next keyboard/accessibility tasks after first Tab navigation (20 October 2026)
 
 Done: bounded page Tab/Shift+Tab order including positive tabindex, original keyboard focus selectors, native visual focus fallback, Enter trusted cancelable anchor activation, input-routing isolation from URL bar and navigation-vs-reflow presentation. Next P0: scroll focused nodes into viewport and nested scroll containers; focus/blur/focusin/focusout and keydown/keyup DOM listeners with preventDefault; correct input/checkbox/select/textarea keyboard behavior; disabled fieldset and inert descendants; browser toolbar-to-page Tab cycling; outline clipping to stacking contexts; HTML/SVG accessibility targets. Continue JS startup, CSS/font/render conformance, and isolating intermittent Pikabu long load. YouTube and Reddit remain far from complete.

@@ -494,6 +494,7 @@ mod tests {
             clips: op_layout::LayoutClips::default(),
             scroll_containers: vec![],
             click_regions: vec![],
+            focus_regions: vec![],
         };
         let result = build_display_list(&layout, 60);
         assert!(matches!(&result.commands[1], PaintCommand::Text { text, .. } if text == "normal"));
@@ -556,6 +557,7 @@ mod tests {
             clips: op_layout::LayoutClips::default(),
             scroll_containers: vec![],
             click_regions: vec![],
+            focus_regions: vec![],
         };
         let ordered_x: Vec<_> = build_display_list(&layout, 20)
             .commands
@@ -628,6 +630,7 @@ mod tests {
             clips: op_layout::LayoutClips::default(),
             scroll_containers: vec![],
             click_regions: vec![],
+            focus_regions: vec![],
         };
         let commands = build_display_list(&layout, 90).commands;
         let backgrounds: Vec<Color> = commands
@@ -742,6 +745,7 @@ mod tests {
             clips: op_layout::LayoutClips::default(),
             scroll_containers: vec![],
             click_regions: vec![],
+            focus_regions: vec![],
         };
 
         let display_list = build_display_list(&layout, 120);
@@ -854,6 +858,7 @@ mod tests {
             clips: op_layout::LayoutClips::default(),
             scroll_containers: vec![],
             click_regions: vec![],
+            focus_regions: vec![],
         };
 
         let display_list = build_display_list(&layout, 200);
@@ -900,6 +905,7 @@ mod tests {
             clips: op_layout::LayoutClips::default(),
             scroll_containers: vec![],
             click_regions: vec![],
+            focus_regions: vec![],
         };
 
         let display_list = build_display_list(&layout, 600);

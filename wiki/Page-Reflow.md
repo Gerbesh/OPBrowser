@@ -1,5 +1,9 @@
 # Page Reflow
 
+## Keyboard scroll into view without widening click targets (20 October 2026)
+
+Original layout stores `focus_regions` copied after CSS positioning, nested scroll translation and inline glyph placement but before ancestor overflow clipping; `click_regions` remain clipped. Tab walks CSS scrollport ancestors from the inner container outward, using each container's computed min/max vertical/horizontal scroll offsets and rerendering original layout to find new target coordinates. The resulting document top/bottom bounds are sent once with the worker repaint to the Win32 main viewport, whose existing SCROLL_Y scrolls only if the target lies outside the visible page. Tests validate nested auto overflow, near-bottom/root scrolling, reverse Tab and absence of jitter.
+
 ## CSS focus-visible and fallback ring from keyboard focus (20 October 2026)
 
 Original retained `StyleInteractionState` now receives focused NodeIds from DOM/tabindex-based native keyboard movement. Recomputing the author cascade activates `:focus`, `:focus-visible` and ancestor `:focus-within`. For a keyboard-focused node with a cached native hit region, OPBrowser draws a 2px blue rectangle after the existing page display list as a fallback indicator independent of site styling. Mouse click switches focus visibility off; navigation creates a fresh focus state. Automatic scrolling and exact outline clipping or rings for targets with no hit box are still unsupported.

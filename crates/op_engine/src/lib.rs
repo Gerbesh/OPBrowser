@@ -452,6 +452,107 @@ impl PreparedDocument {
         ordered.into_iter().map(|(_, _, node)| node).collect()
     }
 
+    fn layout_for_focus(&self, width: i32, height: i32) -> op_layout::LayoutTree {
+        layout_document_with_axis_scrolling(
+            &self.document,
+            width,
+            height,
+            (&self.images.elements, &self.images.backgrounds),
+            &self.images.generated,
+            (
+                &self.computed_styles,
+                self.current_scroll_offsets(),
+                &self.scroll_left_offsets,
+            ),
+            &mut text::Measurer::new(),
+        )
+    }
+
+    /// Scroll scrollable ancestors from innermost outward using unclipped
+    /// glyph/block bounds; clipped hit rectangles cannot locate offscreen Tab targets.
+    fn reveal_nested_focus(
+        &mut self,
+        node: op_dom::NodeId,
+        width: i32,
+        height: i32,
+    ) -> Option<(i32, i32)> {
+        let mut ancestors = Vec::new();
+        let mut parent = self.document.node(node)?.parent;
+        while let Some(id) = parent {
+            if ancestors.len() >= 128 {
+                break;
+            }
+            ancestors.push(id);
+            parent = self.document.node(id).and_then(|n| n.parent);
+        }
+        for ancestor in ancestors {
+            let layout = self.layout_for_focus(width, height);
+            let Some(container) = layout.scroll_containers.iter().find(|c| c.node == ancestor)
+            else {
+                continue;
+            };
+            let Some(target) = layout
+                .focus_regions
+                .iter()
+                .find(|r| r.node == node && r.width > 0 && r.height > 0)
+            else {
+                continue;
+            };
+            let visible = container
+                .clip
+                .map_or(container.rect, |clip| container.rect.intersect(clip));
+            let delta_y = if target.y < visible.y {
+                target.y.saturating_sub(visible.y)
+            } else if target.y.saturating_add(target.height)
+                > visible.y.saturating_add(visible.height)
+            {
+                target
+                    .y
+                    .saturating_add(target.height)
+                    .saturating_sub(visible.y.saturating_add(visible.height))
+            } else {
+                0
+            };
+            let next_y = container
+                .scroll_top
+                .saturating_add(delta_y)
+                .clamp(0, container.max_scroll_top);
+            if next_y != container.scroll_top {
+                if let Some(vm) = self.runtime.as_mut() {
+                    vm.set_dom_scroll_top(ancestor.index(), next_y);
+                    vm.take_scroll_dirty();
+                } else {
+                    self.scroll_offsets.insert(ancestor.index(), next_y);
+                }
+            }
+            let delta_x = if target.x < visible.x {
+                target.x.saturating_sub(visible.x)
+            } else if target.x.saturating_add(target.width)
+                > visible.x.saturating_add(visible.width)
+            {
+                target
+                    .x
+                    .saturating_add(target.width)
+                    .saturating_sub(visible.x.saturating_add(visible.width))
+            } else {
+                0
+            };
+            let next_x = container
+                .scroll_left
+                .saturating_add(delta_x)
+                .clamp(0, container.max_scroll_left);
+            if next_x != container.scroll_left {
+                self.scroll_left_offsets.insert(ancestor.index(), next_x);
+            }
+        }
+        let layout = self.layout_for_focus(width, height);
+        layout
+            .focus_regions
+            .iter()
+            .find(|r| r.node == node && r.height > 0)
+            .map(|r| (r.y, r.y.saturating_add(r.height)))
+    }
+
     /// Rebuild author matching and inline styles against the mutated real
     /// DOM, retaining originally loaded linked CSS and color profiles.
     fn refresh_styles(&mut self) {
@@ -628,6 +729,7 @@ pub struct Engine {
     active_document: Option<PreparedDocument>,
     scrollbar_drag: Option<ScrollbarDrag>,
     last_click_default_prevented: bool,
+    pending_focus_bounds: Option<(i32, i32)>,
     network_completion_send: mpsc::Sender<NetworkCompletion>,
     network_completion_recv: mpsc::Receiver<NetworkCompletion>,
     generation: u64,
@@ -649,6 +751,7 @@ impl Engine {
             active_document: None,
             scrollbar_drag: None,
             last_click_default_prevented: false,
+            pending_focus_bounds: None,
         }
     }
 
@@ -911,6 +1014,12 @@ impl Engine {
         self.scrollbar_drag = None;
     }
 
+    /// Bounds of the last keyboard-focused item for the OS document viewport.
+    /// Consumed once so unrelated paints do not unexpectedly scroll the page.
+    pub fn take_focus_scroll_bounds(&mut self) -> Option<(i32, i32)> {
+        self.pending_focus_bounds.take()
+    }
+
     /// Advance the native keyboard focus through the page's connected DOM.
     pub fn focus_next(&mut self, backwards: bool, width: i32, height: i32) -> Option<RenderedPage> {
         let page = self.active_document.as_mut()?;
@@ -928,10 +1037,20 @@ impl Engine {
         } else {
             order[0]
         };
+        let previous = page.interaction.focused;
         page.interaction.focused = Some(next);
         page.interaction.focus_visible = true;
         page.interaction.active = None;
+        if previous != Some(next)
+            && let Some(vm) = page.runtime.as_mut()
+        {
+            let (mutations, checkpoint) =
+                scripts::dispatch_focus_change(&mut page.document, vm, previous, Some(next));
+            page.scripts.mutations += mutations;
+            page.finish_gc_checkpoint(checkpoint);
+        }
         page.refresh_styles();
+        self.pending_focus_bounds = page.reveal_nested_focus(next, width, height);
         Some(page.render(width, height))
     }
 
@@ -1624,6 +1743,140 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn tab_focus_dispatches_capture_target_blur_and_bubbling_focus_events() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><div id='wrap'><a id='one' href='#one' style='display:block;height:24px'>One</a><a id='two' href='#two' style='display:block;height:24px'>Two</a></div>\
+             <p id='log'>Initial</p><script>\
+             var seq='';var wrap=document.getElementById('wrap');\
+             wrap.addEventListener('focus',function(e){seq=seq+'C';},true);\
+             wrap.addEventListener('focus',function(e){seq=seq+'X';});\
+             wrap.addEventListener('focusin',function(e){seq=seq+'I';document.getElementById('log').textContent=seq;});\
+             wrap.addEventListener('focusout',function(e){seq=seq+'O';});\
+             document.getElementById('one').addEventListener('focus',function(e){seq=seq+'F';});\
+             document.getElementById('one').addEventListener('blur',function(e){seq=seq+'B';});\
+             document.getElementById('two').addEventListener('focus',function(e){seq=seq+'T';});\
+             </script></body>",
+            500, 320,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let first = engine.focus_next(false, 500, 320).unwrap();
+        assert!(
+            contains_text(&first.display_list, "CFI"),
+            "first focus captures, hits target, bubbles focusin"
+        );
+        let second = engine.focus_next(false, 500, 320).unwrap();
+        assert!(
+            contains_text(&second.display_list, "CFIBOCTI"),
+            "blur/focusout then second focus/focusin"
+        );
+        assert!(
+            !contains_text(&second.display_list, "X"),
+            "non-bubbling focus must not run parent's bubble listener"
+        );
+    }
+
+    #[test]
+    fn tab_focus_reveals_nested_overflow_ancestors_without_exposing_clipped_hits() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><div id='outer' style='width:240px;height:100px;overflow:auto'>\
+              <div style='height:130px'></div>\
+              <div id='inner' style='width:175px;height:70px;overflow:auto'>\
+                <div style='height:185px'></div>\
+                <div id='target' tabindex='0' style='height:30px;background:blue'>Target</div>\
+              </div><div style='height:130px'></div>\
+            </div></body>",
+            520,
+            350,
+        );
+        let page = engine.active_document.as_ref().unwrap();
+        let target = page.keyboard_focus_order()[0];
+        let before = page.layout_for_focus(520, 350);
+        assert!(
+            before
+                .focus_regions
+                .iter()
+                .any(|r| r.node == target && r.height > 0)
+        );
+        let visible_before = before.click_regions.iter().find(|r| r.node == target);
+        assert!(
+            visible_before.is_none_or(|r| r.height == 0),
+            "focus starts clipped"
+        );
+        assert!(engine.focus_next(false, 520, 350).is_some());
+        let page = engine.active_document.as_ref().unwrap();
+        let after = page.layout_for_focus(520, 350);
+        let target_rect = after
+            .focus_regions
+            .iter()
+            .find(|r| r.node == target)
+            .unwrap();
+        let own_container = |id: &str| -> &op_layout::ScrollContainer {
+            after
+                .scroll_containers
+                .iter()
+                .find(|c| {
+                    page.document.element(c.node).is_some_and(|el| {
+                        el.attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == id)
+                    })
+                })
+                .unwrap()
+        };
+        let inner = own_container("inner");
+        let outer = own_container("outer");
+        assert!(
+            inner.scroll_top > 0,
+            "inner scroll should reveal focused child"
+        );
+        assert!(
+            outer.scroll_top > 0,
+            "outer scroll should reveal its nested target"
+        );
+        for container in [inner, outer] {
+            assert!(
+                target_rect.y >= container.rect.y,
+                "focused top inside {}",
+                container.node.index()
+            );
+            assert!(
+                target_rect.y.saturating_add(target_rect.height)
+                    <= container.rect.y.saturating_add(container.rect.height),
+                "focused bottom inside {}",
+                container.node.index()
+            );
+        }
+        assert_eq!(page.interaction.focused, Some(target));
+        assert!(engine.take_focus_scroll_bounds().is_some());
+        assert!(engine.take_focus_scroll_bounds().is_none());
+    }
+
+    #[test]
+    fn keyboard_focus_bounds_request_root_document_scroll_for_offscreen_target() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><a href='#top' style='display:block;height:20px'>Top</a>\
+             <div style='height:1100px'></div>\
+             <a href='#bottom' style='display:block;height:35px'>Bottom</a></body>",
+            520,
+            250,
+        );
+        engine.focus_next(false, 520, 250);
+        let first = engine.take_focus_scroll_bounds().unwrap();
+        engine.focus_next(false, 520, 250);
+        let last = engine.take_focus_scroll_bounds().unwrap();
+        assert!(
+            last.0 > 1000,
+            "offscreen target must retain document coordinate"
+        );
+        assert!(last.0 > first.1);
+        engine.focus_next(true, 520, 250);
+        assert_eq!(engine.take_focus_scroll_bounds().unwrap(), first);
+    }
 
     #[test]
     fn keyboard_tab_order_skips_disabled_hidden_and_negative_tabindex() {

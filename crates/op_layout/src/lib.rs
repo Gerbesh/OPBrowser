@@ -451,6 +451,8 @@ pub struct LayoutTree {
     pub clips: LayoutClips,
     pub scroll_containers: Vec<ScrollContainer>,
     pub click_regions: Vec<ClickRegion>,
+    /// Original un-clipped rectangles to reveal keyboard focused elements.
+    pub focus_regions: Vec<ClickRegion>,
 }
 
 pub fn layout_document(document: &Document, viewport_width: i32) -> LayoutTree {

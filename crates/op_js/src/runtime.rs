@@ -3502,7 +3502,34 @@ impl JsRuntime {
         path: &[usize],
         trusted: bool,
     ) -> Result<DomClickDispatch, JsError> {
-        if path.is_empty() || !self.has_dom_click_path_listener(path) {
+        self.dispatch_dom_native_event_path(path, "click", true, true, trusted)
+    }
+
+    /// Host-generated focus transitions reuse the original EventTarget
+    /// capture/target/bubble machinery, with DOM-compliant bubbling flags.
+    pub fn dispatch_dom_focus_path(&mut self, path: &[usize], name: &str) -> Result<(), JsError> {
+        if !matches!(name, "focus" | "blur" | "focusin" | "focusout") {
+            return Err(JsError::type_error("unsupported native focus event"));
+        }
+        self.dispatch_dom_native_event_path(
+            path,
+            name,
+            matches!(name, "focusin" | "focusout"),
+            false,
+            true,
+        )?;
+        Ok(())
+    }
+
+    fn dispatch_dom_native_event_path(
+        &mut self,
+        path: &[usize],
+        event_type: &str,
+        bubbles: bool,
+        cancelable: bool,
+        trusted: bool,
+    ) -> Result<DomClickDispatch, JsError> {
+        if path.is_empty() || (event_type == "click" && !self.has_dom_click_path_listener(path)) {
             return Ok(DomClickDispatch {
                 handled: false,
                 default_prevented: false,
@@ -3544,11 +3571,11 @@ impl JsRuntime {
             ObjectKind::Ordinary,
             Some(self.object_prototype),
             HashMap::from([
-                ("type".into(), JsValue::String("click".into())),
+                ("type".into(), JsValue::String(event_type.into())),
                 ("target".into(), JsValue::Object(target_object)),
                 ("currentTarget".into(), JsValue::Null),
-                ("bubbles".into(), JsValue::Boolean(true)),
-                ("cancelable".into(), JsValue::Boolean(true)),
+                ("bubbles".into(), JsValue::Boolean(bubbles)),
+                ("cancelable".into(), JsValue::Boolean(cancelable)),
                 ("composed".into(), JsValue::Boolean(true)),
                 ("isTrusted".into(), JsValue::Boolean(trusted)),
                 ("defaultPrevented".into(), JsValue::Boolean(false)),
@@ -3568,34 +3595,36 @@ impl JsRuntime {
         let mut handled = true;
         let connected = self.path_reaches_document(path);
         if connected {
-            self.deliver_element_global_capture(event, "click", &mut steps)?;
+            self.deliver_element_global_capture(event, event_type, &mut steps)?;
             if self.event_propagation_stopped(event)? {
                 self.finish_event_dispatch(event)?;
                 return self.click_dispatch_result(event, handled);
             }
         }
         for &node in path.iter().take(64).skip(1).rev() {
-            handled |= self.deliver_element_listeners(event, node, "click", true, 1, &mut steps)?;
+            handled |=
+                self.deliver_element_listeners(event, node, event_type, true, 1, &mut steps)?;
             if self.event_propagation_stopped(event)? {
                 self.finish_event_dispatch(event)?;
                 return self.click_dispatch_result(event, handled);
             }
         }
-        handled |= self.deliver_element_listeners(event, target, "click", true, 2, &mut steps)?;
+        handled |=
+            self.deliver_element_listeners(event, target, event_type, true, 2, &mut steps)?;
         if !self.event_immediate_stopped(event)? {
             handled |=
-                self.deliver_element_listeners(event, target, "click", false, 2, &mut steps)?;
+                self.deliver_element_listeners(event, target, event_type, false, 2, &mut steps)?;
         }
-        if !self.event_propagation_stopped(event)? {
+        if bubbles && !self.event_propagation_stopped(event)? {
             for &node in path.iter().take(64).skip(1) {
                 handled |=
-                    self.deliver_element_listeners(event, node, "click", false, 3, &mut steps)?;
+                    self.deliver_element_listeners(event, node, event_type, false, 3, &mut steps)?;
                 if self.event_propagation_stopped(event)? {
                     break;
                 }
             }
             if connected && !self.event_propagation_stopped(event)? {
-                self.deliver_element_global_bubble(event, "click", &mut steps)?;
+                self.deliver_element_global_bubble(event, event_type, &mut steps)?;
             }
         }
         self.finish_event_dispatch(event)?;

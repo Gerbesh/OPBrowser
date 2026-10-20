@@ -1,5 +1,9 @@
 # Navigation
 
+## Keyboard focus reveal and browser viewport (20 October 2026)
+
+Tab and Shift+Tab still follow native DOM/tabindex order. Their selected target now scrolls into view through original nested CSS overflow containers and then the Windows root document, without altering hit-test clipping or navigation history. The worker passes optional focus document coordinates only alongside the keyboard-focus repaint. Native Enter hyperlink default activation and the toolbar address field remain unchanged. Focus transitions invoke JS blur/focusout/focus/focusin listeners with normal capture/bubble phases; keydown/keyup support is still pending.
+
 ## Keyboard Enter on focused anchors (20 October 2026)
 
 When the page's native Windows window has focus, Tab and Shift+Tab move across valid connected DOM focus targets, and Enter activates the current focused anchor using the original browser trusted cancelable click path. JavaScript can prevent the default hyperlink navigation; href is read after the handler runs. If navigation occurs, the worker treats the new address/history as a loaded page instead of an in-place reflow. Enter in the URL field continues to submit the typed address, not activate the page link. Clicking the viewport restores focus to the page HWND. No automatic offscreen-focus scroll or full keyboard DOM event system yet.

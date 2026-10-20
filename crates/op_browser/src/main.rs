@@ -75,6 +75,7 @@ struct LoadResult {
     viewport: (i32, i32),
     reflow: bool,
     fallback_scroll: Option<i32>,
+    focus_scroll_bounds: Option<(i32, i32)>,
 }
 
 /// Keep the first/last capture events in order, but collapse repeated
@@ -191,6 +192,7 @@ fn main() {
                                 viewport: last_viewport,
                                 reflow: true,
                                 fallback_scroll: None,
+                                focus_scroll_bounds: None,
                             })
                             .is_err()
                         {
@@ -206,6 +208,7 @@ fn main() {
                 height,
             } = command;
             last_viewport = (width, height);
+            let keyboard_focus = matches!(event, NavigationEvent::FocusNext { .. });
             let keyboard_activate = matches!(event, NavigationEvent::ActivateFocused);
             let before_navigation = (
                 engine.navigation().current_index(),
@@ -280,6 +283,9 @@ fn main() {
                 // Enter followed an anchor: present the full navigation and URL.
                 reflow = false;
             }
+            let focus_scroll_bounds = keyboard_focus
+                .then(|| engine.take_focus_scroll_bounds())
+                .flatten();
             let history = engine.navigation();
             if responses
                 .send(LoadResult {
@@ -290,6 +296,7 @@ fn main() {
                     viewport: (width, height),
                     reflow,
                     fallback_scroll,
+                    focus_scroll_bounds,
                 })
                 .is_err()
             {
@@ -383,6 +390,9 @@ fn main() {
                                     window.present_reflow(page.display_list);
                                 }
                                 presented_viewport = result.viewport;
+                                if let Some((top, bottom)) = result.focus_scroll_bounds {
+                                    window.reveal_document_bounds(top, bottom);
+                                }
                                 window.set_status(last_error.as_deref().unwrap_or("Ready"));
                                 page_loaded = true;
                                 if (navigation_smoke || link_smoke || image_smoke || resize_smoke)

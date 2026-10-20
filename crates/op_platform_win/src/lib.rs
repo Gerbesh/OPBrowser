@@ -272,6 +272,31 @@ impl NativeBrowserWindow {
         scroll_document_delta(self.hwnd, delta_y);
     }
 
+    /// Reveal a DOM keyboard-focus rectangle in the Windows document viewport.
+    /// Nested CSS scroll containers have already been adjusted by op_engine.
+    pub fn reveal_document_bounds(&self, top: i32, bottom: i32) {
+        let mut client: RECT = unsafe { zeroed() };
+        unsafe { GetClientRect(self.hwnd, &mut client) };
+        let viewport = (client.bottom - TOOLBAR_HEIGHT).max(0);
+        if viewport <= 0 {
+            return;
+        }
+        let current = SCROLL_Y.load(Ordering::SeqCst);
+        let margin = 8.min(viewport / 4);
+        let delta = if top < current.saturating_add(margin) {
+            top.saturating_sub(current).saturating_sub(margin)
+        } else if bottom > current.saturating_add(viewport).saturating_sub(margin) {
+            bottom
+                .saturating_sub(current.saturating_add(viewport))
+                .saturating_add(margin)
+        } else {
+            0
+        };
+        if delta != 0 {
+            scroll_document_delta(self.hwnd, delta);
+        }
+    }
+
     pub fn present(&self, address: &str, display_list: DisplayList) {
         // A new document invalidates the previous scrollbar thumb and capture.
         if THUMB_DRAG_ACTIVE.swap(false, Ordering::SeqCst) {
@@ -1586,6 +1611,42 @@ mod tests {
         assert_eq!(sample(24, 18), &[144, 130, 120]);
         assert_eq!(sample(24, 55), &[241, 237, 234]);
         assert_eq!(sample(16, 55), &[255, 255, 255]);
+    }
+
+    #[test]
+    fn keyboard_focus_reveals_bottom_and_then_top_of_native_document() {
+        let _window_lock = WINDOW_TEST_LOCK.lock().unwrap();
+        let window = NativeBrowserWindow::create("Focus scroll test", DisplayList::default())
+            .expect("native window");
+        window.present_reflow(DisplayList {
+            commands: vec![PaintCommand::FillRect {
+                x: 0,
+                y: 0,
+                width: 450,
+                height: 1700,
+                color: Color::WHITE,
+            }],
+        });
+        assert_eq!(SCROLL_Y.load(Ordering::SeqCst), 0);
+        window.reveal_document_bounds(1450, 1480);
+        assert!(
+            SCROLL_Y.load(Ordering::SeqCst) > 0,
+            "Tab to distant content should scroll the native document"
+        );
+        let bottom_offset = SCROLL_Y.load(Ordering::SeqCst);
+        window.reveal_document_bounds(1450, 1480);
+        assert_eq!(
+            SCROLL_Y.load(Ordering::SeqCst),
+            bottom_offset,
+            "visible target should not jitter"
+        );
+        window.reveal_document_bounds(12, 30);
+        assert_eq!(
+            SCROLL_Y.load(Ordering::SeqCst),
+            4,
+            "Shift+Tab near top should move viewport back"
+        );
+        window.close();
     }
 
     #[test]

@@ -98,6 +98,8 @@ pub(super) fn layout(
         context.flush_pending_margin();
     }
     context.finish_deferred_inline();
+    // Preserve offscreen target bounds before overflow clipping removes hit pixels.
+    let focus_regions = context.click_regions.clone();
     let clips = context.collect_overflow_clips();
     let paint_groups = collect_paint_groups(
         document,
@@ -116,6 +118,7 @@ pub(super) fn layout(
         paint_groups,
         clips,
         click_regions: context.click_regions,
+        focus_regions,
         scroll_containers: context.scroll_containers,
     }
 }

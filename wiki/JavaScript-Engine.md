@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## Native focus DOM events (20 October 2026)
+
+The original JS EventTarget dispatcher now handles trusted noncancelable `focus`/`blur` (capture and target only), and `focusin`/`focusout` (capture, target and bubble) from native Tab transitions. Each old/new focus sequence is delivered through bounded original DOM ancestry; original once/passive listener registrations are reused, and mutations from handlers apply before the browser restyles/repaints. This extends the existing click/default-action dispatcher rather than adding another VM or event system. Mouse click focus changes, relatedTarget, document.activeElement synchronization, keyboard keydown/keyup and form default actions are still open.
+
 ## Cancelable native browser click default actions (20 October 2026)
 
 Native link clicks now execute the existing original JS capture/target/bubble dispatch before navigation. `JsRuntime::dispatch_dom_click_path_with_result` returns handler-delivery and `defaultPrevented` flags; the old bool API remains compatible. Target, capturing-ancestor and `onclick` listeners can cancel the default action via `preventDefault()` or legacy `event.returnValue=false`; an `onclick` property callback returning exactly false also cancels it. Passive handlers cannot cancel, and `addEventListener` return values are ignored. Engine mutations are committed before deciding whether to navigate; dispatch VM failure cancels default activation conservatively. Programmatic `Element.click()` still needs its own default-action pipeline, and script-mutated href/removed nodes and keyboard semantics remain follow-ups.

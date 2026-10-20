@@ -937,6 +937,46 @@ pub(crate) fn execute_retained(
     (report, Some(runtime))
 }
 
+/// Dispatch native focus transitions on the existing generation-safe DOM.
+pub(crate) fn dispatch_focus_change(
+    document: &mut Document,
+    runtime: &mut JsRuntime,
+    previous: Option<NodeId>,
+    next: Option<NodeId>,
+) -> (usize, Option<GcCheckpointPhases>) {
+    let path_for = |target: NodeId| -> Vec<usize> {
+        let mut path = Vec::new();
+        let mut current = Some(target);
+        while let Some(node) = current {
+            if path.len() >= 64 {
+                break;
+            }
+            if document.element(node).is_some() {
+                path.push(node.index());
+            }
+            current = document.node(node).and_then(|item| item.parent);
+        }
+        path
+    };
+    if let Some(previous) = previous {
+        let path = path_for(previous);
+        if !path.is_empty() {
+            let _ = runtime.dispatch_dom_focus_path(&path, "blur");
+            let _ = runtime.dispatch_dom_focus_path(&path, "focusout");
+        }
+    }
+    if let Some(next) = next {
+        let path = path_for(next);
+        if !path.is_empty() {
+            let _ = runtime.dispatch_dom_focus_path(&path, "focus");
+            let _ = runtime.dispatch_dom_focus_path(&path, "focusin");
+        }
+    }
+    let changed = apply_dom_operations(document, runtime);
+    let checkpoint = collect_at_idle(document, runtime, false);
+    (changed, checkpoint)
+}
+
 /// Dispatch the click to the hit element and its attached DOM ancestors.
 pub(crate) fn dispatch_click(
     document: &mut Document,

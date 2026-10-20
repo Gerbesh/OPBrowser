@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Tab reveals offscreen focus; JS blur/focus transitions (20 October 2026)
+
+Original Rust DOM focus now scrolls nested CSS overflow containers and the native Windows root viewport to show the keyboard-selected element, including reverse Tab to earlier content. Separate pre-clip `focus_regions` prevent hidden elements becoming clickable by accident. Tab focus transitions now deliver trusted `blur`, `focusout`, `focus`, `focusin` JavaScript events with capture/target/bubble behavior and retained DOM mutations. Dedicated Win32, engine and JS event tests pass, as do full workspace/Clippy/native smoke tests. Remaining keyboard/browser gaps: keydown/keyup, mouse-induced focus event parity, relatedTarget, document.activeElement, form controls and autofocus. YouTube textless; Reddit blank. Pikabu partially rendered in the latest Release sample.
+
 ## Win32 Tab, focus-visible and Enter default activation (20 October 2026)
 
 Original OPBrowser now supports page Tab and Shift+Tab focus traversal in DOM/tabindex order, skipping hidden/disabled/negative-tabindex nodes. Keyboard focus activates the original CSS `:focus`, `:focus-visible` and `:focus-within` author cascade and gets a native 2px blue indicator for elements with hit geometry. Enter dispatches cancelable trusted JavaScript click before a focused link navigates; a canceled click retains the current page, and successful navigation refreshes address/history. The native URL field's Enter is unaffected; page clicks transfer Windows focus to the page. Full workspace/Win32 tests and native startup/link smoke pass. Auto-scroll-to-focused, complete control hit rectangles, focus/blur key events and browser-grade accessibility remain missing. YouTube still textless and Reddit blank. A fresh Pikabu run succeeded ~18.4s after previous 23s/45s timeouts; cause unresolved.
