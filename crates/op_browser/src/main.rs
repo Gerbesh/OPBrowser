@@ -633,7 +633,10 @@ mod overflow_tests {
         queue_thumb_event(&mut queued, NavigationEvent::Resize);
         assert_eq!(queued.len(), 2);
         assert_eq!(queued.pop_front(), Some(NavigationEvent::Resize));
-        assert_eq!(queued.pop_front(), Some(NavigationEvent::Hover { x: 5, y: 6 }));
+        assert_eq!(
+            queued.pop_front(),
+            Some(NavigationEvent::Hover { x: 5, y: 6 })
+        );
     }
 
     #[test]
