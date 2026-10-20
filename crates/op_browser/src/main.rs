@@ -122,6 +122,12 @@ fn queue_thumb_event(
     }
 }
 
+/// Native reflows (hover, press, and resize) can arrive before the queued
+/// hyperlink navigation. The smoke test is complete only after history moves.
+fn should_close_link_smoke(clicked: bool, can_go_back: bool, smoke_exit: i32) -> bool {
+    smoke_exit != 0 || (clicked && can_go_back)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let source = args.iter().find(|argument| !argument.starts_with("--"));
@@ -377,12 +383,12 @@ fn main() {
     let mut wide_text_count = 0;
     let mut presented_viewport = (width, height);
     let (smoke_done, smoke_watch) = mpsc::channel::<()>();
-    if resize_smoke {
+    if resize_smoke || link_smoke {
         std::thread::spawn(move || {
             if smoke_watch.recv_timeout(std::time::Duration::from_secs(10))
                 == Err(mpsc::RecvTimeoutError::Timeout)
             {
-                eprintln!("OPBrowser resize smoke timed out");
+                eprintln!("OPBrowser native link/resize smoke timed out before navigation");
                 std::process::exit(4);
             }
         });
@@ -421,8 +427,10 @@ fn main() {
                                 if resize_smoke && resize_phase == 0 {
                                     wide_text_count = text_count;
                                 }
-                                if resize_smoke && resize_phase == 1
-                                    && (result.viewport.0 != 320 || text_count <= wide_text_count)
+                                if resize_smoke
+                                    && resize_phase == 1
+                                    && result.viewport.0 == 320
+                                    && text_count <= wide_text_count
                                 {
                                     eprintln!("OPBrowser resize smoke failed: latest width did not rewrap text");
                                     smoke_exit = 2;
@@ -483,8 +491,11 @@ fn main() {
                         window.resize_viewport(640, 500);
                         window.resize_viewport(480, 500);
                         window.resize_viewport(800, 500);
-                    } else if (link_smoke || (resize_smoke && resize_phase == 1))
-                        && page_loaded && !link_smoke_clicked && smoke_exit == 0
+                    } else if (link_smoke
+                        || (resize_smoke && resize_phase == 1 && presented_viewport.0 == 320))
+                        && page_loaded
+                        && !link_smoke_clicked
+                        && smoke_exit == 0
                     {
                         if window.click_first_link() {
                             link_smoke_clicked = true;
@@ -496,10 +507,11 @@ fn main() {
                             smoke_exit = 2;
                             window.close();
                         }
-                    } else if navigation_smoke || link_smoke || image_smoke || resize_smoke {
-                        if (link_smoke || resize_smoke) && page_loaded && !back {
-                            smoke_exit = 2;
-                        }
+                    } else if navigation_smoke || image_smoke {
+                        window.close();
+                    } else if (link_smoke || resize_smoke)
+                        && should_close_link_smoke(link_smoke_clicked, back, smoke_exit)
+                    {
                         window.close();
                     }
                     // Serialize native capture events through the render worker.
@@ -578,6 +590,14 @@ fn main() {
 #[cfg(test)]
 mod overflow_tests {
     use super::*;
+
+    #[test]
+    fn native_link_smoke_waits_for_history_instead_of_failing_on_intermediate_reflow() {
+        assert!(!should_close_link_smoke(false, false, 0));
+        assert!(!should_close_link_smoke(true, false, 0));
+        assert!(should_close_link_smoke(true, true, 0));
+        assert!(should_close_link_smoke(false, false, 2));
+    }
 
     #[test]
     fn worker_keeps_real_keydown_keyup_and_cancelable_enter_in_order() {
