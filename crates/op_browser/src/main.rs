@@ -507,10 +507,10 @@ fn main() {
                             smoke_exit = 2;
                             window.close();
                         }
-                    } else if navigation_smoke || image_smoke {
-                        window.close();
-                    } else if (link_smoke || resize_smoke)
-                        && should_close_link_smoke(link_smoke_clicked, back, smoke_exit)
+                    } else if navigation_smoke
+                        || image_smoke
+                        || ((link_smoke || resize_smoke)
+                            && should_close_link_smoke(link_smoke_clicked, back, smoke_exit))
                     {
                         window.close();
                     }
