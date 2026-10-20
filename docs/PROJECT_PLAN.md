@@ -1,8 +1,12 @@
 # OPBrowser: active project plan
 
+## P0 native click-to-caret for original HTML text controls (20 October 2026)
+
+OPBrowser now maps a mouse click on supported text-like input and textarea controls to a Unicode-safe native insertion caret using its own text measurer. Mouse coordinates and CSS font size feed a bounded nearest-glyph-boundary search; password controls measure mask bullets, and textarea maps explicit newline rows using the current provisional line-height. The resulting editor selection is synchronized to JS selectionStart/End in UTF-16 *before* focus/click listeners. Clicking an already-focused input repaints when the cursor moves. Real DOM regression tests verify click-to-start, emoji/Unicode insertion and textarea second-line clicks. Limits: provisional inline field layout, no wrapping or horizontal-scroll offset, no exact shaped/bidi caret positioning, drag highlight, clipboard or IME.
+
 ## P0 live DOM text selection and UTF-16 bridging (20 October 2026)
 
-Original input/textarea JS proxies now expose selectionStart, selectionEnd, selectionDirection and setSelectionRange() for applicable text-like types, with DOM-facing UTF-16 code-unit offsets. Engine::edit_focused and PreparedDocument::render synchronize those selections with the original scalar-indexed TextEditor. Native replacement edits update the live JS selection before input listeners run, including surrogate-pair emoji handling. Unsupported non-text input types report null selection getters. A real HTML + VM + native edit regression replaces a selected emoji and observes the changed JS caret. This remains bounded: no actual selection highlight, click-to-caret, setRangeText, IME, clipboard, grapheme-aware movement or full text selection specification coverage.
+Original input/textarea JS proxies now expose selectionStart, selectionEnd, selectionDirection and setSelectionRange() for applicable text-like types, with DOM-facing UTF-16 code-unit offsets. Engine::edit_focused and PreparedDocument::render synchronize those selections with the original scalar-indexed TextEditor. Native replacement edits update the live JS selection before input listeners run, including surrogate-pair emoji handling. Unsupported non-text input types report null selection getters. A real HTML + VM + native edit regression replaces a selected emoji and observes the changed JS caret. This remains bounded: no actual selection highlight, complete click/drag selection, setRangeText, IME, clipboard, grapheme-aware movement or full text selection specification coverage.
 
 ## P0 native HTML text editing foundation (20 October 2026)
 

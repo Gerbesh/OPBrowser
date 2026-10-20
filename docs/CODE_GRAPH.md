@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 20 October 2026: mouse glyph hit to original JS and native editing caret
+
+Native pointer click -> Engine::click_at with original hit/scrollbar priority -> CSS-sized control value and paint hit position -> op_engine::forms::caret_at_point binary-searches original op_layout::TextMeasurer prefix widths for nearest Unicode scalar caret, with password masking and explicit textarea lines -> original TextEditor caret/anchor -> JsRuntime::sync_native_control_selection UTF-16 offsets visible in focus and click handlers -> native repaint and later WM_CHAR insertion. No WebView or OS text control is involved.
+
 ## 20 October 2026: DOM UTF-16 text selection to native editor and back
 
 Original op_js input/textarea selectionStart/selectionEnd/selectionDirection and setSelectionRange() -> UTF-16 selection state in JsRuntime (selected applicable input types) -> PreparedDocument::render and Engine::edit_focused -> op_engine::forms::TextEditor conversion to scalar-indexed caret/anchor without splitting surrogate pairs -> native insertion/replacement -> synchronized VM selection state before bubbling input handlers -> original DOM text pixels and caret. Separate selection movement through native arrows and Home/End also reports back to VM. Unsupported input types report null selection getters. Limited visual selection remains a future step.

@@ -144,6 +144,62 @@ impl TextEditor {
     }
 }
 
+/// Find the nearest Unicode scalar caret boundary under a native document click.
+/// The current first-party field painter uses one unwrapped line per newline
+/// and a fixed font-size + 4 line advance; use that same provisional geometry.
+pub(super) fn caret_at_point(
+    value: &str,
+    x: i32,
+    y: i32,
+    font_size: i32,
+    masked: bool,
+    mut measure: impl FnMut(&str) -> i32,
+) -> usize {
+    let line_height = font_size.saturating_add(4).max(1);
+    let wanted_row = (y.max(0) / line_height) as usize;
+    let lines: Vec<&str> = value.split('\n').collect();
+    let row = wanted_row.min(lines.len().saturating_sub(1));
+    let start: usize = lines[..row]
+        .iter()
+        .map(|line| line.chars().count() + 1)
+        .sum();
+    let line = lines[row];
+    let shown = if masked {
+        "•".repeat(line.chars().count())
+    } else {
+        line.to_owned()
+    };
+    let count = shown.chars().count();
+    if x <= 0 || count == 0 {
+        return start;
+    }
+    // A bounded binary search avoids measuring every Unicode prefix of a
+    // long field and never returns a position inside a UTF-8 scalar.
+    let width_at = |index: usize, measure: &mut dyn FnMut(&str) -> i32| {
+        measure(&shown.chars().take(index).collect::<String>()).max(0)
+    };
+    let mut low = 0;
+    let mut high = count;
+    while low < high {
+        let mid = low + (high - low) / 2;
+        if width_at(mid, &mut measure) < x {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    let right = low;
+    let left = right.saturating_sub(1);
+    let right_distance = (i64::from(width_at(right, &mut measure)) - i64::from(x)).abs();
+    let left_distance = (i64::from(width_at(left, &mut measure)) - i64::from(x)).abs();
+    start
+        + if right_distance <= left_distance {
+            right
+        } else {
+            left
+        }
+}
+
 fn byte_at(value: &str, index: usize) -> usize {
     value
         .char_indices()
@@ -154,6 +210,18 @@ fn byte_at(value: &str, index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn click_to_caret_rounds_to_scalar_boundaries_on_each_line() {
+        let width = |text: &str| text.chars().count() as i32 * 10;
+        assert_eq!(caret_at_point("A😊B", -5, 0, 16, false, width), 0);
+        assert_eq!(caret_at_point("A😊B", 11, 0, 16, false, width), 1);
+        assert_eq!(caret_at_point("A😊B", 24, 0, 16, false, width), 2);
+        assert_eq!(caret_at_point("A😊B", 90, 0, 16, false, width), 3);
+        assert_eq!(caret_at_point("one\n猫😊", 11, 22, 16, false, width), 5);
+        assert_eq!(caret_at_point("one\n猫😊", 90, 999, 16, false, width), 6);
+        assert_eq!(caret_at_point("secret", 16, 0, 16, true, width), 2);
+    }
+
     #[test]
     fn unicode_caret_delete_and_selection_never_split_utf8() {
         let mut e = TextEditor::new(op_dom::Document::new().root(), "Привет😊");

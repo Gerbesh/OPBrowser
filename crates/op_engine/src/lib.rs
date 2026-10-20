@@ -1665,6 +1665,86 @@ impl Engine {
         let previous_focus = prepared.interaction.focused;
         prepared.interaction.focused = focused;
         prepared.interaction.focus_visible = false;
+        // Mouse positioning is a native editing default. Commit the nearest
+        // glyph boundary before focus/click handlers so JS sees the live caret.
+        let mut caret_changed = false;
+        if focused == Some(target)
+            && let Some(element) = prepared.document.element(target)
+        {
+            let attr = |name: &str| element.attributes.iter().find(|a| a.name == name);
+            let kind = attr("type").map_or("text", |a| a.value.as_str());
+            let is_text = element.tag_name == "textarea"
+                || (element.tag_name == "input"
+                    && matches!(kind, "text" | "search" | "tel" | "url" | "password"));
+            if is_text
+                && let Some(region) = layout
+                    .click_regions
+                    .iter()
+                    .filter(|hit| hit.node == target && hit.width > 0 && hit.height > 0)
+                    .min_by_key(|hit| (hit.y, hit.x))
+            {
+                let initial = if element.tag_name == "textarea" {
+                    prepared
+                        .document
+                        .children(target)
+                        .iter()
+                        .filter_map(|id| {
+                            prepared
+                                .document
+                                .node(*id)
+                                .and_then(|node| match &node.kind {
+                                    op_dom::NodeKind::Text(text) => Some(text.as_str()),
+                                    _ => None,
+                                })
+                        })
+                        .collect::<String>()
+                } else {
+                    String::new()
+                };
+                let value = attr("value")
+                    .map_or(initial.as_str(), |a| a.value.as_str())
+                    .to_owned();
+                let size = prepared
+                    .computed_styles
+                    .style_for(target)
+                    .map_or(16, |style| {
+                        style.font_size_px.round().clamp(8.0, 40.0) as i32
+                    });
+                let mut measurer = text::Measurer::new();
+                let caret = forms::caret_at_point(
+                    &value,
+                    x.saturating_sub(region.x),
+                    y.saturating_sub(region.y),
+                    size,
+                    kind == "password",
+                    |prefix| {
+                        op_layout::TextMeasurer::measure(
+                            &mut measurer,
+                            prefix,
+                            size,
+                            op_layout::FontWeight::Normal,
+                            op_layout::FontStyle::Normal,
+                        )
+                        .width
+                    },
+                );
+                let editor = prepared
+                    .editor
+                    .get_or_insert_with(|| forms::TextEditor::new(target, &value));
+                if editor.node != target {
+                    *editor = forms::TextEditor::new(target, &value);
+                }
+                caret_changed = editor.caret != caret || editor.anchor != caret;
+                editor.caret = caret;
+                editor.anchor = caret;
+                if let Some(vm) = prepared.runtime.as_mut() {
+                    let (start, _, _) = editor.selection_utf16(&value);
+                    let previous = vm.dom_control_selection(target.index());
+                    vm.sync_native_control_selection(target.index(), start, start, false);
+                    caret_changed |= previous.is_some_and(|(s, e, _)| s != start || e != start);
+                }
+            }
+        }
         let focus_mutations = if previous_focus != focused {
             if let Some(runtime) = prepared.runtime.as_mut() {
                 let (changes, checkpoint) = scripts::dispatch_focus_change(
@@ -1692,7 +1772,13 @@ impl Engine {
             };
         self.last_click_default_prevented = canceled;
         prepared.finish_gc_checkpoint(checkpoint);
-        if !handled && changes == 0 && focus_mutations == 0 && !focus_changed && !was_pressed {
+        if !handled
+            && changes == 0
+            && focus_mutations == 0
+            && !focus_changed
+            && !caret_changed
+            && !was_pressed
+        {
             return None;
         }
         prepared.scripts.mutations += changes + focus_mutations;
@@ -2235,6 +2321,90 @@ mod tests {
     }
 
     #[test]
+    fn mouse_click_places_input_caret_before_script_click_and_unicode_typing() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='q' value='A😊B'><p id='out'>Idle</p><script>\
+             var q=document.getElementById('q');\
+             q.addEventListener('click',function(){document.getElementById('out').textContent=\
+             'Caret:'+q.selectionStart+'|'+q.selectionEnd;});\
+             q.addEventListener('input',function(){document.getElementById('out').textContent=q.value;});\
+             </script></body>",
+            640, 400,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let (left, top) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document.element(r.node).is_some_and(|element| {
+                        element
+                            .attributes
+                            .iter()
+                            .any(|attr| attr.name == "id" && attr.value == "q")
+                    })
+                })
+                .expect("hit");
+            (region.x, region.y)
+        };
+        // A click at the left boundary must replace the earlier end-of-field
+        // native caret, and the click listener must see the new UTF-16 offset.
+        let frame = engine.click_at(left + 1, top + 3, 640, 400).unwrap();
+        assert!(contains_text(&frame.display_list, "Caret:0|0"));
+        let frame = engine.text_input("猫", 640, 400).unwrap();
+        assert!(contains_text(&frame.display_list, "猫A😊B"));
+    }
+
+    #[test]
+    fn mouse_click_uses_newline_row_when_placing_textarea_caret() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><textarea id='q'>ab\n😊Z</textarea><p id='out'>Idle</p><script>\
+             var q=document.getElementById('q');\
+             q.addEventListener('click',function(){document.getElementById('out').textContent=\
+             'Caret:'+q.selectionStart;});\
+             q.addEventListener('input',function(){document.getElementById('out').textContent=q.value;});\
+             </script></body>",
+            640, 400,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let (left, top) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document.element(r.node).is_some_and(|element| {
+                        element
+                            .attributes
+                            .iter()
+                            .any(|attr| attr.name == "id" && attr.value == "q")
+                    })
+                })
+                .expect("hit");
+            (region.x, region.y)
+        };
+        let frame = engine.click_at(left + 1, top + 23, 640, 400).unwrap();
+        assert!(contains_text(&frame.display_list, "Caret:3"));
+        engine.text_input("猫", 640, 400).unwrap();
+        // The provisional multiline painter splits runs between lines, so
+        // check the authoritative DOM value rather than a single text primitive.
+        let page = engine.active_document.as_ref().unwrap();
+        let node = page.interaction.focused.unwrap();
+        let value = page
+            .document
+            .element(node)
+            .unwrap()
+            .attributes
+            .iter()
+            .find(|attr| attr.name == "value")
+            .unwrap();
+        assert_eq!(value.value, "ab\n猫😊Z");
+    }
+
+    #[test]
     fn javascript_value_property_and_mouse_focused_typing_share_dom_field() {
         let mut engine = Engine::new();
         engine.set_html_page(
@@ -2260,7 +2430,7 @@ mod tests {
                     })
                 })
                 .expect("DOM input should be clickable");
-            (region.x + 5, region.y + 5)
+            (region.x + region.width - 3, region.y + 5)
         };
         let _ = engine.click_at(x, y, 640, 400);
         let focused = engine

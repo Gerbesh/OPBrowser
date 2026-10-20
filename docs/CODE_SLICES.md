@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S111 - Native click-to-caret in Unicode HTML text fields
+
+Win32 mouse input -> original Engine native hit target with scrollbar/pointer-events precedence -> CSS font-size and true source DOM input/textarea value -> first-party nearest-glyph-prefix measurement (masked passwords, textarea newline rows, bounded binary search) -> scalar-safe TextEditor caret/anchor -> UTF-16 selectionStart/End synced into JS before focus/click EventTarget handlers -> rendered caret and next native Unicode edit at clicked position. Offline engine regressions verify script-observed click selection and Unicode replacement, and click into the second textarea line. Future work: accurate wrapping, RTL/shaped glyph hit testing, drag selections, clipboard, IME.
+
 ## S110 - HTML text selection from JS through UTF-16 to native typing
 
 Author script calls input/textarea setSelectionRange() or sets selectionStart, selectionEnd or selectionDirection -> original JS DOM proxy keeps UTF-16 unit positions -> original Engine reads requested selection on render and before edits -> TextEditor converts to Unicode scalar caret/anchor and safely replaces highlighted characters -> authoritative value attribute, VM and input listener observe updated selection with correct UTF-16 count. A real browser engine test selects an emoji as two UTF-16 units, replaces it with a CJK character and asserts the JS handler's collapsed caret. Unsupported input kinds intentionally have null selection getters; exact web standard selection behavior, visual highlights and IME remain incomplete.

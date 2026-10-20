@@ -3939,3 +3939,10 @@ This file is append-only project history.
 - Original native TextEditor maps UTF-16 offsets to safe Rust scalar positions (rounding incomplete surrogate pairs down), and maps native selection back to UTF-16 after editing. Engine synchronizes native and script selections before edits, input handlers and original paint.
 - Added a real HTML+JS/native regression selecting an emoji at offsets 1..3 in backward direction and replacing it, checking input listener observes the new collapsed UTF-16 caret; scalar boundary unit coverage also added.
 - Retained clear P0 limitations: no visual selection highlight/click-to-caret, clipboard, IME, setRangeText or comprehensive web selection conformance. Full independent browser/JS readiness not remeasured.
+
+## 2026-10-20 - P0 native click-to-caret for first-party HTML forms
+
+- Engine::click_at converts the original input/textarea hit rectangle and CSS font-size into nearest Unicode scalar caret position with op_layout's glyph measurer. The bounded prefix search handles password mask glyphs and explicit newline rows in textarea, retaining original scrollbar/pointer eligibility ordering.
+- Script-visible UTF-16 selectionStart/selectionEnd are synchronized before focus/click handlers. Clicking an already-focused control repaints when the caret changes; subsequent keyboard text inserts at that position.
+- Added real DOM engine tests for clicks at start of an emoji-bearing input, JS observing the click selection, Unicode insertion and second-row textarea insertion. Added scalar-safe positioning unit tests. Existing append-only mouse test uses click at field end.
+- Full Rust workspace tests, formatting and strict Clippy passed. Known limits: provisional inline control geometry, no accurate wrapped/bidi/shaped glyph mapping, drag selection/highlighting, clipboard, IME, full forms or global browser compatibility claims.

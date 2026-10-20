@@ -1,12 +1,16 @@
 # Roadmap
 
+## Native form click-to-caret (20 October 2026)
+
+Implemented nearest-scalar mouse caret placement for text-like input and explicit textarea rows with live UTF-16 JS selection synchronization and Unicode-safe follow-on edits. P0 next: visual selection highlight and drag, exact real control boxes with text overflow/wrapping, clipboard, IME and bidirectional/grapheme cursor movement.
+
 ## Native/DOM text selection bridge (20 October 2026)
 
-Implemented JS selectionStart/selectionEnd/selectionDirection and setSelectionRange for text-like controls, including UTF-16 emoji offsets and native editor synchronization. Next: visual selection highlight, click placement, clipboard, IME composition, setRangeText, and full web selection behavior.
+Implemented JS selectionStart/selectionEnd/selectionDirection and setSelectionRange for text-like controls, including UTF-16 emoji offsets and native editor synchronization. Next: visual selection highlight, complete drag/click placement, clipboard, IME composition, setRangeText, and full web selection behavior.
 
 ## Next steps following first editable HTML text controls (20 October 2026)
 
-Done: Unicode WM_CHAR including surrogate pairs, first-party input/textarea text editing, scalar-indexed caret/selection, deletion, Home/End/arrows/Ctrl+A, basic multiline Enter, noneditable restrictions, JS .value and cancelable beforeinput/input, native field outlines/caret, manual demo and tests. Highest P0: replace the provisional inline field painter with real atomic/replaced control box layout, selection highlight/click-to-caret, clipboard and text navigation, IME composition, horizontal text scroll/wrapped textarea, InputEvent.data/inputType/change, complete selection semantics and proper form submission. ECMAScript syntax/VM and modern website JS compatibility remain independent major gaps.
+Done: Unicode WM_CHAR including surrogate pairs, first-party input/textarea text editing, scalar-indexed caret/selection, deletion, Home/End/arrows/Ctrl+A, basic multiline Enter, noneditable restrictions, JS .value and cancelable beforeinput/input, native field outlines/caret, manual demo and tests. Highest P0: replace the provisional inline field painter with real atomic/replaced control box layout, selection highlight/drag-to-select, clipboard and text navigation, IME composition, horizontal text scroll/wrapped textarea, InputEvent.data/inputType/change, complete selection semantics and proper form submission. ECMAScript syntax/VM and modern website JS compatibility remain independent major gaps.
 
 ## Following programmatic DOM focus and blur (20 October 2026)
 
