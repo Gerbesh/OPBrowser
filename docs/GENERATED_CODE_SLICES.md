@@ -277,7 +277,7 @@ op_engine::compute_styles
 ```
 
 - [`op_platform_win::WM_LBUTTONUP`](../crates/op_platform_win/src/lib.rs#L414)
-- [`op_browser::NavigationEvent::Click`](../crates/op_browser/src/main.rs#L117)
+- [`op_browser::NavigationEvent::Click`](../crates/op_browser/src/main.rs#L124)
 - [`op_engine::click_at`](../crates/op_engine/src/lib.rs#L1066)
 - [`op_layout::click_regions`](../crates/op_layout/src/flow.rs#L78)
 - [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L1046)
@@ -378,7 +378,7 @@ op_platform_win::present_reflow
 
 - [`op_js::SetTimeout`](../crates/op_js/src/runtime.rs#L204)
 - [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L2385)
-- [`op_browser::recv_timeout`](../crates/op_browser/src/main.rs#L184)
+- [`op_browser::recv_timeout`](../crates/op_browser/src/main.rs#L191)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L1860)
 - [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L2402)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
@@ -406,7 +406,7 @@ op_platform_win::present_reflow
 - [`op_js::SetInterval`](../crates/op_js/src/runtime.rs#L206)
 - [`op_js::QueueMicrotask`](../crates/op_js/src/runtime.rs#L208)
 - [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L2385)
-- [`op_browser::recv_timeout`](../crates/op_browser/src/main.rs#L184)
+- [`op_browser::recv_timeout`](../crates/op_browser/src/main.rs#L191)
 - [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L2402)
 - [`op_js::drain_microtasks`](../crates/op_js/src/runtime.rs#L1443)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L1860)
