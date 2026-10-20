@@ -1,5 +1,9 @@
 # Roadmap
 
+## Following programmatic DOM focus and blur (20 October 2026)
+
+Done: first-party Element.focus()/blur() dispatch, activeElement synchronization, original event listener transitions and CSS :focus/native paint handoff with tested native click integration. Next P0 interaction tasks: actual text editing in HTML input/textarea with selection/caret/IME, relatedTarget and activeElement on node detach, CSS-hidden/inert/fieldset focus eligibility, autofocus, script focus scrollIntoView and stronger keyboard modality rules. Continue rigorous conformance via current full Test262/WPT versioned measurements rather than extrapolating from selected historical suites; broader JS syntax, modules, DOM API and modern site startup remain major blockers. YouTube currently lacks rendered text, Reddit blank.
+
 ## After activeElement and cancelable native key input (20 October 2026)
 
 Done: DOM document.activeElement initialization and host focus synchronization, focus/blur/focusin/focusout on both Tab and mouse clicks, original KeyboardEvent keydown/keyup dispatch with capture/bubble and preventDefault suppression of Tab/Enter defaults; full Rust/Win32 test matrix. Next P0: JS Element.focus()/blur() and document.activeElement for detached/disabled targets, focus-relatedTarget and autofocus, correct DOM keypress/WM_CHAR/composition and IME editing, backspace/arrow key default actions for real inputs, modifier completeness and long-lived event listener performance. Independent modern-web problems remain JavaScript bootstrap, font/layout fidelity and page painting (YouTube no text, Reddit blank).

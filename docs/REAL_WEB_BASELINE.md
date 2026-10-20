@@ -1,5 +1,9 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 20 October 2026: programmatic focus Release site smoke
+
+Release build and five anonymous noninteractive site samples in ignored `artifacts/live_web/programmatic-focus-2026-10-20/` retained previously observed statuses: Google rendered_with_js_errors (~1.83 s), YouTube no_text_rendered (~3.02 s), Reddit blank_viewport (~1.59 s), Pikabu rendered_with_js_errors (~12.84 s), DeviantArt rendered_with_js_errors (~11.83 s). These probes do not execute focused user interactions and must not be used to claim full site, JavaScript or DOM interoperability. Pinned Test262 Parser v1 (523/1983) and Runtime v2 (78/179 attempted with 110 SKIP) remain historical selected-subset measurements; external full Test262 conformance was not rerun here.
+
 ## 20 October 2026: synchronized focus and KeyboardEvent baseline
 
 Native Release run in ignored `artifacts/live_web/native-key-events-2026-10-20/`: Google `rendered_with_js_errors` (2 failed JS, ~1.97 s), YouTube `no_text_rendered` (4 failures, ~3.16 s), Reddit `blank_viewport` (0 failed JS, ~1.64 s), DeviantArt `rendered_with_js_errors` (3 failures, ~16.23 s), Pikabu `rendered_with_js_errors` (11 failures, ~19.42 s). High-level outcomes remain as before. These noninteractive probes cannot verify keyboard/mouse events; dedicated engine/Win32 DOM tests demonstrate cancellation and activeElement. No claim of complete YouTube/Reddit compatibility or a solved Pikabu latency problem.

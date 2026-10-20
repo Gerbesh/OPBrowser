@@ -1,5 +1,9 @@
 # Page Reflow
 
+## CSS recascade after JavaScript focus (20 October 2026)
+
+At the paint boundary, `PreparedDocument::render` consumes one-shot `JsRuntime::take_programmatic_focus_change` if `element.focus()`/`blur()` was executed by an inline script or DOM event callback. The Rust host resolves the JS node index to a live generation-safe NodeId, updates original `StyleInteractionState` and recascades `:focus/:focus-within` before native layout and paint. The JS VM owns the synchronous focus/blur event dispatch already, so this host sync never duplicates events. No new ready-made rendering dependency.
+
 ## Keyboard scroll into view without widening click targets (20 October 2026)
 
 Original layout stores `focus_regions` copied after CSS positioning, nested scroll translation and inline glyph placement but before ancestor overflow clipping; `click_regions` remain clipped. Tab walks CSS scrollport ancestors from the inner container outward, using each container's computed min/max vertical/horizontal scroll offsets and rerendering original layout to find new target coordinates. The resulting document top/bottom bounds are sent once with the worker repaint to the Win32 main viewport, whose existing SCROLL_Y scrolls only if the target lies outside the visible page. Tests validate nested auto overflow, near-bottom/root scrolling, reverse Tab and absence of jitter.

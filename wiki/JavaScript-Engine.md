@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## JavaScript Element.focus()/blur() lifecycle (20 October 2026)
+
+Native DOM element proxies now expose real `focus()`/`blur()` methods, handled by `DomFocus/DomBlur` builtins in the original VM rather than a WebView. The methods validate basic connected HTML focusability, synchronize `document.activeElement`, dispatch noncancelable blur/focusout and focus/focusin events, and hand the new focused DOM node to the Rust engine at the next paint boundary for matching CSS `:focus`. Repeated focus and non-active blur are no-ops; nested listener focus transitions have a recursion budget. The original engine tests verify CSS color and document.activeElement from scripts and inside click listeners. Modern ECMAScript/Test262 conformance remains only partially measured: frozen parser subset 523/1,983 (~26.4%) and runtime subset 78/179 attempted (~43.6%, 110 skipped), neither is an overall JS percentage. Focus eligibility and relatedTarget/scroll-to-focus semantics remain partial.
+
 ## Original KeyboardEvent delivery and read-only activeElement (20 October 2026)
 
 Native page events now use original EventTarget dispatch for trusted cancelable/bubbling keydown/keyup with key, code, ctrlKey, shiftKey and repeat; listener once/passive, preventDefault and capture/bubble rules share the existing runtime. Host-driven activeElement changes update the original document property before focus/blur handlers, and the initial/no-focus reference is body. Native mouse click focus transitions use the same blur/focusout/focus/focusin JS path as Tab, before the click. Keyboard changes made by JavaScript update the retained DOM before default handling. An un-canceled Tab performs traversal and scroll-into-view; Enter activates through the existing cancelable click/default-link pipeline. Programmatic element.focus/blur, relatedTarget, focused-node detach, alt/meta modifiers and advanced editing events remain incomplete.

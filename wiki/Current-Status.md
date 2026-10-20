@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Script-driven DOM focus() and blur() (20 October 2026)
+
+The original JavaScript VM supports `element.focus()` and `element.blur()` for connected, supported HTML focus targets, synchronizing `document.activeElement` immediately and emitting focus/blur/focusin/focusout events in the original DOM listener system. Host rendering synchronizes `:focus` CSS even without text mutations, including script focus initiated inside native click handlers. Repeated focus/blur calls avoid duplicate dispatch; disabled basic controls are skipped. Full Rust workspace, Win32 startup/link/image smoke and Clippy pass. The modern ECMAScript engine remains incomplete; 30–35% is only an engineering readiness estimate, **not** a new full Test262 score. YouTube remains textless, Reddit blank.
+
 ## Browser DOM activeElement, native keydown/keyup and cancelable Tab/Enter (20 October 2026)
 
 The original OPBrowser JS DOM now tracks document.activeElement (body initially; focused element following native Tab/mouse). Mouse-triggered focus/blur/focusin/focusout events run before the click, with listener DOM mutations retained. Win32 page keydown/keyup events reach the original JS dispatcher with key/code/shiftKey/ctrlKey/repeat metadata and normal event propagation. JavaScript preventDefault in keydown blocks Tab movement and Enter link activation, while non-canceled defaults still work. Address-field Enter, Ctrl+L and F5 are preserved. Full Rust, Win32, Clippy and native smoke tests pass. Public rendering remains partial Google/Pikabu/DeviantArt, textless YouTube, blank Reddit. Pending: real form editing/IME, script focus()/blur(), relatedTarget and removal of focused nodes, full browser keyboard standards.

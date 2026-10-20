@@ -170,6 +170,8 @@ enum BuiltinFunction {
     DomHtmlCollectionNamedItem,
     DomContains,
     DomClick,
+    DomFocus,
+    DomBlur,
     DomDispatchEvent,
     DomEventConstructor,
     DomCreateEvent,
@@ -652,6 +654,9 @@ pub struct JsRuntime {
     event_paths: HashMap<ObjectId, Vec<ObjectId>>,
     dom_dispatch_depth: usize,
     dom_programmatic_click_depth: usize,
+    dom_focused_node: Option<usize>,
+    dom_focus_dirty: bool,
+    dom_focus_depth: usize,
     dom_document: Option<ObjectId>,
     lifecycle_listeners: HashMap<(ObjectId, String, bool), Vec<JsValue>>,
     lifecycle_listener_options: HashMap<(ObjectId, String, bool, ObjectId), DomListenerOptions>,
@@ -811,6 +816,9 @@ impl Default for JsRuntime {
             event_paths: HashMap::new(),
             dom_dispatch_depth: 0,
             dom_programmatic_click_depth: 0,
+            dom_focused_node: None,
+            dom_focus_dirty: false,
+            dom_focus_depth: 0,
             dom_document: None,
             lifecycle_listeners: HashMap::new(),
             lifecycle_listener_options: HashMap::new(),
@@ -1143,6 +1151,9 @@ impl JsRuntime {
         self.event_paths.clear();
         self.dom_dispatch_depth = 0;
         self.dom_programmatic_click_depth = 0;
+        self.dom_focused_node = None;
+        self.dom_focus_dirty = false;
+        self.dom_focus_depth = 0;
         self.lifecycle_listeners.clear();
         self.lifecycle_listener_options.clear();
         self.lifecycle_property_registration.clear();
@@ -3304,6 +3315,7 @@ impl JsRuntime {
     /// Native focus owns document.activeElement. Do not let script assignment
     /// replace this read-only live reference with a stale DOM wrapper.
     pub fn sync_native_active_element(&mut self, node: Option<usize>) -> Result<(), JsError> {
+        self.dom_focused_node = node;
         let value = match node {
             Some(index) => JsValue::Object(self.dom_element_object(index)?),
             None => self
@@ -3318,6 +3330,65 @@ impl JsRuntime {
                 .insert("activeElement".into(), value);
         }
         Ok(())
+    }
+
+    /// The host consumes script-triggered focus changes at the next paint
+    /// boundary; native Tab/mouse updates do not mark this flag.
+    pub fn take_programmatic_focus_change(&mut self) -> Option<Option<usize>> {
+        std::mem::take(&mut self.dom_focus_dirty).then_some(self.dom_focused_node)
+    }
+
+    fn focusable_dom_element(&self, node: usize) -> bool {
+        if !self.dom_attached.contains(&node) {
+            return false;
+        }
+        let Some(tag) = self.dom_tags.get(&node).map(String::as_str) else {
+            return false;
+        };
+        let attributes = self.dom_attributes.get(&node);
+        let has = |key: &str| attributes.is_some_and(|attrs| attrs.contains_key(key));
+        if has("disabled")
+            || has("hidden")
+            || (tag == "input"
+                && attributes
+                    .and_then(|a| a.get("type"))
+                    .is_some_and(|value| value.eq_ignore_ascii_case("hidden")))
+        {
+            return false;
+        }
+        has("tabindex")
+            || matches!(tag, "button" | "input" | "select" | "textarea" | "summary")
+            || (matches!(tag, "a" | "area") && has("href"))
+    }
+
+    fn change_programmatic_dom_focus(&mut self, next: Option<usize>) -> Result<(), JsError> {
+        if self.dom_focused_node == next {
+            return Ok(());
+        }
+        if self.dom_focus_depth >= 8 {
+            return Err(JsError::execution_limit(
+                "nested DOM focus transition budget exceeded",
+            ));
+        }
+        self.dom_focus_depth += 1;
+        let previous = self.dom_focused_node;
+        let result = (|| {
+            self.sync_native_active_element(next)?;
+            self.dom_focus_dirty = true;
+            if let Some(previous) = previous {
+                let path = self.element_event_path(previous)?;
+                self.dispatch_dom_focus_path(&path, "blur")?;
+                self.dispatch_dom_focus_path(&path, "focusout")?;
+            }
+            if let Some(next) = next {
+                let path = self.element_event_path(next)?;
+                self.dispatch_dom_focus_path(&path, "focus")?;
+                self.dispatch_dom_focus_path(&path, "focusin")?;
+            }
+            Ok(())
+        })();
+        self.dom_focus_depth -= 1;
+        result
     }
 
     /// Expose the parser-owned html root as document.documentElement.
@@ -4416,6 +4487,8 @@ impl JsRuntime {
         self.object_mut(dispatch)?
             .properties
             .insert("length".into(), JsValue::Number(1.0));
+        let focus = self.allocate_lifecycle_method("focus", BuiltinFunction::DomFocus)?;
+        let blur = self.allocate_lifecycle_method("blur", BuiltinFunction::DomBlur)?;
         let click = self.allocate_lifecycle_method("click", BuiltinFunction::DomClick)?;
         self.object_mut(click)?
             .properties
@@ -4486,6 +4559,8 @@ impl JsRuntime {
                 ("remove".into(), JsValue::Object(remove_self)),
                 ("contains".into(), JsValue::Object(contains)),
                 ("click".into(), JsValue::Object(click)),
+                ("focus".into(), JsValue::Object(focus)),
+                ("blur".into(), JsValue::Object(blur)),
                 ("dispatchEvent".into(), JsValue::Object(dispatch)),
                 ("setAttribute".into(), JsValue::Object(set_attr)),
                 ("getAttribute".into(), JsValue::Object(get_attr)),
@@ -8152,6 +8227,25 @@ impl JsRuntime {
             let uncanceled = self.dispatch_custom_event(*event, &path)?;
             return Ok(CallOutcome::Value(JsValue::Boolean(uncanceled)));
         }
+        if matches!(
+            builtin,
+            BuiltinFunction::DomFocus | BuiltinFunction::DomBlur
+        ) {
+            let JsValue::Object(receiver) = this_value else {
+                return Err(JsError::type_error("focus/blur needs an element receiver"));
+            };
+            let ObjectKind::DomElement(node) = self.object(receiver)?.kind else {
+                return Err(JsError::type_error("focus/blur needs an element receiver"));
+            };
+            if builtin == BuiltinFunction::DomFocus {
+                if self.focusable_dom_element(node) {
+                    self.change_programmatic_dom_focus(Some(node))?;
+                }
+            } else if self.dom_focused_node == Some(node) {
+                self.change_programmatic_dom_focus(None)?;
+            }
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
         if builtin == BuiltinFunction::DomClick {
             let JsValue::Object(receiver) = this_value else {
                 return Err(JsError::type_error("click requires an element"));
@@ -8925,6 +9019,8 @@ impl JsRuntime {
             | BuiltinFunction::DomHtmlCollectionNamedItem
             | BuiltinFunction::DomContains
             | BuiltinFunction::DomClick
+            | BuiltinFunction::DomFocus
+            | BuiltinFunction::DomBlur
             | BuiltinFunction::DomDispatchEvent
             | BuiltinFunction::DomEventConstructor
             | BuiltinFunction::DomCreateEvent

@@ -3899,3 +3899,13 @@ This file is append-only project history.
 - Added local HTML regressions for canceled Tab/Enter, uncanceled Enter navigation, keyup fields, modifier/repeat metadata and unfocused body bubbling; mouse focus transitions verify document.activeElement seen inside focus/blur and click; Win32 and worker ordering tests added.
 - All workspace tests, strict Clippy, native startup/link/image smoke, Release probe build and five-site noninteractive baseline pass. Google/DeviantArt/Pikabu partial, YouTube textless, Reddit blank, without claiming full compatibility.
 - Remaining: Element.focus/blur, relatedTarget, removal of focused element, full text input/IME/keyboard defaults, alt/meta, and modern JS/layout work.
+
+## 2026-10-20 - P0 first-party programmatic Element.focus()/blur() integrated with CSS
+
+- Added DomFocus/DomBlur builtins to each original JavaScript DOM element proxy. The VM checks basic focusability for attached HTML elements including tabindex and ordinary controls, ignores disabled/hidden inputs, keeps repeated focus and nonactive blur as no-ops, and limits nested focus changes to eight calls.
+- The original JS runtime updates read-only document.activeElement immediately, delivers the previously implemented noncancelable blur/focusout and focus/focusin event paths, and records one-shot dom_focus_dirty without borrowing a native DOM tree.
+- Original PreparedDocument::render consumes the script-owned focus transition, maps raw VM index to generation-safe NodeId, updates CSS :focus matching and repaints without duplicating events. Host-originated focus continues via existing Tab/mouse dispatch with shared activeElement.
+- Added three real HTML engine regressions: initial inline script focuses enabled element while skipping disabled/repeated focus, events and CSS change together; blur-to-body clears focus with one event; script focus from a native click moves host focus without redundant events.
+- Passed cargo fmt, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace, Win32 startup/link/image smokes, optimized Release native probe and five public sites (partial Google/Pikabu/DeviantArt, textless YouTube, blank Reddit).
+- JS readiness remains a *qualitative* estimate around 30–35% of modern ECMAScript implementation. Last pinned handpicked Test262 parser v1 523/1983 (26.37%) and runtime v2 78/179 attempted (43.58%; 110 skipped) are historical and not representative overall conformance; not rerun.
+- Further P0: display:none/inert/fieldset focus predicates, relatedTarget, removed focused elements, script focus scrollIntoView, full keyboard text editing/IME and robust standards coverage.

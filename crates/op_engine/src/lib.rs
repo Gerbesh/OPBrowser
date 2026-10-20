@@ -633,6 +633,25 @@ impl PreparedDocument {
     }
 
     fn render(&mut self, width: i32, height: i32) -> RenderedPage {
+        // Script calls to Element.focus()/blur() already dispatched their DOM
+        // events in the VM; synchronize CSS :focus and the native indicator
+        // once at the host paint boundary, without firing the events twice.
+        if let Some(requested) = self
+            .runtime
+            .as_mut()
+            .and_then(op_js::JsRuntime::take_programmatic_focus_change)
+        {
+            let focused = requested
+                .and_then(|node| self.document.node_id(node))
+                .filter(|node| self.document.element(*node).is_some());
+            if focused != self.interaction.focused {
+                self.interaction.focused = focused;
+                if focused.is_none() {
+                    self.interaction.focus_visible = false;
+                }
+                self.refresh_styles();
+            }
+        }
         if self.style_viewport != (width, height) {
             self.style_viewport = (width, height);
             self.refresh_styles();
@@ -1844,6 +1863,120 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn script_focus_and_blur_update_dom_events_and_css_focused_element() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><style>button:focus{color:red}</style>\
+             <div id='outer'>\
+               <button id='one' style='display:block;width:110px;height:40px'>One</button>\
+               <button id='two' style='display:block;width:110px;height:40px'>Two</button>\
+               <button id='disabled' disabled>Disabled</button>\
+             </div><p id='status'>Waiting</p><script>\
+             var one=document.getElementById('one');\
+             var two=document.getElementById('two');\
+             var no=document.getElementById('disabled');\
+             var out=document.getElementById('status');\
+             var log=(document.activeElement===document.body)?'body;':'wrong;';\
+             one.addEventListener('focus',function(){log=log+'focus1;';});\
+             one.addEventListener('blur',function(){log=log+'blur1;';});\
+             two.addEventListener('focus',function(){log=log+'focus2;';});\
+             two.addEventListener('blur',function(){log=log+'blur2;';});\
+             one.focus();one.focus();no.focus();two.focus();\
+             out.textContent=log+(document.activeElement===two);\
+             </script></body>",
+            600,
+            400,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let display = engine.reflow(600, 400).unwrap().display_list;
+        let page = engine.active_document.as_ref().unwrap();
+        let node = page
+            .interaction
+            .focused
+            .expect("script focus should reach host");
+        assert!(
+            page.document
+                .element(node)
+                .unwrap()
+                .attributes
+                .iter()
+                .any(|a| a.name == "id" && a.value == "two")
+        );
+        assert_eq!(
+            page.computed_styles.style_for(node).unwrap().color,
+            op_css::CssColor::RED
+        );
+        assert!(contains_text(&display, "body;focus1;blur1;focus2;true"));
+    }
+
+    #[test]
+    fn script_blur_returns_active_element_to_body_and_clears_css_focus() {
+        let mut engine = Engine::new();
+        let display = engine.set_html_page(
+            "<body><button id='b' style='display:block;width:110px;height:40px'>B</button>\
+             <p id='out'>Start</p><script>\
+             var b=document.getElementById('b');var out=document.getElementById('out');\
+             var log='';b.addEventListener('blur',function(){log='blur;';});\
+             b.focus();b.blur();b.blur();out.textContent=log+(document.activeElement===document.body);\
+             </script></body>",
+            600,400,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        assert!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .interaction
+                .focused
+                .is_none()
+        );
+        assert!(contains_text(&display, "blur;true"));
+    }
+
+    #[test]
+    fn script_focus_from_click_listener_changes_native_focus_without_duplicate_events() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><button id='a' style='display:block;width:150px;height:50px'>A</button>\
+             <button id='b' style='display:block;width:150px;height:50px'>B</button>\
+             <p id='out'>Idle</p><script>\
+             var a=document.getElementById('a'),b=document.getElementById('b'),out=document.getElementById('out');\
+             var log='';b.addEventListener('focus',function(){log=log+'focus;';});\
+             a.addEventListener('click',function(){b.focus();out.textContent=log+(document.activeElement===b);});\
+             </script></body>", 600, 400
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let (x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let r = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document.element(r.node).is_some_and(|e| {
+                        e.attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == "a")
+                    })
+                })
+                .unwrap();
+            (r.x + 8, r.y + 8)
+        };
+        let frame = engine.click_at(x, y, 600, 400).unwrap();
+        assert!(contains_text(&frame.display_list, "focus;true"));
+        let page = engine.active_document.as_ref().unwrap();
+        let focused = page.interaction.focused.unwrap();
+        assert!(
+            page.document
+                .element(focused)
+                .unwrap()
+                .attributes
+                .iter()
+                .any(|a| a.name == "id" && a.value == "b")
+        );
+    }
 
     #[test]
     fn tab_focus_dispatches_capture_target_blur_and_bubbling_focus_events() {
