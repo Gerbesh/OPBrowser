@@ -3926,3 +3926,9 @@ This file is append-only project history.
 - The resize smoke now waits for the target 320px viewport before checking text wrapping and clicking the resized image link; intermediate 800px frames are not failures.
 - Bound link and resize smoke waits to 10 seconds so actual missed navigation is reported as a timeout instead of either a false early failure or a hung GitHub job.
 - Add a regression unit test for smoke completion gating; retain full image hyperlink and resize smoke checks in CI rather than skipping them.
+
+## 2026-10-20 - Follow-up: preserve pending WM_SIZE during active layout
+
+- The resize CI failure also exposed a production event-loss bug: while an engine command was active, the native event queue silently discarded `NavigationEvent::Resize`. Queue and deduplicate resize requests, then replay against the current viewport when the worker is free.
+- Make the native resize smoke explicitly submit its wide request and immediately shrink the real Win32 client area to 320px. This deterministically tests stale-viewport discard, text rewrap and image hyperlink navigation instead of depending on the 120ms WM_SIZE debounce timing.
+- Drain pending native events only when no new render command has already been scheduled. Added a regression test for coalesced busy resize events.
