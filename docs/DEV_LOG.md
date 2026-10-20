@@ -3946,3 +3946,10 @@ This file is append-only project history.
 - Script-visible UTF-16 selectionStart/selectionEnd are synchronized before focus/click handlers. Clicking an already-focused control repaints when the caret changes; subsequent keyboard text inserts at that position.
 - Added real DOM engine tests for clicks at start of an emoji-bearing input, JS observing the click selection, Unicode insertion and second-row textarea insertion. Added scalar-safe positioning unit tests. Existing append-only mouse test uses click at field end.
 - Full Rust workspace tests, formatting and strict Clippy passed. Known limits: provisional inline control geometry, no accurate wrapped/bidi/shaped glyph mapping, drag selection/highlighting, clipboard, IME, full forms or global browser compatibility claims.
+
+## 2026-10-20 - P0 draw native/JavaScript HTML text selections
+
+- Added original forms::selection_fragments to measure scalar-indexed selected glyph ranges line by line; masked passwords use bullet glyphs, textarea selections split on explicit newline and stay within first-party approximate line-height.
+- PreparedDocument::render now emits clipped blue selection fill plus white selected text over original control glyphs, and hides the insertion caret while the range is active. Source DOM/JS UTF-16 selection positions remain authoritative, not a Win32 EDIT control.
+- Added Unicode and multiline geometry units, real DOM tests selecting emoji via setSelectionRange, checking paint commands and selection removal after typing, and a two-row textarea selection check.
+- Observed that minimal input-only/script-only pages may render no hit regions in the current layout. Integration tests cover ordinary body content; this separate inline layout deficiency is not resolved here. Still missing drag selection, exact shaping/wrapping/bidi, clipboard and IME.

@@ -200,6 +200,66 @@ pub(super) fn caret_at_point(
         }
 }
 
+/// One visible selection run. Coordinates are relative to the provisional
+/// first-party form control text origin, not document or screen coordinates.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct SelectionFragment {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub text: String,
+}
+
+/// Convert the Unicode-scalar selection to measured highlight runs, preserving
+/// explicit textarea newlines. Empty ranges emit no highlight. This deliberately
+/// does not pretend to implement bidi shaping or soft-wrapped textarea lines.
+pub(super) fn selection_fragments(
+    value: &str,
+    start: usize,
+    end: usize,
+    font_size: i32,
+    masked: bool,
+    mut measure: impl FnMut(&str) -> i32,
+) -> Vec<SelectionFragment> {
+    let (start, end) = (start.min(end), start.max(end));
+    if start == end {
+        return Vec::new();
+    }
+    let mut fragments = Vec::new();
+    let mut offset = 0usize;
+    let line_height = font_size.saturating_add(4).max(1);
+    for (row, line) in value.split('\n').enumerate() {
+        let length = line.chars().count();
+        let from = start.saturating_sub(offset).min(length);
+        let to = end.saturating_sub(offset).min(length);
+        if from < to {
+            let shown = if masked {
+                "•".repeat(length)
+            } else {
+                line.to_owned()
+            };
+            let prefix = shown.chars().take(from).collect::<String>();
+            let selected = shown.chars().skip(from).take(to - from).collect::<String>();
+            let selected_end = shown.chars().take(to).collect::<String>();
+            let x = measure(&prefix).max(0);
+            let width = measure(&selected_end).saturating_sub(x).max(1);
+            fragments.push(SelectionFragment {
+                x,
+                y: (row as i32).saturating_mul(line_height),
+                width,
+                height: font_size.max(1),
+                text: selected,
+            });
+        }
+        offset = offset.saturating_add(length + 1);
+        if offset > end {
+            break;
+        }
+    }
+    fragments
+}
+
 fn byte_at(value: &str, index: usize) -> usize {
     value
         .char_indices()
@@ -220,6 +280,51 @@ mod tests {
         assert_eq!(caret_at_point("one\n猫😊", 11, 22, 16, false, width), 5);
         assert_eq!(caret_at_point("one\n猫😊", 90, 999, 16, false, width), 6);
         assert_eq!(caret_at_point("secret", 16, 0, 16, true, width), 2);
+    }
+
+    #[test]
+    fn selection_highlights_visible_unicode_ranges_and_multiline_rows() {
+        let width = |text: &str| text.chars().count() as i32 * 10;
+        assert!(selection_fragments("A😊B", 1, 1, 16, false, width).is_empty());
+        assert_eq!(
+            selection_fragments("A😊B", 1, 2, 16, false, width),
+            vec![SelectionFragment {
+                x: 10,
+                y: 0,
+                width: 10,
+                height: 16,
+                text: "😊".into(),
+            }]
+        );
+        assert_eq!(
+            selection_fragments("ab\n猫😊Z", 1, 5, 16, false, width),
+            vec![
+                SelectionFragment {
+                    x: 10,
+                    y: 0,
+                    width: 10,
+                    height: 16,
+                    text: "b".into(),
+                },
+                SelectionFragment {
+                    x: 0,
+                    y: 20,
+                    width: 20,
+                    height: 16,
+                    text: "猫😊".into(),
+                },
+            ]
+        );
+        assert_eq!(
+            selection_fragments("secret", 1, 3, 16, true, width),
+            vec![SelectionFragment {
+                x: 10,
+                y: 0,
+                width: 20,
+                height: 16,
+                text: "••".into(),
+            }]
+        );
     }
 
     #[test]

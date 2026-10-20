@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 20 October 2026: selected HTML control range to visible foreground highlight
+
+JsRuntime UTF-16 selection -> PreparedDocument::render synchronizes first-party TextEditor scalar caret and anchor -> op_engine::forms::selection_fragments splits the range across explicit newline rows and measures Unicode-safe glyph prefixes via original op_layout::TextMeasurer -> clipped blue FillRect and white PaintCommand::Text foreground over original op_paint display list -> hide collapsed caret only while selection active. Subsequent original keyboard event/native WM_CHAR edits collapse the selection and restore ordinary cursor. Limits: provisional inline geometry and unshaped/unwrapped controls; no Windows text editor.
+
 ## 20 October 2026: mouse glyph hit to original JS and native editing caret
 
 Native pointer click -> Engine::click_at with original hit/scrollbar priority -> CSS-sized control value and paint hit position -> op_engine::forms::caret_at_point binary-searches original op_layout::TextMeasurer prefix widths for nearest Unicode scalar caret, with password masking and explicit textarea lines -> original TextEditor caret/anchor -> JsRuntime::sync_native_control_selection UTF-16 offsets visible in focus and click handlers -> native repaint and later WM_CHAR insertion. No WebView or OS text control is involved.

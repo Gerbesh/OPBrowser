@@ -1,5 +1,9 @@
 # OPBrowser: active project plan
 
+## P0 first-party HTML text selection highlight (20 October 2026)
+
+Native Unicode editor and JavaScript-selected text ranges in focused input/textarea fields are now visually highlighted using the original op_paint command stream. A measured row-by-row scalar range yields clipped blue selection backgrounds followed by white selected glyphs, including emoji, masked password bullets and explicit textarea newline rows. A noncollapsed selection hides the insertion caret; after native replacement it collapses and the caret returns. Tests cover selection geometry, JS-selected emoji repaint and multiline textarea rows. This is provisional overlay painting over an inline control model, not pixel-perfect shaping/wrapping or a ready-made Windows text widget. Mouse drag selection, IME, clipboard, bidirectional text, soft wrapping and standalone minimal markup hit-region coverage remain separate work.
+
 ## P0 native click-to-caret for original HTML text controls (20 October 2026)
 
 OPBrowser now maps a mouse click on supported text-like input and textarea controls to a Unicode-safe native insertion caret using its own text measurer. Mouse coordinates and CSS font size feed a bounded nearest-glyph-boundary search; password controls measure mask bullets, and textarea maps explicit newline rows using the current provisional line-height. The resulting editor selection is synchronized to JS selectionStart/End in UTF-16 *before* focus/click listeners. Clicking an already-focused input repaints when the cursor moves. Real DOM regression tests verify click-to-start, emoji/Unicode insertion and textarea second-line clicks. Limits: provisional inline field layout, no wrapping or horizontal-scroll offset, no exact shaped/bidi caret positioning, drag highlight, clipboard or IME.

@@ -1,12 +1,16 @@
 # JavaScript Engine
 
+## Visual selection in editable HTML fields (20 October 2026)
+
+JavaScript setSelectionRange() and first-party keyboard selections in focused input/textarea controls now produce a clipped blue selection highlight with selected glyphs repainted in white. The renderer uses Unicode scalar boundaries measured with its own font measurer, including masked password characters and explicit textarea newlines. Editing the selection collapses the highlight back to a caret. This is not drag selection, a full contenteditable implementation, or pixel-perfect shaping/soft wrapping.
+
 ## HTML form click-to-caret (20 October 2026)
 
-Native mouse clicks on text-like input and textarea controls now position the caret using the original font measurer, without Win32 EDIT/WebView. The original JS runtime sees the resulting UTF-16 selectionStart/End before focus and click listeners run, and subsequent input inserts at the chosen position. Explicit textarea newline rows and password masking are supported; visual selection highlight, complete wrapping/RTL/glyph shaping and drag selection are not.
+Native mouse clicks on text-like input and textarea controls now position the caret using the original font measurer, without Win32 EDIT/WebView. The original JS runtime sees the resulting UTF-16 selectionStart/End before focus and click listeners run, and subsequent input inserts at the chosen position. Explicit textarea newline rows and password masking are supported; drag selection, complete wrapping/RTL/glyph shaping and drag selection are not.
 
 ## HTML text selection interoperation (20 October 2026)
 
-Applicable first-party text input and textarea proxies support selectionStart, selectionEnd, selectionDirection and setSelectionRange(). Script coordinates are UTF-16 offsets and map into safe Unicode scalar positions in OPBrowser's native text editor; subsequent typing, replacement and input events synchronize back to the script. Non-text input types expose null selection getters. Visual highlighting, full click/drag selection semantics, IME and complete selection standard conformance are not yet implemented.
+Applicable first-party text input and textarea proxies support selectionStart, selectionEnd, selectionDirection and setSelectionRange(). Script coordinates are UTF-16 offsets and map into safe Unicode scalar positions in OPBrowser's native text editor; subsequent typing, replacement and input events synchronize back to the script. Non-text input types expose null selection getters. Drag selection, complete click/drag semantics, IME and complete selection standard conformance are not yet implemented.
 
 ## Form value reflection and beforeinput/input DOM events (20 October 2026)
 

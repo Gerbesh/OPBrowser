@@ -1,12 +1,16 @@
 # Roadmap
 
+## First-party editable selection highlighting (20 October 2026)
+
+Done: blue/white glyph-repaint highlight for active native and script selections in focused input/textarea with Unicode-safe boundaries, password masking and explicit newline row support. Next: mouse drag selection, accurate atomic control box geometry, wrapping/scrolling and RTL/shaped glyph positioning, clipboard and IME.
+
 ## Native form click-to-caret (20 October 2026)
 
-Implemented nearest-scalar mouse caret placement for text-like input and explicit textarea rows with live UTF-16 JS selection synchronization and Unicode-safe follow-on edits. P0 next: visual selection highlight and drag, exact real control boxes with text overflow/wrapping, clipboard, IME and bidirectional/grapheme cursor movement.
+Implemented nearest-scalar mouse caret placement for text-like input and explicit textarea rows with live UTF-16 JS selection synchronization and Unicode-safe follow-on edits. P0 next: drag-to-select, exact real control boxes with text overflow/wrapping, clipboard, IME and bidirectional/grapheme cursor movement.
 
 ## Native/DOM text selection bridge (20 October 2026)
 
-Implemented JS selectionStart/selectionEnd/selectionDirection and setSelectionRange for text-like controls, including UTF-16 emoji offsets and native editor synchronization. Next: visual selection highlight, complete drag/click placement, clipboard, IME composition, setRangeText, and full web selection behavior.
+Implemented JS selectionStart/selectionEnd/selectionDirection and setSelectionRange for text-like controls, including UTF-16 emoji offsets and native editor synchronization. Next: drag-to-select, complete click placement, clipboard, IME composition, setRangeText, and full web selection behavior.
 
 ## Next steps following first editable HTML text controls (20 October 2026)
 

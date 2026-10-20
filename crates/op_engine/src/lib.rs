@@ -785,11 +785,25 @@ impl PreparedDocument {
             let Some(element) = self.document.element(node) else {
                 continue;
             };
+            let initial = if element.tag_name == "textarea" {
+                self.document
+                    .children(node)
+                    .iter()
+                    .filter_map(|id| {
+                        self.document.node(*id).and_then(|child| match &child.kind {
+                            op_dom::NodeKind::Text(text) => Some(text.as_str()),
+                            _ => None,
+                        })
+                    })
+                    .collect::<String>()
+            } else {
+                String::new()
+            };
             let raw = element
                 .attributes
                 .iter()
                 .find(|a| a.name == "value")
-                .map_or("", |a| a.value.as_str());
+                .map_or(initial.as_str(), |a| a.value.as_str());
             let position = self
                 .editor
                 .as_ref()
@@ -811,6 +825,76 @@ impl PreparedDocument {
                 .computed_styles
                 .style_for(node)
                 .map_or(16, |s| s.font_size_px.round().clamp(8.0, 40.0) as i32);
+            if let Some(editor) = self.editor.as_ref().filter(|editor| editor.node == node)
+                && editor.caret != editor.anchor
+            {
+                let masked = element
+                    .attributes
+                    .iter()
+                    .any(|a| a.name == "type" && a.value == "password");
+                let mut measurer = text::Measurer::new();
+                let clip = op_layout::ClipRect {
+                    x: left.saturating_add(1),
+                    y: top,
+                    width: width.saturating_sub(2).max(0),
+                    height,
+                };
+                for fragment in forms::selection_fragments(
+                    raw,
+                    editor.caret,
+                    editor.anchor,
+                    size,
+                    masked,
+                    |text| {
+                        op_layout::TextMeasurer::measure(
+                            &mut measurer,
+                            text,
+                            size,
+                            op_layout::FontWeight::Normal,
+                            op_layout::FontStyle::Normal,
+                        )
+                        .width
+                    },
+                ) {
+                    let x = left.saturating_add(fragment.x);
+                    let y = top.saturating_add(fragment.y);
+                    // The selected glyphs are repainted over the highlight;
+                    // otherwise a solid FillRect would hide the text entirely.
+                    for command in [
+                        PaintCommand::FillRect {
+                            x,
+                            y,
+                            width: fragment.width,
+                            height: fragment.height,
+                            color: Color {
+                                r: 26,
+                                g: 95,
+                                b: 225,
+                            },
+                        },
+                        PaintCommand::Text {
+                            x,
+                            y,
+                            text: fragment.text,
+                            font_size: size,
+                            bold: false,
+                            italic: false,
+                            underline: false,
+                            line_through: false,
+                            letter_spacing: 0,
+                            word_spacing: 0,
+                            color: Color::WHITE,
+                            links: Vec::new(),
+                        },
+                    ] {
+                        display_list.commands.push(PaintCommand::Clipped {
+                            rect: clip,
+                            command: Box::new(command),
+                        });
+                    }
+                }
+                continue;
+            }
             let width_to_caret = op_layout::TextMeasurer::measure(
                 &mut text::Measurer::new(),
                 &shown,
@@ -2569,6 +2653,89 @@ mod tests {
         let page = engine.active_document.as_ref().unwrap();
         assert_eq!(page.editor.as_ref().unwrap().caret, 2);
         assert_eq!(page.editor.as_ref().unwrap().anchor, 2);
+    }
+
+    #[test]
+    fn selected_input_emoji_paints_highlight_and_reverses_on_native_edit() {
+        let mut engine = Engine::new();
+        let list = engine.set_html_page(
+            "<body><input id='q' value='A😊B'><p>Ready</p><script>\
+             var q=document.getElementById('q');q.focus();q.setSelectionRange(1,3);\
+             </script></body>",
+            600,
+            380,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let selected_glyphs = |list: &op_paint::DisplayList| {
+            list.commands
+                .iter()
+                .filter(|cmd| {
+                    matches!(
+                        cmd,
+                        PaintCommand::Clipped {
+                            command,
+                            ..
+                        } if matches!(command.as_ref(),
+                            PaintCommand::Text { text, color, .. }
+                                if text == "😊" && *color == Color::WHITE)
+                    )
+                })
+                .count()
+        };
+        assert_eq!(
+            selected_glyphs(&list),
+            1,
+            "selected emoji must be repainted over the highlight"
+        );
+        let frame = engine.text_input("猫", 600, 380).unwrap();
+        assert_eq!(
+            selected_glyphs(&frame.display_list),
+            0,
+            "insertion collapses the selection"
+        );
+        let page = engine.active_document.as_ref().unwrap();
+        let focused = page.interaction.focused.expect("focused input");
+        assert_eq!(
+            page.document
+                .element(focused)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "value")
+                .unwrap()
+                .value,
+            "A猫B"
+        );
+    }
+
+    #[test]
+    fn textarea_multiline_js_selection_paints_each_selected_row() {
+        let mut engine = Engine::new();
+        let list = engine.set_html_page(
+            "<body><textarea id='q'>ab\n猫😊Z</textarea><p>Ready</p><script>\
+             var q=document.getElementById('q');q.focus();q.setSelectionRange(1,6);\
+             </script></body>",
+            600,
+            380,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let fragments: Vec<(i32, String)> = list
+            .commands
+            .iter()
+            .filter_map(|cmd| {
+                if let PaintCommand::Clipped { command, .. } = cmd
+                    && let PaintCommand::Text { y, text, color, .. } = command.as_ref()
+                    && *color == Color::WHITE
+                {
+                    return Some((*y, text.clone()));
+                }
+                None
+            })
+            .collect();
+        assert_eq!(fragments.len(), 2);
+        assert_eq!(fragments[0].1, "b");
+        assert_eq!(fragments[1].1, "猫😊");
+        assert!(fragments[1].0 > fragments[0].0);
     }
 
     #[test]

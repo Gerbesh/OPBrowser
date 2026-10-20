@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S112 - Script or keyboard form selection to visible paint highlight
+
+A user keyboard selection or original JS input/textarea setSelectionRange -> VM UTF-16 selection offsets -> scalar-safe TextEditor caret/anchor in PreparedDocument -> original first-party selection_fragments measures highlighted character spans for each explicit newline row (including password bullet masks) -> clipped blue FillRect and repainted white glyphs in op_paint display list, in place of the collapsed insertion caret -> insertion replaces range, collapses selection and hides highlight. Engine/DOM tests check an emoji selection and multiline textarea selected glyphs, plus the caret restoration after editing. Soft-wrapped textarea, shaped/bidi glyph positioning, cross-field text and drag selection remain future steps.
+
 ## S111 - Native click-to-caret in Unicode HTML text fields
 
 Win32 mouse input -> original Engine native hit target with scrollbar/pointer-events precedence -> CSS font-size and true source DOM input/textarea value -> first-party nearest-glyph-prefix measurement (masked passwords, textarea newline rows, bounded binary search) -> scalar-safe TextEditor caret/anchor -> UTF-16 selectionStart/End synced into JS before focus/click EventTarget handlers -> rendered caret and next native Unicode edit at clicked position. Offline engine regressions verify script-observed click selection and Unicode replacement, and click into the second textarea line. Future work: accurate wrapping, RTL/shaped glyph hit testing, drag selections, clipboard, IME.
