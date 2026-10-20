@@ -550,9 +550,7 @@ fn main() {
                     }
                     // Serialize native capture events through the render worker.
                     // Starting the next command re-arms the UI's Poll timer.
-                    if !busy
-                        && let Some(next) = queued_thumb_events.pop_front()
-                    {
+                    if !busy && let Some(next) = queued_thumb_events.pop_front() {
                         let (width, height) = window.viewport_size();
                         busy = commands.send(LoadCommand {
                             event: next,
