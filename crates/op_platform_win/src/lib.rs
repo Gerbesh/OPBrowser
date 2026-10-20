@@ -31,6 +31,7 @@ static PAINTED_IMAGES: AtomicUsize = AtomicUsize::new(0);
 static SCROLL_Y: AtomicI32 = AtomicI32::new(0);
 static THUMB_DRAG_ACTIVE: AtomicBool = AtomicBool::new(false);
 static POINTER_PRESS_CAPTURE: AtomicBool = AtomicBool::new(false);
+static PENDING_UTF16_HIGH: AtomicUsize = AtomicUsize::new(0);
 static THUMB_DRAG_LAST_Y: AtomicI32 = AtomicI32::new(0);
 static LINK_REGIONS: OnceLock<RwLock<Vec<LinkRegion>>> = OnceLock::new();
 
@@ -80,6 +81,7 @@ pub enum NavigationEvent {
         ctrl: bool,
         repeat: bool,
     },
+    TextInput(String),
     KeyUp {
         key: String,
         code: String,
@@ -144,6 +146,7 @@ impl NativeBrowserWindow {
         SCROLL_Y.store(0, Ordering::SeqCst);
         THUMB_DRAG_ACTIVE.store(false, Ordering::SeqCst);
         POINTER_PRESS_CAPTURE.store(false, Ordering::SeqCst);
+        PENDING_UTF16_HIGH.store(0, Ordering::SeqCst);
         set_display_list(display_list);
 
         let class_name = wide("OPBrowserMainWindow");
@@ -612,6 +615,25 @@ impl NativeBrowserWindow {
                     && message.hwnd == unsafe { GetDlgItem(self.hwnd, ADDRESS) } =>
             {
                 Some(NavigationEvent::Navigate(self.address()))
+            }
+            WM_CHAR if message.hwnd == self.hwnd => {
+                let unit = u16::try_from(message.wParam).ok()?;
+                if (0xD800..=0xDBFF).contains(&unit) {
+                    PENDING_UTF16_HIGH.store(usize::from(unit), Ordering::SeqCst);
+                    None
+                } else {
+                    let pending = PENDING_UTF16_HIGH.swap(0, Ordering::SeqCst);
+                    let code_point = if (0xDC00..=0xDFFF).contains(&unit)
+                        && (0xD800..=0xDBFF).contains(&(pending as u16))
+                    {
+                        0x10000 + (((pending as u32 - 0xD800) << 10) | (u32::from(unit) - 0xDC00))
+                    } else {
+                        u32::from(unit)
+                    };
+                    char::from_u32(code_point)
+                        .filter(|ch| !ch.is_control())
+                        .map(|ch| NavigationEvent::TextInput(ch.to_string()))
+                }
             }
             WM_KEYDOWN if message.wParam == VK_F5 as usize => Some(NavigationEvent::Reload),
             WM_KEYDOWN | WM_KEYUP
@@ -1732,6 +1754,32 @@ mod tests {
             4,
             "Shift+Tab near top should move viewport back"
         );
+        window.close();
+    }
+
+    #[test]
+    fn native_wm_char_translates_cyrillic_and_surrogate_pairs_without_touching_url_bar() {
+        let _lock = WINDOW_TEST_LOCK.lock().unwrap();
+        let window =
+            NativeBrowserWindow::create("Unicode typing test", DisplayList::default()).unwrap();
+        let mut message: MSG = unsafe { zeroed() };
+        message.hwnd = window.hwnd;
+        message.message = WM_CHAR;
+        message.wParam = 0x043F; // п
+        assert_eq!(
+            window.navigation_event(&message),
+            Some(NavigationEvent::TextInput("п".into()))
+        );
+        message.wParam = 0xD83D;
+        assert_eq!(window.navigation_event(&message), None);
+        message.wParam = 0xDE0A;
+        assert_eq!(
+            window.navigation_event(&message),
+            Some(NavigationEvent::TextInput("😊".into()))
+        );
+        message.hwnd = unsafe { GetDlgItem(window.hwnd, ADDRESS) };
+        message.wParam = 0x0440;
+        assert_eq!(window.navigation_event(&message), None);
         window.close();
     }
 

@@ -3909,3 +3909,13 @@ This file is append-only project history.
 - Passed cargo fmt, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace, Win32 startup/link/image smokes, optimized Release native probe and five public sites (partial Google/Pikabu/DeviantArt, textless YouTube, blank Reddit).
 - JS readiness remains a *qualitative* estimate around 30–35% of modern ECMAScript implementation. Last pinned handpicked Test262 parser v1 523/1983 (26.37%) and runtime v2 78/179 attempted (43.58%; 110 skipped) are historical and not representative overall conformance; not rerun.
 - Further P0: display:none/inert/fieldset focus predicates, relatedTarget, removed focused elements, script focus scrollIntoView, full keyboard text editing/IME and robust standards coverage.
+
+## 2026-10-20 - P0 first-party Unicode HTML input/textarea editing
+
+- Added `op_engine::forms::TextEditor`: Unicode scalar-indexed caret and anchor, bounded 4,096-character edits, Backspace/Delete, selection and Home/End/arrows, Ctrl+A and textarea newline. UTF-8 byte offsets are computed only at a valid char boundary.
+- Win32 page `WM_CHAR` maps BMP code units and UTF-16 surrogate pairs to ordered `NavigationEvent::TextInput`; address toolbar remains untouched. Canceled JS keydown suppresses the following native character. Native Win32 tests cover Cyrillic, emoji and address input isolation.
+- Original VM supports `input/textarea.value` getter/setter through the existing DOM attributes. Host changes synchronize authoritative DOM and VM, dispatch cancelable `beforeinput` before editing and bubbling noncancelable `input` after, committing handler DOM mutations.
+- First-party op_layout creates control glyph text, placeholder, password mask, minimum-width source DOM hit regions and basic textarea line breaks. op_paint display-list overlay draws field bounds and a caret, without adding WebView/native EDIT controls.
+- Added offline HTML regression tests covering mouse click focus, typed Cyrillic/emoji, Unicode Backspace and replacement selection, readonly, event cancelation, script .value and textarea Enter, plus `examples/forms/index.html` manual demo.
+- The existing 128-level inline stress test had a Windows test-thread stack overflow under default harness settings; it now uses a 16MiB dedicated test thread (without changing actual layout behavior). Full workspace tests, Clippy, native startup/link/image smoke and Release 5-site baseline pass.
+- Deliberate limitations: simplified inline form layout and approximate caret; no visual selection highlighting, mouse click-to-caret, clipboard, IME composition, JS selection APIs, complete multiline wrapping/scrolling or real form submission/validation. JS readiness percentage not newly measured.

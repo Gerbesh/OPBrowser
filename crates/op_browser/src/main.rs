@@ -111,6 +111,7 @@ fn queue_thumb_event(
         | NavigationEvent::PointerCancel
         | NavigationEvent::FocusNext { .. }
         | NavigationEvent::ActivateFocused
+        | NavigationEvent::TextInput(_)
         | NavigationEvent::KeyDown { .. }
         | NavigationEvent::KeyUp { .. }
         | NavigationEvent::Click { .. }
@@ -226,6 +227,7 @@ fn main() {
                     | NavigationEvent::PointerCancel
                     | NavigationEvent::FocusNext { .. }
                     | NavigationEvent::ActivateFocused
+                    | NavigationEvent::TextInput(_)
                     | NavigationEvent::KeyDown { .. }
                     | NavigationEvent::KeyUp { .. }
                     | NavigationEvent::Hover { .. }
@@ -254,6 +256,7 @@ fn main() {
                     Ok(engine.focus_next(backwards, width, height))
                 }
                 NavigationEvent::ActivateFocused => engine.activate_focused(width, height),
+                NavigationEvent::TextInput(ref text) => Ok(engine.text_input(text, width, height)),
                 NavigationEvent::KeyDown {
                     ref key,
                     ref code,
@@ -534,6 +537,7 @@ fn main() {
                     | NavigationEvent::PointerCancel
                     | NavigationEvent::FocusNext { .. }
                     | NavigationEvent::ActivateFocused
+                    | NavigationEvent::TextInput(_)
                     | NavigationEvent::KeyDown { .. }
                     | NavigationEvent::KeyUp { .. }
                     | NavigationEvent::Hover { .. }

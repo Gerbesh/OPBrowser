@@ -1,5 +1,9 @@
 # Navigation
 
+## Page typing distinct from address-bar input (20 October 2026)
+
+Windows native toolbar address remains a real separate EDIT child; page HWND WM_CHAR is routed only to the original browser's currently focused HTML input/textarea. Unicode characters, including surrogate-pair emoji, are sent after cancelable keydown, while controls such as Backspace/Delete/Enter work through the existing DOM keyboard path. This prevents typing into a web form from changing the browser address. `examples/forms/index.html` exercises it.
+
 ## Native keyboard events gate Tab and Enter defaults (20 October 2026)
 
 Page keydown/keyup now passes through native Windows input -> ordered browser worker -> original cancelable JavaScript DOM KeyboardEvent path. If keydown listeners preventDefault, neither Tab moves focus nor Enter activates a link; keyboard event DOM changes remain. Without cancelation, Tab/Shift+Tab scrolls focused elements into view and Enter runs trusted click/default navigation, updating the address/history. Mouse focus changes update document.activeElement and dispatch focus events before click. Ctrl+L, F5 and entering a URL in the toolbar remain handled separately by native chrome.

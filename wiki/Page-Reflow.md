@@ -1,5 +1,9 @@
 # Page Reflow
 
+## Initial form text hit regions, glyph paint, native caret (20 October 2026)
+
+The original inline layout synthesizes Unicode text for supported input/textarea DOM nodes, including edited `value`, placeholder fallback, password masking, NBSP minimum-width hit geometry and basic textarea line breaks. The existing native raster paints glyphs and a field outline/focused caret; click regions are still filtered by original CSS stacking and pointer-events. This simplified inline representation is deliberately not full replaced-element control layout; text selection highlight, accurate scrollable textarea and click positioning require subsequent work.
+
 ## CSS recascade after JavaScript focus (20 October 2026)
 
 At the paint boundary, `PreparedDocument::render` consumes one-shot `JsRuntime::take_programmatic_focus_change` if `element.focus()`/`blur()` was executed by an inline script or DOM event callback. The Rust host resolves the JS node index to a live generation-safe NodeId, updates original `StyleInteractionState` and recascades `:focus/:focus-within` before native layout and paint. The JS VM owns the synchronous focus/blur event dispatch already, so this host sync never duplicates events. No new ready-made rendering dependency.

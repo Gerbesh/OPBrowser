@@ -3631,6 +3631,23 @@ impl JsRuntime {
         Ok(())
     }
 
+    /// Native text input uses the same original EventTarget dispatch, not
+    /// synthetic JavaScript eval. beforeinput is cancelable; input is not.
+    pub fn dispatch_dom_text_input_path(
+        &mut self,
+        path: &[usize],
+        before: bool,
+    ) -> Result<DomClickDispatch, JsError> {
+        self.dispatch_dom_native_event_path(
+            path,
+            if before { "beforeinput" } else { "input" },
+            true,
+            before,
+            true,
+            None,
+        )
+    }
+
     /// A browser-owned keyboard event, delivered through the same listener
     /// path as click while exposing the KeyboardEvent fields used by pages.
     pub fn dispatch_dom_keyboard_path(
@@ -9792,6 +9809,31 @@ impl JsRuntime {
                         return Ok(JsValue::Boolean(!prevented));
                     }
                     ObjectKind::DomElement(node) | ObjectKind::DomText(node) => {
+                        if key == "value"
+                            && matches!(kind, ObjectKind::DomElement(_))
+                            && self
+                                .dom_tags
+                                .get(&node)
+                                .is_some_and(|tag| tag == "input" || tag == "textarea")
+                        {
+                            return Ok(JsValue::String(
+                                self.dom_attributes
+                                    .get(&node)
+                                    .and_then(|attrs| attrs.get("value"))
+                                    .cloned()
+                                    .unwrap_or_else(|| {
+                                        if self
+                                            .dom_tags
+                                            .get(&node)
+                                            .is_some_and(|tag| tag == "textarea")
+                                        {
+                                            self.dom_text.get(&node).cloned().unwrap_or_default()
+                                        } else {
+                                            String::new()
+                                        }
+                                    }),
+                            ));
+                        }
                         if key == "scrollTop" && matches!(kind, ObjectKind::DomElement(_)) {
                             return Ok(JsValue::Number(
                                 self.dom_scroll_tops.get(&node).copied().unwrap_or(0) as f64,
@@ -10352,6 +10394,17 @@ impl JsRuntime {
             }
             let name = Self::style_property_name(key);
             self.set_dom_style_property(node, &name, Some(value.to_js_string()))?;
+            return Ok(());
+        }
+        if key == "value"
+            && let ObjectKind::DomElement(node) = self.object(*id)?.kind
+            && self
+                .dom_tags
+                .get(&node)
+                .is_some_and(|tag| tag == "input" || tag == "textarea")
+        {
+            let text = value.to_js_string().chars().take(4096).collect::<String>();
+            self.stage_dom_attribute(node, "value", text)?;
             return Ok(());
         }
         if let ObjectKind::DomElement(node) = self.object(*id)?.kind

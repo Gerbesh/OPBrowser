@@ -1,5 +1,9 @@
 # Current Project Status
 
+## HTML form entry through original Rust browser (20 October 2026)
+
+Native page text input now supports an initial bounded `input`/`textarea` edit path: Windows Unicode WM_CHAR including Cyrillic and surrogate pairs, Backspace/Delete, caret arrows/Home/End, Shift selection and Ctrl+A, textarea Enter, readonly checks, basic password masking, original JS `.value` reflection and cancelable `beforeinput` / bubbling `input` events. Original layout/paint show values, control bounds and a caret. Try `examples/forms/index.html`. Whole Rust workspace and Clippy/Win32 smoke pass. Still **not full HTML forms**: standard control box geometry, visual selection highlighting, mouse click-to-caret, clipboard, IME composition, JS selection APIs, form submission and browser-grade multiline editing remain incomplete. Google/Pikabu/DeviantArt partial, YouTube textless, Reddit blank.
+
 ## Script-driven DOM focus() and blur() (20 October 2026)
 
 The original JavaScript VM supports `element.focus()` and `element.blur()` for connected, supported HTML focus targets, synchronizing `document.activeElement` immediately and emitting focus/blur/focusin/focusout events in the original DOM listener system. Host rendering synchronizes `:focus` CSS even without text mutations, including script focus initiated inside native click handlers. Repeated focus/blur calls avoid duplicate dispatch; disabled basic controls are skipped. Full Rust workspace, Win32 startup/link/image smoke and Clippy pass. The modern ECMAScript engine remains incomplete; 30–35% is only an engineering readiness estimate, **not** a new full Test262 score. YouTube remains textless, Reddit blank.

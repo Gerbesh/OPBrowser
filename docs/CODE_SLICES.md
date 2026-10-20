@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S109 - First native HTML control text entry, DOM input events and caret
+
+Win32 WM_CHAR -> Unicode char / surrogate pair -> original worker TextInput queue -> first-party Engine text_input -> UTF-8-safe scalar-indexed forms editor; for control keys, trusted cancelable JS keydown -> Backspace/Delete/caret/selection Home/End/Ctrl+A or Enter newline in textarea. Value changes first emit cancelable native `beforeinput`; only noncanceled changes persist in authoritative DOM and VM `.value`; bubbling `input` handler DOM updates apply before CSS and paint. Original layout synthesizes glyphs and hit positions for input/textarea, minimum-width NBSP and password mask; original raster overlays border/caret. Regression tests verify Cyrillic/emoji, linked JS .value, native click focus, textarea newline, readonly and preventDefault. Missing clipboard/IME/composition, JS selection APIs, focus click-to-caret and complete field box layout remain intentional P0.
+
 ## S108 - JavaScript element.focus()/blur() to real browser CSS and DOM events
 
 HTML script or trusted click callback calls source-DOM `Element.focus()` or `Element.blur()` -> original `BuiltinFunction::DomFocus/DomBlur` -> validate connected, basic focusable HTML node and enabled status -> VM synchronizes read-only `document.activeElement` (body fallback) -> original trusted, noncancelable DOM `blur/focusout` then `focus/focusin` event dispatcher -> script callbacks mutate actual DOM -> VM records one-shot focus change -> original engine paint boundary maps node index back to generation-safe NodeId -> CSS `:focus/:focus-within` recascade and native paint. Repeated focus or blur does not redispatch. Three new Engine HTML tests cover script-start focus, disabled/repeated focus, CSS styling, blur-to-body and reentrant focus from a native click without duplicate event. Future: CSS-hidden/inert/form eligibility and full focus scrolling.

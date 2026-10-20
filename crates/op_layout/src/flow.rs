@@ -4619,6 +4619,78 @@ impl<'a> Context<'a, '_> {
                     return;
                 }
 
+                // Original first-party text controls: expose a consistent
+                // inline hit/paint run even before the full replaced-element
+                // form layout is implemented. Never render the textarea's raw
+                // source children a second time.
+                if tag == "input" || tag == "textarea" {
+                    let input_kind = attribute(element, "type").unwrap_or("text");
+                    let text_kind = tag == "textarea"
+                        || matches!(
+                            input_kind,
+                            "text" | "search" | "email" | "url" | "tel" | "password" | "number"
+                        );
+                    if !text_kind || attribute(element, "hidden").is_some() {
+                        return;
+                    }
+                    let initial = if tag == "textarea" {
+                        node.children
+                            .iter()
+                            .filter_map(|child| {
+                                self.document
+                                    .node(*child)
+                                    .and_then(|node| match &node.kind {
+                                        NodeKind::Text(text) => Some(text.as_str()),
+                                        _ => None,
+                                    })
+                            })
+                            .collect::<String>()
+                    } else {
+                        String::new()
+                    };
+                    let value = attribute(element, "value").unwrap_or(&initial);
+                    let mut inline = current.inline;
+                    inline.white_space = WhiteSpace::PreWrap;
+                    let shown = if input_kind == "password" {
+                        "•".repeat(value.chars().count().min(4096))
+                    } else {
+                        value.chars().take(4096).collect::<String>()
+                    };
+                    let hint = attribute(element, "placeholder").unwrap_or("");
+                    let shown = if shown.is_empty() {
+                        hint.chars().take(80).collect::<String>()
+                    } else {
+                        shown
+                    };
+                    let min_columns: usize = if tag == "textarea" { 24 } else { 18 };
+                    let first_line_width = shown.lines().next().unwrap_or("").chars().count();
+                    for ch in shown.chars().chain(std::iter::repeat_n(
+                        ' ',
+                        min_columns.saturating_sub(first_line_width),
+                    )) {
+                        if ch == '\n' && tag == "textarea" {
+                            items.push(Item::Break);
+                        } else {
+                            items.push(Item::Char(InlineChar {
+                                ch: if ch == '\n' || ch == '\r' { ' ' } else { ch },
+                                href: None,
+                                origin: Some(id),
+                                style: inline,
+                            }));
+                        }
+                    }
+                    if tag == "textarea" {
+                        items.push(Item::Break);
+                        items.push(Item::Char(InlineChar {
+                            ch: ' ',
+                            href: None,
+                            origin: Some(id),
+                            style: inline,
+                        }));
+                    }
+                    return;
+                }
+
                 if display == Display::InlineBlock {
                     current.inline.boxes = inherited.inline.boxes;
                     let mut atomic = self.inline_block_atomic(id, current, containing_width);

@@ -519,25 +519,35 @@ fn nested_image_fitting_reserves_ancestors_without_changing_percentage_basis() {
 
 #[test]
 fn deep_inline_box_stacks_accumulate_geometry_without_recursive_fragment_closing() {
-    let mut html = "<p>".to_owned();
-    for _ in 0..128 {
-        html.push_str("<span style='padding:1px'>");
-    }
-    html.push('X');
-    for _ in 0..128 {
-        html.push_str("</span>");
-    }
-    html.push_str("</p>");
-    let page = layout(&html, 500, &mut Fixed);
-    assert_eq!(page.box_decorations.len(), 128);
-    assert_eq!(page.text_boxes[0].x, 32 + 128);
-    assert_eq!(page.box_decorations[0].width, 266);
-    for pair in page.box_decorations.windows(2) {
-        assert_eq!(pair[1].x, pair[0].x + 1);
-        assert_eq!(pair[1].y, pair[0].y);
-        assert_eq!(pair[1].width, pair[0].width - 2);
-        assert_eq!(pair[1].height, pair[0].height);
-    }
+    // This intentionally extreme 128-level nesting needs a larger test
+    // thread stack on Windows; production layout remains unchanged.
+    std::thread::Builder::new()
+        .name("deep-inline-geometry".into())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(|| {
+            let mut html = "<p>".to_owned();
+            for _ in 0..128 {
+                html.push_str("<span style='padding:1px'>");
+            }
+            html.push('X');
+            for _ in 0..128 {
+                html.push_str("</span>");
+            }
+            html.push_str("</p>");
+            let page = layout(&html, 500, &mut Fixed);
+            assert_eq!(page.box_decorations.len(), 128);
+            assert_eq!(page.text_boxes[0].x, 32 + 128);
+            assert_eq!(page.box_decorations[0].width, 266);
+            for pair in page.box_decorations.windows(2) {
+                assert_eq!(pair[1].x, pair[0].x + 1);
+                assert_eq!(pair[1].y, pair[0].y);
+                assert_eq!(pair[1].width, pair[0].width - 2);
+                assert_eq!(pair[1].height, pair[0].height);
+            }
+        })
+        .expect("spawn deep inline test")
+        .join()
+        .expect("deep inline test thread");
 }
 
 #[test]

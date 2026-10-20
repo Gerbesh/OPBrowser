@@ -1011,6 +1011,37 @@ pub(crate) fn dispatch_keyboard_event(
     (canceled, changed, checkpoint)
 }
 
+/// The original DOM event system handles cancelable beforeinput and
+/// bubbling input; host edits never eval synthetic JavaScript.
+pub(crate) fn dispatch_text_input_event(
+    document: &mut Document,
+    runtime: &mut JsRuntime,
+    target: NodeId,
+    before: bool,
+) -> (bool, usize, Option<GcCheckpointPhases>) {
+    let mut path = Vec::new();
+    let mut cursor = Some(target);
+    while let Some(node) = cursor {
+        if path.len() >= 64 {
+            break;
+        }
+        if document.element(node).is_some() {
+            path.push(node.index());
+        }
+        cursor = document.node(node).and_then(|node| node.parent);
+    }
+    let canceled = if path.is_empty() {
+        false
+    } else {
+        runtime
+            .dispatch_dom_text_input_path(&path, before)
+            .map_or(true, |outcome| outcome.default_prevented)
+    };
+    let mutations = apply_dom_operations(document, runtime);
+    let checkpoint = collect_at_idle(document, runtime, false);
+    (canceled, mutations, checkpoint)
+}
+
 /// Dispatch the click to the hit element and its attached DOM ancestors.
 pub(crate) fn dispatch_click(
     document: &mut Document,

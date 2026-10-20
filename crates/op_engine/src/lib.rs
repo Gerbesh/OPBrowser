@@ -30,6 +30,7 @@ struct NetworkCompletion {
 
 pub use op_js::NativeKeyboardInput;
 use op_paint::{Color, DisplayList, PaintCommand, build_display_list};
+mod forms;
 mod images;
 mod scripts;
 mod styles;
@@ -277,6 +278,7 @@ struct PreparedDocument {
     style_collection: StyleCollection,
     style_viewport: (i32, i32),
     interaction: StyleInteractionState,
+    editor: Option<forms::TextEditor>,
     hit_regions: Vec<op_layout::ClickRegion>,
     computed_styles: ComputedStyleMap,
     stylesheet_addresses: std::collections::HashMap<op_dom::NodeId, String>,
@@ -693,6 +695,111 @@ impl PreparedDocument {
             *left > 0
         });
         let mut display_list = build_display_list(&layout, height);
+        // Retained DOM form controls share the native glyph geometry. Draw an
+        // unmistakable field outline and a focus caret; the actual text is
+        // painted by original op_layout/op_paint, not a Windows EDIT control.
+        let mut control_rects = std::collections::HashMap::new();
+        for hit in &self.hit_regions {
+            let Some(element) = self.document.element(hit.node) else {
+                continue;
+            };
+            if !matches!(element.tag_name.as_str(), "input" | "textarea")
+                || hit.width <= 0
+                || hit.height <= 0
+            {
+                continue;
+            }
+            let entry = control_rects.entry(hit.node).or_insert((
+                hit.x,
+                hit.y,
+                hit.x.saturating_add(hit.width),
+                hit.y.saturating_add(hit.height),
+            ));
+            entry.0 = entry.0.min(hit.x);
+            entry.1 = entry.1.min(hit.y);
+            entry.2 = entry.2.max(hit.x.saturating_add(hit.width));
+            entry.3 = entry.3.max(hit.y.saturating_add(hit.height));
+        }
+        for (node, (left, top, right, bottom)) in control_rects {
+            let width = right.saturating_sub(left);
+            let height = bottom.saturating_sub(top);
+            let border = Color {
+                r: 125,
+                g: 129,
+                b: 141,
+            };
+            for (x, y, w, h) in [
+                (left, top, width, 1),
+                (left, bottom - 1, width, 1),
+                (left, top, 1, height),
+                (right - 1, top, 1, height),
+            ] {
+                display_list.commands.push(PaintCommand::FillRect {
+                    x,
+                    y,
+                    width: w,
+                    height: h,
+                    color: border,
+                });
+            }
+            if self.interaction.focused != Some(node) {
+                continue;
+            }
+            let Some(element) = self.document.element(node) else {
+                continue;
+            };
+            let raw = element
+                .attributes
+                .iter()
+                .find(|a| a.name == "value")
+                .map_or("", |a| a.value.as_str());
+            let position = self
+                .editor
+                .as_ref()
+                .filter(|e| e.node == node)
+                .map_or(raw.chars().count(), |e| e.caret);
+            let prefix = raw.chars().take(position).collect::<String>();
+            let last_line = prefix.rsplit('\n').next().unwrap_or("");
+            let row = prefix.chars().filter(|ch| *ch == '\n').count();
+            let shown = if element
+                .attributes
+                .iter()
+                .any(|a| a.name == "type" && a.value == "password")
+            {
+                "•".repeat(last_line.chars().count())
+            } else {
+                last_line.to_owned()
+            };
+            let size = self
+                .computed_styles
+                .style_for(node)
+                .map_or(16, |s| s.font_size_px.round().clamp(8.0, 40.0) as i32);
+            let width_to_caret = op_layout::TextMeasurer::measure(
+                &mut text::Measurer::new(),
+                &shown,
+                size,
+                op_layout::FontWeight::Normal,
+                op_layout::FontStyle::Normal,
+            )
+            .width;
+            let caret_x = left
+                .saturating_add(width_to_caret)
+                .clamp(left + 1, right - 2);
+            let caret_y = top.saturating_add((row as i32).saturating_mul(size + 4));
+            if caret_y < bottom {
+                display_list.commands.push(PaintCommand::FillRect {
+                    x: caret_x,
+                    y: caret_y,
+                    width: 2,
+                    height: size.min(bottom.saturating_sub(caret_y)).max(1),
+                    color: Color {
+                        r: 26,
+                        g: 95,
+                        b: 225,
+                    },
+                });
+            }
+        }
         // Author :focus-visible styles also apply via the computed cascade.
         // Provide a native fallback indicator even on pages with no CSS.
         if self.interaction.focus_visible
@@ -749,6 +856,7 @@ pub struct Engine {
     active_document: Option<PreparedDocument>,
     scrollbar_drag: Option<ScrollbarDrag>,
     last_click_default_prevented: bool,
+    suppress_text_input: bool,
     pending_focus_bounds: Option<(i32, i32)>,
     network_completion_send: mpsc::Sender<NetworkCompletion>,
     network_completion_recv: mpsc::Receiver<NetworkCompletion>,
@@ -771,6 +879,7 @@ impl Engine {
             active_document: None,
             scrollbar_drag: None,
             last_click_default_prevented: false,
+            suppress_text_input: false,
             pending_focus_bounds: None,
         }
     }
@@ -930,6 +1039,7 @@ impl Engine {
             style_collection,
             style_viewport: (width, height),
             interaction: StyleInteractionState::default(),
+            editor: None,
             hit_regions: Vec::new(),
             computed_styles,
             stylesheet_addresses: std::collections::HashMap::new(),
@@ -1074,6 +1184,119 @@ impl Engine {
         Some(page.render(width, height))
     }
 
+    /// WM_CHAR commits Unicode text after a cancelable DOM keydown. WM_CHAR is
+    /// independent of keydown: it also covers keyboard layouts and dead keys.
+    pub fn text_input(&mut self, text: &str, width: i32, height: i32) -> Option<RenderedPage> {
+        if std::mem::take(&mut self.suppress_text_input) {
+            return None;
+        }
+        if text.is_empty() || text.chars().any(char::is_control) {
+            return None;
+        }
+        self.edit_focused(forms::Edit::Insert(text.to_owned()), width, height)
+    }
+
+    fn edit_focused(
+        &mut self,
+        action: forms::Edit,
+        width: i32,
+        height: i32,
+    ) -> Option<RenderedPage> {
+        let page = self.active_document.as_mut()?;
+        let focused = page.interaction.focused?;
+        let element = page.document.element(focused)?;
+        let tag = element.tag_name.clone();
+        if !matches!(tag.as_str(), "input" | "textarea")
+            || element
+                .attributes
+                .iter()
+                .any(|a| matches!(a.name.as_str(), "readonly" | "disabled" | "hidden"))
+            || (tag == "input"
+                && !matches!(
+                    element
+                        .attributes
+                        .iter()
+                        .find(|a| a.name == "type")
+                        .map(|a| a.value.as_str())
+                        .unwrap_or("text"),
+                    "text" | "search" | "email" | "url" | "tel" | "password" | "number"
+                ))
+        {
+            return None;
+        }
+        let initial = if tag == "textarea" {
+            page.document
+                .children(focused)
+                .iter()
+                .filter_map(|id| {
+                    page.document.node(*id).and_then(|node| match &node.kind {
+                        op_dom::NodeKind::Text(text) => Some(text.as_str()),
+                        _ => None,
+                    })
+                })
+                .collect::<String>()
+        } else {
+            String::new()
+        };
+        let value = element
+            .attributes
+            .iter()
+            .find(|a| a.name == "value")
+            .map_or(initial.as_str(), |a| a.value.as_str())
+            .to_owned();
+        let saved = page.editor.clone();
+        let editor = page
+            .editor
+            .get_or_insert_with(|| forms::TextEditor::new(focused, &value));
+        if editor.node != focused {
+            *editor = forms::TextEditor::new(focused, &value);
+        }
+        let (next, edited) = editor.edit(&value, action);
+        if edited {
+            if let Some(vm) = page.runtime.as_mut() {
+                let (cancel, mutation, checkpoint) =
+                    scripts::dispatch_text_input_event(&mut page.document, vm, focused, true);
+                page.scripts.mutations += mutation;
+                page.finish_gc_checkpoint(checkpoint);
+                if cancel {
+                    page.editor = saved;
+                    if mutation > 0 {
+                        page.refresh_styles();
+                    }
+                    return Some(page.render(width, height));
+                }
+            }
+            if let Some(element) = page.document.element_mut(focused) {
+                if let Some(attr) = element.attributes.iter_mut().find(|a| a.name == "value") {
+                    attr.value.clone_from(&next);
+                } else {
+                    element.attributes.push(op_dom::Attribute {
+                        name: "value".into(),
+                        value: next,
+                    });
+                }
+            }
+            if let Some(vm) = page.runtime.as_mut() {
+                let attrs = page
+                    .document
+                    .element(focused)?
+                    .attributes
+                    .iter()
+                    .map(|a| (a.name.clone(), a.value.clone()))
+                    .collect();
+                vm.sync_dom_attributes(focused.index(), attrs);
+                let (_, mutations, checkpoint) =
+                    scripts::dispatch_text_input_event(&mut page.document, vm, focused, false);
+                page.scripts.mutations += mutations;
+                page.finish_gc_checkpoint(checkpoint);
+                if mutations > 0 {
+                    page.refresh_styles();
+                }
+            }
+        }
+        Some(page.render(width, height))
+    }
+
     /// Native keyboard events are cancelable in the original JS DOM. Run
     /// listeners first; Tab and Enter only execute their defaults if allowed.
     pub fn keyboard_event(
@@ -1118,6 +1341,44 @@ impl Engine {
                 if changed {
                     page.refresh_styles();
                 }
+            }
+        }
+        if input.down {
+            self.suppress_text_input = canceled || input.ctrl;
+        }
+        if input.down && !canceled {
+            let edit = if input.ctrl && input.code == "KeyA" {
+                Some(forms::Edit::SelectAll)
+            } else if !input.ctrl {
+                match input.key {
+                    "Backspace" => Some(forms::Edit::Backspace),
+                    "Delete" => Some(forms::Edit::Delete),
+                    "ArrowLeft" => Some(forms::Edit::Left { shift: input.shift }),
+                    "ArrowRight" => Some(forms::Edit::Right { shift: input.shift }),
+                    "Home" => Some(forms::Edit::Home { shift: input.shift }),
+                    "End" => Some(forms::Edit::End { shift: input.shift }),
+                    "Enter"
+                        if self
+                            .active_document
+                            .as_ref()
+                            .and_then(|page| {
+                                page.interaction
+                                    .focused
+                                    .and_then(|id| page.document.element(id))
+                            })
+                            .is_some_and(|e| e.tag_name == "textarea") =>
+                    {
+                        Some(forms::Edit::Insert("\n".into()))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if let Some(edit) = edit
+                && let Some(frame) = self.edit_focused(edit, width, height)
+            {
+                return Ok(Some(frame));
             }
         }
         if input.down && !canceled && !input.ctrl {
@@ -1838,6 +2099,7 @@ impl Engine {
             style_collection,
             style_viewport: (viewport_width, viewport_height),
             interaction: StyleInteractionState::default(),
+            editor: None,
             hit_regions: Vec::new(),
             computed_styles,
             stylesheet_addresses: linked_stylesheets.addresses,
@@ -1863,6 +2125,313 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn prevented_keydown_suppresses_the_corresponding_native_text_input() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='q' value='До'>\
+             <script>document.getElementById('q').addEventListener('keydown',function(e){\
+             if(e.code==='KeyA'){e.preventDefault();}});</script></body>",
+            500,
+            330,
+        );
+        engine.focus_next(false, 500, 330).unwrap();
+        engine
+            .keyboard_event(
+                op_js::NativeKeyboardInput {
+                    key: "ф",
+                    code: "KeyA",
+                    down: true,
+                    shift: false,
+                    ctrl: false,
+                    repeat: false,
+                },
+                500,
+                330,
+            )
+            .unwrap();
+        assert!(engine.text_input("ф", 500, 330).is_none());
+        let node = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .interaction
+            .focused
+            .unwrap();
+        assert_eq!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .document
+                .element(node)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|a| a.name == "value")
+                .unwrap()
+                .value,
+            "До"
+        );
+    }
+
+    #[test]
+    fn javascript_value_property_and_mouse_focused_typing_share_dom_field() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='q' placeholder='Search'>\
+             <p id='out'>Idle</p><script>\
+             var q=document.getElementById('q');q.value='Тест';\
+             document.getElementById('out').textContent='VM:'+q.value;\
+             q.addEventListener('input',function(){document.getElementById('out').textContent='Typed:'+q.value;});\
+             </script></body>",
+            640, 400,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let (x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|r| {
+                    page.document.element(r.node).is_some_and(|e| {
+                        e.attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == "q")
+                    })
+                })
+                .expect("DOM input should be clickable");
+            (region.x + 5, region.y + 5)
+        };
+        let _ = engine.click_at(x, y, 640, 400);
+        let focused = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .interaction
+            .focused
+            .unwrap();
+        assert!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .document
+                .element(focused)
+                .unwrap()
+                .attributes
+                .iter()
+                .any(|a| a.name == "id" && a.value == "q")
+        );
+        let frame = engine.text_input("ы", 640, 400).unwrap();
+        assert!(contains_text(&frame.display_list, "Typed:Тесты"));
+        assert!(frame.display_list.commands.iter().any(|c| matches!(c,
+            PaintCommand::Text {text,..} if text.starts_with("Тесты"))));
+    }
+
+    #[test]
+    fn native_text_field_edits_unicode_and_reflects_live_value_to_javascript() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='query' value='Привет' style='font-size:17px'>\
+             <p id='result'>Idle</p><script>\
+             var q=document.getElementById('query');\
+             q.addEventListener('input',function(){document.getElementById('result').textContent=q.value;});\
+             </script></body>",
+            640, 380,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        engine.focus_next(false, 640, 380).unwrap();
+        let frame = engine.text_input(" мир😊", 640, 380).unwrap();
+        assert!(contains_text(&frame.display_list, "Привет мир😊"));
+        let node = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .interaction
+            .focused
+            .unwrap();
+        assert_eq!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .document
+                .element(node)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|a| a.name == "value")
+                .unwrap()
+                .value,
+            "Привет мир😊"
+        );
+        let input = |engine: &mut Engine, key, code, ctrl| {
+            engine
+                .keyboard_event(
+                    op_js::NativeKeyboardInput {
+                        key,
+                        code,
+                        down: true,
+                        shift: false,
+                        ctrl,
+                        repeat: false,
+                    },
+                    640,
+                    380,
+                )
+                .unwrap()
+                .unwrap()
+        };
+        let frame = input(&mut engine, "Backspace", "Backspace", false);
+        assert!(contains_text(&frame.display_list, "Привет мир"));
+        input(&mut engine, "a", "KeyA", true);
+        // Ctrl+A emits no WM_CHAR; the next ordinary keydown enables text.
+        let _ = engine.keyboard_event(
+            op_js::NativeKeyboardInput {
+                key: "м",
+                code: "KeyV",
+                down: true,
+                shift: false,
+                ctrl: false,
+                repeat: false,
+            },
+            640,
+            380,
+        );
+        let frame = engine.text_input("Москва", 640, 380).unwrap();
+        assert!(contains_text(&frame.display_list, "Москва"));
+        assert!(!contains_text(&frame.display_list, "Привет мир"));
+        assert!(
+            frame.display_list.commands.iter().any(|command| matches!(
+                command,
+                PaintCommand::FillRect {
+                    color: Color {
+                        r: 26,
+                        g: 95,
+                        b: 225
+                    },
+                    ..
+                }
+            )),
+            "focused text field should show a caret"
+        );
+    }
+
+    #[test]
+    fn beforeinput_cancelation_blocks_edit_and_readonly_is_not_writable() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='blocked' value='SAFE'>\
+             <input id='readonly' value='LOCK' readonly><p id='out'>Waiting</p><script>\
+             var block=document.getElementById('blocked');\
+             block.addEventListener('beforeinput',function(e){e.preventDefault();document.getElementById('out').textContent='Canceled';});\
+             block.addEventListener('input',function(){document.getElementById('out').textContent='BAD';});\
+             </script></body>",
+            600,380
+        );
+        engine.focus_next(false, 600, 380).unwrap();
+        let frame = engine.text_input("evil", 600, 380).unwrap();
+        assert!(contains_text(&frame.display_list, "Canceled"));
+        assert!(
+            frame
+                .display_list
+                .commands
+                .iter()
+                .any(|c| matches!(c,PaintCommand::Text{text,..} if text.starts_with("SAFE")))
+        );
+        assert!(!contains_text(&frame.display_list, "BAD"));
+        engine.focus_next(false, 600, 380).unwrap();
+        assert!(engine.text_input("evil", 600, 380).is_none());
+        let node = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .interaction
+            .focused
+            .unwrap();
+        let el = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .document
+            .element(node)
+            .unwrap();
+        assert_eq!(
+            el.attributes
+                .iter()
+                .find(|a| a.name == "value")
+                .unwrap()
+                .value,
+            "LOCK"
+        );
+    }
+
+    #[test]
+    fn textarea_accepts_multiline_keyboard_enter_and_native_unicode_characters() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><textarea id='note'>Старт</textarea></body>",
+            600,
+            380,
+        );
+        engine.focus_next(false, 600, 380).unwrap();
+        let frame = engine.text_input("猫", 600, 380).unwrap();
+        assert!(
+            frame
+                .display_list
+                .commands
+                .iter()
+                .any(|c| matches!(c,PaintCommand::Text{text,..} if text.starts_with("Старт猫")))
+        );
+        let frame = engine
+            .keyboard_event(
+                op_js::NativeKeyboardInput {
+                    key: "Enter",
+                    code: "Enter",
+                    down: true,
+                    shift: false,
+                    ctrl: false,
+                    repeat: false,
+                },
+                600,
+                380,
+            )
+            .unwrap()
+            .unwrap();
+        let frame = engine
+            .text_input("вторая строка", 600, 380)
+            .unwrap_or(frame);
+        let node = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .interaction
+            .focused
+            .unwrap();
+        let value = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .document
+            .element(node)
+            .unwrap()
+            .attributes
+            .iter()
+            .find(|a| a.name == "value")
+            .unwrap()
+            .value
+            .as_str();
+        assert_eq!(value, "Старт猫\nвторая строка");
+        assert!(
+            frame
+                .display_list
+                .commands
+                .iter()
+                .any(|c| matches!(c,PaintCommand::Text{text,..} if text.contains("вторая")))
+        );
+    }
 
     #[test]
     fn script_focus_and_blur_update_dom_events_and_css_focused_element() {

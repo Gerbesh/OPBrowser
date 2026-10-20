@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## Form value reflection and beforeinput/input DOM events (20 October 2026)
+
+Original element proxies now expose bounded input/textarea `.value` getters/setters; native edit commits synchronize source DOM attributes and VM state. Original EventTarget dispatch delivers cancelable bubbling `beforeinput` and noncancelable bubbling `input`. A keydown listener's preventDefault prevents subsequent Windows WM_CHAR insertion. This is native DOM event functionality, not a claimed change in overall ECMAScript conformance. Missing complete InputEvent.data/inputType, selectionStart/End, composition, change/submit, constraint validation and form-specific default actions.
+
 ## JavaScript Element.focus()/blur() lifecycle (20 October 2026)
 
 Native DOM element proxies now expose real `focus()`/`blur()` methods, handled by `DomFocus/DomBlur` builtins in the original VM rather than a WebView. The methods validate basic connected HTML focusability, synchronize `document.activeElement`, dispatch noncancelable blur/focusout and focus/focusin events, and hand the new focused DOM node to the Rust engine at the next paint boundary for matching CSS `:focus`. Repeated focus and non-active blur are no-ops; nested listener focus transitions have a recursion budget. The original engine tests verify CSS color and document.activeElement from scripts and inside click listeners. Modern ECMAScript/Test262 conformance remains only partially measured: frozen parser subset 523/1,983 (~26.4%) and runtime subset 78/179 attempted (~43.6%, 110 skipped), neither is an overall JS percentage. Focus eligibility and relatedTarget/scroll-to-focus semantics remain partial.

@@ -1,5 +1,9 @@
 # Roadmap
 
+## Next steps following first editable HTML text controls (20 October 2026)
+
+Done: Unicode WM_CHAR including surrogate pairs, first-party input/textarea text editing, scalar-indexed caret/selection, deletion, Home/End/arrows/Ctrl+A, basic multiline Enter, noneditable restrictions, JS .value and cancelable beforeinput/input, native field outlines/caret, manual demo and tests. Highest P0: replace the provisional inline field painter with real atomic/replaced control box layout, selection highlight/click-to-caret, clipboard and text navigation, IME composition, horizontal text scroll/wrapped textarea, InputEvent.data/inputType/change, selectionStart/End and proper form submission. ECMAScript syntax/VM and modern website JS compatibility remain independent major gaps.
+
 ## Following programmatic DOM focus and blur (20 October 2026)
 
 Done: first-party Element.focus()/blur() dispatch, activeElement synchronization, original event listener transitions and CSS :focus/native paint handoff with tested native click integration. Next P0 interaction tasks: actual text editing in HTML input/textarea with selection/caret/IME, relatedTarget and activeElement on node detach, CSS-hidden/inert/fieldset focus eligibility, autofocus, script focus scrollIntoView and stronger keyboard modality rules. Continue rigorous conformance via current full Test262/WPT versioned measurements rather than extrapolating from selected historical suites; broader JS syntax, modules, DOM API and modern site startup remain major blockers. YouTube currently lacks rendered text, Reddit blank.

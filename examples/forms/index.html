@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>OPBrowser native form editing demo</title>
+<style>
+body { background: #f5f8fc; color: #1c3047; font-size: 18px; margin: 30px }
+h1 { color: #14558a; font-size: 25px }
+p { margin: 10px 0 }
+input, textarea { border: 1px solid #71869d; padding: 6px; margin: 8px 0; background: white; }
+input:focus, textarea:focus { border: 2px solid #1673d0 }
+</style>
+</head>
+<body>
+<h1>OPBrowser: Native Form Editing</h1>
+<p>Введите текст кириллицей, попробуйте Backspace, стрелки, Shift и Ctrl+A.</p>
+<p>Поиск: <input id="search" value="Привет" placeholder="Текст для поиска"></p>
+<p>Пароль: <input id="pass" type="password" value="секрет"></p>
+<p>Несколько строк:</p>
+<textarea id="notes">Первая строка</textarea>
+<p>Только чтение: <input id="locked" value="Не изменять" readonly></p>
+<p id="status">События ввода появятся здесь.</p>
+<script>
+var status = document.getElementById('status');
+var search = document.getElementById('search');
+var pass = document.getElementById('pass');
+var notes = document.getElementById('notes');
+search.addEventListener('input', function() {
+  status.textContent = 'Поиск: ' + search.value;
+});
+pass.addEventListener('input', function() {
+  status.textContent = 'Пароль изменён, длина: ' + pass.value.length;
+});
+notes.addEventListener('input', function() {
+  status.textContent = 'Заметка обновлена';
+});
+</script>
+</body>
+</html>

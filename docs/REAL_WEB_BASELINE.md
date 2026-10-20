@@ -1,5 +1,9 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 20 October 2026: native editable controls Release sample
+
+Original Release suite at ignored `artifacts/live_web/native-form-editing-2026-10-20/`: Google rendered_with_js_errors (2 failures, 378 ms, 6 paint commands), YouTube no_text_rendered (4, 1,595 ms, 130 commands), Reddit blank_viewport (0, 242 ms, 1 command), DeviantArt rendered_with_js_errors (3, 8,901 ms, 2,609 commands), Pikabu rendered_with_js_errors (11, 12,740 ms, 1,522 commands). Statuses unchanged; changing remote pages prevent rigorous paint/performance comparison. Native WM_CHAR Unicode and local HTML editing are tested offline; public load probes do not type into forms. Full-browser compatibility still limited.
+
 ## 20 October 2026: programmatic focus Release site smoke
 
 Release build and five anonymous noninteractive site samples in ignored `artifacts/live_web/programmatic-focus-2026-10-20/` retained previously observed statuses: Google rendered_with_js_errors (~1.83 s), YouTube no_text_rendered (~3.02 s), Reddit blank_viewport (~1.59 s), Pikabu rendered_with_js_errors (~12.84 s), DeviantArt rendered_with_js_errors (~11.83 s). These probes do not execute focused user interactions and must not be used to claim full site, JavaScript or DOM interoperability. Pinned Test262 Parser v1 (523/1983) and Runtime v2 (78/179 attempted with 110 SKIP) remain historical selected-subset measurements; external full Test262 conformance was not rerun here.
