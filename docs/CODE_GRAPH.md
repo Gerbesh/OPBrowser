@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 21 October 2026: painted form controls prevent false empty ancestor collapse
+
+Original parsed DOM body (including input/textarea without any normal text siblings) -> op_css computed display -> op_layout::flow::Context::self_collapsing_children_margin checks whether an element produces real inline content before applying a self-collapsing fast path -> text-like input and textarea return nonempty, while hidden/nonpainted controls retain their existing behavior -> Context::collect creates original glyph runs -> ClickRegion/paint list -> native Engine::click_at, JS selection synchronization and original caret/selection painting. Regression coverage includes nested and solitary controls, hidden-only forms, mouse Unicode typing and script-selected emoji/newline highlight.
+
 ## 20 October 2026: selected HTML control range to visible foreground highlight
 
 JsRuntime UTF-16 selection -> PreparedDocument::render synchronizes first-party TextEditor scalar caret and anchor -> op_engine::forms::selection_fragments splits the range across explicit newline rows and measures Unicode-safe glyph prefixes via original op_layout::TextMeasurer -> clipped blue FillRect and white PaintCommand::Text foreground over original op_paint display list -> hide collapsed caret only while selection active. Subsequent original keyboard event/native WM_CHAR edits collapse the selection and restore ordinary cursor. Limits: provisional inline geometry and unshaped/unwrapped controls; no Windows text editor.

@@ -3953,3 +3953,10 @@ This file is append-only project history.
 - PreparedDocument::render now emits clipped blue selection fill plus white selected text over original control glyphs, and hides the insertion caret while the range is active. Source DOM/JS UTF-16 selection positions remain authoritative, not a Win32 EDIT control.
 - Added Unicode and multiline geometry units, real DOM tests selecting emoji via setSelectionRange, checking paint commands and selection removal after typing, and a two-row textarea selection check.
 - Observed that minimal input-only/script-only pages may render no hit regions in the current layout. Integration tests cover ordinary body content; this separate inline layout deficiency is not resolved here. Still missing drag selection, exact shaping/wrapping/bidi, clipboard and IME.
+
+## 2026-10-21 - P0 fix disappearing standalone editable HTML controls
+
+- Root cause: original CSS self-collapsing ancestor fast path treated input/textarea as recursively empty because their displayed value is generated internally and does not appear as ordinary DOM child text. When the input was the body's only visible content, the entire body was collapsed before form inline glyph generation ran.
+- In original op_layout::flow, treat paintable text/search/email/url/tel/password/number input and textarea as nonempty for margin collapse. Keep hidden and unsupported nonpainted controls excluded; ordinary empty-block collapse is unchanged.
+- Added layout regressions for input-only + script, nested inline/block input, textarea-only and hidden-only controls. New original engine regression clicks and inserts Unicode into a standalone input; removed the artificial neighboring paragraphs from JS-selected emoji and multiline textarea paint tests. All focused tests passed.
+- Existing first-party form rendering remains simplified: no full replaced-element sizing, soft-wrapped textarea selection, drag selection, clipboard, IME or exact bidi/glyph shaping.

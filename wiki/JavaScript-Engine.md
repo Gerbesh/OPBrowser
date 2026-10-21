@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## Standalone editable form visibility (21 October 2026)
+
+A body containing only an input or textarea (or such a control with a neighboring script) now renders its text, mouse hit area, JavaScript-selected highlights and caret. The original layout's margin-collapse detection no longer discards ancestors of real text controls. Hidden/nonpainted inputs remain invisible. This is not yet full replaced-element/textarea geometry conformance.
+
 ## Visual selection in editable HTML fields (20 October 2026)
 
 JavaScript setSelectionRange() and first-party keyboard selections in focused input/textarea controls now produce a clipped blue selection highlight with selected glyphs repainted in white. The renderer uses Unicode scalar boundaries measured with its own font measurer, including masked password characters and explicit textarea newlines. Editing the selection collapses the highlight back to a caret. This is not drag selection, a full contenteditable implementation, or pixel-perfect shaping/soft wrapping.

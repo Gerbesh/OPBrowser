@@ -4286,7 +4286,30 @@ impl<'a> Context<'a, '_> {
                     if display == Display::None {
                         continue;
                     }
-                    if matches!(tag, "img" | "br") {
+                    // Native text controls generate actual inline glyphs and
+                    // click regions from their value/placeholder even without
+                    // child text. Treating them as empty allows the body (and
+                    // ancestor blocks) to collapse away before layout visits
+                    // the controls. Input[type=hidden] and unsupported native
+                    // control types still follow the existing non-render path.
+                    let painted_form_control = match tag {
+                        "textarea" => attribute(element, "hidden").is_none(),
+                        "input" => {
+                            attribute(element, "hidden").is_none()
+                                && matches!(
+                                    attribute(element, "type").unwrap_or("text"),
+                                    "text"
+                                        | "search"
+                                        | "email"
+                                        | "url"
+                                        | "tel"
+                                        | "password"
+                                        | "number"
+                                )
+                        }
+                        _ => false,
+                    };
+                    if matches!(tag, "img" | "br") || painted_form_control {
                         return None;
                     }
                     let child_style = self.element_style(*child, tag, inherited);

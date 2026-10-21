@@ -1622,6 +1622,55 @@ mod tests {
     }
 
     #[test]
+    fn bare_form_controls_keep_ancestor_blocks_from_collapsing() {
+        for markup in [
+            "<body><input value='Solo😊'><script>let a=1;</script></body>",
+            "<body><div><span><input value='Solo😊'></span></div></body>",
+            "<body><textarea>Solo😊</textarea></body>",
+        ] {
+            let document = op_html::parse_document(markup);
+            let author = op_css::collect_author_styles(&document);
+            let computed = op_css::compute_styles(&document, &author.styles);
+            let layout = layout_document_with_computed_styles_and_metrics(
+                &document,
+                640,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            );
+            assert!(
+                layout
+                    .text_boxes
+                    .iter()
+                    .any(|run| run.text.contains("Solo😊")),
+                "text field is not painted for {markup}"
+            );
+            assert!(
+                !layout.click_regions.is_empty(),
+                "text field must have a click target for {markup}"
+            );
+        }
+    }
+
+    #[test]
+    fn hidden_only_input_does_not_create_a_fake_text_control() {
+        let document = op_html::parse_document(
+            "<body><input type='hidden' value='SECRET'><input hidden value='HIDE'></body>",
+        );
+        let author = op_css::collect_author_styles(&document);
+        let computed = op_css::compute_styles(&document, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &document,
+            640,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        assert!(layout.text_boxes.is_empty());
+        assert!(layout.click_regions.is_empty());
+    }
+
+    #[test]
     fn self_collapsing_block_in_inline_collapses_through_empty_parent() {
         let document = op_html::parse_document(
             "<style>

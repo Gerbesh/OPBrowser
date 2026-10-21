@@ -2656,10 +2656,57 @@ mod tests {
     }
 
     #[test]
+    fn solitary_input_renders_clicks_and_accepts_unicode_at_mouse_caret() {
+        let mut engine = Engine::new();
+        let initial = engine.set_html_page(
+            "<body><input id='one' value='AB'><script>var q=document.getElementById('one');</script></body>",
+            640, 400,
+        );
+        assert!(initial.commands.iter().any(|command| matches!(
+            command, PaintCommand::Text { text, .. } if text.contains("AB")
+        )));
+        let (x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let hit = page
+                .hit_regions
+                .iter()
+                .find(|hit| {
+                    page.document.element(hit.node).is_some_and(|element| {
+                        element
+                            .attributes
+                            .iter()
+                            .any(|attr| attr.name == "id" && attr.value == "one")
+                    })
+                })
+                .expect("solitary input should have a real hit target");
+            (hit.x + 1, hit.y + 2)
+        };
+        engine
+            .click_at(x, y, 640, 400)
+            .expect("first click focuses input");
+        engine
+            .text_input("猫", 640, 400)
+            .expect("Unicode text insertion");
+        let page = engine.active_document.as_ref().unwrap();
+        let node = page.interaction.focused.unwrap();
+        assert_eq!(
+            page.document
+                .element(node)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "value")
+                .unwrap()
+                .value,
+            "猫AB"
+        );
+    }
+
+    #[test]
     fn selected_input_emoji_paints_highlight_and_reverses_on_native_edit() {
         let mut engine = Engine::new();
         let list = engine.set_html_page(
-            "<body><input id='q' value='A😊B'><p>Ready</p><script>\
+            "<body><input id='q' value='A😊B'><script>\
              var q=document.getElementById('q');q.focus();q.setSelectionRange(1,3);\
              </script></body>",
             600,
@@ -2712,7 +2759,7 @@ mod tests {
     fn textarea_multiline_js_selection_paints_each_selected_row() {
         let mut engine = Engine::new();
         let list = engine.set_html_page(
-            "<body><textarea id='q'>ab\n猫😊Z</textarea><p>Ready</p><script>\
+            "<body><textarea id='q'>ab\n猫😊Z</textarea><script>\
              var q=document.getElementById('q');q.focus();q.setSelectionRange(1,6);\
              </script></body>",
             600,

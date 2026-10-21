@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S113 - Standalone HTML control paint and hit regions through margin-collapse check
+
+HTML body containing only a text input or textarea, optionally nested in inline/block ancestors or accompanied only by script -> original op_css display and op_layout::flow recursive self-collapsing-block detection -> known paintable text controls stop false empty collapse (hidden and nonpainted control types still do not) -> original inline glyph layout, text boxes and click regions -> native click caret, Unicode editing and JS-driven selection highlight without unrelated paragraph content. Original op_layout tests cover solitary/nested/textarea controls and hidden inputs; original op_engine tests cover real DOM click and emoji/textarea selections. Limited to first-party text-like control rendering, not standards-complete replaced-element metrics.
+
 ## S112 - Script or keyboard form selection to visible paint highlight
 
 A user keyboard selection or original JS input/textarea setSelectionRange -> VM UTF-16 selection offsets -> scalar-safe TextEditor caret/anchor in PreparedDocument -> original first-party selection_fragments measures highlighted character spans for each explicit newline row (including password bullet masks) -> clipped blue FillRect and repainted white glyphs in op_paint display list, in place of the collapsed insertion caret -> insertion replaces range, collapses selection and hides highlight. Engine/DOM tests check an emoji selection and multiline textarea selected glyphs, plus the caret restoration after editing. Soft-wrapped textarea, shaped/bidi glyph positioning, cross-field text and drag selection remain future steps.

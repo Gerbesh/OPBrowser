@@ -1,5 +1,9 @@
 # Roadmap
 
+## First-party form display for minimal HTML pages (21 October 2026)
+
+Fixed vanishing input/textarea control text and hit regions when the controls are the only painted children of the body or an ancestor block. Margin collapse now respects paintable controls while continuing to ignore hidden inputs. Verified real original layout, native click edit and JavaScript selection rendering without unrelated paragraphs. Remaining P0: proper form box geometry, drag selection, wrapping/scrolling, clipboard and IME.
+
 ## First-party editable selection highlighting (20 October 2026)
 
 Done: blue/white glyph-repaint highlight for active native and script selections in focused input/textarea with Unicode-safe boundaries, password masking and explicit newline row support. Next: mouse drag selection, accurate atomic control box geometry, wrapping/scrolling and RTL/shaped glyph positioning, clipboard and IME.
