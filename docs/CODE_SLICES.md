@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S114 - Captured mouse drag through first-party HTML form editing
+
+Win32 pointer press/captured pointer move (including beyond viewport) -> NavigationEvent::PointerDown/PointerMove with busy coalescing in op_browser -> original Engine::press_at/drag_text_selection_at/finish_text_drag_at -> scalar boundary computation from the retained DOM and measured glyph prefix (password mask and explicit textarea rows) -> TextEditor anchor/caret selection -> JS UTF-16 selectionStart/End/Direction -> original clipped blue/white text highlights -> native Unicode replacement after release. Actual drags suppress JS click and link defaults while stationary clicks remain unchanged. Real regressions verify both drag directions over surrogate-pair emoji, multiline textarea and Win32 capture events; shape/wrap/bidi, IME and clipboard still pending.
+
 ## S113 - Standalone HTML control paint and hit regions through margin-collapse check
 
 HTML body containing only a text input or textarea, optionally nested in inline/block ancestors or accompanied only by script -> original op_css display and op_layout::flow recursive self-collapsing-block detection -> known paintable text controls stop false empty collapse (hidden and nonpainted control types still do not) -> original inline glyph layout, text boxes and click regions -> native click caret, Unicode editing and JS-driven selection highlight without unrelated paragraph content. Original op_layout tests cover solitary/nested/textarea controls and hidden inputs; original op_engine tests cover real DOM click and emoji/textarea selections. Limited to first-party text-like control rendering, not standards-complete replaced-element metrics.

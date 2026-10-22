@@ -3960,3 +3960,10 @@ This file is append-only project history.
 - In original op_layout::flow, treat paintable text/search/email/url/tel/password/number input and textarea as nonempty for margin collapse. Keep hidden and unsupported nonpainted controls excluded; ordinary empty-block collapse is unchanged.
 - Added layout regressions for input-only + script, nested inline/block input, textarea-only and hidden-only controls. New original engine regression clicks and inserts Unicode into a standalone input; removed the artificial neighboring paragraphs from JS-selected emoji and multiline textarea paint tests. All focused tests passed.
 - Existing first-party form rendering remains simplified: no full replaced-element sizing, soft-wrapped textarea selection, drag selection, clipboard, IME or exact bidi/glyph shaping.
+
+## 2026-10-22 - P0 native captured mouse drag selects HTML form text
+
+- Win32 now sends PointerMove during mouse capture even outside the viewport; the original browser worker coalesces busy pointer moves while preserving press and release order.
+- Engine records a scalar anchor on pointer-down using the same font-measured click-to-caret mapping, extends it across Unicode text and explicit textarea rows, and synchronizes live JS UTF-16 selectionStart/End/Direction. Original clipped highlight rendering updates during dragging, with existing password bullet measurements.
+- Releasing a genuine selection drag does not dispatch a spurious click or link activation. Stationary clicks, scrollbar capture and pointer cancellation preserve prior behavior.
+- Regression tests cover forward/backward emoji dragging, multiline textarea edits, no click handler activation, native off-page pointer capture and busy move ordering. Remaining limitations: exact form geometry, soft-wrapped textarea, bidi/grapheme shaping, clipboard, IME and scroll-drag.

@@ -2,6 +2,19 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S114",
+      "title": "Captured Win32 mouse drag to original JS form selection and pixels",
+      "status": "Native capture, browser queue, UTF-16 control editing and rendering tested",
+      "steps": [
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "NavigationEvent::PointerMove"},
+        {"path": "crates/op_browser/src/main.rs", "symbol": "NavigationEvent::PointerMove"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "drag_text_selection_at"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "sync_native_control_selection"},
+        {"path": "crates/op_engine/src/forms.rs", "symbol": "selection_fragments"}
+      ],
+      "limitation": "Provisional glyph hit geometry, no soft wrapping, bidi/graphemes, IME or clipboard."
+    },
+    {
       "id": "S94",
       "title": "Original nested-await expressions through receiver-safe JS VM into pixels",
       "status": "Bounded eager await expressions, GC and actual DOM-to-native-paint integration tested",

@@ -269,6 +269,15 @@ pub struct RenderedPage {
     pub display_list: DisplayList,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TextDrag {
+    node: op_dom::NodeId,
+    anchor: usize,
+    start_x: i32,
+    start_y: i32,
+    active: bool,
+}
+
 #[derive(Debug)]
 struct PreparedDocument {
     address: String,
@@ -279,6 +288,7 @@ struct PreparedDocument {
     style_viewport: (i32, i32),
     interaction: StyleInteractionState,
     editor: Option<forms::TextEditor>,
+    text_drag: Option<TextDrag>,
     hit_regions: Vec<op_layout::ClickRegion>,
     computed_styles: ComputedStyleMap,
     stylesheet_addresses: std::collections::HashMap<op_dom::NodeId, String>,
@@ -400,6 +410,69 @@ impl PreparedDocument {
                         })
             })
             .map(|region| region.node)
+    }
+
+    /// Shared scalar caret mapping for clicks and captured mouse selection.
+    /// Positions outside the control clamp naturally to its first/last row.
+    fn text_caret_at(
+        &self,
+        target: op_dom::NodeId,
+        x: i32,
+        y: i32,
+        regions: &[op_layout::ClickRegion],
+    ) -> Option<(usize, String)> {
+        let element = self.document.element(target)?;
+        let attr = |name: &str| element.attributes.iter().find(|a| a.name == name);
+        let kind = attr("type").map_or("text", |a| a.value.as_str());
+        let editable = element.tag_name == "textarea"
+            || (element.tag_name == "input"
+                && matches!(kind, "text" | "search" | "tel" | "url" | "password"));
+        if !editable {
+            return None;
+        }
+        let region = regions
+            .iter()
+            .filter(|hit| hit.node == target && hit.width > 0 && hit.height > 0)
+            .min_by_key(|hit| (hit.y, hit.x))?;
+        let initial = if element.tag_name == "textarea" {
+            self.document
+                .children(target)
+                .iter()
+                .filter_map(|id| {
+                    self.document.node(*id).and_then(|node| match &node.kind {
+                        op_dom::NodeKind::Text(text) => Some(text.as_str()),
+                        _ => None,
+                    })
+                })
+                .collect::<String>()
+        } else {
+            String::new()
+        };
+        let value = attr("value")
+            .map_or(initial.as_str(), |a| a.value.as_str())
+            .to_owned();
+        let size = self.computed_styles.style_for(target).map_or(16, |style| {
+            style.font_size_px.round().clamp(8.0, 40.0) as i32
+        });
+        let mut measurer = text::Measurer::new();
+        let caret = forms::caret_at_point(
+            &value,
+            x.saturating_sub(region.x),
+            y.saturating_sub(region.y),
+            size,
+            kind == "password",
+            |prefix| {
+                op_layout::TextMeasurer::measure(
+                    &mut measurer,
+                    prefix,
+                    size,
+                    op_layout::FontWeight::Normal,
+                    op_layout::FontStyle::Normal,
+                )
+                .width
+            },
+        );
+        Some((caret, value))
     }
 
     /// Tab order: positive tabindex first (ascending), then natural focusables
@@ -1161,6 +1234,7 @@ impl Engine {
             style_viewport: (width, height),
             interaction: StyleInteractionState::default(),
             editor: None,
+            text_drag: None,
             hit_regions: Vec::new(),
             computed_styles,
             stylesheet_addresses: std::collections::HashMap::new(),
@@ -1613,11 +1687,21 @@ impl Engine {
         }
     }
 
-    /// Pointer press uses the same generation-safe native hit map as hover.
-    /// Does not run JS click handlers until the release event.
+    /// Pointer press uses the last rendered DOM hit map. Store the text
+    /// anchor at mouse-down, without firing click handlers before mouse-up.
     pub fn press_at(&mut self, x: i32, y: i32, width: i32, height: i32) -> Option<RenderedPage> {
         let page = self.active_document.as_mut()?;
         let target = page.hit_target(x, y);
+        page.text_drag = target.and_then(|node| {
+            page.text_caret_at(node, x, y, &page.hit_regions)
+                .map(|(anchor, _)| TextDrag {
+                    node,
+                    anchor,
+                    start_x: x,
+                    start_y: y,
+                    active: false,
+                })
+        });
         if page.interaction.active == target && page.style_viewport == (width, height) {
             return None;
         }
@@ -1627,14 +1711,105 @@ impl Engine {
         Some(page.render(width, height))
     }
 
-    /// Cancel a pointer press when capture is lost or the release misses the page.
-    pub fn release_press(&mut self, width: i32, height: i32) -> Option<RenderedPage> {
+    /// Extend a field selection while Win32 holds mouse capture. The anchor
+    /// remains fixed even when the pointer leaves the field or reverses direction.
+    pub fn drag_text_selection_at(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Option<RenderedPage> {
         let page = self.active_document.as_mut()?;
-        page.interaction.active.take()?;
+        let drag = page.text_drag?;
+        if !drag.active && x.abs_diff(drag.start_x) < 3 && y.abs_diff(drag.start_y) < 3 {
+            return None;
+        }
+        let (caret, value) = page.text_caret_at(drag.node, x, y, &page.hit_regions)?;
+        page.text_drag = Some(TextDrag {
+            active: true,
+            ..drag
+        });
+        let previous_focus = page.interaction.focused;
+        let focus_changed = previous_focus != Some(drag.node) || page.interaction.focus_visible;
+        page.interaction.focused = Some(drag.node);
+        page.interaction.focus_visible = false;
+        let focus_mutations = if previous_focus != Some(drag.node) {
+            if let Some(runtime) = page.runtime.as_mut() {
+                let (changes, checkpoint) = scripts::dispatch_focus_change(
+                    &mut page.document,
+                    runtime,
+                    previous_focus,
+                    Some(drag.node),
+                );
+                page.finish_gc_checkpoint(checkpoint);
+                changes
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+        if page.document.node(drag.node).is_none() {
+            page.text_drag = None;
+            return None;
+        }
+        let editor = page
+            .editor
+            .get_or_insert_with(|| forms::TextEditor::new(drag.node, &value));
+        if editor.node != drag.node {
+            *editor = forms::TextEditor::new(drag.node, &value);
+        }
+        let anchor = drag.anchor.min(value.chars().count());
+        let changed = editor.caret != caret || editor.anchor != anchor;
+        editor.anchor = anchor;
+        editor.caret = caret;
+        let (start, end, backward) = editor.selection_utf16(&value);
+        let script_changed = if let Some(vm) = page.runtime.as_mut() {
+            let previous = vm.dom_control_selection(drag.node.index());
+            vm.sync_native_control_selection(drag.node.index(), start, end, backward);
+            previous.is_some_and(|(s, e, d)| s != start || e != end || (d == 2) != backward)
+        } else {
+            false
+        };
+        page.scripts.mutations += focus_mutations;
+        if focus_changed || focus_mutations > 0 {
+            page.refresh_styles();
+        }
+        (changed || script_changed || focus_changed || focus_mutations > 0)
+            .then(|| page.render(width, height))
+    }
+
+    /// A completed drag is a selection, not a click or link navigation.
+    /// Returning None means there was no drag and normal click handling applies.
+    pub fn finish_text_drag_at(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    ) -> Option<RenderedPage> {
+        let dragged = self.active_document.as_ref()?.text_drag?.active;
+        if !dragged {
+            self.active_document.as_mut()?.text_drag = None;
+            return None;
+        }
+        self.drag_text_selection_at(x, y, width, height);
+        let page = self.active_document.as_mut()?;
+        page.text_drag = None;
+        page.interaction.active.take();
         page.refresh_styles();
         Some(page.render(width, height))
     }
 
+    /// Cancel a pointer press when capture is lost or the release misses the page.
+    pub fn release_press(&mut self, width: i32, height: i32) -> Option<RenderedPage> {
+        let page = self.active_document.as_mut()?;
+        page.text_drag = None;
+        page.interaction.active.take()?;
+        page.refresh_styles();
+        Some(page.render(width, height))
+    }
     /// Update :hover matching from the last committed native DOM hit map.
     /// No layout work occurs while the pointer stays over the same target.
     /// Coordinates are document pixels; negative values clear the state.
@@ -1753,80 +1928,23 @@ impl Engine {
         // glyph boundary before focus/click handlers so JS sees the live caret.
         let mut caret_changed = false;
         if focused == Some(target)
-            && let Some(element) = prepared.document.element(target)
+            && let Some((caret, value)) =
+                prepared.text_caret_at(target, x, y, &layout.click_regions)
         {
-            let attr = |name: &str| element.attributes.iter().find(|a| a.name == name);
-            let kind = attr("type").map_or("text", |a| a.value.as_str());
-            let is_text = element.tag_name == "textarea"
-                || (element.tag_name == "input"
-                    && matches!(kind, "text" | "search" | "tel" | "url" | "password"));
-            if is_text
-                && let Some(region) = layout
-                    .click_regions
-                    .iter()
-                    .filter(|hit| hit.node == target && hit.width > 0 && hit.height > 0)
-                    .min_by_key(|hit| (hit.y, hit.x))
-            {
-                let initial = if element.tag_name == "textarea" {
-                    prepared
-                        .document
-                        .children(target)
-                        .iter()
-                        .filter_map(|id| {
-                            prepared
-                                .document
-                                .node(*id)
-                                .and_then(|node| match &node.kind {
-                                    op_dom::NodeKind::Text(text) => Some(text.as_str()),
-                                    _ => None,
-                                })
-                        })
-                        .collect::<String>()
-                } else {
-                    String::new()
-                };
-                let value = attr("value")
-                    .map_or(initial.as_str(), |a| a.value.as_str())
-                    .to_owned();
-                let size = prepared
-                    .computed_styles
-                    .style_for(target)
-                    .map_or(16, |style| {
-                        style.font_size_px.round().clamp(8.0, 40.0) as i32
-                    });
-                let mut measurer = text::Measurer::new();
-                let caret = forms::caret_at_point(
-                    &value,
-                    x.saturating_sub(region.x),
-                    y.saturating_sub(region.y),
-                    size,
-                    kind == "password",
-                    |prefix| {
-                        op_layout::TextMeasurer::measure(
-                            &mut measurer,
-                            prefix,
-                            size,
-                            op_layout::FontWeight::Normal,
-                            op_layout::FontStyle::Normal,
-                        )
-                        .width
-                    },
-                );
-                let editor = prepared
-                    .editor
-                    .get_or_insert_with(|| forms::TextEditor::new(target, &value));
-                if editor.node != target {
-                    *editor = forms::TextEditor::new(target, &value);
-                }
-                caret_changed = editor.caret != caret || editor.anchor != caret;
-                editor.caret = caret;
-                editor.anchor = caret;
-                if let Some(vm) = prepared.runtime.as_mut() {
-                    let (start, _, _) = editor.selection_utf16(&value);
-                    let previous = vm.dom_control_selection(target.index());
-                    vm.sync_native_control_selection(target.index(), start, start, false);
-                    caret_changed |= previous.is_some_and(|(s, e, _)| s != start || e != start);
-                }
+            let editor = prepared
+                .editor
+                .get_or_insert_with(|| forms::TextEditor::new(target, &value));
+            if editor.node != target {
+                *editor = forms::TextEditor::new(target, &value);
+            }
+            caret_changed = editor.caret != caret || editor.anchor != caret;
+            editor.caret = caret;
+            editor.anchor = caret;
+            if let Some(vm) = prepared.runtime.as_mut() {
+                let (start, _, _) = editor.selection_utf16(&value);
+                let previous = vm.dom_control_selection(target.index());
+                vm.sync_native_control_selection(target.index(), start, start, false);
+                caret_changed |= previous.is_some_and(|(s, e, _)| s != start || e != start);
             }
         }
         let focus_mutations = if previous_focus != focused {
@@ -2328,6 +2446,7 @@ impl Engine {
             style_viewport: (viewport_width, viewport_height),
             interaction: StyleInteractionState::default(),
             editor: None,
+            text_drag: None,
             hit_regions: Vec::new(),
             computed_styles,
             stylesheet_addresses: linked_stylesheets.addresses,
@@ -2699,6 +2818,140 @@ mod tests {
                 .unwrap()
                 .value,
             "猫AB"
+        );
+    }
+
+    #[test]
+    fn mouse_drag_selects_unicode_in_both_directions_without_click_event() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='q' value='A😊BC'><p id='out'>idle</p><script>\
+             var q=document.getElementById('q');\
+             q.addEventListener('click',function(){document.getElementById('out').textContent='clicked';});\
+             </script></body>",
+            640,
+            380,
+        );
+        let (node, x, right, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let hit = page
+                .hit_regions
+                .iter()
+                .find(|hit| {
+                    page.document.element(hit.node).is_some_and(|e| {
+                        e.attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == "q")
+                    })
+                })
+                .expect("real input region");
+            (hit.node, hit.x + 1, hit.x + hit.width - 1, hit.y + 2)
+        };
+        engine.press_at(x, y, 640, 380);
+        let frame = engine
+            .drag_text_selection_at(right, y, 640, 380)
+            .expect("drag should repaint selected text");
+        assert!(frame.display_list.commands.iter().any(|command| matches!(
+            command,
+            PaintCommand::Clipped { command, .. }
+                if matches!(command.as_ref(), PaintCommand::Text { color: Color::WHITE, .. })
+        )));
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(
+            page.runtime
+                .as_ref()
+                .unwrap()
+                .dom_control_selection(node.index()),
+            Some((0, 5, 1)),
+            "emoji must count as two UTF-16 code units"
+        );
+        let frame = engine
+            .finish_text_drag_at(right, y, 640, 380)
+            .expect("release consumes drag rather than dispatching click");
+        assert!(contains_text(&frame.display_list, "idle"));
+        assert!(!contains_text(&frame.display_list, "clicked"));
+
+        engine.press_at(right, y, 640, 380);
+        engine
+            .drag_text_selection_at(x, y, 640, 380)
+            .expect("reverse drag should repaint");
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(
+            page.runtime
+                .as_ref()
+                .unwrap()
+                .dom_control_selection(node.index()),
+            Some((0, 5, 2)),
+            "backward selection must stay observable to JavaScript"
+        );
+        engine.finish_text_drag_at(x, y, 640, 380).unwrap();
+        engine
+            .text_input("猫", 640, 380)
+            .expect("replace selection");
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(
+            page.document
+                .element(node)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "value")
+                .unwrap()
+                .value,
+            "猫"
+        );
+    }
+
+    #[test]
+    fn textarea_mouse_drag_spans_explicit_rows_and_replaces_selection() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><textarea id='notes'>ab\n猫😊Z</textarea><script>var q=document.getElementById('notes');</script></body>",
+            640,
+            380,
+        );
+        let (node, x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let hit = page
+                .hit_regions
+                .iter()
+                .find(|hit| {
+                    page.document.element(hit.node).is_some_and(|e| {
+                        e.attributes
+                            .iter()
+                            .any(|a| a.name == "id" && a.value == "notes")
+                    })
+                })
+                .expect("textarea region");
+            (hit.node, hit.x + 1, hit.y + 2)
+        };
+        engine.press_at(x, y, 640, 380);
+        engine
+            .drag_text_selection_at(x + 250, y + 28, 640, 380)
+            .expect("multiline drag should select through second row");
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(
+            page.runtime
+                .as_ref()
+                .unwrap()
+                .dom_control_selection(node.index()),
+            Some((0, 7, 1))
+        );
+        engine
+            .finish_text_drag_at(x + 250, y + 28, 640, 380)
+            .unwrap();
+        engine.text_input("X", 640, 380).unwrap();
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(
+            page.document
+                .element(node)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|a| a.name == "value")
+                .unwrap()
+                .value,
+            "X"
         );
     }
 

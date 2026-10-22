@@ -1,5 +1,9 @@
 # Roadmap
 
+## Captured mouse selection in editable forms (22 October 2026)
+
+Completed: press-and-drag native text selection for text-like input and textarea fields, with live JavaScript UTF-16 selection ranges, backward selection, selection painting, pointer capture outside the viewport, and coalesced mouse movement through the render worker. Drag release no longer fires a spurious click/link action; normal clicks still work. Next: true form-control geometry and soft wrapping, grapheme/bidi cursor positioning, scrolling selections, clipboard and IME.
+
 ## First-party form display for minimal HTML pages (21 October 2026)
 
 Fixed vanishing input/textarea control text and hit regions when the controls are the only painted children of the body or an ancestor block. Margin collapse now respects paintable controls while continuing to ignore hidden inputs. Verified real original layout, native click edit and JavaScript selection rendering without unrelated paragraphs. Remaining P0: proper form box geometry, drag selection, wrapping/scrolling, clipboard and IME.

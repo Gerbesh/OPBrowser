@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## Live mouse-drag selections in HTML form fields (22 October 2026)
+
+The original Windows browser now tracks text-like input and textarea selections from captured mouse press/move/release without Win32 EDIT or external JavaScript engines. A scalar-safe anchor and caret are converted into JavaScript-visible UTF-16 selectionStart, selectionEnd and backward/forward selectionDirection; existing native selected-glyph paint updates during movement. Moving outside the field clamps to the first/last line. Releasing an actual drag does not dispatch a spurious DOM click. Explicit textarea lines and password glyph masking share the existing approximate text geometry; accurate wrapping, bidi/grapheme shaping, clipboard and IME are not implemented.
+
 ## Standalone editable form visibility (21 October 2026)
 
 A body containing only an input or textarea (or such a control with a neighboring script) now renders its text, mouse hit area, JavaScript-selected highlights and caret. The original layout's margin-collapse detection no longer discards ancestors of real text controls. Hidden/nonpainted inputs remain invisible. This is not yet full replaced-element/textarea geometry conformance.

@@ -1,5 +1,9 @@
 # OPBrowser: active project plan
 
+## P0 captured mouse drag selection in first-party form controls (22 October 2026)
+
+Win32 mouse capture now forwards pointer moves even outside the page and coalesces busy-frame movement without losing press/release order. An original input/textarea pointer-down captures a Unicode-scalar anchor; dragging at least 3 pixels extends the selection using the existing glyph measurer, including explicit textarea newlines and password masks. The original JS runtime receives UTF-16 start/end/direction updates while the selected glyphs repaint through the existing clipped blue/white display commands. A completed text drag suppresses click/link activation; a stationary press keeps existing click, caret and hyperlink behavior. Real engine/native regressions cover forward/backward emoji selection, multiline editing, click suppression, capture beyond viewport and queued move ordering. Remaining gaps: pixel-accurate replaced-element sizing, soft wrapping and horizontal scroll, grapheme/bidi shaping, clipboard and IME.
+
 ## P0 visible solitary input/textarea forms without unrelated DOM content (21 October 2026)
 
 Fixed a CSS margin-collapsing fast path in the original op_layout::flow engine: block ancestors containing a paintable input or textarea were mistakenly treated as empty when they had no regular text siblings, preventing both glyph painting and native click hit regions. First-party text/search/email/url/tel/password/number inputs and textareas now count as real layout content for this check, while input[type=hidden], boolean hidden and unsupported non-rendered input types are still excluded. The fix restores standalone text controls, nested inline/block controls and script-only neighbor cases without disabling ordinary empty-block margin collapse. Real DOM tests verify solitary mouse editing, JS selection highlight and textarea multiple-line drawing; full precise form box geometry remains future work.

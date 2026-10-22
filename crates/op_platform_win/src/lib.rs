@@ -69,6 +69,10 @@ pub enum NavigationEvent {
         x: i32,
         y: i32,
     },
+    PointerMove {
+        x: i32,
+        y: i32,
+    },
     PointerCancel,
     FocusNext {
         backwards: bool,
@@ -529,6 +533,13 @@ impl NativeBrowserWindow {
                 let y = ((message.lParam >> 16) as u16 as i16) as i32;
                 let mut client: RECT = unsafe { zeroed() };
                 unsafe { GetClientRect(self.hwnd, &mut client) };
+                // Keep captured pointer positions outside the page for text selection.
+                if POINTER_PRESS_CAPTURE.load(Ordering::SeqCst) {
+                    return Some(NavigationEvent::PointerMove {
+                        x,
+                        y: y - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst),
+                    });
+                }
                 if x < 0 || x >= client.right || y < TOOLBAR_HEIGHT || y >= client.bottom {
                     return Some(NavigationEvent::Hover { x: -1, y: -1 });
                 }
@@ -1842,6 +1853,14 @@ mod tests {
             Some(NavigationEvent::PointerDown { x: 70, y: 16 })
         );
         assert!(POINTER_PRESS_CAPTURE.load(Ordering::SeqCst));
+        assert_eq!(
+            window.navigation_event(&message_at(WM_MOUSEMOVE, -4, 5)),
+            Some(NavigationEvent::PointerMove {
+                x: -4,
+                y: 5 - TOOLBAR_HEIGHT + SCROLL_Y.load(Ordering::SeqCst),
+            }),
+            "capture must preserve outside-page drag coordinates"
+        );
         assert_eq!(unsafe { GetCapture() }, window.hwnd);
         assert_eq!(
             window.navigation_event(&message_at(WM_LBUTTONUP, 70, inside_y)),

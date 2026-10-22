@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 22 October 2026: captured mouse drag to JS-observable form selection
+
+Win32 WM_LBUTTONDOWN -> op_platform_win::NavigationEvent::PointerDown -> Engine::press_at saves an original DOM text-field scalar anchor from PreparedDocument::text_caret_at; WM_MOUSEMOVE while captured -> PointerMove (preserves off-page coordinates) -> op_browser busy queue coalesces consecutive moves -> Engine::drag_text_selection_at extends original TextEditor while preserving anchor -> JsRuntime::sync_native_control_selection exports UTF-16 start/end/backward direction -> PreparedDocument::render paints clipped glyph selection. WM_LBUTTONUP -> finish_text_drag_at suppresses ordinary click/link navigation only for an actual drag; no-drag and lost-capture paths keep native click/cancel semantics. Tested across Win32, browser queue and the DOM/render engine.
+
 ## 21 October 2026: painted form controls prevent false empty ancestor collapse
 
 Original parsed DOM body (including input/textarea without any normal text siblings) -> op_css computed display -> op_layout::flow::Context::self_collapsing_children_margin checks whether an element produces real inline content before applying a self-collapsing fast path -> text-like input and textarea return nonempty, while hidden/nonpainted controls retain their existing behavior -> Context::collect creates original glyph runs -> ClickRegion/paint list -> native Engine::click_at, JS selection synchronization and original caret/selection painting. Regression coverage includes nested and solitary controls, hidden-only forms, mouse Unicode typing and script-selected emoji/newline highlight.

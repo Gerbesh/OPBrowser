@@ -93,6 +93,18 @@ fn queue_thumb_event(
                 queued.push_back(NavigationEvent::ScrollbarDragMove { y });
             }
         }
+        NavigationEvent::PointerMove { x, y } => {
+            if let Some(NavigationEvent::PointerMove {
+                x: last_x,
+                y: last_y,
+            }) = queued.back_mut()
+            {
+                *last_x = x;
+                *last_y = y;
+            } else {
+                queued.push_back(NavigationEvent::PointerMove { x, y });
+            }
+        }
         NavigationEvent::Hover { x, y } => {
             if let Some(NavigationEvent::Hover {
                 x: last_x,
@@ -237,6 +249,7 @@ fn main() {
                 NavigationEvent::Resize
                     | NavigationEvent::Click { .. }
                     | NavigationEvent::PointerDown { .. }
+                    | NavigationEvent::PointerMove { .. }
                     | NavigationEvent::PointerCancel
                     | NavigationEvent::FocusNext { .. }
                     | NavigationEvent::ActivateFocused
@@ -256,14 +269,23 @@ fn main() {
                     engine.navigate(&source, width, height).map(Some)
                 }
                 NavigationEvent::FollowLinkAt { href, x, y } => {
-                    engine.activate_link_at(&href, x, y, width, height)
+                    if let Some(page) = engine.finish_text_drag_at(x, y, width, height) {
+                        Ok(Some(page))
+                    } else {
+                        engine.activate_link_at(&href, x, y, width, height)
+                    }
                 }
                 NavigationEvent::Back => engine.go_back(width, height),
                 NavigationEvent::Forward => engine.go_forward(width, height),
                 NavigationEvent::Reload => engine.reload(width, height),
                 NavigationEvent::Resize => Ok(engine.reflow(width, height)),
-                NavigationEvent::Click { x, y } => Ok(engine.click_at(x, y, width, height)),
+                NavigationEvent::Click { x, y } => Ok(engine
+                    .finish_text_drag_at(x, y, width, height)
+                    .or_else(|| engine.click_at(x, y, width, height))),
                 NavigationEvent::PointerDown { x, y } => Ok(engine.press_at(x, y, width, height)),
+                NavigationEvent::PointerMove { x, y } => Ok(engine
+                    .drag_text_selection_at(x, y, width, height)
+                    .or_else(|| engine.hover_at(x, y, width, height))),
                 NavigationEvent::PointerCancel => Ok(engine.release_press(width, height)),
                 NavigationEvent::FocusNext { backwards } => {
                     Ok(engine.focus_next(backwards, width, height))
@@ -580,6 +602,7 @@ fn main() {
                 event,
                 NavigationEvent::Resize | NavigationEvent::Click { .. }
                     | NavigationEvent::PointerDown { .. }
+                    | NavigationEvent::PointerMove { .. }
                     | NavigationEvent::PointerCancel
                     | NavigationEvent::FocusNext { .. }
                     | NavigationEvent::ActivateFocused
@@ -722,6 +745,29 @@ mod overflow_tests {
         queue_thumb_event(&mut queue, NavigationEvent::ScrollbarDragEnd);
         queue_thumb_event(&mut queue, NavigationEvent::Hover { x: -1, y: -1 });
         assert_eq!(queue.len(), 3);
+    }
+
+    #[test]
+    fn captured_text_pointer_moves_coalesce_without_losing_release() {
+        let mut queue = std::collections::VecDeque::new();
+        queue_thumb_event(&mut queue, NavigationEvent::PointerDown { x: 10, y: 10 });
+        for x in 11..1000 {
+            queue_thumb_event(&mut queue, NavigationEvent::PointerMove { x, y: 20 });
+        }
+        queue_thumb_event(&mut queue, NavigationEvent::Click { x: 999, y: 20 });
+        assert_eq!(queue.len(), 3);
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::PointerDown { x: 10, y: 10 })
+        );
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::PointerMove { x: 999, y: 20 })
+        );
+        assert_eq!(
+            queue.pop_front(),
+            Some(NavigationEvent::Click { x: 999, y: 20 })
+        );
     }
 
     #[test]
