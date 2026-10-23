@@ -3967,3 +3967,10 @@ This file is append-only project history.
 - Engine records a scalar anchor on pointer-down using the same font-measured click-to-caret mapping, extends it across Unicode text and explicit textarea rows, and synchronizes live JS UTF-16 selectionStart/End/Direction. Original clipped highlight rendering updates during dragging, with existing password bullet measurements.
 - Releasing a genuine selection drag does not dispatch a spurious click or link activation. Stationary clicks, scrollbar capture and pointer cancellation preserve prior behavior.
 - Regression tests cover forward/backward emoji dragging, multiline textarea edits, no click handler activation, native off-page pointer capture and busy move ordering. Remaining limitations: exact form geometry, soft-wrapped textarea, bidi/grapheme shaping, clipboard, IME and scroll-drag.
+
+## 2026-10-23 - P0 native Unicode clipboard for first-party form fields
+
+- Added bounded Windows CF_UNICODETEXT read/write with a live OPBrowser HWND clipboard owner, moveable global memory and correctly normalized UTF-16 CRLF text. Pure encode/decode regressions reject embedded NUL, invalid surrogates and missing terminators; platform tests do not disturb the user's clipboard.
+- Browser Ctrl+C/X/V dispatches a trusted, cancelable original JS keydown before default clipboard action. Original field selection is mapped from JS UTF-16 units to Unicode scalar ranges, excluding password text and disabling cut on readonly controls.
+- Cut only removes a noncollapsed selection after successful OS clipboard write. Paste normalizes textarea newlines and strips CR/LF from single-line input. Existing original beforeinput cancelation, DOM attribute updates, input events, JS selection synchronization and native repaint remain the single edit pipeline.
+- Added real engine regressions for selected emoji clipboard text, Unicode cut/paste and DOM events, multiline textarea replacement, readonly/password restrictions and keydown.preventDefault; updated forms demo, code graph, roadmap and wiki. ClipboardEvent APIs, IME, undo, exact wrapped text and real OS clipboard roundtrip tests remain future work.

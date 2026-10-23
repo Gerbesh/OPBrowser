@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## Native Windows Unicode copy, cut and paste (23 October 2026)
+
+The first-party HTML input/textarea editor now supports Ctrl+C, Ctrl+X and Ctrl+V without platform text-widget delegation. Keydown listeners run through the original JS runtime first, including preventDefault cancellation; selected ranges are mapped from JS UTF-16 offsets to Unicode scalars. Windows CF_UNICODETEXT transfers only text; native cut/paste route through existing beforeinput/input DOM mutation and selection synchronization. Passwords cannot be copied and readonly fields remain copy-only. HTML ClipboardEvents, custom clipboard MIME types, IME and undo/redo remain unsupported.
+
 ## Live mouse-drag selections in HTML form fields (22 October 2026)
 
 The original Windows browser now tracks text-like input and textarea selections from captured mouse press/move/release without Win32 EDIT or external JavaScript engines. A scalar-safe anchor and caret are converted into JavaScript-visible UTF-16 selectionStart, selectionEnd and backward/forward selectionDirection; existing native selected-glyph paint updates during movement. Moving outside the field clamps to the first/last line. Releasing an actual drag does not dispatch a spurious DOM click. Explicit textarea lines and password glyph masking share the existing approximate text geometry; accurate wrapping, bidi/grapheme shaping, clipboard and IME are not implemented.

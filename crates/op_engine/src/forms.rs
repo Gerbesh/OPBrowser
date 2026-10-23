@@ -14,6 +14,7 @@ pub(super) struct TextEditor {
 #[derive(Debug, Clone)]
 pub(super) enum Edit {
     Insert(String),
+    DeleteSelection,
     Backspace,
     Delete,
     Left { shift: bool },
@@ -61,6 +62,14 @@ impl TextEditor {
             offset(self.caret.max(self.anchor)),
             self.caret < self.anchor,
         )
+    }
+
+    /// Extract a selected range without ever slicing a UTF-8 code point.
+    pub fn selected_text(&self, value: &str) -> Option<String> {
+        let total = value.chars().count();
+        let start = self.caret.min(self.anchor).min(total);
+        let end = self.caret.max(self.anchor).min(total);
+        (start < end).then(|| value.chars().skip(start).take(end - start).collect())
     }
 
     pub fn edit(&mut self, value: &str, edit: Edit) -> (String, bool) {
@@ -115,13 +124,14 @@ impl TextEditor {
                     self.anchor = self.caret;
                 }
             }
-            Edit::Backspace | Edit::Delete | Edit::Insert(_) => {
+            Edit::Backspace | Edit::Delete | Edit::DeleteSelection | Edit::Insert(_) => {
                 let (start, end) = if select {
                     (start, end)
                 } else {
                     match edit {
                         Edit::Backspace => (self.caret.saturating_sub(1), self.caret),
                         Edit::Delete => (self.caret, (self.caret + 1).min(total)),
+                        Edit::DeleteSelection => (self.caret, self.caret),
                         _ => (self.caret, self.caret),
                     }
                 };

@@ -2,6 +2,20 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S115",
+      "title": "Cancelable Ctrl+C/X/V from original DOM to Windows Unicode clipboard and pixels",
+      "status": "Original JS keydown, Unicode scalar selection, Win32 clipboard encoding and DOM edit regressions pass",
+      "steps": [
+        {"path": "crates/op_browser/src/main.rs", "symbol": "keyboard_default_prevented"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "write_clipboard_text"},
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "read_clipboard_text"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "selected_clipboard_text"},
+        {"path": "crates/op_engine/src/forms.rs", "symbol": "DeleteSelection"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "sync_native_control_selection"}
+      ],
+      "limitation": "No ClipboardEvent/custom MIME support, IME, undo or physical OS clipboard roundtrip automated test."
+    },
+    {
       "id": "S114",
       "title": "Captured Win32 mouse drag to original JS form selection and pixels",
       "status": "Native capture, browser queue, UTF-16 control editing and rendering tested",

@@ -475,6 +475,74 @@ impl PreparedDocument {
         Some((caret, value))
     }
 
+    /// Read the current native/JS form selection for a clipboard operation.
+    /// Passwords never disclose their contents to the OS clipboard.
+    fn clipboard_selection(&self, cut: bool) -> Option<String> {
+        let focused = self.interaction.focused?;
+        let element = self.document.element(focused)?;
+        let attr = |name: &str| element.attributes.iter().find(|a| a.name == name);
+        if attr("disabled").is_some()
+            || attr("hidden").is_some()
+            || (cut && attr("readonly").is_some())
+        {
+            return None;
+        }
+        let kind = attr("type").map_or("text", |a| a.value.as_str());
+        if element.tag_name != "textarea"
+            && (element.tag_name != "input"
+                || !matches!(kind, "text" | "search" | "email" | "url" | "tel" | "number"))
+        {
+            return None;
+        }
+        let initial = if element.tag_name == "textarea" {
+            self.document
+                .children(focused)
+                .iter()
+                .filter_map(|id| {
+                    self.document.node(*id).and_then(|child| match &child.kind {
+                        op_dom::NodeKind::Text(text) => Some(text.as_str()),
+                        _ => None,
+                    })
+                })
+                .collect::<String>()
+        } else {
+            String::new()
+        };
+        let value = attr("value").map_or(initial.as_str(), |a| a.value.as_str());
+        let mut editor = self
+            .editor
+            .as_ref()
+            .filter(|e| e.node == focused)
+            .cloned()
+            .unwrap_or_else(|| forms::TextEditor::new(focused, value));
+        if let Some((start, end, direction)) = self
+            .runtime
+            .as_ref()
+            .and_then(|vm| vm.dom_control_selection(focused.index()))
+        {
+            editor.set_utf16_selection(value, start, end, direction == 2);
+        }
+        editor.selected_text(value)
+    }
+
+    /// Native paste uses LF internally; single-line inputs strip line breaks.
+    fn normalize_clipboard_paste(&self, clipboard: &str) -> Option<String> {
+        let focused = self.interaction.focused?;
+        let element = self.document.element(focused)?;
+        let tag = element.tag_name.as_str();
+        if !matches!(tag, "input" | "textarea") {
+            return None;
+        }
+        let normalized = clipboard.replace("\r\n", "\n").replace('\r', "\n");
+        let normalized = if tag == "input" {
+            normalized.replace('\n', "")
+        } else {
+            normalized
+        };
+        let normalized = normalized.replace('\0', "");
+        (!normalized.is_empty()).then_some(normalized)
+    }
+
     /// Tab order: positive tabindex first (ascending), then natural focusables
     /// and tabindex=0 in connected DOM order. Negative values are skipped.
     fn keyboard_focus_order(&self) -> Vec<op_dom::NodeId> {
@@ -1050,6 +1118,7 @@ pub struct Engine {
     active_document: Option<PreparedDocument>,
     scrollbar_drag: Option<ScrollbarDrag>,
     last_click_default_prevented: bool,
+    last_keydown_default_prevented: bool,
     suppress_text_input: bool,
     pending_focus_bounds: Option<(i32, i32)>,
     network_completion_send: mpsc::Sender<NetworkCompletion>,
@@ -1073,6 +1142,7 @@ impl Engine {
             active_document: None,
             scrollbar_drag: None,
             last_click_default_prevented: false,
+            last_keydown_default_prevented: false,
             suppress_text_input: false,
             pending_focus_bounds: None,
         }
@@ -1379,6 +1449,39 @@ impl Engine {
         Some(page.render(width, height))
     }
 
+    /// Whether the last trusted keydown was canceled by page JavaScript.
+    /// Native clipboard defaults must respect preventDefault().
+    pub fn keyboard_default_prevented(&self) -> bool {
+        self.last_keydown_default_prevented
+    }
+
+    /// A text selection that may be copied (or cut) to the OS clipboard.
+    /// This never copies password fields, disabled controls or collapsed ranges.
+    pub fn selected_clipboard_text(&self, cut: bool) -> Option<String> {
+        self.active_document.as_ref()?.clipboard_selection(cut)
+    }
+
+    /// Delete only selected characters after the clipboard write succeeds.
+    pub fn cut_selection(&mut self, width: i32, height: i32) -> Option<RenderedPage> {
+        self.selected_clipboard_text(true)?;
+        self.edit_focused(forms::Edit::DeleteSelection, width, height)
+    }
+
+    /// Insert Unicode from the OS clipboard into a focused editable control.
+    /// HTML single-line fields remove line breaks; textarea retains LF rows.
+    pub fn paste_clipboard_text(
+        &mut self,
+        clipboard: &str,
+        width: i32,
+        height: i32,
+    ) -> Option<RenderedPage> {
+        let text = self
+            .active_document
+            .as_ref()?
+            .normalize_clipboard_paste(clipboard)?;
+        self.edit_focused(forms::Edit::Insert(text), width, height)
+    }
+
     /// WM_CHAR commits Unicode text after a cancelable DOM keydown. WM_CHAR is
     /// independent of keydown: it also covers keyboard layouts and dead keys.
     pub fn text_input(&mut self, text: &str, width: i32, height: i32) -> Option<RenderedPage> {
@@ -1559,6 +1662,7 @@ impl Engine {
                 }
             }
         }
+        self.last_keydown_default_prevented = input.down && canceled;
         if input.down {
             self.suppress_text_input = canceled || input.ctrl;
         }
@@ -2953,6 +3057,122 @@ mod tests {
                 .value,
             "X"
         );
+    }
+
+    #[test]
+    fn clipboard_unicode_selection_cut_and_single_line_paste_use_real_dom_events() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='q' value='A😊B'><p id='out'>idle</p><script>\
+             var q=document.getElementById('q');q.focus();q.setSelectionRange(1,3);\
+             q.addEventListener('input',function(){document.getElementById('out').textContent=\
+             q.value+'|'+q.selectionStart+'|'+q.selectionEnd;});\
+             </script></body>",
+            640,
+            380,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        assert_eq!(engine.selected_clipboard_text(false).as_deref(), Some("😊"));
+        assert_eq!(engine.selected_clipboard_text(true).as_deref(), Some("😊"));
+        let frame = engine
+            .cut_selection(640, 380)
+            .expect("cut real selected text");
+        assert!(contains_text(&frame.display_list, "AB|1|1"));
+        assert!(engine.selected_clipboard_text(false).is_none());
+        let frame = engine
+            .paste_clipboard_text("猫\r\n😊", 640, 380)
+            .expect("paste into single-line control");
+        assert!(contains_text(&frame.display_list, "A猫😊B|4|4"));
+        let page = engine.active_document.as_ref().unwrap();
+        let focused = page.interaction.focused.unwrap();
+        assert_eq!(
+            page.document
+                .element(focused)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|a| a.name == "value")
+                .unwrap()
+                .value,
+            "A猫😊B"
+        );
+    }
+
+    #[test]
+    fn clipboard_textarea_preserves_lf_and_cut_removes_only_selection() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><textarea id='q'>ab\n猫😊Z</textarea><script>\
+             var q=document.getElementById('q');q.focus();q.setSelectionRange(1,7);\
+             </script></body>",
+            640,
+            380,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        assert_eq!(
+            engine.selected_clipboard_text(true).as_deref(),
+            Some("b\n猫😊Z")
+        );
+        engine.cut_selection(640, 380).expect("cut textarea range");
+        let frame = engine
+            .paste_clipboard_text("x\r\n😊", 640, 380)
+            .expect("paste with normalized line endings");
+        assert!(contains_text(&frame.display_list, "ax"));
+        let page = engine.active_document.as_ref().unwrap();
+        let focused = page.interaction.focused.unwrap();
+        assert_eq!(
+            page.document
+                .element(focused)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|a| a.name == "value")
+                .unwrap()
+                .value,
+            "ax\n😊"
+        );
+    }
+
+    #[test]
+    fn clipboard_respects_readonly_password_and_cancelable_keydown() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='q' readonly value='A😊B'><script>\
+             var q=document.getElementById('q');q.focus();q.setSelectionRange(1,3);\
+             q.addEventListener('keydown',function(event){if(event.key==='v')event.preventDefault();});\
+             </script></body>",
+            640,
+            380,
+        );
+        assert_eq!(engine.selected_clipboard_text(false).as_deref(), Some("😊"));
+        assert!(engine.selected_clipboard_text(true).is_none());
+        assert!(engine.cut_selection(640, 380).is_none());
+        assert!(engine.paste_clipboard_text("insert", 640, 380).is_none());
+        let _ = engine
+            .keyboard_event(
+                op_js::NativeKeyboardInput {
+                    key: "v",
+                    code: "KeyV",
+                    down: true,
+                    shift: false,
+                    ctrl: true,
+                    repeat: false,
+                },
+                640,
+                380,
+            )
+            .unwrap();
+        assert!(engine.keyboard_default_prevented());
+
+        engine.set_html_page(
+            "<body><input type='password' id='pass' value='secret'><script>\
+             var q=document.getElementById('pass');q.focus();q.setSelectionRange(0,6);\
+             </script></body>",
+            640,
+            380,
+        );
+        assert!(engine.selected_clipboard_text(false).is_none());
+        assert!(engine.selected_clipboard_text(true).is_none());
     }
 
     #[test]

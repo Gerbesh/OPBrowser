@@ -1,5 +1,9 @@
 # Roadmap
 
+## OS clipboard for first-party HTML text fields (23 October 2026)
+
+Done: Ctrl+C (copy), Ctrl+X (cut) and Ctrl+V (paste) for original HTML input/textarea on Windows via CF_UNICODETEXT, respecting JavaScript keydown.preventDefault(). Unicode and textarea newline handling are covered by regressions, password copy is blocked, readonly is copy-only, and actual OS clipboard tests do not overwrite the user's clipboard. The independent parser/JS/layout/paint engines remain unchanged. Next: true form box geometry, wrapped/scrollable textarea, ClipboardEvent API, IME, bidirectional/grapheme selection and undo.
+
 ## Captured mouse selection in editable forms (22 October 2026)
 
 Completed: press-and-drag native text selection for text-like input and textarea fields, with live JavaScript UTF-16 selection ranges, backward selection, selection painting, pointer capture outside the viewport, and coalesced mouse movement through the render worker. Drag release no longer fires a spurious click/link action; normal clicks still work. Next: true form-control geometry and soft wrapping, grapheme/bidi cursor positioning, scrolling selections, clipboard and IME.

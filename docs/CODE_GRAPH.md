@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 23 October 2026: JS-cancelable Unicode OS clipboard to original form model
+
+Win32 WM_KEYDOWN -> NavigationEvent::KeyDown -> original Engine::keyboard_event emits cancelable DOM keydown -> browser worker checks keyboard_default_prevented -> op_platform_win read_clipboard_text/write_clipboard_text bridge Windows CF_UNICODETEXT via bounded GMEM_MOVEABLE allocations (browser HWND owner; UTF-16 CRLF helper) -> PreparedDocument::clipboard_selection extracts scalar-safe text from original field state/JS UTF-16 selection -> original TextEditor::DeleteSelection or Insert via Engine::cut_selection/paste_clipboard_text -> beforeinput, DOM value/selection synchronization and input event -> existing display list repaint. Native OS address-bar EDIT remains separate. Copy never exposes password values and cut does not modify readonly fields. ClipboardEvent API and IME are still future work.
+
 ## 22 October 2026: captured mouse drag to JS-observable form selection
 
 Win32 WM_LBUTTONDOWN -> op_platform_win::NavigationEvent::PointerDown -> Engine::press_at saves an original DOM text-field scalar anchor from PreparedDocument::text_caret_at; WM_MOUSEMOVE while captured -> PointerMove (preserves off-page coordinates) -> op_browser busy queue coalesces consecutive moves -> Engine::drag_text_selection_at extends original TextEditor while preserving anchor -> JsRuntime::sync_native_control_selection exports UTF-16 start/end/backward direction -> PreparedDocument::render paints clipped glyph selection. WM_LBUTTONUP -> finish_text_drag_at suppresses ordinary click/link navigation only for an actual drag; no-drag and lost-capture paths keep native click/cancel semantics. Tested across Win32, browser queue and the DOM/render engine.

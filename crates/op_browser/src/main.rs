@@ -1,7 +1,9 @@
 use std::sync::mpsc;
 
 use op_engine::{Engine, RenderedPage};
-use op_platform_win::{NativeBrowserWindow, NavigationEvent};
+use op_platform_win::{
+    NativeBrowserWindow, NavigationEvent, read_clipboard_text, write_clipboard_text,
+};
 
 const START_PAGE: &str = r#"
 <!doctype html>
@@ -166,6 +168,7 @@ fn main() {
         eprintln!("OPBrowser startup failed: {error}");
         std::process::exit(1);
     });
+    let clipboard_owner = window.clipboard_owner();
     let (width, height) = window.viewport_size();
     window.present_reflow(engine.reflow(width, height).unwrap().display_list);
 
@@ -298,18 +301,52 @@ fn main() {
                     shift,
                     ctrl,
                     repeat,
-                } => engine.keyboard_event(
-                    op_engine::NativeKeyboardInput {
-                        key,
-                        code,
-                        down: true,
-                        shift,
-                        ctrl,
-                        repeat,
-                    },
-                    width,
-                    height,
-                ),
+                } => {
+                    let dispatched = engine.keyboard_event(
+                        op_engine::NativeKeyboardInput {
+                            key,
+                            code,
+                            down: true,
+                            shift,
+                            ctrl,
+                            repeat,
+                        },
+                        width,
+                        height,
+                    );
+                    // DOM keydown listeners may cancel the browser default.
+                    // The native Win32 clipboard is accessed only afterward.
+                    dispatched.map(|frame| {
+                        let clipboard_frame = if ctrl && !engine.keyboard_default_prevented() {
+                            match code.as_str() {
+                                "KeyC" => {
+                                    if let Some(text) = engine.selected_clipboard_text(false) {
+                                        write_clipboard_text(clipboard_owner, &text);
+                                    }
+                                    None
+                                }
+                                "KeyX" => {
+                                    if let Some(text) = engine.selected_clipboard_text(true) {
+                                        if write_clipboard_text(clipboard_owner, &text) {
+                                            engine.cut_selection(width, height)
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                }
+                                "KeyV" => read_clipboard_text().and_then(|text| {
+                                    engine.paste_clipboard_text(&text, width, height)
+                                }),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+                        clipboard_frame.or(frame)
+                    })
+                }
                 NavigationEvent::KeyUp {
                     ref key,
                     ref code,

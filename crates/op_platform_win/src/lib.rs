@@ -9,7 +9,8 @@ use std::sync::{OnceLock, RwLock};
 use op_paint::{Color, DisplayList, PaintCommand};
 mod raster;
 use windows_sys::Win32::Foundation::{
-    ERROR_CLASS_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM,
+    ERROR_CLASS_ALREADY_EXISTS, GetLastError, GlobalFree, HWND, LPARAM, LRESULT, POINT, RECT, SIZE,
+    WPARAM,
 };
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, CreateFontW, CreateSolidBrush,
@@ -18,7 +19,13 @@ use windows_sys::Win32::Graphics::Gdi::{
     OUT_DEFAULT_PRECIS, PAINTSTRUCT, RestoreDC, SaveDC, ScreenToClient, SelectObject, SetBkMode,
     SetTextColor, SetViewportOrgEx, TRANSPARENT, TextOutW, UpdateWindow, WHITE_BRUSH,
 };
+use windows_sys::Win32::System::DataExchange::{
+    CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, SetClipboardData,
+};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows_sys::Win32::System::Memory::{
+    GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock,
+};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     EnableWindow, GetCapture, GetKeyState, ReleaseCapture, SetCapture, SetFocus, TME_LEAVE,
     TRACKMOUSEEVENT, TrackMouseEvent, VK_CONTROL, VK_F5, VK_L, VK_RETURN, VK_SHIFT,
@@ -46,6 +53,7 @@ const RELOAD: i32 = 103;
 const ADDRESS: i32 = 104;
 const GO: i32 = 105;
 const STATUS: i32 = 106;
+const CF_UNICODETEXT: u32 = 13;
 const POLL_TIMER: usize = 1;
 const RESIZE_TIMER: usize = 2;
 const WM_MOUSELEAVE: u32 = 0x02A3;
@@ -140,11 +148,115 @@ pub fn render_display_list_to_bgra(
     Ok(surface.pixels())
 }
 
+/// Unicode-only OS clipboard bridge. The HTML editor and its selections stay
+/// OPBrowser-owned: these Win32 calls only transfer CF_UNICODETEXT data.
+const MAX_CLIPBOARD_UTF16_UNITS: usize = 1_048_576;
+
+struct OpenClipboardGuard;
+impl Drop for OpenClipboardGuard {
+    fn drop(&mut self) {
+        unsafe { CloseClipboard() };
+    }
+}
+
+/// CF_UNICODETEXT follows Windows CRLF line ending conventions.
+fn clipboard_utf16_encode(text: &str) -> Option<Vec<u16>> {
+    if text.contains('\0') {
+        return None;
+    }
+    let normalized = text
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\n', "\r\n");
+    let mut units: Vec<u16> = normalized.encode_utf16().collect();
+    if units.len() > MAX_CLIPBOARD_UTF16_UNITS {
+        return None;
+    }
+    units.push(0);
+    Some(units)
+}
+
+fn clipboard_utf16_decode(units: &[u16]) -> Option<String> {
+    if units.len() > MAX_CLIPBOARD_UTF16_UNITS {
+        return None;
+    }
+    let len = units.iter().position(|unit| *unit == 0)?;
+    String::from_utf16(&units[..len]).ok()
+}
+
+/// A browser window handle is required as clipboard owner after EmptyClipboard.
+/// Pass the opaque value, not a cross-thread HWND pointer.
+pub fn write_clipboard_text(owner: usize, text: &str) -> bool {
+    if owner == 0 {
+        return false;
+    }
+    let Some(utf16) = clipboard_utf16_encode(text) else {
+        return false;
+    };
+    let Some(bytes) = utf16.len().checked_mul(std::mem::size_of::<u16>()) else {
+        return false;
+    };
+    unsafe {
+        if OpenClipboard(owner as HWND) == 0 {
+            return false;
+        }
+        let _guard = OpenClipboardGuard;
+        let handle = GlobalAlloc(GMEM_MOVEABLE, bytes);
+        if handle.is_null() {
+            return false;
+        }
+        let ptr = GlobalLock(handle) as *mut u16;
+        if ptr.is_null() {
+            GlobalFree(handle);
+            return false;
+        }
+        std::ptr::copy_nonoverlapping(utf16.as_ptr(), ptr, utf16.len());
+        GlobalUnlock(handle);
+        if EmptyClipboard() == 0 || SetClipboardData(CF_UNICODETEXT, handle).is_null() {
+            GlobalFree(handle);
+            return false;
+        }
+        // SetClipboardData transferred ownership of the allocated memory to Windows.
+        true
+    }
+}
+
+/// Snapshot Unicode from the OS clipboard with a bounded allocation/read.
+/// Never treat clipboard bytes as executable script, HTML or a window message.
+pub fn read_clipboard_text() -> Option<String> {
+    unsafe {
+        if OpenClipboard(null_mut()) == 0 {
+            return None;
+        }
+        let _guard = OpenClipboardGuard;
+        let handle = GetClipboardData(CF_UNICODETEXT);
+        if handle.is_null() {
+            return None;
+        }
+        let units = GlobalSize(handle) / std::mem::size_of::<u16>();
+        if units == 0 || units > MAX_CLIPBOARD_UTF16_UNITS {
+            return None;
+        }
+        let ptr = GlobalLock(handle) as *const u16;
+        if ptr.is_null() {
+            return None;
+        }
+        let values = std::slice::from_raw_parts(ptr, units);
+        let result = clipboard_utf16_decode(values);
+        GlobalUnlock(handle);
+        result
+    }
+}
+
 pub struct NativeBrowserWindow {
     hwnd: HWND,
 }
 
 impl NativeBrowserWindow {
+    /// Opaque handle safe to forward as an integer to the layout worker.
+    pub fn clipboard_owner(&self) -> usize {
+        self.hwnd as usize
+    }
     pub fn create(title: &str, display_list: DisplayList) -> Result<Self, String> {
         PAINTED_ONCE.store(false, Ordering::SeqCst);
         SCROLL_Y.store(0, Ordering::SeqCst);
@@ -1589,6 +1701,19 @@ mod tests {
 
     // Native windows share class registration, capture and display-list state.
     static WINDOW_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn clipboard_utf16_format_normalizes_newlines_and_rejects_invalid_data() {
+        let encoded = clipboard_utf16_encode("A😊\n猫\r\nB").expect("valid Unicode");
+        assert_eq!(encoded.last(), Some(&0));
+        assert_eq!(
+            clipboard_utf16_decode(&encoded),
+            Some("A😊\r\n猫\r\nB".into())
+        );
+        assert!(clipboard_utf16_encode("a\0b").is_none());
+        assert!(clipboard_utf16_decode(&[0xD800, 0]).is_none());
+        assert!(clipboard_utf16_decode(&[65, 66]).is_none());
+    }
 
     #[test]
     fn r12e_horizontal_scrollbar_paints_real_gdi_track_and_thumb() {

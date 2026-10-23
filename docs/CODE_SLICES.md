@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S115 - Cancelable DOM keydown through native Windows clipboard and back to pixels
+
+Ctrl+C/X/V keydown on page HWND -> op_browser worker dispatches Engine::keyboard_event before any clipboard default -> if not prevented, first-party UTF-16/scalar selected range -> op_platform_win::write_clipboard_text/read_clipboard_text with Windows CF_UNICODETEXT and CRLF encoding -> cut via TextEditor::DeleteSelection or paste via existing Edit::Insert -> cancelable beforeinput, live DOM value/JS selection, input listener, and repaint. Textarea receives LF, single-line inputs remove CR/LF, read-only accepts copy but not cut/paste, password copy is denied. Tests validate Unicode emoji selection/replacement, normalized multiline paste, JS cancelation, restricted fields, and malformed clipboard encoding without altering the user's clipboard. No ClipboardEvent or IME conformance claim.
+
 ## S114 - Captured mouse drag through first-party HTML form editing
 
 Win32 pointer press/captured pointer move (including beyond viewport) -> NavigationEvent::PointerDown/PointerMove with busy coalescing in op_browser -> original Engine::press_at/drag_text_selection_at/finish_text_drag_at -> scalar boundary computation from the retained DOM and measured glyph prefix (password mask and explicit textarea rows) -> TextEditor anchor/caret selection -> JS UTF-16 selectionStart/End/Direction -> original clipped blue/white text highlights -> native Unicode replacement after release. Actual drags suppress JS click and link defaults while stationary clicks remain unchanged. Real regressions verify both drag directions over surrogate-pair emoji, multiline textarea and Win32 capture events; shape/wrap/bidi, IME and clipboard still pending.

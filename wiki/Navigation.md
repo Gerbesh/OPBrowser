@@ -1,5 +1,9 @@
 # Navigation
 
+## Page clipboard shortcuts (23 October 2026)
+
+On the document surface, Ctrl+C/X/V operates on the original focused input/textarea selection through native Windows Unicode clipboard APIs and OPBrowser's DOM editor, after cancelable JavaScript keydown. The native address-bar EDIT retains its own Windows clipboard behavior. Cut and paste use original beforeinput/input handling; a page preventing keydown blocks the default. Password copying is disabled; readonly fields can be copied but not edited. ClipboardEvent JavaScript APIs are not implemented.
+
 ## Page typing distinct from address-bar input (20 October 2026)
 
 Windows native toolbar address remains a real separate EDIT child; page HWND WM_CHAR is routed only to the original browser's currently focused HTML input/textarea. Unicode characters, including surrogate-pair emoji, are sent after cancelable keydown, while controls such as Backspace/Delete/Enter work through the existing DOM keyboard path. This prevents typing into a web form from changing the browser address. `examples/forms/index.html` exercises it.
