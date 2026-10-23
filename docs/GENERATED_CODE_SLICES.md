@@ -3,6 +3,26 @@
 > Generated from `tools/code_slices.json` and validated against live Rust files.
 > This is a curated vertical feature map, **not** an AST/call/data-flow slicer.
 
+## S116 — HTML input size and textarea cols/rows into measured first-party form hit geometry
+
+Status: **Real native DOM hit regions, text rows, Unicode/clipboard regressions and window smoke tested**.
+
+```text
+op_html::input
+op_layout::min_columns
+op_layout::InlineChar
+op_layout::form_size_and_cols_hints_change_native_inline_control_width
+op_engine::PreparedDocument
+```
+
+- [`op_html::input`](../crates/op_html/src/tree_builder.rs#L53)
+- [`op_layout::min_columns`](../crates/op_layout/src/flow.rs#L4690)
+- [`op_layout::InlineChar`](../crates/op_layout/src/inline.rs#L323)
+- [`op_layout::form_size_and_cols_hints_change_native_inline_control_width`](../crates/op_layout/src/lib.rs#L1656)
+- [`op_engine::PreparedDocument`](../crates/op_engine/src/lib.rs#L282)
+
+Provisional inline minimum text grid, not full replaced-element CSS dimensions, clipping, wrapping or internal text scroll.
+
 ## S115 — Cancelable Ctrl+C/X/V from original DOM to Windows Unicode clipboard and pixels
 
 Status: **Original JS keydown, Unicode scalar selection, Win32 clipboard encoding and DOM edit regressions pass**.

@@ -1653,6 +1653,76 @@ mod tests {
     }
 
     #[test]
+    fn form_size_and_cols_hints_change_native_inline_control_width() {
+        let extent = |markup: &str| {
+            let doc = op_html::parse_document(markup);
+            let author = op_css::collect_author_styles(&doc);
+            let styles = op_css::compute_styles(&doc, &author.styles);
+            let layout = layout_document_with_computed_styles_and_metrics(
+                &doc,
+                1000,
+                &ImageResources::new(),
+                &styles,
+                &mut ApproximateTextMeasurer,
+            );
+            let controls: Vec<_> = layout
+                .click_regions
+                .iter()
+                .filter(|hit| {
+                    doc.element(hit.node).is_some_and(|element| {
+                        matches!(element.tag_name.as_str(), "input" | "textarea")
+                    })
+                })
+                .collect();
+            let min = controls.iter().map(|r| r.x).min().unwrap();
+            let max = controls.iter().map(|r| r.x + r.width).max().unwrap();
+            max - min
+        };
+        assert!(
+            extent("<body><input size='24' value='x'></body>")
+                > extent("<body><input size='4' value='x'></body>") + 80
+        );
+        assert!(
+            extent("<body><textarea cols='30' rows='2'>x</textarea></body>")
+                > extent("<body><textarea cols='5' rows='2'>x</textarea></body>") + 80
+        );
+        // Column padding is per explicit row: swapping a short and long
+        // textarea line must not inflate the final row's text width.
+        assert_eq!(
+            extent("<body><textarea cols='8' rows='2'>x\nab</textarea></body>"),
+            extent("<body><textarea cols='8' rows='2'>ab\nx</textarea></body>")
+        );
+        // Invalid or hostile sizing hints fall back to small bounded grids.
+        assert_eq!(
+            extent("<body><input size='999999999999' value='x'></body>"),
+            extent("<body><input size='160' value='x'></body>")
+        );
+    }
+
+    #[test]
+    fn textarea_rows_attribute_allocates_only_missing_inline_rows() {
+        let heights = |markup: &str| {
+            let doc = op_html::parse_document(markup);
+            let author = op_css::collect_author_styles(&doc);
+            let styles = op_css::compute_styles(&doc, &author.styles);
+            layout_document_with_computed_styles_and_metrics(
+                &doc,
+                1000,
+                &ImageResources::new(),
+                &styles,
+                &mut ApproximateTextMeasurer,
+            )
+            .content_height
+        };
+        let one = heights("<body><textarea cols='6' rows='1'>a</textarea></body>");
+        let four = heights("<body><textarea cols='6' rows='4'>a</textarea></body>");
+        assert!(four > one + 35, "rows=4 must reserve several real lines");
+        let two_existing = heights("<body><textarea cols='6' rows='2'>a\nb</textarea></body>");
+        let four_existing = heights("<body><textarea cols='6' rows='4'>a\nb</textarea></body>");
+        assert!(four_existing > two_existing + 15);
+    }
+
+    #[test]
     fn hidden_only_input_does_not_create_a_fake_text_control() {
         let document = op_html::parse_document(
             "<body><input type='hidden' value='SECRET'><input hidden value='HIDE'></body>",

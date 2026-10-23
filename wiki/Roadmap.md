@@ -1,5 +1,9 @@
 # Roadmap
 
+## HTML input/textarea sizing hints (23 October 2026)
+
+Implemented provisional first-party input size and textarea cols/rows geometry: HTML sizing attributes change actual native layout widths and textarea reserved row height; per-row padding fixes erroneously widened multiline fields, and default/invalid values are bounded. Tested the original DOM click-region widths, multiline height, Unicode selection/editor integration and native smoke. This does not yet implement fixed replaced-element widths, CSS width/height precedence, clipped long text, wrapped textarea or caret-driven scrolling. Those remain the next P0 layout tasks.
+
 ## OS clipboard for first-party HTML text fields (23 October 2026)
 
 Done: Ctrl+C (copy), Ctrl+X (cut) and Ctrl+V (paste) for original HTML input/textarea on Windows via CF_UNICODETEXT, respecting JavaScript keydown.preventDefault(). Unicode and textarea newline handling are covered by regressions, password copy is blocked, readonly is copy-only, and actual OS clipboard tests do not overwrite the user's clipboard. The independent parser/JS/layout/paint engines remain unchanged. Next: true form box geometry, wrapped/scrollable textarea, ClipboardEvent API, IME, bidirectional/grapheme selection and undo.

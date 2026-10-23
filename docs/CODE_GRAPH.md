@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 23 October 2026: HTML size, cols and rows to native control hit and layout geometry
+
+DOM input[size] / textarea[cols][rows] -> op_html parsed attributes -> original op_layout::flow::Context form glyph generation resolves bounded positive sizing hints with native defaults (20 columns and 2 textarea rows) -> each explicit row gets separate non-breaking-space minimum width and missing textarea rows are emitted without unconditional phantom rows -> original op_layout::inline::Lines measures glyphs and retains NodeId-owned click rectangles -> op_engine::PreparedDocument::render paints native control outline, caret and UTF-16-backed selection over unchanged first-party text. HTML size hints do not yet override a standards-complete CSS replaced element; long values and soft-wrapped textarea still need true clipping/scrolling.
+
 ## 23 October 2026: JS-cancelable Unicode OS clipboard to original form model
 
 Win32 WM_KEYDOWN -> NavigationEvent::KeyDown -> original Engine::keyboard_event emits cancelable DOM keydown -> browser worker checks keyboard_default_prevented -> op_platform_win read_clipboard_text/write_clipboard_text bridge Windows CF_UNICODETEXT via bounded GMEM_MOVEABLE allocations (browser HWND owner; UTF-16 CRLF helper) -> PreparedDocument::clipboard_selection extracts scalar-safe text from original field state/JS UTF-16 selection -> original TextEditor::DeleteSelection or Insert via Engine::cut_selection/paste_clipboard_text -> beforeinput, DOM value/selection synchronization and input event -> existing display list repaint. Native OS address-bar EDIT remains separate. Copy never exposes password values and cut does not modify readonly fields. ClipboardEvent API and IME are still future work.

@@ -3974,3 +3974,10 @@ This file is append-only project history.
 - Browser Ctrl+C/X/V dispatches a trusted, cancelable original JS keydown before default clipboard action. Original field selection is mapped from JS UTF-16 units to Unicode scalar ranges, excluding password text and disabling cut on readonly controls.
 - Cut only removes a noncollapsed selection after successful OS clipboard write. Paste normalizes textarea newlines and strips CR/LF from single-line input. Existing original beforeinput cancelation, DOM attribute updates, input events, JS selection synchronization and native repaint remain the single edit pipeline.
 - Added real engine regressions for selected emoji clipboard text, Unicode cut/paste and DOM events, multiline textarea replacement, readonly/password restrictions and keydown.preventDefault; updated forms demo, code graph, roadmap and wiki. ClipboardEvent APIs, IME, undo, exact wrapped text and real OS clipboard roundtrip tests remain future work.
+
+## 2026-10-23 - P0 HTML form size, cols and rows layout hints
+
+- Original op_layout::flow now honors positive, bounded HTML input size (default 20), textarea cols (default 20) and textarea rows (default 2). Values outside supported sizes cannot allocate unbounded runs.
+- The temporary first-party glyph layout pads every explicit textarea row independently instead of appending its entire width after the last row. Only missing rows are created to reach the requested minimum, eliminating the previous unconditional phantom extra row.
+- Added original layout tests for true DOM control click-region widths, row-dependent layout heights, swapped unequal rows and capped extreme numeric hints. Updated the form HTML demo with observable sizing attributes.
+- Full Rust workspace tests, strict Clippy and native forms smoke passed. This is an incremental inline sizing pass: actual CSS replaced-element fixed widths/heights, text clipping, soft wrapping, caret-driven scrolling and bidi/shaping remain unsupported.

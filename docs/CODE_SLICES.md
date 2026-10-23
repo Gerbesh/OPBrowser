@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S116 - Native HTML control size hints through first-party inline layout
+
+Parsed input[size], textarea[cols] and textarea[rows] -> original op_layout::flow handles default and bounded positive hints -> explicit textarea lines receive independent minimum column width and only missing row lines are appended -> op_layout::inline::Lines generates native measured glyph/DOM hit regions -> op_engine::PreparedDocument paints the control frame, selection and caret -> original JS and clipboard editing retain actual full underlying text value. Tests compare selected DOM field hit width across size/cols, multiline row height, per-row padding and malicious numeric hints. Limit: hint-driven provisional inline text grid, not fixed CSS replaced-element width/height, wrapped text, clipping or internal scrolling.
+
 ## S115 - Cancelable DOM keydown through native Windows clipboard and back to pixels
 
 Ctrl+C/X/V keydown on page HWND -> op_browser worker dispatches Engine::keyboard_event before any clipboard default -> if not prevented, first-party UTF-16/scalar selected range -> op_platform_win::write_clipboard_text/read_clipboard_text with Windows CF_UNICODETEXT and CRLF encoding -> cut via TextEditor::DeleteSelection or paste via existing Edit::Insert -> cancelable beforeinput, live DOM value/JS selection, input listener, and repaint. Textarea receives LF, single-line inputs remove CR/LF, read-only accepts copy but not cut/paste, password copy is denied. Tests validate Unicode emoji selection/replacement, normalized multiline paste, JS cancelation, restricted fields, and malformed clipboard encoding without altering the user's clipboard. No ClipboardEvent or IME conformance claim.

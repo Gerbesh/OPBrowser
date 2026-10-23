@@ -3117,7 +3117,9 @@ mod tests {
         let frame = engine
             .paste_clipboard_text("x\r\n😊", 640, 380)
             .expect("paste with normalized line endings");
-        assert!(contains_text(&frame.display_list, "ax"));
+        assert!(frame.display_list.commands.iter().any(|command| matches!(
+            command, PaintCommand::Text { text, .. } if text.starts_with("ax")
+        )));
         let page = engine.active_document.as_ref().unwrap();
         let focused = page.interaction.focused.unwrap();
         assert_eq!(

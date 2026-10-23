@@ -4685,15 +4685,25 @@ impl<'a> Context<'a, '_> {
                     } else {
                         shown
                     };
-                    let min_columns: usize = if tag == "textarea" { 24 } else { 18 };
-                    let first_line_width = shown.lines().next().unwrap_or("").chars().count();
-                    for ch in shown.chars().chain(std::iter::repeat_n(
-                        ' ',
-                        min_columns.saturating_sub(first_line_width),
-                    )) {
-                        if ch == '\n' && tag == "textarea" {
+                    // Use bounded HTML size/cols hints for provisional form geometry.
+                    let column_hint = if tag == "textarea" { "cols" } else { "size" };
+                    let min_columns = attribute(element, column_hint)
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .filter(|value| *value > 0)
+                        .unwrap_or(20)
+                        .min(160);
+                    // Size each explicit row independently. Padding only
+                    // after the last row made multiline fields spuriously wide.
+                    let rows = if tag == "textarea" {
+                        shown.split('\n').collect::<Vec<_>>()
+                    } else {
+                        vec![shown.as_str()]
+                    };
+                    for (row, line) in rows.iter().enumerate() {
+                        if row > 0 {
                             items.push(Item::Break);
-                        } else {
+                        }
+                        for ch in line.chars() {
                             items.push(Item::Char(InlineChar {
                                 ch: if ch == '\n' || ch == '\r' { ' ' } else { ch },
                                 href: None,
@@ -4701,15 +4711,34 @@ impl<'a> Context<'a, '_> {
                                 style: inline,
                             }));
                         }
+                        for _ in line.chars().count()..min_columns {
+                            items.push(Item::Char(InlineChar {
+                                ch: ' ',
+                                href: None,
+                                origin: Some(id),
+                                style: inline,
+                            }));
+                        }
                     }
                     if tag == "textarea" {
-                        items.push(Item::Break);
-                        items.push(Item::Char(InlineChar {
-                            ch: ' ',
-                            href: None,
-                            origin: Some(id),
-                            style: inline,
-                        }));
+                        let min_rows = attribute(element, "rows")
+                            .and_then(|value| value.parse::<usize>().ok())
+                            .filter(|value| *value > 0)
+                            .unwrap_or(2)
+                            .min(100);
+                        // Value already contains its own explicit newline rows.
+                        // Add only the missing rows, with visible click geometry.
+                        for _ in shown.split('\n').count()..min_rows {
+                            items.push(Item::Break);
+                            for _ in 0..min_columns {
+                                items.push(Item::Char(InlineChar {
+                                    ch: ' ',
+                                    href: None,
+                                    origin: Some(id),
+                                    style: inline,
+                                }));
+                            }
+                        }
                     }
                     return;
                 }

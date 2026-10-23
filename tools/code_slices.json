@@ -2,6 +2,19 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S116",
+      "title": "HTML input size and textarea cols/rows into measured first-party form hit geometry",
+      "status": "Real native DOM hit regions, text rows, Unicode/clipboard regressions and window smoke tested",
+      "steps": [
+        {"path": "crates/op_html/src/tree_builder.rs", "symbol": "input"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "min_columns"},
+        {"path": "crates/op_layout/src/inline.rs", "symbol": "InlineChar"},
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "form_size_and_cols_hints_change_native_inline_control_width"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "PreparedDocument"}
+      ],
+      "limitation": "Provisional inline minimum text grid, not full replaced-element CSS dimensions, clipping, wrapping or internal text scroll."
+    },
+    {
       "id": "S115",
       "title": "Cancelable Ctrl+C/X/V from original DOM to Windows Unicode clipboard and pixels",
       "status": "Original JS keydown, Unicode scalar selection, Win32 clipboard encoding and DOM edit regressions pass",
