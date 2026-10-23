@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Native Unicode form undo and redo (24 October 2026)
+
+The original OPBrowser input/textarea editor supports Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z with a bounded 32-step undo/redo history of Unicode-safe value and caret/selection snapshots, restoring UTF-16 DOM selections before input handlers. Canceled keydown/beforeinput prevents defaults, while script-changed values invalidate stale native history. Pending WM_CHAR suppression is cleared on new document installation. Existing clipboard and original rendering path are preserved, with no Windows EDIT/WebView dependency. This does not include typing coalescing, persistent per-field history across focus swaps, correct InputEvent.inputType, IME or standards-complete control geometry. Modern public sites remain partially or not rendered.
+
 ## HTML form entry through original Rust browser (20 October 2026)
 
 Native page text input now supports an initial bounded `input`/`textarea` edit path: Windows Unicode WM_CHAR including Cyrillic and surrogate pairs, Backspace/Delete, caret arrows/Home/End, Shift selection and Ctrl+A, textarea Enter, readonly checks, basic password masking, original JS `.value` reflection and cancelable `beforeinput` / bubbling `input` events. Original layout/paint show values, control bounds and a caret. Try `examples/forms/index.html`. Whole Rust workspace and Clippy/Win32 smoke pass. Still **not full HTML forms**: standard control box geometry, visual selection highlighting, mouse click-to-caret, clipboard, IME composition, JS selection APIs, form submission and browser-grade multiline editing remain incomplete. Google/Pikabu/DeviantArt partial, YouTube textless, Reddit blank.

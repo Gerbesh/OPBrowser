@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 24 October 2026: native form edit history and document-level key suppression reset
+
+Win32 WM_KEYDOWN Ctrl+Z/Y/Shift+Z -> op_platform_win NavigationEvent::KeyDown with standard KeyZ/KeyY codes -> op_browser worker -> op_engine::Engine::keyboard_event dispatches trusted, cancelable JS keydown before the native default -> forms::Edit::{Undo,Redo} -> op_engine::forms::TextEditor tracks bounded EditorSnapshot {value, caret, anchor} in two stacks -> Engine::edit_focused reuses cancelable beforeinput, live DOM/VM value and UTF-16 selection, bubbling input, style refresh and op_paint display list. New typing/cut/paste clears redo; external JS DOM value assignments clear both native stacks. Installing a new PreparedDocument resets stale suppress_text_input and last_keydown_default_prevented state. Single currently focused editor only, no IME or standards-complete history InputEvent metadata.
+
 ## 23 October 2026: HTML size, cols and rows to native control hit and layout geometry
 
 DOM input[size] / textarea[cols][rows] -> op_html parsed attributes -> original op_layout::flow::Context form glyph generation resolves bounded positive sizing hints with native defaults (20 columns and 2 textarea rows) -> each explicit row gets separate non-breaking-space minimum width and missing textarea rows are emitted without unconditional phantom rows -> original op_layout::inline::Lines measures glyphs and retains NodeId-owned click rectangles -> op_engine::PreparedDocument::render paints native control outline, caret and UTF-16-backed selection over unchanged first-party text. HTML size hints do not yet override a standards-complete CSS replaced element; long values and soft-wrapped textarea still need true clipping/scrolling.

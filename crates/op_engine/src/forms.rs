@@ -3,12 +3,23 @@
 use op_dom::NodeId;
 
 const MAX_TEXT_SCALARS: usize = 4096;
+const MAX_UNDO_STEPS: usize = 32;
+
+#[derive(Debug, Clone)]
+struct EditorSnapshot {
+    value: String,
+    caret: usize,
+    anchor: usize,
+}
 
 #[derive(Debug, Clone)]
 pub(super) struct TextEditor {
     pub node: NodeId,
     pub caret: usize,
     pub anchor: usize,
+    observed_value: String,
+    undo: Vec<EditorSnapshot>,
+    redo: Vec<EditorSnapshot>,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +33,8 @@ pub(super) enum Edit {
     Home { shift: bool },
     End { shift: bool },
     SelectAll,
+    Undo,
+    Redo,
 }
 
 impl TextEditor {
@@ -31,7 +44,30 @@ impl TextEditor {
             node,
             caret: end,
             anchor: end,
+            observed_value: value.to_owned(),
+            undo: Vec::new(),
+            redo: Vec::new(),
         }
+    }
+
+    /// Script-assigned values are not native edits. Discard stale native
+    /// history rather than overwriting newer author JavaScript state on undo.
+    pub fn observe_value(&mut self, value: &str) {
+        if self.observed_value != value {
+            self.undo.clear();
+            self.redo.clear();
+            self.observed_value = value.to_owned();
+            let count = value.chars().count();
+            self.caret = self.caret.min(count);
+            self.anchor = self.anchor.min(count);
+        }
+    }
+
+    fn push_snapshot(stack: &mut Vec<EditorSnapshot>, snapshot: EditorSnapshot) {
+        if stack.len() == MAX_UNDO_STEPS {
+            stack.remove(0);
+        }
+        stack.push(snapshot);
     }
 
     /// The web-exposed selection uses UTF-16 code units; the native editor
@@ -73,9 +109,38 @@ impl TextEditor {
     }
 
     pub fn edit(&mut self, value: &str, edit: Edit) -> (String, bool) {
+        self.observe_value(value);
         let total = value.chars().count();
         self.caret = self.caret.min(total);
         self.anchor = self.anchor.min(total);
+        if matches!(edit, Edit::Undo | Edit::Redo) {
+            let current = EditorSnapshot {
+                value: value.to_owned(),
+                caret: self.caret,
+                anchor: self.anchor,
+            };
+            let previous = if matches!(edit, Edit::Undo) {
+                self.undo.pop().inspect(|_| {
+                    Self::push_snapshot(&mut self.redo, current);
+                })
+            } else {
+                self.redo.pop().inspect(|_| {
+                    Self::push_snapshot(&mut self.undo, current);
+                })
+            };
+            if let Some(previous) = previous {
+                self.caret = previous.caret;
+                self.anchor = previous.anchor;
+                self.observed_value.clone_from(&previous.value);
+                return (previous.value, true);
+            }
+            return (value.to_owned(), false);
+        }
+        let previous = EditorSnapshot {
+            value: value.to_owned(),
+            caret: self.caret,
+            anchor: self.anchor,
+        };
         let (start, end) = (self.caret.min(self.anchor), self.caret.max(self.anchor));
         let select = start != end;
         let mut next = value.to_owned();
@@ -148,8 +213,14 @@ impl TextEditor {
                     self.anchor = self.caret;
                 }
             }
+            Edit::Undo | Edit::Redo => unreachable!("handled before native edits"),
         }
         let changed = next != value;
+        if changed {
+            Self::push_snapshot(&mut self.undo, previous);
+            self.redo.clear();
+            self.observed_value.clone_from(&next);
+        }
         (next, changed)
     }
 }
@@ -353,5 +424,41 @@ mod tests {
         assert_eq!(after, "a猫b");
         e.set_utf16_selection("a😊b", 2, 2, false);
         assert_eq!(e.selection_utf16("a😊b"), (1, 1, false));
+    }
+
+    #[test]
+    fn bounded_undo_redo_restores_unicode_selection_and_invalidates_redo() {
+        let mut editor = TextEditor::new(op_dom::Document::new().root(), "A😊B");
+        editor.set_utf16_selection("A😊B", 1, 3, true);
+        let (value, changed) = editor.edit("A😊B", Edit::Insert("猫".into()));
+        assert!(changed);
+        assert_eq!(value, "A猫B");
+        let (value, changed) = editor.edit(&value, Edit::Undo);
+        assert!(changed);
+        assert_eq!(value, "A😊B");
+        assert_eq!(editor.selection_utf16(&value), (1, 3, true));
+        let (value, _) = editor.edit(&value, Edit::Redo);
+        assert_eq!(value, "A猫B");
+        assert_eq!(editor.selection_utf16(&value), (2, 2, false));
+        let (value, _) = editor.edit(&value, Edit::Undo);
+        let (value, _) = editor.edit(&value, Edit::Insert("X".into()));
+        assert_eq!(value, "AXB");
+        assert_eq!(editor.edit(&value, Edit::Redo), (value, false));
+    }
+
+    #[test]
+    fn undo_history_is_bounded_and_script_value_changes_invalidate_it() {
+        let mut editor = TextEditor::new(op_dom::Document::new().root(), "");
+        let mut value = String::new();
+        for _ in 0..(MAX_UNDO_STEPS + 5) {
+            value = editor.edit(&value, Edit::Insert("x".into())).0;
+        }
+        for _ in 0..MAX_UNDO_STEPS {
+            value = editor.edit(&value, Edit::Undo).0;
+        }
+        assert_eq!(value, "xxxxx");
+        assert_eq!(editor.edit(&value, Edit::Undo), (value.clone(), false));
+        editor.observe_value("script");
+        assert_eq!(editor.edit("script", Edit::Redo), ("script".into(), false));
     }
 }

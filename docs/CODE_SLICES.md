@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S117 - Trusted keyboard undo/redo through original HTML form DOM and paint
+
+Page Win32 Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z -> original NavigationEvent::KeyDown -> op_engine trusted cancelable DOM keydown -> TextEditor Undo/Redo restores up to 32 Unicode scalar-safe value and selection snapshots -> Engine::edit_focused sends cancelable beforeinput, commits real input/textarea value and UTF-16 selection to op_js, dispatches input and repaints field/caret/selection. After new typing/cut/paste, redo is invalidated. Script-owned value assignments invalidate both history stacks; new page installation clears stale key suppression. Original Rust/DOM tests verify emoji replacement with backward selection, selection restoration, canceled JS keydown, script value ownership, 32-step cap and cross-navigation WM_CHAR isolation. Not full InputEvent metadata/coalesced typing/IME or persistent cross-field undo.
+
 ## S116 - Native HTML control size hints through first-party inline layout
 
 Parsed input[size], textarea[cols] and textarea[rows] -> original op_layout::flow handles default and bounded positive hints -> explicit textarea lines receive independent minimum column width and only missing row lines are appended -> op_layout::inline::Lines generates native measured glyph/DOM hit regions -> op_engine::PreparedDocument paints the control frame, selection and caret -> original JS and clipboard editing retain actual full underlying text value. Tests compare selected DOM field hit width across size/cols, multiline row height, per-row padding and malicious numeric hints. Limit: hint-driven provisional inline text grid, not fixed CSS replaced-element width/height, wrapped text, clipping or internal scrolling.

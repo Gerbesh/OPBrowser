@@ -1,5 +1,9 @@
 # Roadmap
 
+## First-party native text undo/redo (24 October 2026)
+
+Completed bounded per-focused-field edit history in the original Rust TextEditor: Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z restore Unicode-safe field values and native/JS-visible selections through cancelable keyboard and beforeinput events, normal DOM input events and repaint. Undo/redo stacks are capped at 32 edits; new edits invalidate redo; external script-assigned values invalidate obsolete history. Switching focus starts a new editor history. New page loads also clear stale keydown/WM_CHAR suppression. Still P0: typing coalescing, per-element retained history across focus changes, precise CSS control rectangles, overflow/scroll, soft-wrap, IME and InputEvent historyUndo/inputType conformance.
+
 ## HTML input/textarea sizing hints (23 October 2026)
 
 Implemented provisional first-party input size and textarea cols/rows geometry: HTML sizing attributes change actual native layout widths and textarea reserved row height; per-row padding fixes erroneously widened multiline fields, and default/invalid values are bounded. Tested the original DOM click-region widths, multiline height, Unicode selection/editor integration and native smoke. This does not yet implement fixed replaced-element widths, CSS width/height precedence, clipped long text, wrapped textarea or caret-driven scrolling. Those remain the next P0 layout tasks.

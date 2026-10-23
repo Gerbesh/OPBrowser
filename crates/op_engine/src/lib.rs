@@ -830,6 +830,7 @@ impl PreparedDocument {
             if editor.node != focused {
                 *editor = forms::TextEditor::new(focused, value);
             }
+            editor.observe_value(value);
             editor.set_utf16_selection(value, start, end, direction == 2);
         }
         if self.style_viewport != (width, height) {
@@ -1322,6 +1323,8 @@ impl Engine {
         self.network_active = 0;
         self.active_document = Some(prepared);
         self.scrollbar_drag = None;
+        self.suppress_text_input = false;
+        self.last_keydown_default_prevented = false;
         self.document_address = None;
         self.navigation = NavigationState::default();
         page.display_list
@@ -1667,9 +1670,14 @@ impl Engine {
             self.suppress_text_input = canceled || input.ctrl;
         }
         if input.down && !canceled {
-            let edit = if input.ctrl && input.code == "KeyA" {
-                Some(forms::Edit::SelectAll)
-            } else if !input.ctrl {
+            let edit = if input.ctrl {
+                match (input.code, input.shift) {
+                    ("KeyA", _) => Some(forms::Edit::SelectAll),
+                    ("KeyZ", false) => Some(forms::Edit::Undo),
+                    ("KeyZ", true) | ("KeyY", _) => Some(forms::Edit::Redo),
+                    _ => None,
+                }
+            } else {
                 match input.key {
                     "Backspace" => Some(forms::Edit::Backspace),
                     "Delete" => Some(forms::Edit::Delete),
@@ -1692,8 +1700,6 @@ impl Engine {
                     }
                     _ => None,
                 }
-            } else {
-                None
             };
             if let Some(edit) = edit
                 && let Some(frame) = self.edit_focused(edit, width, height)
@@ -2376,6 +2382,8 @@ impl Engine {
         self.network_active = 0;
         self.active_document = Some(prepared);
         self.scrollbar_drag = None;
+        self.suppress_text_input = false;
+        self.last_keydown_default_prevented = false;
         self.document_address = Some(page.address.clone());
         Ok(page)
     }
@@ -3175,6 +3183,139 @@ mod tests {
         );
         assert!(engine.selected_clipboard_text(false).is_none());
         assert!(engine.selected_clipboard_text(true).is_none());
+    }
+
+    #[test]
+    fn keyboard_undo_redo_replays_unicode_selection_and_dom_input_events() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='q' value='A😊B'><p id='out'>idle</p><script>\
+             var q=document.getElementById('q');q.focus();q.setSelectionRange(1,3,'backward');\
+             q.addEventListener('input',function(){document.getElementById('out').textContent=\
+             q.value+'|'+q.selectionStart+'|'+q.selectionEnd;});\
+             </script></body>",
+            640,
+            380,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let frame = engine
+            .text_input("猫", 640, 380)
+            .expect("replace selected emoji");
+        assert!(contains_text(&frame.display_list, "A猫B|2|2"));
+        let key = |engine: &mut Engine, key: &str, code: &str, shift: bool| {
+            engine
+                .keyboard_event(
+                    op_js::NativeKeyboardInput {
+                        key,
+                        code,
+                        down: true,
+                        shift,
+                        ctrl: true,
+                        repeat: false,
+                    },
+                    640,
+                    380,
+                )
+                .unwrap()
+                .expect("native undo/redo frame")
+        };
+        let frame = key(&mut engine, "z", "KeyZ", false);
+        assert!(contains_text(&frame.display_list, "A😊B|1|3"));
+        let frame = key(&mut engine, "Z", "KeyZ", true);
+        assert!(contains_text(&frame.display_list, "A猫B|2|2"));
+        let _ = key(&mut engine, "z", "KeyZ", false);
+        let frame = key(&mut engine, "y", "KeyY", false);
+        assert!(contains_text(&frame.display_list, "A猫B|2|2"));
+    }
+
+    #[test]
+    fn canceled_undo_keydown_and_script_owned_values_are_not_overwritten() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='q' value='A'><script>\
+             var q=document.getElementById('q');q.focus();\
+             q.addEventListener('keydown',function(e){if(e.key==='z'){e.preventDefault();}});\
+             </script></body>",
+            640,
+            380,
+        );
+        engine.text_input("😊", 640, 380).expect("native edit");
+        let canceled = engine
+            .keyboard_event(
+                op_js::NativeKeyboardInput {
+                    key: "z",
+                    code: "KeyZ",
+                    down: true,
+                    shift: false,
+                    ctrl: true,
+                    repeat: false,
+                },
+                640,
+                380,
+            )
+            .unwrap();
+        assert!(engine.keyboard_default_prevented());
+        assert!(canceled.is_none() || contains_text(&canceled.unwrap().display_list, "A😊"));
+        let focused = engine
+            .active_document
+            .as_ref()
+            .unwrap()
+            .interaction
+            .focused
+            .unwrap();
+        let value = |engine: &Engine| {
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .document
+                .element(focused)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "value")
+                .unwrap()
+                .value
+                .clone()
+        };
+        assert_eq!(value(&engine), "A😊");
+
+        engine.set_html_page(
+            "<body><input id='q' value='A'><script>\
+             var q=document.getElementById('q');q.focus();\
+             q.addEventListener('keydown',function(e){if(e.key==='z')q.value='script';});\
+             </script></body>",
+            640,
+            380,
+        );
+        engine.text_input("😊", 640, 380).expect("native edit");
+        engine
+            .keyboard_event(
+                op_js::NativeKeyboardInput {
+                    key: "z",
+                    code: "KeyZ",
+                    down: true,
+                    shift: false,
+                    ctrl: true,
+                    repeat: false,
+                },
+                640,
+                380,
+            )
+            .unwrap();
+        let page = engine.active_document.as_ref().unwrap();
+        let focused = page.interaction.focused.unwrap();
+        assert_eq!(
+            page.document
+                .element(focused)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "value")
+                .unwrap()
+                .value,
+            "script"
+        );
     }
 
     #[test]
