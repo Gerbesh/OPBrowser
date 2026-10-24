@@ -16,9 +16,9 @@ op_engine::PreparedDocument
 ```
 
 - [`op_html::input`](../crates/op_html/src/tree_builder.rs#L53)
-- [`op_layout::min_columns`](../crates/op_layout/src/flow.rs#L4690)
+- [`op_layout::min_columns`](../crates/op_layout/src/flow.rs#L4837)
 - [`op_layout::InlineChar`](../crates/op_layout/src/inline.rs#L323)
-- [`op_layout::form_size_and_cols_hints_change_native_inline_control_width`](../crates/op_layout/src/lib.rs#L1656)
+- [`op_layout::form_size_and_cols_hints_change_native_inline_control_width`](../crates/op_layout/src/lib.rs#L1814)
 - [`op_engine::PreparedDocument`](../crates/op_engine/src/lib.rs#L282)
 
 Provisional inline minimum text grid, not full replaced-element CSS dimensions, clipping, wrapping or internal text scroll.
@@ -646,7 +646,7 @@ op_platform_win::render_display_list_to_bgra
 - [`op_css::parse_flex_shorthand`](../crates/op_css/src/computed.rs#L1830)
 - [`op_css::parse_flex_basis`](../crates/op_css/src/computed.rs#L1861)
 - [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1253)
-- [`op_layout::reflow_flex_item_to_outer_width`](../crates/op_layout/src/flow.rs#L1940)
+- [`op_layout::reflow_flex_item_to_outer_width`](../crates/op_layout/src/flow.rs#L2070)
 - [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L135)
 
 Horizontal row flex only, no full automatic min-content, column direction, cross-axis alignment/order, Grid or complete Flexbox conformance.

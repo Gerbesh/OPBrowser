@@ -1653,6 +1653,164 @@ mod tests {
     }
 
     #[test]
+    fn atomic_input_has_css_dimensions_even_with_no_text_or_a_long_value() {
+        let input = |markup: &str| {
+            let doc = op_html::parse_document(markup);
+            let author = op_css::collect_author_styles(&doc);
+            let styles = op_css::compute_styles(&doc, &author.styles);
+            let layout = layout_document_with_computed_styles_and_metrics(
+                &doc,
+                900,
+                &ImageResources::new(),
+                &styles,
+                &mut ApproximateTextMeasurer,
+            );
+            let hit = layout
+                .click_regions
+                .iter()
+                .find(|hit| doc.element(hit.node).is_some_and(|e| e.tag_name == "input"))
+                .copied()
+                .expect("atomic input must retain one whole-box hit target");
+            (hit, layout)
+        };
+
+        let (empty, empty_layout) =
+            input("<body><input style='width:108px;height:37px' value=''></body>");
+        assert_eq!((empty.width, empty.height), (108, 37));
+        assert!(empty_layout.text_boxes.is_empty());
+        assert_eq!(
+            empty_layout
+                .click_regions
+                .iter()
+                .filter(|hit| hit.node == empty.node)
+                .count(),
+            1
+        );
+
+        let long = "猫😊".repeat(120);
+        let markup = format!(
+            "<body><input size='160' style='width:108px;height:37px' value='{long}'></body>"
+        );
+        let (full, layout) = input(&markup);
+        assert_eq!((full.width, full.height), (empty.width, empty.height));
+        assert_eq!(
+            layout
+                .click_regions
+                .iter()
+                .filter(|hit| hit.node == full.node)
+                .count(),
+            1,
+            "one atomic field hit box instead of individual fake space spans"
+        );
+        assert!(
+            layout
+                .text_boxes
+                .iter()
+                .any(|text| text.text.starts_with("猫😊") && text.width <= full.width),
+            "only an in-bounds Unicode prefix should be drawn"
+        );
+        assert!(layout.content_height <= empty_layout.content_height + 1);
+        assert!(
+            layout
+                .text_boxes
+                .iter()
+                .all(|text| !text.text.contains('�')),
+            "truncation must never split a Unicode scalar"
+        );
+        let (hint_small, _) = input("<body><input size='2' value='abc'></body>");
+        let (hint_large, _) = input("<body><input size='18' value='abc'></body>");
+        assert!(hint_large.width > hint_small.width + 60);
+        let (minimum, _) =
+            input("<body><input style='width:12px;min-width:60px;max-width:80px'></body>");
+        assert_eq!(minimum.width, 60);
+    }
+
+    #[test]
+    fn atomic_input_resolves_css_content_box_and_border_box_dimensions() {
+        let measure = |sizing: &str| {
+            let markup = format!(
+                "<body><input style='width:100px;height:40px;padding:8px;border:2px solid red;box-sizing:{sizing}' value='x'></body>"
+            );
+            let doc = op_html::parse_document(&markup);
+            let author = op_css::collect_author_styles(&doc);
+            let styles = op_css::compute_styles(&doc, &author.styles);
+            let layout = layout_document_with_computed_styles_and_metrics(
+                &doc,
+                800,
+                &ImageResources::new(),
+                &styles,
+                &mut ApproximateTextMeasurer,
+            );
+            let hit = layout
+                .click_regions
+                .iter()
+                .find(|hit| {
+                    doc.element(hit.node)
+                        .is_some_and(|element| element.tag_name == "input")
+                })
+                .unwrap();
+            let decoration = layout
+                .box_decorations
+                .iter()
+                .find(|decoration| {
+                    decoration.border_left.width == 2 && decoration.border_right.width == 2
+                })
+                .expect("CSS border still paints around atomic field");
+            (hit.width, hit.height, decoration.width, decoration.height)
+        };
+        let content = measure("content-box");
+        let border = measure("border-box");
+        assert_eq!((content.0, content.1), (100, 40));
+        assert_eq!((border.0, border.1), (80, 20));
+        assert!(content.2 > border.2);
+        assert!(content.3 > border.3);
+    }
+
+    #[test]
+    fn atomic_input_preserves_inline_sibling_flow_and_password_mask() {
+        let doc = op_html::parse_document(
+            "<body><span>before</span><input type='password' size='8' value='секрет😊'><span>after</span></body>",
+        );
+        let author = op_css::collect_author_styles(&doc);
+        let styles = op_css::compute_styles(&doc, &author.styles);
+        let layout = layout_document_with_computed_styles_and_metrics(
+            &doc,
+            900,
+            &ImageResources::new(),
+            &styles,
+            &mut ApproximateTextMeasurer,
+        );
+        let before = layout
+            .text_boxes
+            .iter()
+            .find(|run| run.text == "before")
+            .unwrap();
+        let after = layout
+            .text_boxes
+            .iter()
+            .find(|run| run.text == "after")
+            .unwrap();
+        let input = layout
+            .click_regions
+            .iter()
+            .find(|hit| {
+                doc.element(hit.node)
+                    .is_some_and(|element| element.tag_name == "input")
+            })
+            .unwrap();
+        assert!(before.x + before.width <= input.x);
+        assert!(after.x >= input.x + input.width);
+        assert_eq!(before.y, after.y);
+        assert!(layout.text_boxes.iter().any(|run| run.text.contains('•')));
+        assert!(
+            !layout
+                .text_boxes
+                .iter()
+                .any(|run| run.text.contains("секрет"))
+        );
+    }
+
+    #[test]
     fn form_size_and_cols_hints_change_native_inline_control_width() {
         let extent = |markup: &str| {
             let doc = op_html::parse_document(markup);

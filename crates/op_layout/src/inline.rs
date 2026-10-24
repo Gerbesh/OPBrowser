@@ -336,6 +336,8 @@ pub(super) struct InlineImage {
 }
 
 pub(super) struct InlineAtomic {
+    /// Whole control hit target, including the empty area beyond its glyphs.
+    pub hit_node: Option<op_dom::NodeId>,
     pub width: i32,
     pub height: i32,
     pub baseline: i32,
@@ -1268,6 +1270,36 @@ impl<'a, 'm> Lines<'a, 'm> {
                             .saturating_sub(self.default_style.font_size / 4)
                             .saturating_sub(atomic.height / 2),
                     };
+                    if style.visible
+                        && let Some(node) = atomic.hit_node
+                    {
+                        self.hit_regions.push(ClickRegion {
+                            node,
+                            paint_key: self.inline_boxes.paint_key(style.boxes),
+                            x: x.saturating_add(dx),
+                            y: top.saturating_add(dy),
+                            width: atomic.width,
+                            height: atomic.height,
+                        });
+                    }
+                    // The HTML input owns an actual box height. Its CSS
+                    // inline fragment border/background must follow that box
+                    // instead of the surrounding font's fixed line metrics.
+                    if let Some(node) = atomic.hit_node {
+                        for (box_id, _, decoration) in &active_fragments {
+                            let own = self.inline_boxes.style(*box_id);
+                            if own.node == node && own.pseudo.is_none() {
+                                let (_, offset_y) = self.inline_boxes.visual_offset(Some(*box_id));
+                                let bounds = &mut self.decorations[*decoration];
+                                bounds.y =
+                                    top.saturating_add(offset_y).saturating_sub(own.top_extra());
+                                bounds.height = atomic
+                                    .height
+                                    .saturating_add(own.top_extra())
+                                    .saturating_add(own.bottom_extra());
+                            }
+                        }
+                    }
                     let text_base = self.text_boxes.len();
                     let image_base = self.image_boxes.len();
 

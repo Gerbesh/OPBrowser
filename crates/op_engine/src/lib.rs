@@ -2887,6 +2887,71 @@ mod tests {
     }
 
     #[test]
+    fn empty_fixed_size_input_is_clickable_across_its_box_and_keeps_unicode_dom_value() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><input id='one' style='width:180px;height:38px' value=''><script>\
+             var q=document.getElementById('one');q.addEventListener('input',function(){\
+             document.body.setAttribute('data-value',q.value);});\
+             </script></body>",
+            640,
+            400,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let (node, x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let hit = page
+                .hit_regions
+                .iter()
+                .find(|hit| {
+                    page.document.element(hit.node).is_some_and(|element| {
+                        element
+                            .attributes
+                            .iter()
+                            .any(|attr| attr.name == "id" && attr.value == "one")
+                    })
+                })
+                .expect("empty input must have a click target");
+            assert_eq!((hit.width, hit.height), (180, 38));
+            (hit.node, hit.x + 170, hit.y + 25)
+        };
+        engine
+            .click_at(x, y, 640, 400)
+            .expect("focus empty far side");
+        let frame = engine.text_input("猫😊", 640, 400).expect("Unicode insert");
+        assert!(contains_text(&frame.display_list, "猫😊"));
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(page.interaction.focused, Some(node));
+        assert_eq!(
+            page.document
+                .element(node)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "value")
+                .unwrap()
+                .value,
+            "猫😊"
+        );
+        let body = page
+            .document
+            .node(node)
+            .and_then(|node| node.parent)
+            .unwrap();
+        assert_eq!(
+            page.document
+                .element(body)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "data-value")
+                .unwrap()
+                .value,
+            "猫😊"
+        );
+    }
+
+    #[test]
     fn solitary_input_renders_clicks_and_accepts_unicode_at_mouse_caret() {
         let mut engine = Engine::new();
         let initial = engine.set_html_page(

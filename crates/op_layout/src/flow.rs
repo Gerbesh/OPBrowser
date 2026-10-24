@@ -1642,6 +1642,7 @@ impl<'a> Context<'a, '_> {
         }
 
         InlineAtomic {
+            hit_node: None,
             width: margin_left
                 .saturating_add(metrics.width)
                 .saturating_add(margin_right)
@@ -1657,6 +1658,132 @@ impl<'a> Context<'a, '_> {
             text_boxes: local.text,
             image_boxes: local.images_out,
             order: local.order,
+        }
+    }
+
+    /// A single-line HTML input participates as one sized inline box. The
+    /// DOM value is untouched; only the provisional visible prefix is clipped
+    /// until native horizontal editing scroll is implemented.
+    fn text_input_atomic(
+        &mut self,
+        id: NodeId,
+        element: &op_dom::ElementData,
+        style: Style,
+        containing_width: i32,
+    ) -> InlineAtomic {
+        let columns = attribute(element, "size")
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(20)
+            .min(160);
+        let font = style.inline.font_size.max(1);
+        let cell = self
+            .measurer
+            .measure("0", font, style.inline.weight, style.inline.font_style)
+            .width
+            .max(1);
+        let intrinsic = cell.saturating_mul(columns as i32).saturating_add(4);
+        let border = resolve_border_edges(style.border);
+        let horizontal_extras = resolve_length(style.padding.left, containing_width)
+            .max(0)
+            .saturating_add(resolve_length(style.padding.right, containing_width).max(0))
+            .saturating_add(border.left.width)
+            .saturating_add(border.right.width);
+        let vertical_extras = resolve_length(style.padding.top, containing_width)
+            .max(0)
+            .saturating_add(resolve_length(style.padding.bottom, containing_width).max(0))
+            .saturating_add(border.top.width)
+            .saturating_add(border.bottom.width);
+        let to_width = |value| {
+            size_to_content_width(value, style.box_sizing, containing_width, horizontal_extras)
+        };
+        let mut width = style.width.map(to_width).unwrap_or(intrinsic);
+        width = width.max(to_width(style.min_width));
+        if let Some(max) = style.max_width {
+            width = width.min(to_width(max));
+        }
+        let width = width.clamp(1, 4096);
+        // A percentage height without a definite containing block is auto.
+        let to_height =
+            |value| size_to_content_height(value, style.box_sizing, None, vertical_extras);
+        let mut height = style
+            .height
+            .and_then(to_height)
+            .unwrap_or(font.saturating_add(6));
+        if let Some(min) = to_height(style.min_height) {
+            height = height.max(min);
+        }
+        if let Some(max) = style.max_height.and_then(to_height) {
+            height = height.min(max);
+        }
+        let height = height.clamp(1, 4096);
+        let value = attribute(element, "value").unwrap_or("");
+        let kind = attribute(element, "type").unwrap_or("text");
+        let source = if kind == "password" && !value.is_empty() {
+            "•".repeat(value.chars().count().min(4096))
+        } else if value.is_empty() {
+            attribute(element, "placeholder")
+                .unwrap_or("")
+                .chars()
+                .take(80)
+                .collect::<String>()
+        } else {
+            value.chars().take(4096).collect::<String>()
+        };
+        let chars: Vec<char> = source.chars().collect();
+        let available = width.saturating_sub(4).max(0);
+        let measure = |text: &str, measurer: &mut dyn TextMeasurer| {
+            measurer
+                .measure(text, font, style.inline.weight, style.inline.font_style)
+                .width
+        };
+        let mut low = 0;
+        let mut high = chars.len();
+        while low < high {
+            let mid = low + (high - low).div_ceil(2);
+            let candidate = chars[..mid].iter().collect::<String>();
+            if measure(&candidate, self.measurer) <= available {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+        let shown = chars[..low].iter().collect::<String>();
+        let measured = measure(&shown, self.measurer).min(available);
+        let text_boxes = if shown.is_empty() {
+            Vec::new()
+        } else {
+            vec![TextBox {
+                x: 0,
+                y: 0,
+                width: measured,
+                height: font.min(height),
+                text: shown,
+                font_size: font,
+                weight: style.inline.weight,
+                style: style.inline.font_style,
+                decoration: style.inline.decoration,
+                letter_spacing: style.inline.letter_spacing,
+                word_spacing: style.inline.word_spacing,
+                color: style.inline.color,
+                visible: style.inline.visible,
+                links: Vec::new(),
+            }]
+        };
+        let order = if text_boxes.is_empty() {
+            Vec::new()
+        } else {
+            vec![LayoutItem::Text(0)]
+        };
+        InlineAtomic {
+            hit_node: Some(id),
+            width,
+            height,
+            baseline: height,
+            decorations: Vec::new(),
+            text_boxes,
+            image_boxes: Vec::new(),
+            order,
         }
     }
 
@@ -1739,6 +1866,7 @@ impl<'a> Context<'a, '_> {
         let border_height = local.y.max(0);
         let baseline = local.last_line_baseline.unwrap_or(border_height);
         InlineAtomic {
+            hit_node: None,
             width: margin_left
                 .saturating_add(used.border_width)
                 .saturating_add(margin_right)
@@ -1833,6 +1961,7 @@ impl<'a> Context<'a, '_> {
 
         let content_height = local.y.max(0);
         InlineAtomic {
+            hit_node: None,
             width: margin_left
                 .saturating_add(used.border_width)
                 .saturating_add(margin_right)
@@ -1870,6 +1999,7 @@ impl<'a> Context<'a, '_> {
         self.flush_anonymous_flex_item(&mut pending, style, &mut children_out);
 
         let mut row = InlineAtomic {
+            hit_node: None,
             width: 0,
             height: 0,
             baseline: 0,
@@ -2222,6 +2352,7 @@ impl<'a> Context<'a, '_> {
         let height = lines.bottom().max(0);
         output.push(FlexItem {
             atomic: InlineAtomic {
+                hit_node: None,
                 width,
                 height,
                 baseline: height,
@@ -2318,6 +2449,7 @@ impl<'a> Context<'a, '_> {
         local.finish_deferred_inline();
         let height = local.y.max(0);
         InlineAtomic {
+            hit_node: None,
             width: used
                 .margin_left
                 .saturating_add(used.border_width)
@@ -4642,11 +4774,26 @@ impl<'a> Context<'a, '_> {
                     return;
                 }
 
-                // Original first-party text controls: expose a consistent
-                // inline hit/paint run even before the full replaced-element
-                // form layout is implemented. Never render the textarea's raw
-                // source children a second time.
-                if tag == "input" || tag == "textarea" {
+                // Native single-line controls are atomic so CSS width/height
+                // and size hints no longer depend on text or synthetic spaces.
+                if tag == "input" {
+                    let kind = attribute(element, "type").unwrap_or("text");
+                    if attribute(element, "hidden").is_some()
+                        || !matches!(
+                            kind,
+                            "text" | "search" | "email" | "url" | "tel" | "password" | "number"
+                        )
+                    {
+                        return;
+                    }
+                    let atomic = self.text_input_atomic(id, element, current, containing_width);
+                    items.push(Item::Atomic(atomic, current.inline, current.vertical_align));
+                    return;
+                }
+
+                // Textarea remains on the existing multiline editing path
+                // until its scrolling, wrapping and selection are shared.
+                if tag == "textarea" {
                     let input_kind = attribute(element, "type").unwrap_or("text");
                     let text_kind = tag == "textarea"
                         || matches!(

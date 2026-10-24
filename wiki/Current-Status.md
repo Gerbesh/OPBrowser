@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Atomic HTML input sizing and whole-field hit regions (24 October 2026)
+
+Supported first-party single-line HTML inputs are now real sized inline atoms instead of artificially padded text. CSS width/height/min/max and box-sizing plus bounded HTML size control geometry; blank and long-value fields keep stable whole-field click targets and long text displays only the Unicode-safe portion that fits. Existing native editing and JS DOM full value are preserved. A targeted CSS fragment vertical-size fix allows authored borders/backgrounds to follow the actual control height. `textarea` retains provisional multi-row rendering; horizontal scrolling, shaped glyph clipping, exact selection/padding alignment and full browser form conformance remain incomplete. Modern public-site visual readiness is not newly measured.
+
 ## Native Unicode form undo and redo (24 October 2026)
 
 The original OPBrowser input/textarea editor supports Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z with a bounded 32-step undo/redo history of Unicode-safe value and caret/selection snapshots, restoring UTF-16 DOM selections before input handlers. Canceled keydown/beforeinput prevents defaults, while script-changed values invalidate stale native history. Pending WM_CHAR suppression is cleared on new document installation. Existing clipboard and original rendering path are preserved, with no Windows EDIT/WebView dependency. This does not include typing coalescing, persistent per-field history across focus swaps, correct InputEvent.inputType, IME or standards-complete control geometry. Modern public sites remain partially or not rendered.

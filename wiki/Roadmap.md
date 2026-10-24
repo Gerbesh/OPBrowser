@@ -1,5 +1,9 @@
 # Roadmap
 
+## Atomic single-line HTML input control (24 October 2026)
+
+Completed first-party atomic inline sizing for text/search/email/url/tel/password/number inputs: CSS width/height, min/max, content-/border-box, bounded HTML size, fixed click areas even without text, Unicode-safe displayed prefix, and CSS fragment background/border height following the control. DOM value/selection, native Unicode edits, keydown/beforeinput/input, clipboard and undo remain backed by the original VM and model. Layout/native editor regressions pass. Next high-priority work: horizontal caret-follow scrolling and accurate text clipping, box padding/selection alignment, then textarea as a true multiline atom with soft wraps and scrolling. No Chromium, WebView or external browser engine involved.
+
 ## First-party native text undo/redo (24 October 2026)
 
 Completed bounded per-focused-field edit history in the original Rust TextEditor: Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z restore Unicode-safe field values and native/JS-visible selections through cancelable keyboard and beforeinput events, normal DOM input events and repaint. Undo/redo stacks are capped at 32 edits; new edits invalidate redo; external script-assigned values invalidate obsolete history. Switching focus starts a new editor history. New page loads also clear stale keydown/WM_CHAR suppression. Still P0: typing coalescing, per-element retained history across focus changes, precise CSS control rectangles, overflow/scroll, soft-wrap, IME and InputEvent historyUndo/inputType conformance.
