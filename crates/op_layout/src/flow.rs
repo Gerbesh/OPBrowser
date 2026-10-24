@@ -18,14 +18,11 @@ pub(super) fn layout(
     viewport_height: i32,
     images_and_backgrounds: (&ImageResources, &ImageResources),
     generated_images: &GeneratedImageResources,
-    styles_and_scroll: (
-        &ComputedStyleMap,
-        &HashMap<usize, i32>,
-        &HashMap<usize, i32>,
-    ),
+    styles_and_scroll: FormLayoutState<'_>,
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
-    let (computed_styles, scroll_offsets, scroll_left_offsets) = styles_and_scroll;
+    let (computed_styles, scroll_offsets, scroll_left_offsets, input_scroll_starts) =
+        styles_and_scroll;
     let (images, backgrounds) = images_and_backgrounds;
     let viewport_width = viewport_width.max(240);
     let viewport_height = viewport_height.max(1);
@@ -56,6 +53,7 @@ pub(super) fn layout(
         measurer,
         scroll_offsets,
         scroll_left_offsets,
+        input_scroll_starts,
         dom_order: &dom_order,
         inline_boxes: InlineBoxes::default(),
         viewport_width,
@@ -216,6 +214,7 @@ struct Context<'a, 'm> {
     measurer: &'m mut dyn TextMeasurer,
     scroll_offsets: &'a HashMap<usize, i32>,
     scroll_left_offsets: &'a HashMap<usize, i32>,
+    input_scroll_starts: &'a HashMap<usize, usize>,
     dom_order: &'m HashMap<NodeId, usize>,
     inline_boxes: InlineBoxes,
     viewport_width: i32,
@@ -1602,6 +1601,7 @@ impl<'a> Context<'a, '_> {
             measurer: &mut *self.measurer,
             scroll_offsets: self.scroll_offsets,
             scroll_left_offsets: self.scroll_left_offsets,
+            input_scroll_starts: self.input_scroll_starts,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -1731,6 +1731,13 @@ impl<'a> Context<'a, '_> {
             value.chars().take(4096).collect::<String>()
         };
         let chars: Vec<char> = source.chars().collect();
+        let scroll_start = self
+            .input_scroll_starts
+            .get(&id.index())
+            .copied()
+            .unwrap_or(0)
+            .min(chars.len());
+        let chars = &chars[scroll_start..];
         let available = width.saturating_sub(4).max(0);
         let measure = |text: &str, measurer: &mut dyn TextMeasurer| {
             measurer
@@ -1823,6 +1830,7 @@ impl<'a> Context<'a, '_> {
             measurer: &mut *self.measurer,
             scroll_offsets: self.scroll_offsets,
             scroll_left_offsets: self.scroll_left_offsets,
+            input_scroll_starts: self.input_scroll_starts,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -1919,6 +1927,7 @@ impl<'a> Context<'a, '_> {
             measurer: &mut *self.measurer,
             scroll_offsets: self.scroll_offsets,
             scroll_left_offsets: self.scroll_left_offsets,
+            input_scroll_starts: self.input_scroll_starts,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,
@@ -2404,6 +2413,7 @@ impl<'a> Context<'a, '_> {
             measurer: &mut *self.measurer,
             scroll_offsets: self.scroll_offsets,
             scroll_left_offsets: self.scroll_left_offsets,
+            input_scroll_starts: self.input_scroll_starts,
             dom_order: self.dom_order,
             inline_boxes: InlineBoxes::default(),
             viewport_width: self.viewport_width,

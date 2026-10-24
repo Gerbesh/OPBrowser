@@ -5,7 +5,7 @@ use op_css::{
 };
 use op_layout::{
     ImageResources, layout_document_with_axis_scrolling,
-    layout_document_with_computed_styles_and_viewport_metrics,
+    layout_document_with_computed_styles_and_viewport_metrics, layout_document_with_form_scrolling,
 };
 #[cfg(test)]
 use op_layout::{layout_document_with_backgrounds_and_resources, layout_document_with_scrolling};
@@ -384,6 +384,19 @@ fn order_native_hit_regions(
 }
 
 impl PreparedDocument {
+    fn input_scroll_starts(&self) -> std::collections::HashMap<usize, usize> {
+        self.editor
+            .as_ref()
+            .filter(|editor| self.interaction.focused == Some(editor.node))
+            .filter(|editor| editor.scroll_start > 0)
+            .map(|editor| {
+                [(editor.node.index(), editor.scroll_start)]
+                    .into_iter()
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     fn current_scroll_offsets(&self) -> &std::collections::HashMap<usize, i32> {
         self.runtime
             .as_ref()
@@ -455,9 +468,34 @@ impl PreparedDocument {
             style.font_size_px.round().clamp(8.0, 40.0) as i32
         });
         let mut measurer = text::Measurer::new();
+        let scroll_start = if element.tag_name == "input" {
+            self.editor
+                .as_ref()
+                .filter(|editor| editor.node == target)
+                .map_or(0, |editor| editor.scroll_start)
+        } else {
+            0
+        };
+        let hidden_prefix = if scroll_start == 0 {
+            0
+        } else {
+            let shown = if kind == "password" {
+                "•".repeat(scroll_start.min(value.chars().count()))
+            } else {
+                value.chars().take(scroll_start).collect::<String>()
+            };
+            op_layout::TextMeasurer::measure(
+                &mut measurer,
+                &shown,
+                size,
+                op_layout::FontWeight::Normal,
+                op_layout::FontStyle::Normal,
+            )
+            .width
+        };
         let caret = forms::caret_at_point(
             &value,
-            x.saturating_sub(region.x),
+            x.saturating_sub(region.x).saturating_add(hidden_prefix),
             y.saturating_sub(region.y),
             size,
             kind == "password",
@@ -597,7 +635,7 @@ impl PreparedDocument {
     }
 
     fn layout_for_focus(&self, width: i32, height: i32) -> op_layout::LayoutTree {
-        layout_document_with_axis_scrolling(
+        layout_document_with_form_scrolling(
             &self.document,
             width,
             height,
@@ -607,6 +645,7 @@ impl PreparedDocument {
                 &self.computed_styles,
                 self.current_scroll_offsets(),
                 &self.scroll_left_offsets,
+                &self.input_scroll_starts(),
             ),
             &mut text::Measurer::new(),
         )
@@ -837,7 +876,8 @@ impl PreparedDocument {
             self.style_viewport = (width, height);
             self.refresh_styles();
         }
-        let layout = layout_document_with_axis_scrolling(
+        let mut input_starts = self.input_scroll_starts();
+        let mut layout = layout_document_with_form_scrolling(
             &self.document,
             width,
             height,
@@ -847,9 +887,75 @@ impl PreparedDocument {
                 &self.computed_styles,
                 self.current_scroll_offsets(),
                 &self.scroll_left_offsets,
+                &input_starts,
             ),
             &mut text::Measurer::new(),
         );
+        // The first layout establishes the actual CSS-sized field width.
+        // Reflow only when the focused caret needs a different visible slice.
+        if let Some(editor) = self.editor.as_mut()
+            && self.interaction.focused == Some(editor.node)
+            && let Some(element) = self.document.element(editor.node)
+            && element.tag_name == "input"
+            && let Some(hit) = layout
+                .click_regions
+                .iter()
+                .find(|hit| hit.node == editor.node && hit.width > 0)
+        {
+            let value = element
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "value")
+                .map_or("", |attr| attr.value.as_str());
+            let masked = element
+                .attributes
+                .iter()
+                .any(|a| a.name == "type" && a.value == "password");
+            let size = self
+                .computed_styles
+                .style_for(editor.node)
+                .map_or(16, |s| s.font_size_px.round().max(1.0) as i32);
+            let mut measurer = text::Measurer::new();
+            let next = forms::reveal_input_caret(
+                value,
+                editor.caret,
+                editor.scroll_start,
+                hit.width.saturating_sub(4),
+                masked,
+                |text| {
+                    op_layout::TextMeasurer::measure(
+                        &mut measurer,
+                        text,
+                        size,
+                        op_layout::FontWeight::Normal,
+                        op_layout::FontStyle::Normal,
+                    )
+                    .width
+                },
+            );
+            if editor.scroll_start != next {
+                editor.scroll_start = next;
+                if next == 0 {
+                    input_starts.remove(&editor.node.index());
+                } else {
+                    input_starts.insert(editor.node.index(), next);
+                }
+                layout = layout_document_with_form_scrolling(
+                    &self.document,
+                    width,
+                    height,
+                    (&self.images.elements, &self.images.backgrounds),
+                    &self.images.generated,
+                    (
+                        &self.computed_styles,
+                        self.current_scroll_offsets(),
+                        &self.scroll_left_offsets,
+                        &input_starts,
+                    ),
+                    &mut text::Measurer::new(),
+                );
+            }
+        }
         self.hit_regions = order_native_hit_regions(&layout, &self.document);
         let scroll_limits: std::collections::HashMap<usize, i32> = layout
             .scroll_containers
@@ -967,6 +1073,35 @@ impl PreparedDocument {
                 .computed_styles
                 .style_for(node)
                 .map_or(16, |s| s.font_size_px.round().clamp(8.0, 40.0) as i32);
+            let scroll_start = if element.tag_name == "input" {
+                self.editor
+                    .as_ref()
+                    .filter(|editor| editor.node == node)
+                    .map_or(0, |editor| editor.scroll_start)
+            } else {
+                0
+            };
+            let hidden = if scroll_start > 0 {
+                let prefix = if element
+                    .attributes
+                    .iter()
+                    .any(|a| a.name == "type" && a.value == "password")
+                {
+                    "•".repeat(scroll_start.min(raw.chars().count()))
+                } else {
+                    raw.chars().take(scroll_start).collect::<String>()
+                };
+                op_layout::TextMeasurer::measure(
+                    &mut text::Measurer::new(),
+                    &prefix,
+                    size,
+                    op_layout::FontWeight::Normal,
+                    op_layout::FontStyle::Normal,
+                )
+                .width
+            } else {
+                0
+            };
             if let Some(editor) = self.editor.as_ref().filter(|editor| editor.node == node)
                 && editor.caret != editor.anchor
             {
@@ -998,7 +1133,7 @@ impl PreparedDocument {
                         .width
                     },
                 ) {
-                    let x = left.saturating_add(fragment.x);
+                    let x = left.saturating_add(fragment.x).saturating_sub(hidden);
                     let y = top.saturating_add(fragment.y);
                     // The selected glyphs are repainted over the highlight;
                     // otherwise a solid FillRect would hide the text entirely.
@@ -1047,6 +1182,7 @@ impl PreparedDocument {
             .width;
             let caret_x = left
                 .saturating_add(width_to_caret)
+                .saturating_sub(hidden)
                 .clamp(left + 1, right - 2);
             let caret_y = top.saturating_add((row as i32).saturating_mul(size + 4));
             if caret_y < bottom {
@@ -1943,7 +2079,7 @@ impl Engine {
         if was_pressed {
             prepared.refresh_styles();
         }
-        let layout = layout_document_with_axis_scrolling(
+        let layout = layout_document_with_form_scrolling(
             &prepared.document,
             width,
             height,
@@ -1953,6 +2089,7 @@ impl Engine {
                 &prepared.computed_styles,
                 prepared.current_scroll_offsets(),
                 &prepared.scroll_left_offsets,
+                &prepared.input_scroll_starts(),
             ),
             &mut text::Measurer::new(),
         );
@@ -2884,6 +3021,90 @@ mod tests {
         let page = engine.active_document.as_ref().unwrap();
         assert_eq!(page.editor.as_ref().unwrap().caret, 2);
         assert_eq!(page.editor.as_ref().unwrap().anchor, 2);
+    }
+
+    #[test]
+    fn native_input_scroll_tracks_home_end_and_mouse_caret_without_losing_value() {
+        let mut engine = Engine::new();
+        let first = engine.set_html_page(
+            "<body><input id='q' style='width:85px' value='ABCDEFGHIJKLMNOPQRSTUVWXYZ'><script>var q=document.getElementById('q');q.focus();q.setSelectionRange(26,26);</script></body>",
+            640,
+            380,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let page = engine.active_document.as_ref().unwrap();
+        let editor = page.editor.as_ref().expect("JS focused input");
+        assert!(editor.scroll_start > 0, "end caret must scroll into view");
+        let initial_scroll = editor.scroll_start;
+        let displayed = first
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Text { text, .. } if text.ends_with('Z') => Some(text.as_str()),
+                _ => None,
+            })
+            .expect("native input tail should be painted");
+        assert!(
+            !displayed.starts_with('A'),
+            "only the visible tail is painted"
+        );
+
+        let key = |engine: &mut Engine, key: &str| {
+            engine
+                .keyboard_event(
+                    op_js::NativeKeyboardInput {
+                        key,
+                        code: key,
+                        down: true,
+                        shift: false,
+                        ctrl: false,
+                        repeat: false,
+                    },
+                    640,
+                    380,
+                )
+                .unwrap()
+                .expect("repaint on caret movement")
+        };
+        key(&mut engine, "Home");
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(page.editor.as_ref().unwrap().scroll_start, 0);
+        key(&mut engine, "End");
+        let (node, left, top, scroll) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let editor = page.editor.as_ref().unwrap();
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|r| r.node == editor.node)
+                .unwrap();
+            (editor.node, region.x, region.y, editor.scroll_start)
+        };
+        assert_eq!(scroll, initial_scroll);
+        engine
+            .click_at(left + 2, top + 2, 640, 380)
+            .expect("click visible left side");
+        let page = engine.active_document.as_ref().unwrap();
+        let editor = page.editor.as_ref().unwrap();
+        assert_eq!(editor.node, node);
+        assert!(editor.caret >= scroll && editor.caret <= scroll + 2);
+        assert_eq!(
+            page.document
+                .element(node)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "value")
+                .unwrap()
+                .value,
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        );
+        let frame = engine
+            .text_input("猫😊", 640, 380)
+            .expect("insert after scroll");
+        assert!(frame.display_list.commands.iter().any(|paint| matches!(
+            paint, PaintCommand::Text { text, .. } if text.contains("猫😊")
+        )));
     }
 
     #[test]

@@ -17,6 +17,7 @@ pub(super) struct TextEditor {
     pub node: NodeId,
     pub caret: usize,
     pub anchor: usize,
+    pub scroll_start: usize,
     observed_value: String,
     undo: Vec<EditorSnapshot>,
     redo: Vec<EditorSnapshot>,
@@ -44,6 +45,7 @@ impl TextEditor {
             node,
             caret: end,
             anchor: end,
+            scroll_start: 0,
             observed_value: value.to_owned(),
             undo: Vec::new(),
             redo: Vec::new(),
@@ -57,6 +59,7 @@ impl TextEditor {
             self.undo.clear();
             self.redo.clear();
             self.observed_value = value.to_owned();
+            self.scroll_start = 0;
             let count = value.chars().count();
             self.caret = self.caret.min(count);
             self.anchor = self.anchor.min(count);
@@ -225,6 +228,45 @@ impl TextEditor {
     }
 }
 
+/// Keep a single-line Unicode caret visible in its sized box. A whole-scalar
+/// scroll origin avoids splitting UTF-8 and keeps first-party hit geometry and
+/// painted glyphs on the same visible run.
+pub(super) fn reveal_input_caret(
+    value: &str,
+    caret: usize,
+    previous_start: usize,
+    available: i32,
+    masked: bool,
+    mut measure: impl FnMut(&str) -> i32,
+) -> usize {
+    let chars: Vec<char> = if masked {
+        vec!['•'; value.chars().count().min(MAX_TEXT_SCALARS)]
+    } else {
+        value.chars().take(MAX_TEXT_SCALARS).collect()
+    };
+    let caret = caret.min(chars.len());
+    let start = previous_start.min(caret);
+    let measure_range = |start: usize, end: usize, measure: &mut dyn FnMut(&str) -> i32| {
+        measure(&chars[start..end].iter().collect::<String>()).max(0)
+    };
+    if measure_range(0, chars.len(), &mut measure) <= available.max(0) {
+        return 0;
+    }
+    if measure_range(start, caret, &mut measure) <= available.max(0) {
+        return start;
+    }
+    let (mut low, mut high) = (start, caret);
+    while low < high {
+        let mid = low + (high - low) / 2;
+        if measure_range(mid, caret, &mut measure) <= available.max(0) {
+            high = mid;
+        } else {
+            low = mid + 1;
+        }
+    }
+    low
+}
+
 /// Find the nearest Unicode scalar caret boundary under a native document click.
 /// The current first-party field painter uses one unwrapped line per newline
 /// and a fixed font-size + 4 line advance; use that same provisional geometry.
@@ -351,6 +393,19 @@ fn byte_at(value: &str, index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn horizontal_input_scroll_keeps_unicode_caret_visible_and_resets_at_start() {
+        let width = |s: &str| (s.chars().count() as i32) * 10;
+        let value = "A😊猫BCDEFG";
+        let right = reveal_input_caret(value, 9, 0, 35, false, width);
+        assert_eq!(right, 6);
+        assert_eq!(reveal_input_caret(value, 8, right, 35, false, width), right);
+        assert_eq!(reveal_input_caret(value, 0, right, 35, false, width), 0);
+        assert_eq!(reveal_input_caret("ab", 2, right, 35, false, width), 0);
+        assert_eq!(reveal_input_caret("abcdef", 6, 0, 25, true, width), 4);
+        assert_eq!(reveal_input_caret("abcdef", 1, 4, 25, true, width), 1);
+    }
+
     #[test]
     fn click_to_caret_rounds_to_scalar_boundaries_on_each_line() {
         let width = |text: &str| text.chars().count() as i32 * 10;

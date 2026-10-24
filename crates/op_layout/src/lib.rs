@@ -622,6 +622,40 @@ pub fn layout_document_with_axis_scrolling(
     ),
     measurer: &mut dyn TextMeasurer,
 ) -> LayoutTree {
+    layout_document_with_form_scrolling(
+        document,
+        viewport_width,
+        viewport_height,
+        images_and_backgrounds,
+        generated_images,
+        (
+            styles_and_scroll.0,
+            styles_and_scroll.1,
+            styles_and_scroll.2,
+            &std::collections::HashMap::new(),
+        ),
+        measurer,
+    )
+}
+
+/// Style, CSS scroll and native input visible starts for first-party forms.
+pub type FormLayoutState<'a> = (
+    &'a ComputedStyleMap,
+    &'a std::collections::HashMap<usize, i32>,
+    &'a std::collections::HashMap<usize, i32>,
+    &'a std::collections::HashMap<usize, usize>,
+);
+
+/// Native form horizontal scroll uses scalar start positions, not CSS scrollLeft.
+pub fn layout_document_with_form_scrolling(
+    document: &Document,
+    viewport_width: i32,
+    viewport_height: i32,
+    images_and_backgrounds: (&ImageResources, &ImageResources),
+    generated_images: &GeneratedImageResources,
+    styles_and_scroll: FormLayoutState<'_>,
+    measurer: &mut dyn TextMeasurer,
+) -> LayoutTree {
     flow::layout(
         document,
         viewport_width,

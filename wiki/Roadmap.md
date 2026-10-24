@@ -1,5 +1,9 @@
 # Roadmap
 
+## Native input horizontal caret-follow scrolling (24 October 2026)
+
+Implemented a focused-field horizontal viewport for original Rust input atoms. Home and End, editing and JavaScript setSelectionRange change a bounded Unicode-scalar visible start as needed; a second layout pass occurs only when that start changes. Native glyph painting, selected text highlight, caret and mouse click-to-caret use the same hidden-prefix offset. The actual DOM field value and JavaScript UTF-16 selection remain complete; password bullet masking and Undo/Redo still work. Next: precise CSS padding/text alignment, grapheme clusters, IME, bidi/shaping, selection drag beyond the field boundary and true wrapped/scrollable textarea. This is not complete HTML form conformance.
+
 ## Atomic single-line HTML input control (24 October 2026)
 
 Completed first-party atomic inline sizing for text/search/email/url/tel/password/number inputs: CSS width/height, min/max, content-/border-box, bounded HTML size, fixed click areas even without text, Unicode-safe displayed prefix, and CSS fragment background/border height following the control. DOM value/selection, native Unicode edits, keydown/beforeinput/input, clipboard and undo remain backed by the original VM and model. Layout/native editor regressions pass. Next high-priority work: horizontal caret-follow scrolling and accurate text clipping, box padding/selection alignment, then textarea as a true multiline atom with soft wraps and scrolling. No Chromium, WebView or external browser engine involved.

@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Native single-line input horizontal caret reveal (24 October 2026)
+
+Focused first-party HTML inputs now scroll the displayed Unicode text horizontally when the caret reaches the content-box edge. The original Rust layout paints the visible suffix, while native caret, selection and mouse position map through the same scalar-aligned offset. Home/End, JavaScript selection positions and normal Unicode editing preserve the full DOM value. Native/JS tests, full workspace, strict Clippy and Windows startup smoke pass. The remaining gaps include partial glyph clipping, CSS padding alignment, grapheme/bidi/IME behavior and atomic textarea scroll/wrap. No new modern website compatibility score is claimed.
+
 ## Atomic HTML input sizing and whole-field hit regions (24 October 2026)
 
 Supported first-party single-line HTML inputs are now real sized inline atoms instead of artificially padded text. CSS width/height/min/max and box-sizing plus bounded HTML size control geometry; blank and long-value fields keep stable whole-field click targets and long text displays only the Unicode-safe portion that fits. Existing native editing and JS DOM full value are preserved. A targeted CSS fragment vertical-size fix allows authored borders/backgrounds to follow the actual control height. `textarea` retains provisional multi-row rendering; horizontal scrolling, shaped glyph clipping, exact selection/padding alignment and full browser form conformance remain incomplete. Modern public-site visual readiness is not newly measured.
