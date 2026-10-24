@@ -1,5 +1,9 @@
 # Roadmap
 
+## First-party textarea soft wrapping and shared caret geometry (24 October 2026)
+
+Completed the first bounded measured visual-row model for HTML textarea. Original layout uses its scalar start/end positions to wrap Unicode across the fixed box, and native editor follows the same rows for scroll-to-caret, mouse selection and highlight paint, preserving full DOM and JS UTF-16 positions. The next UI work is wheel/scrollbar navigation independent of caret, vertical cursor up/down and exact CSS padding/clipping. After that, implement grapheme/BiDi/IME and standards-grade CSS Unicode line breaking. No claim of WebKit/Chromium/Gecko conformance or new real-site compatibility benchmark.
+
 ## Atomic textarea fixed geometry and explicit-newline scrolling (24 October 2026)
 
 Implemented bounded first-party CSS-sized multiline textarea boxes with one click rectangle, independently constrained width/height, and caret-follow vertical viewport for explicit newline rows. DOM values/JS selections and native input/clipboard/Undo remain complete; clicking inside a shifted textarea maps to its original row. Next: shared measured visual-line model for soft wrapping, selection/drag across wraps, vertical wheel/scrollbar integration, correct padding/text clips, Unicode grapheme navigation and IME. Do not mark full textarea scrolling or standards-complete replaced-element geometry as done.

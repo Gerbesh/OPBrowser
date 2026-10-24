@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Native textarea shared soft-wrap visual rows (24 October 2026)
+
+Original Rust op_layout and native op_engine now share a bounded measured Unicode visual-line map. Textarea wraps at available CSS content width (preferring spaces) and its caret follows the scrolled visual row; clicks/drag, Unicode text insertion and highlighted selections use those same visual boundaries. JavaScript values and UTF-16 selections retain the complete text. Unit/integration tests, workspace, strict Clippy and Win32 startup smoke pass. Text rendering remains incomplete for full CSS line breaking, bidi/graphemes, horizontal scrolling of nonwrapping text, IME, vertical wheel/scrollbar affordances, font weight and exact CSS padding/partial-glyph clipping. No public website compatibility result was remeasured.
+
 ## Atomic textarea box and explicit-row caret scrolling (24 October 2026)
 
 The first-party Rust layout now treats textarea as one sized inline atomic control with bounded HTML cols/rows and author CSS sizing, rather than pushing synthetic glyph runs into surrounding page flow. A focused textarea can follow caret movement vertically across explicit newline rows while keeping a fixed hit box; clicks in the scrolled viewport, native selection/paint and Unicode text insertion map back to the complete DOM value. Layout and JS integration regressions cover these paths. Long individual lines are clipped at scalar boundaries, not soft-wrapped. Wheel scrolling, proper scrollbars, visual line wrapping, IME, bidi/grapheme shaping and exact CSS padding alignment remain unsupported; no real website rendering-score change is claimed.

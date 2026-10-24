@@ -1751,43 +1751,22 @@ impl<'a> Context<'a, '_> {
             .unwrap_or(0);
         let visible_rows = (height / line_height).max(1) as usize;
         let available = width.saturating_sub(4).max(0);
+        let visual = textarea_visual_lines(&source, available, font, self.measurer);
         let mut text_boxes = Vec::new();
         let mut order = Vec::new();
-        for (row, text) in source
-            .split('\n')
-            .enumerate()
-            .skip(first_row)
-            .take(visible_rows)
-        {
+        for (row, line) in visual.iter().enumerate().skip(first_row).take(visible_rows) {
             let y = (row - first_row) as i32 * line_height;
             if y >= height {
                 break;
             }
-            let chars: Vec<char> = text.chars().collect();
-            let mut low = 0;
-            let mut high = chars.len();
-            while low < high {
-                let mid = low + (high - low).div_ceil(2);
-                let candidate: String = chars[..mid].iter().collect();
-                let width = self
-                    .measurer
-                    .measure(
-                        &candidate,
-                        font,
-                        style.inline.weight,
-                        style.inline.font_style,
-                    )
-                    .width;
-                if width <= available {
-                    low = mid;
-                } else {
-                    high = mid - 1;
-                }
-            }
-            if low == 0 {
+            let shown: String = source
+                .chars()
+                .skip(line.start)
+                .take(line.end - line.start)
+                .collect();
+            if shown.is_empty() {
                 continue;
             }
-            let shown: String = chars[..low].iter().collect();
             let measured = self
                 .measurer
                 .measure(&shown, font, style.inline.weight, style.inline.font_style)

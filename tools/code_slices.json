@@ -2,6 +2,19 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S121",
+      "title": "Shared measured textarea visual-line wrapping from DOM to native glyphs, clicks and selections",
+      "status": "Original op_layout/op_engine Unicode visual rows, wrapped caret/selection/click integration and Win32 smoke tested",
+      "steps": [
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "fn textarea_visual_lines"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn textarea_atomic"},
+        {"path": "crates/op_engine/src/forms.rs", "symbol": "wrapped_textarea_caret_at_point"},
+        {"path": "crates/op_engine/src/forms.rs", "symbol": "wrapped_textarea_selection_fragments"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "textarea_soft_wrap_scroll_click_and_unicode_insert_keep_full_dom_value"}
+      ],
+      "limitation": "Bounded scalar/space-first wrap, not full Unicode bidi/grapheme CSS, IME, textarea wheel scrolling or accurate CSS padding/clipping."
+    },
+    {
       "id": "S120",
       "title": "CSS-sized atomic textarea, logical row viewport, click and Unicode DOM editing",
       "status": "First-party layout and native engine regression tests cover fixed CSS hit box, scrolling explicit rows, mouse Unicode editing; workspace and Win32 smoke verified",

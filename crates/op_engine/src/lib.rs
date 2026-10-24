@@ -503,23 +503,41 @@ impl PreparedDocument {
         } else {
             0
         };
-        let caret = forms::caret_at_point(
-            &value,
-            x.saturating_sub(region.x).saturating_add(hidden_prefix),
-            y.saturating_sub(region.y).saturating_add(row_offset),
-            size,
-            kind == "password",
-            |prefix| {
-                op_layout::TextMeasurer::measure(
-                    &mut measurer,
-                    prefix,
-                    size,
-                    op_layout::FontWeight::Normal,
-                    op_layout::FontStyle::Normal,
-                )
-                .width
-            },
-        );
+        let measure = |prefix: &str, measurer: &mut text::Measurer| {
+            op_layout::TextMeasurer::measure(
+                measurer,
+                prefix,
+                size,
+                op_layout::FontWeight::Normal,
+                op_layout::FontStyle::Normal,
+            )
+            .width
+        };
+        let caret = if element.tag_name == "textarea" {
+            let lines = op_layout::textarea_visual_lines(
+                &value,
+                region.width.saturating_sub(4),
+                size,
+                &mut measurer,
+            );
+            forms::wrapped_textarea_caret_at_point(
+                &value,
+                &lines,
+                x.saturating_sub(region.x),
+                y.saturating_sub(region.y).saturating_add(row_offset),
+                size,
+                |text| measure(text, &mut measurer),
+            )
+        } else {
+            forms::caret_at_point(
+                &value,
+                x.saturating_sub(region.x).saturating_add(hidden_prefix),
+                y.saturating_sub(region.y),
+                size,
+                kind == "password",
+                |text| measure(text, &mut measurer),
+            )
+        };
         Some((caret, value))
     }
 
@@ -943,8 +961,14 @@ impl PreparedDocument {
                 .map_or(16, |s| s.font_size_px.round().max(1.0) as i32);
             let mut measurer = text::Measurer::new();
             let next = if element.tag_name == "textarea" {
-                forms::reveal_textarea_row(
+                let rows = op_layout::textarea_visual_lines(
                     value,
+                    hit.width.saturating_sub(4),
+                    size,
+                    &mut measurer,
+                );
+                forms::reveal_textarea_row(
+                    &rows,
                     editor.caret,
                     editor.scroll_start,
                     hit.height,
@@ -1093,30 +1117,48 @@ impl PreparedDocument {
                 .as_ref()
                 .filter(|e| e.node == node)
                 .map_or(raw.chars().count(), |e| e.caret);
-            let prefix = raw.chars().take(position).collect::<String>();
-            let last_line = prefix.rsplit('\n').next().unwrap_or("");
-            let row = prefix.chars().filter(|ch| *ch == '\n').count();
-            let shown = if element
-                .attributes
-                .iter()
-                .any(|a| a.name == "type" && a.value == "password")
-            {
-                "•".repeat(last_line.chars().count())
-            } else {
-                last_line.to_owned()
-            };
             let size = self
                 .computed_styles
                 .style_for(node)
                 .map_or(16, |s| s.font_size_px.round().clamp(8.0, 40.0) as i32);
-            let scroll_start = if element.tag_name == "input" {
-                self.editor
-                    .as_ref()
-                    .filter(|editor| editor.node == node)
-                    .map_or(0, |editor| editor.scroll_start)
+            let visual = (element.tag_name == "textarea").then(|| {
+                op_layout::textarea_visual_lines(
+                    raw,
+                    width.saturating_sub(4),
+                    size,
+                    &mut text::Measurer::new(),
+                )
+            });
+            let (shown, row) = if let Some(lines) = visual.as_ref() {
+                let row = forms::textarea_caret_row(lines, position);
+                let start = lines[row].start;
+                (
+                    raw.chars()
+                        .skip(start)
+                        .take(position.saturating_sub(start))
+                        .collect::<String>(),
+                    row,
+                )
             } else {
-                0
+                let prefix = raw.chars().take(position).collect::<String>();
+                let last_line = prefix.rsplit('\n').next().unwrap_or("");
+                let row = prefix.chars().filter(|ch| *ch == '\n').count();
+                let shown = if element
+                    .attributes
+                    .iter()
+                    .any(|a| a.name == "type" && a.value == "password")
+                {
+                    "•".repeat(last_line.chars().count())
+                } else {
+                    last_line.to_owned()
+                };
+                (shown, row)
             };
+            let scroll_start = self
+                .editor
+                .as_ref()
+                .filter(|editor| editor.node == node)
+                .map_or(0, |editor| editor.scroll_start);
             let row_offset = if element.tag_name == "textarea" {
                 (scroll_start.min(4096) as i32).saturating_mul(size.saturating_add(4))
             } else {
@@ -1157,23 +1199,36 @@ impl PreparedDocument {
                     width: width.saturating_sub(2).max(0),
                     height,
                 };
-                for fragment in forms::selection_fragments(
-                    raw,
-                    editor.caret,
-                    editor.anchor,
-                    size,
-                    masked,
-                    |text| {
-                        op_layout::TextMeasurer::measure(
-                            &mut measurer,
-                            text,
-                            size,
-                            op_layout::FontWeight::Normal,
-                            op_layout::FontStyle::Normal,
-                        )
-                        .width
-                    },
-                ) {
+                let mut measure = |text: &str| {
+                    op_layout::TextMeasurer::measure(
+                        &mut measurer,
+                        text,
+                        size,
+                        op_layout::FontWeight::Normal,
+                        op_layout::FontStyle::Normal,
+                    )
+                    .width
+                };
+                let fragments = if let Some(lines) = visual.as_ref() {
+                    forms::wrapped_textarea_selection_fragments(
+                        raw,
+                        lines,
+                        editor.caret,
+                        editor.anchor,
+                        size,
+                        &mut measure,
+                    )
+                } else {
+                    forms::selection_fragments(
+                        raw,
+                        editor.caret,
+                        editor.anchor,
+                        size,
+                        masked,
+                        &mut measure,
+                    )
+                };
+                for fragment in fragments {
                     let x = left.saturating_add(fragment.x).saturating_sub(hidden);
                     let y = top.saturating_add(fragment.y).saturating_sub(row_offset);
                     // The selected glyphs are repainted over the highlight;
@@ -2850,6 +2905,106 @@ mod tests {
         assert!(contains_text(&frame.display_list, "Caret:0|0"));
         let frame = engine.text_input("猫", 640, 400).unwrap();
         assert!(contains_text(&frame.display_list, "猫A😊B"));
+    }
+
+    #[test]
+    fn textarea_soft_wrap_scroll_click_and_unicode_insert_keep_full_dom_value() {
+        let value = "ABCDEFGH猫😊IJKLMNOPQRST";
+        let mut engine = Engine::new();
+        let html = format!(
+            "<body><textarea id='q' style='width:55px;height:40px'>{value}</textarea><script>var q=document.getElementById('q');q.focus();q.setSelectionRange(22,22);</script></body>"
+        );
+        let _frame = engine.set_html_page(&html, 640, 380);
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let (node, x, y, start, rows) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let editor = page.editor.as_ref().expect("textarea JS focus");
+            let hit = page
+                .hit_regions
+                .iter()
+                .find(|hit| hit.node == editor.node)
+                .unwrap();
+            let rows = op_layout::textarea_visual_lines(
+                value,
+                hit.width - 4,
+                16,
+                &mut text::Measurer::new(),
+            );
+            assert!(
+                rows.len() > 3,
+                "single logical line must wrap to visual rows"
+            );
+            assert!(
+                editor.scroll_start > 0,
+                "End caret should reveal last visual row"
+            );
+            assert_eq!(hit.width, 55);
+            assert_eq!(hit.height, 40);
+            (editor.node, hit.x + 1, hit.y + 2, editor.scroll_start, rows)
+        };
+        engine
+            .click_at(x, y, 640, 380)
+            .expect("click inside wrapped row");
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(page.editor.as_ref().unwrap().caret, rows[start].start);
+        assert_eq!(page.editor.as_ref().unwrap().scroll_start, start);
+        let frame = engine
+            .text_input("Ж😊", 640, 380)
+            .expect("edit wrapped line");
+        let expected = format!(
+            "{}Ж😊{}",
+            value.chars().take(rows[start].start).collect::<String>(),
+            value.chars().skip(rows[start].start).collect::<String>()
+        );
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(
+            page.document
+                .element(node)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "value")
+                .unwrap()
+                .value,
+            expected
+        );
+        assert!(frame.display_list.commands.iter().any(|command| matches!(
+            command, PaintCommand::Text { text, .. } if text.contains("Ж😊")
+        )));
+    }
+
+    #[test]
+    fn textarea_soft_wrap_selection_highlights_separate_visual_rows() {
+        let mut engine = Engine::new();
+        let frame = engine.set_html_page(
+            "<body><textarea id='q' style='width:65px;height:80px'>AB猫😊EFGHIJKL</textarea><script>var q=document.getElementById('q');q.focus();q.setSelectionRange(1,10);</script></body>",
+            640, 380,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let rows: Vec<(i32, String)> = frame
+            .commands
+            .iter()
+            .filter_map(|cmd| {
+                if let PaintCommand::Clipped { command, .. } = cmd
+                    && let PaintCommand::Text { y, text, color, .. } = command.as_ref()
+                    && *color == Color::WHITE
+                {
+                    return Some((*y, text.clone()));
+                }
+                None
+            })
+            .collect();
+        assert!(
+            rows.len() >= 2,
+            "selected range must span multiple wrapped rows: {rows:?}"
+        );
+        assert!(rows.windows(2).all(|pair| pair[1].0 > pair[0].0));
+        assert_eq!(
+            rows.iter()
+                .map(|(_, line)| line.as_str())
+                .collect::<String>(),
+            "B猫😊EFGHI"
+        );
     }
 
     #[test]

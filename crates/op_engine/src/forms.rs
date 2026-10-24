@@ -267,26 +267,29 @@ pub(super) fn reveal_input_caret(
     low
 }
 
-/// Move a fixed-height textarea's viewport by explicit newline rows only.
-/// This remains a separate model from future soft-wrapped visual line indexes.
+/// Resolve scalar caret positions against the same soft/hard visual
+/// rows used by the first-party layout compositor.
+pub(super) fn textarea_caret_row(lines: &[op_layout::TextareaVisualLine], caret: usize) -> usize {
+    lines
+        .iter()
+        .rposition(|line| line.start <= caret)
+        .unwrap_or(0)
+}
+
+/// Reveal the visual row under the caret within a fixed-height textarea.
 pub(super) fn reveal_textarea_row(
-    value: &str,
+    lines: &[op_layout::TextareaVisualLine],
     caret: usize,
     previous_row: usize,
     height: i32,
     font_size: i32,
 ) -> usize {
-    let line_height = font_size.saturating_add(4).max(1);
-    let visible = (height.max(1) / line_height).max(1) as usize;
-    let total = value
-        .chars()
-        .filter(|ch| *ch == '\n')
-        .count()
-        .saturating_add(1);
+    let visible = (height.max(1) / font_size.saturating_add(4).max(1)).max(1) as usize;
+    let total = lines.len().max(1);
     if total <= visible {
         return 0;
     }
-    let row = value.chars().take(caret).filter(|ch| *ch == '\n').count();
+    let row = textarea_caret_row(lines, caret);
     let previous_row = previous_row.min(total.saturating_sub(visible));
     if row < previous_row {
         row
@@ -295,6 +298,68 @@ pub(super) fn reveal_textarea_row(
     } else {
         previous_row
     }
+}
+
+/// Translate a clicked visible visual row back to a Unicode scalar index.
+pub(super) fn wrapped_textarea_caret_at_point(
+    value: &str,
+    lines: &[op_layout::TextareaVisualLine],
+    x: i32,
+    y: i32,
+    font_size: i32,
+    measure: impl FnMut(&str) -> i32,
+) -> usize {
+    if lines.is_empty() {
+        return 0;
+    }
+    let wanted = y.max(0) as usize / font_size.saturating_add(4).max(1) as usize;
+    let line = lines[wanted.min(lines.len() - 1)];
+    let text: String = value
+        .chars()
+        .skip(line.start)
+        .take(line.end - line.start)
+        .collect();
+    line.start + caret_at_point(&text, x, 0, font_size, false, measure)
+}
+
+/// Selected glyph spans use visual wrapped rows, not explicit newline rows.
+pub(super) fn wrapped_textarea_selection_fragments(
+    value: &str,
+    lines: &[op_layout::TextareaVisualLine],
+    start: usize,
+    end: usize,
+    font_size: i32,
+    mut measure: impl FnMut(&str) -> i32,
+) -> Vec<SelectionFragment> {
+    let (start, end) = (start.min(end), start.max(end));
+    let mut fragments = Vec::new();
+    for (row, line) in lines.iter().enumerate() {
+        let from = start.max(line.start).min(line.end);
+        let to = end.max(line.start).min(line.end);
+        if from >= to {
+            continue;
+        }
+        let prefix: String = value
+            .chars()
+            .skip(line.start)
+            .take(from - line.start)
+            .collect();
+        let selected: String = value.chars().skip(from).take(to - from).collect();
+        let through: String = value
+            .chars()
+            .skip(line.start)
+            .take(to - line.start)
+            .collect();
+        let x = measure(&prefix).max(0);
+        fragments.push(SelectionFragment {
+            x,
+            y: (row as i32).saturating_mul(font_size.saturating_add(4).max(1)),
+            width: measure(&through).saturating_sub(x).max(1),
+            height: font_size.max(1),
+            text: selected,
+        });
+    }
+    fragments
 }
 
 /// Find the nearest Unicode scalar caret boundary under a native document click.
@@ -426,16 +491,65 @@ mod tests {
     #[test]
     fn textarea_row_reveal_tracks_explicit_newline_caret_without_mutating_text() {
         let value = "one\ntwo\n猫😊\nfour";
+        let rows = op_layout::textarea_visual_lines(
+            value,
+            1000,
+            16,
+            &mut op_layout::ApproximateTextMeasurer,
+        );
         assert_eq!(
-            reveal_textarea_row(value, value.chars().count(), 0, 40, 16),
+            reveal_textarea_row(&rows, value.chars().count(), 0, 40, 16),
             2
         );
-        assert_eq!(reveal_textarea_row(value, 7, 2, 40, 16), 1);
-        assert_eq!(reveal_textarea_row(value, 0, 2, 40, 16), 0);
-        assert_eq!(reveal_textarea_row("one\ntwo", 7, 12, 40, 16), 0);
+        assert_eq!(reveal_textarea_row(&rows, 7, 2, 40, 16), 1);
+        assert_eq!(reveal_textarea_row(&rows, 0, 2, 40, 16), 0);
+        let short = op_layout::textarea_visual_lines(
+            "one\ntwo",
+            1000,
+            16,
+            &mut op_layout::ApproximateTextMeasurer,
+        );
+        assert_eq!(reveal_textarea_row(&short, 7, 12, 40, 16), 0);
         assert_eq!(
-            reveal_textarea_row(value, value.chars().count(), 0, 10, 16),
+            reveal_textarea_row(&rows, value.chars().count(), 0, 10, 16),
             3
+        );
+    }
+
+    #[test]
+    fn wrapping_visual_lines_keep_unicode_caret_click_and_selection_aligned() {
+        let value = "AB猫😊EF\nxy";
+        let rows = op_layout::textarea_visual_lines(
+            value,
+            21,
+            16,
+            &mut op_layout::ApproximateTextMeasurer,
+        );
+        assert_eq!(rows[0], op_layout::TextareaVisualLine { start: 0, end: 2 });
+        assert_eq!(rows[1], op_layout::TextareaVisualLine { start: 2, end: 4 });
+        assert_eq!(rows[2], op_layout::TextareaVisualLine { start: 4, end: 6 });
+        assert_eq!(rows[3], op_layout::TextareaVisualLine { start: 7, end: 9 });
+        assert_eq!(textarea_caret_row(&rows, 2), 1);
+        assert_eq!(textarea_caret_row(&rows, 6), 2);
+        assert_eq!(textarea_caret_row(&rows, 7), 3);
+        let width = |s: &str| s.chars().count() as i32 * 9;
+        assert_eq!(
+            wrapped_textarea_caret_at_point(value, &rows, 0, 25, 16, width),
+            2
+        );
+        assert_eq!(
+            wrapped_textarea_caret_at_point(value, &rows, 100, 25, 16, width),
+            4
+        );
+        assert_eq!(reveal_textarea_row(&rows, 7, 0, 40, 16), 2);
+        let spans = wrapped_textarea_selection_fragments(value, &rows, 1, 5, 16, width);
+        assert_eq!(
+            spans.iter().map(|f| f.text.as_str()).collect::<Vec<_>>(),
+            vec!["B", "猫😊", "E"]
+        );
+        assert_eq!(
+            spans.iter().map(|f| f.y).collect::<Vec<_>>(),
+            vec![0, 20, 40]
         );
     }
 

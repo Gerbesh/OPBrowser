@@ -667,6 +667,78 @@ pub fn layout_document_with_form_scrolling(
     )
 }
 
+/// A measured textarea visual row, addressed in Unicode scalar positions.
+/// A soft break shares its boundary with the next row; an explicit newline
+/// is omitted from both runs but remains in the original DOM value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextareaVisualLine {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// First-party bounded hard/soft wrapping shared by layout and native editing.
+/// A character wider than the box occupies its own row; CSS glyph clipping
+/// remains the painter's responsibility. Positions never split UTF-8 scalars.
+pub fn textarea_visual_lines(
+    value: &str,
+    width: i32,
+    font_size: i32,
+    measurer: &mut dyn TextMeasurer,
+) -> Vec<TextareaVisualLine> {
+    let chars: Vec<char> = value.chars().take(4096).collect();
+    let mut result = Vec::new();
+    let mut start = 0usize;
+    loop {
+        let hard_end = chars[start..]
+            .iter()
+            .position(|ch| *ch == '\n')
+            .map_or(chars.len(), |index| start + index);
+        if start == hard_end {
+            result.push(TextareaVisualLine { start, end: start });
+        } else {
+            let mut position = start;
+            while position < hard_end {
+                let mut low = position;
+                let mut high = hard_end;
+                while low < high {
+                    let mid = low + (high - low).div_ceil(2);
+                    let candidate: String = chars[position..mid].iter().collect();
+                    let measured = measurer
+                        .measure(&candidate, font_size, FontWeight::Normal, FontStyle::Normal)
+                        .width;
+                    if measured <= width.max(0) {
+                        low = mid;
+                    } else {
+                        high = mid - 1;
+                    }
+                }
+                let mut end = low.max(position + 1);
+                if end < hard_end && end > position + 1 {
+                    // Prefer a word boundary if it fits; retain whitespace in
+                    // the source range so DOM caret offsets stay reversible.
+                    if let Some(last_space) = chars[position..end]
+                        .iter()
+                        .rposition(|ch| *ch == ' ' || *ch == '\t')
+                        && last_space > 0
+                    {
+                        end = position + last_space + 1;
+                    }
+                }
+                result.push(TextareaVisualLine {
+                    start: position,
+                    end,
+                });
+                position = end;
+            }
+        }
+        if hard_end == chars.len() {
+            break;
+        }
+        start = hard_end + 1;
+    }
+    result
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct TextMetrics {
     pub width: i32,
@@ -1684,6 +1756,47 @@ mod tests {
                 "text field must have a click target for {markup}"
             );
         }
+    }
+
+    #[test]
+    fn textarea_visual_lines_respect_unicode_newlines_words_and_tiny_widths() {
+        let rows = textarea_visual_lines("AB猫😊EF\n\nxy", 21, 16, &mut ApproximateTextMeasurer);
+        assert_eq!(
+            rows,
+            vec![
+                TextareaVisualLine { start: 0, end: 2 },
+                TextareaVisualLine { start: 2, end: 4 },
+                TextareaVisualLine { start: 4, end: 6 },
+                TextareaVisualLine { start: 7, end: 7 },
+                TextareaVisualLine { start: 8, end: 10 },
+            ]
+        );
+        let words = textarea_visual_lines("one two", 40, 16, &mut ApproximateTextMeasurer);
+        assert_eq!(
+            words,
+            vec![
+                TextareaVisualLine { start: 0, end: 4 },
+                TextareaVisualLine { start: 4, end: 7 },
+            ]
+        );
+        assert_eq!(
+            textarea_visual_lines("猫😊", 0, 16, &mut ApproximateTextMeasurer),
+            vec![
+                TextareaVisualLine { start: 0, end: 1 },
+                TextareaVisualLine { start: 1, end: 2 },
+            ]
+        );
+        assert_eq!(
+            textarea_visual_lines("a\n", 100, 16, &mut ApproximateTextMeasurer),
+            vec![
+                TextareaVisualLine { start: 0, end: 1 },
+                TextareaVisualLine { start: 2, end: 2 },
+            ]
+        );
+        assert_eq!(
+            textarea_visual_lines("", 100, 16, &mut ApproximateTextMeasurer),
+            vec![TextareaVisualLine { start: 0, end: 0 }]
+        );
     }
 
     #[test]
