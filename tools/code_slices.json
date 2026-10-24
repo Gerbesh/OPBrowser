@@ -2,6 +2,21 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S122",
+      "title": "Native textarea visual-row wheel, scrollbar track and click priority",
+      "status": "First-party renderer DOM wheel/track integration, focused/unfocused caret, scroll limits and Windows startup tested",
+      "steps": [
+        {"path": "crates/op_platform_win/src/lib.rs", "symbol": "WM_MOUSEWHEEL"},
+        {"path": "crates/op_browser/src/main.rs", "symbol": "NavigationEvent::Scroll"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "scroll_textarea_at"},
+        {"path": "crates/op_engine/src/forms.rs", "symbol": "textarea_wheel_row"},
+        {"path": "crates/op_engine/src/forms.rs", "symbol": "TextareaScrollbar"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "click_textarea_scrollbar_at"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "textarea_scrollbar_track_click_jumps_without_dispatching_dom_click"}
+      ],
+      "limitation": "No captured scrollbar thumb dragging/touch, standards-grade CSS control clipping, IME/BiDi or grapheme-aware editing."
+    },
+    {
       "id": "S121",
       "title": "Shared measured textarea visual-line wrapping from DOM to native glyphs, clicks and selections",
       "status": "Original op_layout/op_engine Unicode visual rows, wrapped caret/selection/click integration and Win32 smoke tested",

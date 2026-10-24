@@ -18,6 +18,9 @@ pub(super) struct TextEditor {
     pub caret: usize,
     pub anchor: usize,
     pub scroll_start: usize,
+    /// Wheel-scrolled textarea remains at its manual viewport until the
+    /// caret moves (or script changes the source value).
+    pub manual_scroll_caret: Option<usize>,
     observed_value: String,
     undo: Vec<EditorSnapshot>,
     redo: Vec<EditorSnapshot>,
@@ -46,6 +49,7 @@ impl TextEditor {
             caret: end,
             anchor: end,
             scroll_start: 0,
+            manual_scroll_caret: None,
             observed_value: value.to_owned(),
             undo: Vec::new(),
             redo: Vec::new(),
@@ -60,6 +64,7 @@ impl TextEditor {
             self.redo.clear();
             self.observed_value = value.to_owned();
             self.scroll_start = 0;
+            self.manual_scroll_caret = None;
             let count = value.chars().count();
             self.caret = self.caret.min(count);
             self.anchor = self.anchor.min(count);
@@ -91,6 +96,9 @@ impl TextEditor {
         let end = to_scalar(end).max(start);
         self.anchor = if backward { end } else { start };
         self.caret = if backward { start } else { end };
+        if self.manual_scroll_caret != Some(self.caret) {
+            self.manual_scroll_caret = None;
+        }
     }
 
     pub fn selection_utf16(&self, value: &str) -> (usize, usize, bool) {
@@ -132,6 +140,7 @@ impl TextEditor {
                 })
             };
             if let Some(previous) = previous {
+                self.manual_scroll_caret = None;
                 self.caret = previous.caret;
                 self.anchor = previous.anchor;
                 self.observed_value.clone_from(&previous.value);
@@ -219,6 +228,7 @@ impl TextEditor {
             Edit::Undo | Edit::Redo => unreachable!("handled before native edits"),
         }
         let changed = next != value;
+        self.manual_scroll_caret = None;
         if changed {
             Self::push_snapshot(&mut self.undo, previous);
             self.redo.clear();
@@ -298,6 +308,86 @@ pub(super) fn reveal_textarea_row(
     } else {
         previous_row
     }
+}
+
+/// Convert Win32 wheel pixel delta to a bounded textarea visual-row offset.
+/// A wheel at either edge returns None so a scrollable parent/page may handle it.
+pub(super) fn textarea_wheel_row(
+    current: usize,
+    total_rows: usize,
+    visible_rows: usize,
+    delta_y: i32,
+    line_height: i32,
+) -> Option<usize> {
+    if delta_y == 0 || total_rows <= visible_rows {
+        return None;
+    }
+    let max_start = total_rows.saturating_sub(visible_rows.max(1));
+    let current = current.min(max_start);
+    let rows = ((delta_y.unsigned_abs() as usize).div_ceil(line_height.max(1) as usize)).max(1);
+    let next = if delta_y > 0 {
+        current.saturating_add(rows).min(max_start)
+    } else {
+        current.saturating_sub(rows)
+    };
+    (next != current).then_some(next)
+}
+
+/// Lightweight first-party textarea scrollbar coordinates. This belongs to
+/// the control, not the page's CSS overflow scrollTop or DOM scrollLeft.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TextareaScrollbar {
+    pub x: i32,
+    pub y: i32,
+    pub height: i32,
+    pub thumb_y: i32,
+    pub thumb_height: i32,
+    pub max_start: usize,
+}
+
+impl TextareaScrollbar {
+    pub fn row_at_track_click(self, y: i32) -> usize {
+        let travel = self.height.saturating_sub(self.thumb_height);
+        if travel <= 0 {
+            return 0;
+        }
+        let pixel = y
+            .saturating_sub(self.y)
+            .saturating_sub(self.thumb_height / 2)
+            .clamp(0, travel);
+        (i64::from(pixel) * self.max_start as i64 / i64::from(travel)) as usize
+    }
+}
+
+pub(super) fn textarea_scrollbar(
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    total_rows: usize,
+    visible_rows: usize,
+    start: usize,
+) -> Option<TextareaScrollbar> {
+    if width < 22 || height < 16 || total_rows <= visible_rows.max(1) {
+        return None;
+    }
+    let track_height = height - 2;
+    let thumb_height = ((track_height as i64 * visible_rows.max(1) as i64) / total_rows as i64)
+        .max(10)
+        .min(i64::from(track_height)) as i32;
+    let max_start = total_rows.saturating_sub(visible_rows.max(1));
+    let travel = track_height - thumb_height;
+    let thumb_y = y
+        + 1
+        + ((i64::from(travel) * start.min(max_start) as i64) / max_start.max(1) as i64) as i32;
+    Some(TextareaScrollbar {
+        x: x.saturating_add(width - 8),
+        y: y + 1,
+        height: track_height,
+        thumb_y,
+        thumb_height,
+        max_start,
+    })
 }
 
 /// Translate a clicked visible visual row back to a Unicode scalar index.
@@ -488,6 +578,34 @@ fn byte_at(value: &str, index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn textarea_scrollbar_thumb_geometry_and_track_click_use_bounded_rows() {
+        assert_eq!(textarea_scrollbar(10, 20, 70, 40, 2, 2, 0), None);
+        let top = textarea_scrollbar(10, 20, 70, 40, 10, 2, 0).unwrap();
+        let bottom = textarea_scrollbar(10, 20, 70, 40, 10, 2, 8).unwrap();
+        assert_eq!((top.x, top.y, top.height), (72, 21, 38));
+        assert_eq!(top.max_start, 8);
+        assert_eq!(top.thumb_y, 21);
+        assert_eq!(bottom.thumb_y + bottom.thumb_height, 59);
+        assert_eq!(top.row_at_track_click(0), 0);
+        assert_eq!(top.row_at_track_click(200), 8);
+        assert_eq!(bottom.row_at_track_click(0), 0);
+        assert!(textarea_scrollbar(0, 0, 10, 40, 10, 2, 0).is_none());
+    }
+
+    #[test]
+    fn textarea_wheel_row_moves_by_visual_rows_and_chains_at_edges() {
+        assert_eq!(textarea_wheel_row(0, 10, 2, 72, 20), Some(4));
+        assert_eq!(textarea_wheel_row(4, 10, 2, -72, 20), Some(0));
+        assert_eq!(textarea_wheel_row(7, 10, 2, 72, 20), Some(8));
+        assert_eq!(textarea_wheel_row(8, 10, 2, 72, 20), None);
+        assert_eq!(textarea_wheel_row(0, 10, 2, -72, 20), None);
+        assert_eq!(textarea_wheel_row(0, 1, 2, 72, 20), None);
+        assert_eq!(textarea_wheel_row(0, 10, 2, 0, 20), None);
+        assert_eq!(textarea_wheel_row(0, 10, 2, -1, 20), None);
+        assert_eq!(textarea_wheel_row(0, 10, 2, 1, 20), Some(1));
+    }
+
     #[test]
     fn textarea_row_reveal_tracks_explicit_newline_caret_without_mutating_text() {
         let value = "one\ntwo\n猫😊\nfour";

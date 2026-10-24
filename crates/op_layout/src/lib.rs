@@ -1890,6 +1890,14 @@ mod tests {
         );
         assert_eq!((fixed.width, fixed.height), (110, 48));
         assert!(long.text_boxes.iter().all(|run| run.width <= 110));
+        let (_short, shortened) = inspect(
+            "<body><textarea rows='2' cols='8'>short</textarea></body>",
+            1000,
+        );
+        assert!(
+            shortened.text_boxes.iter().any(|run| run.text == "short"),
+            "a stale scroll position must clamp after script-shortened content"
+        );
     }
 
     #[test]

@@ -1752,6 +1752,9 @@ impl<'a> Context<'a, '_> {
         let visible_rows = (height / line_height).max(1) as usize;
         let available = width.saturating_sub(4).max(0);
         let visual = textarea_visual_lines(&source, available, font, self.measurer);
+        // A script may shorten an unfocused, manually scrolled textarea.
+        // Never leave its viewport pointing beyond the new final visual row.
+        let first_row = first_row.min(visual.len().saturating_sub(visible_rows));
         let mut text_boxes = Vec::new();
         let mut order = Vec::new();
         for (row, line) in visual.iter().enumerate().skip(first_row).take(visible_rows) {

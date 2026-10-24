@@ -288,6 +288,8 @@ struct PreparedDocument {
     style_viewport: (i32, i32),
     interaction: StyleInteractionState,
     editor: Option<forms::TextEditor>,
+    /// Per-textarea visual row offsets survive blur and ordinary repaints.
+    textarea_scroll_starts: std::collections::HashMap<usize, usize>,
     text_drag: Option<TextDrag>,
     hit_regions: Vec<op_layout::ClickRegion>,
     computed_styles: ComputedStyleMap,
@@ -385,16 +387,17 @@ fn order_native_hit_regions(
 
 impl PreparedDocument {
     fn input_scroll_starts(&self) -> std::collections::HashMap<usize, usize> {
-        self.editor
-            .as_ref()
-            .filter(|editor| self.interaction.focused == Some(editor.node))
-            .filter(|editor| editor.scroll_start > 0)
-            .map(|editor| {
-                [(editor.node.index(), editor.scroll_start)]
-                    .into_iter()
-                    .collect()
-            })
-            .unwrap_or_default()
+        let mut starts = self.textarea_scroll_starts.clone();
+        if let Some(editor) = self.editor.as_ref()
+            && self.interaction.focused == Some(editor.node)
+        {
+            if editor.scroll_start > 0 {
+                starts.insert(editor.node.index(), editor.scroll_start);
+            } else {
+                starts.remove(&editor.node.index());
+            }
+        }
+        starts
     }
 
     fn current_scroll_offsets(&self) -> &std::collections::HashMap<usize, i32> {
@@ -496,8 +499,16 @@ impl PreparedDocument {
         let row_offset = if element.tag_name == "textarea" {
             self.editor
                 .as_ref()
-                .filter(|editor| editor.node == target)
-                .map_or(0, |editor| editor.scroll_start)
+                .filter(|editor| editor.node == target && self.interaction.focused == Some(target))
+                .map_or_else(
+                    || {
+                        self.textarea_scroll_starts
+                            .get(&target.index())
+                            .copied()
+                            .unwrap_or(0)
+                    },
+                    |editor| editor.scroll_start,
+                )
                 .min(4096) as i32
                 * size.saturating_add(4)
         } else {
@@ -539,6 +550,183 @@ impl PreparedDocument {
             )
         };
         Some((caret, value))
+    }
+
+    fn textarea_scrollbar_for_hit(
+        &self,
+        hit: &op_layout::ClickRegion,
+    ) -> Option<forms::TextareaScrollbar> {
+        let element = self.document.element(hit.node)?;
+        if element.tag_name != "textarea" {
+            return None;
+        }
+        let size = self
+            .computed_styles
+            .style_for(hit.node)
+            .map_or(16, |style| {
+                style.font_size_px.round().clamp(8.0, 40.0) as i32
+            });
+        let original: String = self
+            .document
+            .children(hit.node)
+            .iter()
+            .filter_map(|id| self.document.node(*id))
+            .filter_map(|node| match &node.kind {
+                op_dom::NodeKind::Text(value) => Some(value.as_str()),
+                _ => None,
+            })
+            .collect();
+        let value = element
+            .attributes
+            .iter()
+            .find(|a| a.name == "value")
+            .map_or(original.as_str(), |a| a.value.as_str());
+        let rows = op_layout::textarea_visual_lines(
+            value,
+            hit.width.saturating_sub(4),
+            size,
+            &mut text::Measurer::new(),
+        );
+        let visible = (hit.height.max(1) / size.saturating_add(4).max(1)).max(1) as usize;
+        let start = self
+            .editor
+            .as_ref()
+            .filter(|e| e.node == hit.node && self.interaction.focused == Some(hit.node))
+            .map_or_else(
+                || {
+                    self.textarea_scroll_starts
+                        .get(&hit.node.index())
+                        .copied()
+                        .unwrap_or(0)
+                },
+                |e| e.scroll_start,
+            );
+        forms::textarea_scrollbar(
+            hit.x,
+            hit.y,
+            hit.width,
+            hit.height,
+            rows.len(),
+            visible,
+            start,
+        )
+    }
+
+    /// Track clicks jump between visual rows, without firing DOM click.
+    fn click_textarea_scrollbar_at(&mut self, x: i32, y: i32) -> bool {
+        let Some(node) = self.hit_target(x, y) else {
+            return false;
+        };
+        let Some(hit) = self.hit_regions.iter().find(|hit| {
+            hit.node == node
+                && x >= hit.x
+                && x < hit.x.saturating_add(hit.width)
+                && y >= hit.y
+                && y < hit.y.saturating_add(hit.height)
+        }) else {
+            return false;
+        };
+        let Some(scrollbar) = self.textarea_scrollbar_for_hit(hit) else {
+            return false;
+        };
+        if x < scrollbar.x
+            || x >= scrollbar.x + 7
+            || y < scrollbar.y
+            || y >= scrollbar.y + scrollbar.height
+        {
+            return false;
+        }
+        let next = scrollbar.row_at_track_click(y);
+        if next == 0 {
+            self.textarea_scroll_starts.remove(&node.index());
+        } else {
+            self.textarea_scroll_starts.insert(node.index(), next);
+        }
+        if self.interaction.focused == Some(node)
+            && let Some(editor) = self.editor.as_mut().filter(|editor| editor.node == node)
+        {
+            editor.scroll_start = next;
+            editor.manual_scroll_caret = Some(editor.caret);
+        }
+        true
+    }
+
+    /// Wheel scrolling of a textarea under the pointer is independent of the
+    /// caret. Return false at its edges to chain to normal page/CSS scrolling.
+    fn scroll_textarea_at(&mut self, x: i32, y: i32, delta_y: i32) -> bool {
+        let Some(node) = self.hit_target(x, y) else {
+            return false;
+        };
+        let Some(element) = self.document.element(node) else {
+            return false;
+        };
+        if element.tag_name != "textarea" {
+            return false;
+        }
+        let Some(hit) = self.hit_regions.iter().find(|hit| {
+            hit.node == node
+                && x >= hit.x
+                && x < hit.x.saturating_add(hit.width)
+                && y >= hit.y
+                && y < hit.y.saturating_add(hit.height)
+        }) else {
+            return false;
+        };
+        let size = self.computed_styles.style_for(node).map_or(16, |style| {
+            style.font_size_px.round().clamp(8.0, 40.0) as i32
+        });
+        let line_height = size.saturating_add(4).max(1);
+        let visible_rows = (hit.height.max(1) / line_height).max(1) as usize;
+        let initial = self
+            .document
+            .children(node)
+            .iter()
+            .filter_map(|child| self.document.node(*child))
+            .filter_map(|child| match &child.kind {
+                op_dom::NodeKind::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        let value = element
+            .attributes
+            .iter()
+            .find(|attr| attr.name == "value")
+            .map_or(initial.as_str(), |attr| attr.value.as_str());
+        let rows = op_layout::textarea_visual_lines(
+            value,
+            hit.width.saturating_sub(4),
+            size,
+            &mut text::Measurer::new(),
+        );
+        let focused = self.interaction.focused == Some(node);
+        let current = self
+            .editor
+            .as_ref()
+            .filter(|editor| focused && editor.node == node)
+            .map_or_else(
+                || {
+                    self.textarea_scroll_starts
+                        .get(&node.index())
+                        .copied()
+                        .unwrap_or(0)
+                },
+                |editor| editor.scroll_start,
+            );
+        let Some(next) =
+            forms::textarea_wheel_row(current, rows.len(), visible_rows, delta_y, line_height)
+        else {
+            return false;
+        };
+        if next == 0 {
+            self.textarea_scroll_starts.remove(&node.index());
+        } else {
+            self.textarea_scroll_starts.insert(node.index(), next);
+        }
+        if focused && let Some(editor) = self.editor.as_mut().filter(|editor| editor.node == node) {
+            editor.scroll_start = next;
+            editor.manual_scroll_caret = Some(editor.caret);
+        }
+        true
     }
 
     /// Read the current native/JS form selection for a clipboard operation.
@@ -840,6 +1028,13 @@ impl PreparedDocument {
             .retain(|id, _| document.node_id(*id).is_some());
         self.scroll_left_offsets
             .retain(|id, _| document.node_id(*id).is_some());
+        self.textarea_scroll_starts.retain(|id, _| {
+            document.node_id(*id).is_some_and(|node| {
+                document
+                    .element(node)
+                    .is_some_and(|element| element.tag_name == "textarea")
+            })
+        });
     }
 
     fn render(&mut self, width: i32, height: i32) -> RenderedPage {
@@ -967,13 +1162,20 @@ impl PreparedDocument {
                     size,
                     &mut measurer,
                 );
-                forms::reveal_textarea_row(
-                    &rows,
-                    editor.caret,
-                    editor.scroll_start,
-                    hit.height,
-                    size,
-                )
+                let visible = (hit.height.max(1) / size.saturating_add(4).max(1)).max(1) as usize;
+                let max_start = rows.len().saturating_sub(visible);
+                if editor.manual_scroll_caret == Some(editor.caret) {
+                    editor.scroll_start.min(max_start)
+                } else {
+                    editor.manual_scroll_caret = None;
+                    forms::reveal_textarea_row(
+                        &rows,
+                        editor.caret,
+                        editor.scroll_start,
+                        hit.height,
+                        size,
+                    )
+                }
             } else {
                 forms::reveal_input_caret(
                     value,
@@ -993,6 +1195,14 @@ impl PreparedDocument {
                     },
                 )
             };
+            if element.tag_name == "textarea" {
+                if next == 0 {
+                    self.textarea_scroll_starts.remove(&editor.node.index());
+                } else {
+                    self.textarea_scroll_starts
+                        .insert(editor.node.index(), next);
+                }
+            }
             if editor.scroll_start != next {
                 editor.scroll_start = next;
                 if next == 0 {
@@ -1297,6 +1507,34 @@ impl PreparedDocument {
                 });
             }
         }
+        // Scrollbar overlay comes after text and selection so neither can
+        // paint over its native thumb. Coordinates are document pixels.
+        for hit in &self.hit_regions {
+            if let Some(scrollbar) = self.textarea_scrollbar_for_hit(hit) {
+                display_list.commands.push(PaintCommand::FillRect {
+                    x: scrollbar.x,
+                    y: scrollbar.y,
+                    width: 7,
+                    height: scrollbar.height,
+                    color: Color {
+                        r: 225,
+                        g: 230,
+                        b: 237,
+                    },
+                });
+                display_list.commands.push(PaintCommand::FillRect {
+                    x: scrollbar.x + 1,
+                    y: scrollbar.thumb_y,
+                    width: 5,
+                    height: scrollbar.thumb_height,
+                    color: Color {
+                        r: 110,
+                        g: 119,
+                        b: 135,
+                    },
+                });
+            }
+        }
         // Author :focus-visible styles also apply via the computed cascade.
         // Provide a native fallback indicator even on pages with no CSS.
         if self.interaction.focus_visible
@@ -1539,6 +1777,7 @@ impl Engine {
             style_viewport: (width, height),
             interaction: StyleInteractionState::default(),
             editor: None,
+            textarea_scroll_starts: std::collections::HashMap::new(),
             text_drag: None,
             hit_regions: Vec::new(),
             computed_styles,
@@ -2177,6 +2416,9 @@ impl Engine {
         if was_pressed {
             prepared.refresh_styles();
         }
+        if prepared.click_textarea_scrollbar_at(x, y) {
+            return Some(prepared.render(width, height));
+        }
         let layout = layout_document_with_form_scrolling(
             &prepared.document,
             width,
@@ -2351,6 +2593,9 @@ impl Engine {
             return None;
         }
         let prepared = self.active_document.as_mut()?;
+        if prepared.scroll_textarea_at(x, y, delta_y) {
+            return Some(prepared.render(width, height));
+        }
         let layout = layout_document_with_axis_scrolling(
             &prepared.document,
             width,
@@ -2793,6 +3038,7 @@ impl Engine {
             style_viewport: (viewport_width, viewport_height),
             interaction: StyleInteractionState::default(),
             editor: None,
+            textarea_scroll_starts: std::collections::HashMap::new(),
             text_drag: None,
             hit_regions: Vec::new(),
             computed_styles,
@@ -2905,6 +3151,163 @@ mod tests {
         assert!(contains_text(&frame.display_list, "Caret:0|0"));
         let frame = engine.text_input("猫", 640, 400).unwrap();
         assert!(contains_text(&frame.display_list, "猫A😊B"));
+    }
+
+    #[test]
+    fn textarea_scrollbar_track_click_jumps_without_dispatching_dom_click() {
+        let mut engine = Engine::new();
+        let frame = engine.set_html_page(
+            "<body><textarea id='q' style='width:70px;height:40px'>AAA BBB CCC DDD EEE FFF GGG HHH III JJJ</textarea><p id='out'>Idle</p><script>document.getElementById('q').addEventListener('click',function(){document.getElementById('out').textContent='BAD';});</script></body>",
+            640, 400,
+        );
+        let (node, x, y) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let hit = page
+                .hit_regions
+                .iter()
+                .find(|hit| {
+                    page.document
+                        .element(hit.node)
+                        .is_some_and(|element| element.tag_name == "textarea")
+                })
+                .unwrap();
+            let bar = page
+                .textarea_scrollbar_for_hit(hit)
+                .expect("overflow scrollbar");
+            assert!(frame.commands.iter().any(|command| matches!(
+                command, PaintCommand::FillRect { x, y, width: 7, .. }
+                    if *x == bar.x && *y == bar.y
+            )));
+            (hit.node, bar.x + 2, bar.y + bar.height - 2)
+        };
+        let frame = engine
+            .click_at(x, y, 640, 400)
+            .expect("scrollbar click repaint");
+        let page = engine.active_document.as_ref().unwrap();
+        assert!(page.textarea_scroll_starts[&node.index()] > 0);
+        assert_eq!(page.interaction.focused, None);
+        assert!(contains_text(&frame.display_list, "Idle"));
+        assert!(!contains_text(&frame.display_list, "BAD"));
+    }
+
+    #[test]
+    fn textarea_wheel_scrolls_unfocused_field_and_chains_at_edges() {
+        let mut engine = Engine::new();
+        let markup = "<body><textarea id='q' style='width:70px;height:40px'>AAAA BBBB CCCC DDDD EEEE FFFF GGGG HHHH IIII JJJJ</textarea><p>After</p></body>";
+        engine.set_html_page(markup, 640, 400);
+        let (node, left, top, initial_count) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let hit = page
+                .hit_regions
+                .iter()
+                .find(|hit| {
+                    page.document
+                        .element(hit.node)
+                        .is_some_and(|element| element.tag_name == "textarea")
+                })
+                .unwrap();
+            let value = page
+                .document
+                .children(hit.node)
+                .iter()
+                .filter_map(|id| {
+                    page.document.node(*id).and_then(|node| match &node.kind {
+                        op_dom::NodeKind::Text(text) => Some(text.as_str()),
+                        _ => None,
+                    })
+                })
+                .collect::<String>();
+            let rows = op_layout::textarea_visual_lines(
+                &value,
+                hit.width - 4,
+                16,
+                &mut text::Measurer::new(),
+            );
+            (hit.node, hit.x, hit.y, rows.len())
+        };
+        assert!(initial_count > 2);
+        assert!(engine.scroll_at(left + 4, top + 4, 72, 640, 400).is_some());
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(page.interaction.focused, None);
+        let scrolled = page.textarea_scroll_starts[&node.index()];
+        assert!(scrolled > 0);
+        assert!(page.hit_regions.iter().any(|hit| hit.node == node));
+        let mut consumed = 1usize;
+        for _ in 0..30 {
+            if engine.scroll_at(left + 4, top + 4, 72, 640, 400).is_some() {
+                consumed += 1;
+            } else {
+                break;
+            }
+        }
+        assert!(consumed > 0);
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(
+            page.textarea_scroll_starts[&node.index()],
+            initial_count - 2
+        );
+        assert!(engine.scroll_at(left + 4, top + 4, 72, 640, 400).is_none());
+        assert!(engine.scroll_at(left + 4, top + 4, -72, 640, 400).is_some());
+    }
+
+    #[test]
+    fn textarea_wheel_does_not_move_focused_caret_until_keyboard_edit() {
+        let mut engine = Engine::new();
+        engine.set_html_page(
+            "<body><textarea id='q' style='width:70px;height:40px'>AAA BBB CCC DDD EEE FFF GGG HHH III JJJ</textarea><script>var q=document.getElementById('q');q.focus();q.setSelectionRange(0,0);</script></body>",
+            640, 400,
+        );
+        let (x, y, node) = {
+            let page = engine.active_document.as_ref().unwrap();
+            let editor = page.editor.as_ref().unwrap();
+            assert_eq!(editor.caret, 0);
+            let hit = page
+                .hit_regions
+                .iter()
+                .find(|hit| hit.node == editor.node)
+                .unwrap();
+            (hit.x + 5, hit.y + 5, editor.node)
+        };
+        engine
+            .scroll_at(x, y, 72, 640, 400)
+            .expect("wheel over textarea");
+        let page = engine.active_document.as_ref().unwrap();
+        let editor = page.editor.as_ref().unwrap();
+        assert_eq!(editor.node, node);
+        assert_eq!(editor.caret, 0);
+        assert_eq!(editor.anchor, 0);
+        assert!(editor.scroll_start > 0);
+        assert_eq!(editor.manual_scroll_caret, Some(0));
+        let manual = editor.scroll_start;
+        engine.hover_at(x, y, 640, 400);
+        assert_eq!(
+            engine
+                .active_document
+                .as_ref()
+                .unwrap()
+                .editor
+                .as_ref()
+                .unwrap()
+                .scroll_start,
+            manual,
+        );
+        engine
+            .text_input("猫", 640, 400)
+            .expect("typing reveals caret again");
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(page.editor.as_ref().unwrap().scroll_start, 0);
+        assert_eq!(page.editor.as_ref().unwrap().manual_scroll_caret, None);
+        assert_eq!(
+            page.document
+                .element(node)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|a| a.name == "value")
+                .unwrap()
+                .value,
+            "猫AAA BBB CCC DDD EEE FFF GGG HHH III JJJ"
+        );
     }
 
     #[test]

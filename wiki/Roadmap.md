@@ -1,5 +1,9 @@
 # Roadmap
 
+## Native textarea wheel and scrollbar track (24 October 2026)
+
+Added per-control visual-row scroll from Win32 wheel, independent of the DOM caret and chained to parent/page scroll at boundaries. Original first-party painting now shows a proportional thumb and clickable track. Native editing returns to caret reveal after a manual wheel scroll; scroll state survives blur. Next: captured thumb dragging, wrapped Up/Down and Shift+Up/Down caret navigation, accurate CSS padding and clipping, then IME/grapheme/BiDi work.
+
 ## First-party textarea soft wrapping and shared caret geometry (24 October 2026)
 
 Completed the first bounded measured visual-row model for HTML textarea. Original layout uses its scalar start/end positions to wrap Unicode across the fixed box, and native editor follows the same rows for scroll-to-caret, mouse selection and highlight paint, preserving full DOM and JS UTF-16 positions. The next UI work is wheel/scrollbar navigation independent of caret, vertical cursor up/down and exact CSS padding/clipping. After that, implement grapheme/BiDi/IME and standards-grade CSS Unicode line breaking. No claim of WebKit/Chromium/Gecko conformance or new real-site compatibility benchmark.

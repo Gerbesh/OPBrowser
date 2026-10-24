@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Textarea native wheel and clickable scrollbar track (24 October 2026)
+
+Win32 wheel over an unfocused or focused textarea now scrolls measured visual rows without altering the DOM caret or selection; input at a boundary chains to the existing nested/page scroll path. An original PaintCommand overlay draws a proportional track and thumb only for overflowing fields, and clicking the track changes the viewport without dispatching a DOM click. Native per-control scroll positions survive blur, and the wheel-scrolled focused view remains until editing resumes. Layout/engine and Win32 smoke tests pass. Thumb dragging/touch, wrapped Up/Down keyboard navigation, exact CSS padding and IME/BiDi/grapheme handling remain incomplete.
+
 ## Native textarea shared soft-wrap visual rows (24 October 2026)
 
 Original Rust op_layout and native op_engine now share a bounded measured Unicode visual-line map. Textarea wraps at available CSS content width (preferring spaces) and its caret follows the scrolled visual row; clicks/drag, Unicode text insertion and highlighted selections use those same visual boundaries. JavaScript values and UTF-16 selections retain the complete text. Unit/integration tests, workspace, strict Clippy and Win32 startup smoke pass. Text rendering remains incomplete for full CSS line breaking, bidi/graphemes, horizontal scrolling of nonwrapping text, IME, vertical wheel/scrollbar affordances, font weight and exact CSS padding/partial-glyph clipping. No public website compatibility result was remeasured.
