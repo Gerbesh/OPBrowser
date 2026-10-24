@@ -1661,6 +1661,168 @@ impl<'a> Context<'a, '_> {
         }
     }
 
+    /// One fixed-size multi-row control, independent of the page's line flow.
+    /// The first iteration lays out explicit newline rows and a caret-driven
+    /// row viewport; soft wrapping requires shared editor visual-line metrics.
+    fn textarea_atomic(
+        &mut self,
+        id: NodeId,
+        element: &op_dom::ElementData,
+        style: Style,
+        containing_width: i32,
+    ) -> InlineAtomic {
+        let columns = attribute(element, "cols")
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(20)
+            .min(160);
+        let rows = attribute(element, "rows")
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(2)
+            .min(100);
+        let font = style.inline.font_size.max(1);
+        let line_height = font.saturating_add(4);
+        let cell = self
+            .measurer
+            .measure("0", font, style.inline.weight, style.inline.font_style)
+            .width
+            .max(1);
+        let border = resolve_border_edges(style.border);
+        let horizontal_extras = resolve_length(style.padding.left, containing_width)
+            .max(0)
+            .saturating_add(resolve_length(style.padding.right, containing_width).max(0))
+            .saturating_add(border.left.width)
+            .saturating_add(border.right.width);
+        let vertical_extras = resolve_length(style.padding.top, containing_width)
+            .max(0)
+            .saturating_add(resolve_length(style.padding.bottom, containing_width).max(0))
+            .saturating_add(border.top.width)
+            .saturating_add(border.bottom.width);
+        let to_width = |value| {
+            size_to_content_width(value, style.box_sizing, containing_width, horizontal_extras)
+        };
+        let mut width = style
+            .width
+            .map(to_width)
+            .unwrap_or_else(|| cell.saturating_mul(columns as i32).saturating_add(4));
+        width = width.max(to_width(style.min_width));
+        if let Some(max) = style.max_width {
+            width = width.min(to_width(max));
+        }
+        let width = width.clamp(1, 4096);
+        let to_height =
+            |value| size_to_content_height(value, style.box_sizing, None, vertical_extras);
+        let mut height = style
+            .height
+            .and_then(to_height)
+            .unwrap_or_else(|| line_height.saturating_mul(rows as i32));
+        if let Some(min) = to_height(style.min_height) {
+            height = height.max(min);
+        }
+        if let Some(max) = style.max_height.and_then(to_height) {
+            height = height.min(max);
+        }
+        let height = height.clamp(1, 4096);
+        let original: String = self
+            .document
+            .children(id)
+            .iter()
+            .filter_map(|child| self.document.node(*child))
+            .filter_map(|child| match &child.kind {
+                NodeKind::Text(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        let value = attribute(element, "value").unwrap_or(&original);
+        let source: String = if value.is_empty() {
+            attribute(element, "placeholder")
+                .unwrap_or("")
+                .chars()
+                .take(80)
+                .collect()
+        } else {
+            value.chars().take(4096).collect()
+        };
+        let first_row = self
+            .input_scroll_starts
+            .get(&id.index())
+            .copied()
+            .unwrap_or(0);
+        let visible_rows = (height / line_height).max(1) as usize;
+        let available = width.saturating_sub(4).max(0);
+        let mut text_boxes = Vec::new();
+        let mut order = Vec::new();
+        for (row, text) in source
+            .split('\n')
+            .enumerate()
+            .skip(first_row)
+            .take(visible_rows)
+        {
+            let y = (row - first_row) as i32 * line_height;
+            if y >= height {
+                break;
+            }
+            let chars: Vec<char> = text.chars().collect();
+            let mut low = 0;
+            let mut high = chars.len();
+            while low < high {
+                let mid = low + (high - low).div_ceil(2);
+                let candidate: String = chars[..mid].iter().collect();
+                let width = self
+                    .measurer
+                    .measure(
+                        &candidate,
+                        font,
+                        style.inline.weight,
+                        style.inline.font_style,
+                    )
+                    .width;
+                if width <= available {
+                    low = mid;
+                } else {
+                    high = mid - 1;
+                }
+            }
+            if low == 0 {
+                continue;
+            }
+            let shown: String = chars[..low].iter().collect();
+            let measured = self
+                .measurer
+                .measure(&shown, font, style.inline.weight, style.inline.font_style)
+                .width
+                .min(available);
+            order.push(LayoutItem::Text(text_boxes.len()));
+            text_boxes.push(TextBox {
+                x: 0,
+                y,
+                width: measured,
+                height: font.min(height - y),
+                text: shown,
+                font_size: font,
+                weight: style.inline.weight,
+                style: style.inline.font_style,
+                decoration: style.inline.decoration,
+                letter_spacing: style.inline.letter_spacing,
+                word_spacing: style.inline.word_spacing,
+                color: style.inline.color,
+                visible: style.inline.visible,
+                links: Vec::new(),
+            });
+        }
+        InlineAtomic {
+            hit_node: Some(id),
+            width,
+            height,
+            baseline: height,
+            decorations: Vec::new(),
+            text_boxes,
+            image_boxes: Vec::new(),
+            order,
+        }
+    }
+
     /// A single-line HTML input participates as one sized inline box. The
     /// DOM value is untouched; only the provisional visible prefix is clipped
     /// until native horizontal editing scroll is implemented.
@@ -4801,102 +4963,14 @@ impl<'a> Context<'a, '_> {
                     return;
                 }
 
-                // Textarea remains on the existing multiline editing path
-                // until its scrolling, wrapping and selection are shared.
+                // Textarea is an atomic multi-row control. Explicit lines may
+                // scroll independently without changing document flow geometry.
                 if tag == "textarea" {
-                    let input_kind = attribute(element, "type").unwrap_or("text");
-                    let text_kind = tag == "textarea"
-                        || matches!(
-                            input_kind,
-                            "text" | "search" | "email" | "url" | "tel" | "password" | "number"
-                        );
-                    if !text_kind || attribute(element, "hidden").is_some() {
+                    if attribute(element, "hidden").is_some() {
                         return;
                     }
-                    let initial = if tag == "textarea" {
-                        node.children
-                            .iter()
-                            .filter_map(|child| {
-                                self.document
-                                    .node(*child)
-                                    .and_then(|node| match &node.kind {
-                                        NodeKind::Text(text) => Some(text.as_str()),
-                                        _ => None,
-                                    })
-                            })
-                            .collect::<String>()
-                    } else {
-                        String::new()
-                    };
-                    let value = attribute(element, "value").unwrap_or(&initial);
-                    let mut inline = current.inline;
-                    inline.white_space = WhiteSpace::PreWrap;
-                    let shown = if input_kind == "password" {
-                        "•".repeat(value.chars().count().min(4096))
-                    } else {
-                        value.chars().take(4096).collect::<String>()
-                    };
-                    let hint = attribute(element, "placeholder").unwrap_or("");
-                    let shown = if shown.is_empty() {
-                        hint.chars().take(80).collect::<String>()
-                    } else {
-                        shown
-                    };
-                    // Use bounded HTML size/cols hints for provisional form geometry.
-                    let column_hint = if tag == "textarea" { "cols" } else { "size" };
-                    let min_columns = attribute(element, column_hint)
-                        .and_then(|value| value.parse::<usize>().ok())
-                        .filter(|value| *value > 0)
-                        .unwrap_or(20)
-                        .min(160);
-                    // Size each explicit row independently. Padding only
-                    // after the last row made multiline fields spuriously wide.
-                    let rows = if tag == "textarea" {
-                        shown.split('\n').collect::<Vec<_>>()
-                    } else {
-                        vec![shown.as_str()]
-                    };
-                    for (row, line) in rows.iter().enumerate() {
-                        if row > 0 {
-                            items.push(Item::Break);
-                        }
-                        for ch in line.chars() {
-                            items.push(Item::Char(InlineChar {
-                                ch: if ch == '\n' || ch == '\r' { ' ' } else { ch },
-                                href: None,
-                                origin: Some(id),
-                                style: inline,
-                            }));
-                        }
-                        for _ in line.chars().count()..min_columns {
-                            items.push(Item::Char(InlineChar {
-                                ch: ' ',
-                                href: None,
-                                origin: Some(id),
-                                style: inline,
-                            }));
-                        }
-                    }
-                    if tag == "textarea" {
-                        let min_rows = attribute(element, "rows")
-                            .and_then(|value| value.parse::<usize>().ok())
-                            .filter(|value| *value > 0)
-                            .unwrap_or(2)
-                            .min(100);
-                        // Value already contains its own explicit newline rows.
-                        // Add only the missing rows, with visible click geometry.
-                        for _ in shown.split('\n').count()..min_rows {
-                            items.push(Item::Break);
-                            for _ in 0..min_columns {
-                                items.push(Item::Char(InlineChar {
-                                    ch: ' ',
-                                    href: None,
-                                    origin: Some(id),
-                                    style: inline,
-                                }));
-                            }
-                        }
-                    }
+                    let atomic = self.textarea_atomic(id, element, current, containing_width);
+                    items.push(Item::Atomic(atomic, current.inline, current.vertical_align));
                     return;
                 }
 

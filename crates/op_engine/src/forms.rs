@@ -267,6 +267,36 @@ pub(super) fn reveal_input_caret(
     low
 }
 
+/// Move a fixed-height textarea's viewport by explicit newline rows only.
+/// This remains a separate model from future soft-wrapped visual line indexes.
+pub(super) fn reveal_textarea_row(
+    value: &str,
+    caret: usize,
+    previous_row: usize,
+    height: i32,
+    font_size: i32,
+) -> usize {
+    let line_height = font_size.saturating_add(4).max(1);
+    let visible = (height.max(1) / line_height).max(1) as usize;
+    let total = value
+        .chars()
+        .filter(|ch| *ch == '\n')
+        .count()
+        .saturating_add(1);
+    if total <= visible {
+        return 0;
+    }
+    let row = value.chars().take(caret).filter(|ch| *ch == '\n').count();
+    let previous_row = previous_row.min(total.saturating_sub(visible));
+    if row < previous_row {
+        row
+    } else if row >= previous_row.saturating_add(visible) {
+        row.saturating_add(1).saturating_sub(visible)
+    } else {
+        previous_row
+    }
+}
+
 /// Find the nearest Unicode scalar caret boundary under a native document click.
 /// The current first-party field painter uses one unwrapped line per newline
 /// and a fixed font-size + 4 line advance; use that same provisional geometry.
@@ -393,6 +423,22 @@ fn byte_at(value: &str, index: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn textarea_row_reveal_tracks_explicit_newline_caret_without_mutating_text() {
+        let value = "one\ntwo\n猫😊\nfour";
+        assert_eq!(
+            reveal_textarea_row(value, value.chars().count(), 0, 40, 16),
+            2
+        );
+        assert_eq!(reveal_textarea_row(value, 7, 2, 40, 16), 1);
+        assert_eq!(reveal_textarea_row(value, 0, 2, 40, 16), 0);
+        assert_eq!(reveal_textarea_row("one\ntwo", 7, 12, 40, 16), 0);
+        assert_eq!(
+            reveal_textarea_row(value, value.chars().count(), 0, 10, 16),
+            3
+        );
+    }
+
     #[test]
     fn horizontal_input_scroll_keeps_unicode_caret_visible_and_resets_at_start() {
         let width = |s: &str| (s.chars().count() as i32) * 10;

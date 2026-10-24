@@ -1,5 +1,9 @@
 # Roadmap
 
+## Atomic textarea fixed geometry and explicit-newline scrolling (24 October 2026)
+
+Implemented bounded first-party CSS-sized multiline textarea boxes with one click rectangle, independently constrained width/height, and caret-follow vertical viewport for explicit newline rows. DOM values/JS selections and native input/clipboard/Undo remain complete; clicking inside a shifted textarea maps to its original row. Next: shared measured visual-line model for soft wrapping, selection/drag across wraps, vertical wheel/scrollbar integration, correct padding/text clips, Unicode grapheme navigation and IME. Do not mark full textarea scrolling or standards-complete replaced-element geometry as done.
+
 ## Native input horizontal caret-follow scrolling (24 October 2026)
 
 Implemented a focused-field horizontal viewport for original Rust input atoms. Home and End, editing and JavaScript setSelectionRange change a bounded Unicode-scalar visible start as needed; a second layout pass occurs only when that start changes. Native glyph painting, selected text highlight, caret and mouse click-to-caret use the same hidden-prefix offset. The actual DOM field value and JavaScript UTF-16 selection remain complete; password bullet masking and Undo/Redo still work. Next: precise CSS padding/text alignment, grapheme clusters, IME, bidi/shaping, selection drag beyond the field boundary and true wrapped/scrollable textarea. This is not complete HTML form conformance.

@@ -493,10 +493,20 @@ impl PreparedDocument {
             )
             .width
         };
+        let row_offset = if element.tag_name == "textarea" {
+            self.editor
+                .as_ref()
+                .filter(|editor| editor.node == target)
+                .map_or(0, |editor| editor.scroll_start)
+                .min(4096) as i32
+                * size.saturating_add(4)
+        } else {
+            0
+        };
         let caret = forms::caret_at_point(
             &value,
             x.saturating_sub(region.x).saturating_add(hidden_prefix),
-            y.saturating_sub(region.y),
+            y.saturating_sub(region.y).saturating_add(row_offset),
             size,
             kind == "password",
             |prefix| {
@@ -891,22 +901,38 @@ impl PreparedDocument {
             ),
             &mut text::Measurer::new(),
         );
-        // The first layout establishes the actual CSS-sized field width.
-        // Reflow only when the focused caret needs a different visible slice.
+        // The first layout establishes the actual CSS-sized control box.
+        // Reflow only when the focused input/textarea viewport must move.
         if let Some(editor) = self.editor.as_mut()
             && self.interaction.focused == Some(editor.node)
             && let Some(element) = self.document.element(editor.node)
-            && element.tag_name == "input"
+            && matches!(element.tag_name.as_str(), "input" | "textarea")
             && let Some(hit) = layout
                 .click_regions
                 .iter()
                 .find(|hit| hit.node == editor.node && hit.width > 0)
         {
+            let initial: String = if element.tag_name == "textarea" {
+                self.document
+                    .children(editor.node)
+                    .iter()
+                    .filter_map(|child| {
+                        self.document
+                            .node(*child)
+                            .and_then(|child| match &child.kind {
+                                op_dom::NodeKind::Text(value) => Some(value.as_str()),
+                                _ => None,
+                            })
+                    })
+                    .collect()
+            } else {
+                String::new()
+            };
             let value = element
                 .attributes
                 .iter()
                 .find(|attr| attr.name == "value")
-                .map_or("", |attr| attr.value.as_str());
+                .map_or(initial.as_str(), |attr| attr.value.as_str());
             let masked = element
                 .attributes
                 .iter()
@@ -916,23 +942,33 @@ impl PreparedDocument {
                 .style_for(editor.node)
                 .map_or(16, |s| s.font_size_px.round().max(1.0) as i32);
             let mut measurer = text::Measurer::new();
-            let next = forms::reveal_input_caret(
-                value,
-                editor.caret,
-                editor.scroll_start,
-                hit.width.saturating_sub(4),
-                masked,
-                |text| {
-                    op_layout::TextMeasurer::measure(
-                        &mut measurer,
-                        text,
-                        size,
-                        op_layout::FontWeight::Normal,
-                        op_layout::FontStyle::Normal,
-                    )
-                    .width
-                },
-            );
+            let next = if element.tag_name == "textarea" {
+                forms::reveal_textarea_row(
+                    value,
+                    editor.caret,
+                    editor.scroll_start,
+                    hit.height,
+                    size,
+                )
+            } else {
+                forms::reveal_input_caret(
+                    value,
+                    editor.caret,
+                    editor.scroll_start,
+                    hit.width.saturating_sub(4),
+                    masked,
+                    |text| {
+                        op_layout::TextMeasurer::measure(
+                            &mut measurer,
+                            text,
+                            size,
+                            op_layout::FontWeight::Normal,
+                            op_layout::FontStyle::Normal,
+                        )
+                        .width
+                    },
+                )
+            };
             if editor.scroll_start != next {
                 editor.scroll_start = next;
                 if next == 0 {
@@ -1081,7 +1117,12 @@ impl PreparedDocument {
             } else {
                 0
             };
-            let hidden = if scroll_start > 0 {
+            let row_offset = if element.tag_name == "textarea" {
+                (scroll_start.min(4096) as i32).saturating_mul(size.saturating_add(4))
+            } else {
+                0
+            };
+            let hidden = if element.tag_name == "input" && scroll_start > 0 {
                 let prefix = if element
                     .attributes
                     .iter()
@@ -1134,7 +1175,7 @@ impl PreparedDocument {
                     },
                 ) {
                     let x = left.saturating_add(fragment.x).saturating_sub(hidden);
-                    let y = top.saturating_add(fragment.y);
+                    let y = top.saturating_add(fragment.y).saturating_sub(row_offset);
                     // The selected glyphs are repainted over the highlight;
                     // otherwise a solid FillRect would hide the text entirely.
                     for command in [
@@ -1184,8 +1225,10 @@ impl PreparedDocument {
                 .saturating_add(width_to_caret)
                 .saturating_sub(hidden)
                 .clamp(left + 1, right - 2);
-            let caret_y = top.saturating_add((row as i32).saturating_mul(size + 4));
-            if caret_y < bottom {
+            let caret_y = top
+                .saturating_add((row as i32).saturating_mul(size + 4))
+                .saturating_sub(row_offset);
+            if caret_y >= top && caret_y < bottom {
                 display_list.commands.push(PaintCommand::FillRect {
                     x: caret_x,
                     y: caret_y,
@@ -2807,6 +2850,67 @@ mod tests {
         assert!(contains_text(&frame.display_list, "Caret:0|0"));
         let frame = engine.text_input("猫", 640, 400).unwrap();
         assert!(contains_text(&frame.display_list, "猫A😊B"));
+    }
+
+    #[test]
+    fn textarea_atomic_viewport_follows_caret_and_click_maps_to_scrolled_row() {
+        let mut engine = Engine::new();
+        let frame = engine.set_html_page(
+            "<body><textarea id='q' rows='2' cols='12'>one\ntwo\nthree\nfour</textarea>             <script>var q=document.getElementById('q');q.focus();             q.setSelectionRange(18,18);</script></body>",
+            640, 400,
+        );
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+        let page = engine.active_document.as_ref().unwrap();
+        let editor = page.editor.as_ref().expect("JS textarea focus");
+        assert_eq!(editor.scroll_start, 2);
+        assert!(contains_text(&frame, "four"));
+        assert!(!contains_text(&frame, "one"));
+        let (left, top, node, full) = {
+            let region = page
+                .hit_regions
+                .iter()
+                .find(|region| region.node == editor.node)
+                .unwrap();
+            let value = page
+                .document
+                .element(editor.node)
+                .unwrap()
+                .attributes
+                .iter()
+                .find(|attr| attr.name == "value");
+            (
+                region.x,
+                region.y,
+                editor.node,
+                value.map(|a| a.value.clone()),
+            )
+        };
+        assert_eq!(
+            full.as_deref().unwrap_or("one\ntwo\nthree\nfour"),
+            "one\ntwo\nthree\nfour"
+        );
+        engine
+            .click_at(left + 1, top + 2, 640, 400)
+            .expect("click row 3");
+        let page = engine.active_document.as_ref().unwrap();
+        assert_eq!(page.editor.as_ref().unwrap().caret, 8);
+        assert_eq!(page.editor.as_ref().unwrap().scroll_start, 2);
+        engine
+            .text_input("猫😊", 640, 400)
+            .expect("Unicode insertion");
+        let page = engine.active_document.as_ref().unwrap();
+        let value = page
+            .document
+            .element(node)
+            .unwrap()
+            .attributes
+            .iter()
+            .find(|attr| attr.name == "value")
+            .unwrap()
+            .value
+            .as_str();
+        assert_eq!(value, "one\ntwo\n猫😊three\nfour");
+        assert_eq!(page.editor.as_ref().unwrap().scroll_start, 2);
     }
 
     #[test]

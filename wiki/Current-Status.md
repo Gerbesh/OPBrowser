@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Atomic textarea box and explicit-row caret scrolling (24 October 2026)
+
+The first-party Rust layout now treats textarea as one sized inline atomic control with bounded HTML cols/rows and author CSS sizing, rather than pushing synthetic glyph runs into surrounding page flow. A focused textarea can follow caret movement vertically across explicit newline rows while keeping a fixed hit box; clicks in the scrolled viewport, native selection/paint and Unicode text insertion map back to the complete DOM value. Layout and JS integration regressions cover these paths. Long individual lines are clipped at scalar boundaries, not soft-wrapped. Wheel scrolling, proper scrollbars, visual line wrapping, IME, bidi/grapheme shaping and exact CSS padding alignment remain unsupported; no real website rendering-score change is claimed.
+
 ## Native single-line input horizontal caret reveal (24 October 2026)
 
 Focused first-party HTML inputs now scroll the displayed Unicode text horizontally when the caret reaches the content-box edge. The original Rust layout paints the visible suffix, while native caret, selection and mouse position map through the same scalar-aligned offset. Home/End, JavaScript selection positions and normal Unicode editing preserve the full DOM value. Native/JS tests, full workspace, strict Clippy and Windows startup smoke pass. The remaining gaps include partial glyph clipping, CSS padding alignment, grapheme/bidi/IME behavior and atomic textarea scroll/wrap. No new modern website compatibility score is claimed.

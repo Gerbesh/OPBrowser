@@ -1687,6 +1687,99 @@ mod tests {
     }
 
     #[test]
+    fn atomic_textarea_has_fixed_css_geometry_and_whole_box_hit_target() {
+        let inspect = |html: &str, first: usize| {
+            let doc = op_html::parse_document(html);
+            let author = op_css::collect_author_styles(&doc);
+            let styles = op_css::compute_styles(&doc, &author.styles);
+            let mut pending = vec![doc.root()];
+            let textarea = loop {
+                let id = pending.pop().expect("textarea in test document");
+                if doc
+                    .element(id)
+                    .is_some_and(|element| element.tag_name == "textarea")
+                {
+                    break id;
+                }
+                pending.extend(doc.children(id).iter().rev().copied());
+            };
+            let starts = [(textarea.index(), first)].into_iter().collect();
+            let layout = layout_document_with_form_scrolling(
+                &doc,
+                900,
+                600,
+                (&ImageResources::new(), &ImageResources::new()),
+                &GeneratedImageResources::new(),
+                (
+                    &styles,
+                    &std::collections::HashMap::new(),
+                    &std::collections::HashMap::new(),
+                    &starts,
+                ),
+                &mut ApproximateTextMeasurer,
+            );
+            let region = layout
+                .click_regions
+                .iter()
+                .find(|region| {
+                    doc.element(region.node)
+                        .is_some_and(|e| e.tag_name == "textarea")
+                })
+                .copied()
+                .expect("one textarea hit rectangle");
+            (region, layout)
+        };
+        let (base, normal) = inspect(
+            "<body><span>before</span><textarea rows='2' cols='8'>first\nsecond\nthird\nfourth</textarea><span>after</span></body>",
+            0,
+        );
+        assert_eq!(base.height, 40);
+        assert_eq!(
+            normal
+                .click_regions
+                .iter()
+                .filter(|hit| hit.node == base.node)
+                .count(),
+            1
+        );
+        assert!(normal.text_boxes.iter().any(|run| run.text == "first"));
+        assert!(normal.text_boxes.iter().any(|run| run.text == "second"));
+        assert!(!normal.text_boxes.iter().any(|run| run.text == "third"));
+        assert!(normal.text_boxes.iter().any(|run| run.text == "after"));
+
+        let (scrolled, scrolled_layout) = inspect(
+            "<body><span>before</span><textarea rows='2' cols='8'>first\nsecond\nthird\nfourth</textarea><span>after</span></body>",
+            2,
+        );
+        assert_eq!((scrolled.width, scrolled.height), (base.width, base.height));
+        assert!(
+            !scrolled_layout
+                .text_boxes
+                .iter()
+                .any(|run| run.text == "first")
+        );
+        assert!(
+            scrolled_layout
+                .text_boxes
+                .iter()
+                .any(|run| run.text == "third")
+        );
+        assert!(
+            scrolled_layout
+                .text_boxes
+                .iter()
+                .any(|run| run.text == "fourth")
+        );
+
+        let (fixed, long) = inspect(
+            "<body><textarea style='width:110px;height:48px' rows='20'>猫😊猫😊猫😊猫😊猫😊猫😊\ntail</textarea></body>",
+            0,
+        );
+        assert_eq!((fixed.width, fixed.height), (110, 48));
+        assert!(long.text_boxes.iter().all(|run| run.width <= 110));
+    }
+
+    #[test]
     fn atomic_input_has_css_dimensions_even_with_no_text_or_a_long_value() {
         let input = |markup: &str| {
             let doc = op_html::parse_document(markup);

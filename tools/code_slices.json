@@ -2,17 +2,31 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S120",
+      "title": "CSS-sized atomic textarea, logical row viewport, click and Unicode DOM editing",
+      "status": "First-party layout and native engine regression tests cover fixed CSS hit box, scrolling explicit rows, mouse Unicode editing; workspace and Win32 smoke verified",
+      "steps": [
+        {"path": "crates/op_html/src/tree_builder.rs", "symbol": "textarea"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn textarea_atomic"},
+        {"path": "crates/op_layout/src/inline.rs", "symbol": "InlineAtomic"},
+        {"path": "crates/op_engine/src/forms.rs", "symbol": "reveal_textarea_row"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "text_caret_at"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "textarea_atomic_viewport_follows_caret_and_click_maps_to_scrolled_row"}
+      ],
+      "limitation": "No shared visual-line wrapping, wheel scrollbars, IME, bidi/grapheme movement or full CSS padding fidelity."
+    },
+    {
       "id": "S116",
       "title": "HTML input size and textarea cols/rows into measured first-party form hit geometry",
-      "status": "Real native DOM hit regions, text rows, Unicode/clipboard regressions and window smoke tested",
+      "status": "HTML dimension hints feed source-owned atomic controls; original glyph rows and native hit/Unicode/clipboard regressions pass",
       "steps": [
         {"path": "crates/op_html/src/tree_builder.rs", "symbol": "input"},
-        {"path": "crates/op_layout/src/flow.rs", "symbol": "min_columns"},
-        {"path": "crates/op_layout/src/inline.rs", "symbol": "InlineChar"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn textarea_atomic"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn text_input_atomic"},
         {"path": "crates/op_layout/src/lib.rs", "symbol": "form_size_and_cols_hints_change_native_inline_control_width"},
         {"path": "crates/op_engine/src/lib.rs", "symbol": "PreparedDocument"}
       ],
-      "limitation": "Provisional inline minimum text grid, not full replaced-element CSS dimensions, clipping, wrapping or internal text scroll."
+      "limitation": "Atomic sizing works, but full soft-wrap, Unicode shaping, IME and textarea scrollbar behavior are incomplete."
     },
     {
       "id": "S115",
