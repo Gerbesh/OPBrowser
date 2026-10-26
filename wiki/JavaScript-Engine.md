@@ -1,5 +1,11 @@
 # JavaScript Engine
 
+## Canvas 2D initial native pixel implementation (26 October 2026)
+
+An original page-owned Canvas 2D context is now available from canvas.getContext('2d'), with stable per-canvas identity and a real bounded premultiplied BGRA backing surface. Supported operations are fillRect, clearRect and a restricted fillStyle (`#rrggbb` or select simple CSS color names); direct canvas.width and canvas.height are reflected and resizing resets the pixels. Engine and layout send this buffer through the project's own raster image paint path; timer drawings cause new frames even without HTML changes. Canvas is currently limited to eight contexts, max 1024 per axis and 262144 pixels each; unsupported Canvas operations such as paths, text measurement, images, getImageData and transforms are not claimed. No external engine is used.
+
+The native YouTube probe advanced from missing canvas.getContext to a non-callable map member but still has 3 top-level JavaScript failures and no visible text. This is not full YouTube support.
+
 ## DOM Element and CustomEvent prototypes (26 October 2026)
 
 The original JS VM registers Element as a real DOM interface constructor (not directly constructible) with a prototype inheriting EventTarget.prototype; parsed and created DOM elements inherit it, so normal instance identity checks work. Event now exposes Event.prototype, and `new CustomEvent(type, options)` uses the existing native Event machinery with its own detail payload, bubbles/cancelable/composed flags and real dispatch/preventDefault semantics; CustomEvent.prototype inherits Event.prototype. The implementation remains a subset: DOM constructors/method prototypes are not fully standards-complete, and CanvasRenderingContext2D is not implemented.

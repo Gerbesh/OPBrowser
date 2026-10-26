@@ -21,9 +21,9 @@ pub use parser::{
     VariableKind, parse_script,
 };
 pub use runtime::{
-    DomClickDispatch, DomElementSnapshot, DomOperation, DomTextMutation, JsGcPauseHistogram,
-    JsGcPhaseTimings, JsGcReport, JsGcTelemetry, JsHeapReachability, JsHeapUsage, JsRuntime,
-    NativeKeyboardInput, TextResponse,
+    CanvasFrame, DomClickDispatch, DomElementSnapshot, DomOperation, DomTextMutation,
+    JsGcPauseHistogram, JsGcPhaseTimings, JsGcReport, JsGcTelemetry, JsHeapReachability,
+    JsHeapUsage, JsRuntime, NativeKeyboardInput, TextResponse,
 };
 pub use value::{JsSymbol, JsValue, ObjectId};
 

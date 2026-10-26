@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 26 October 2026: original Canvas 2D pixels -> replaced image -> paint
+
+Native VM `JsRuntime` owns `canvas_surfaces` (node -> bounded BGRA CanvasSurface), `canvas_contexts` and `canvas_dirty`. DOM Element `getContext('2d')` validates receiver, allocates native Canvas context with `fillStyle`, `fillRect`, `clearRect`, and retains a stable identity for each node; intrinsic width/height setters reset backing pixels. A canvas frame is exported to host by `canvas_frames()` after pending virtual DOM aliases resolve. Engine `PreparedDocument::render` imports frames only on dirty paint and maps them into `PageImages.elements` as validated `op_image::RasterImage`; native op_layout treats canvas and img as replaced raster content, then op_paint emits ordinary Image paint commands. `Engine::tick_timers` checks canvas_dirty in addition to real DOM mutation and scroll changes. Original GC traces context ownership through DOM element native edges. This is an owned raster path with no WebView or ready-made Canvas engine.
+
 ## 26 October 2026: YouTube DOM constructor and prototype chain
 
 `crates/op_js/src/runtime.rs::JsRuntime::default` registers Event.prototype, Element.prototype inheriting the existing EventTarget.prototype, and CustomEvent.prototype inheriting Event.prototype. First-party `dom_element_object` assigns real parsed/created elements their Element prototype while retaining native node IDs/DOM method dispatch; the existing `DomEventConstructor` allocates dispatchable Event objects with Event.prototype. New `construct_value` handles `new CustomEvent(type, options)` by creating a native DomEvent, preserving event flags and adding `detail` plus CustomEvent.prototype. `Element()` and `new Element()` reject unsupported direct DOM construction. Existing DOM event cancellation/listener routing consumes these real native event objects without a substituted engine.

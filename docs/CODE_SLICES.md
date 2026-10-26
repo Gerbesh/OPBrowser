@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S130 - First-party Canvas 2D fill/clear through native image paint
+
+HTML canvas element or document.createElement('canvas') -> original op_js DOM `getContext('2d')` -> bounded page-owned `CanvasSurface` BGRA pixels -> fillStyle, fillRect and clearRect with transparent clears and alpha-safe channel compositing -> (when dirty) op_engine PreparedDocument::render creates validated `op_image::RasterImage` -> op_layout canvas replaced-image geometry -> op_paint Image display command -> native Windows raster painter. Timed canvas changes trigger page repaint without DOM text mutation. Tests verify pixels, context identity, dimension reset/bounds, host display-list image and timer-only repaint. On original Release YouTube, getContext error advanced to a non-callable map error, with the page still textless. Remaining Canvas API and script-module dependencies are not implied by this slice.
+
 ## S129 - YouTube Element/CustomEvent bootstrap to native DOM dispatch
 
 Original YouTube Release diagnostic -> missing `Element.prototype` and `CustomEvent.prototype` -> native op_js constructor/prototype graph (Element -> EventTarget; CustomEvent -> Event) -> parsed DOM elements gain prototype identity through `dom_element_object` -> `new CustomEvent(type,{detail,bubbles,cancelable,composed})` reuses original Event construction and DOM dispatch/cancellation -> native VM regression tests for `instanceof`, prototype constructor, non-constructible Element, CustomEvent `new`, listeners and canceled return value -> rebuilt Release YouTube advances to missing native canvas `getContext` while retaining no-text classification. Reddit baseline confirms missing parser body text rather than a known JS exception. No Canvas context or page-content fabrication.

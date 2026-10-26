@@ -1004,7 +1004,7 @@ impl<'a> Context<'a, '_> {
             .unwrap_or_default();
         if matches!(display, Display::Table | Display::InlineTable) {
             self.table(id, style, containing_x, layout_width_basis);
-        } else if tag == "img" {
+        } else if matches!(tag, "img" | "canvas") {
             let element = self.document.element(id);
             let image = self.images.get(&id).cloned();
             if image.is_some()
@@ -4595,7 +4595,7 @@ impl<'a> Context<'a, '_> {
                         }
                         _ => false,
                     };
-                    if matches!(tag, "img" | "br") || painted_form_control {
+                    if matches!(tag, "img" | "canvas" | "br") || painted_form_control {
                         return None;
                     }
                     let child_style = self.element_style(*child, tag, inherited);
@@ -4882,7 +4882,7 @@ impl<'a> Context<'a, '_> {
                 }
 
                 if display == Display::Inline {
-                    current.inline.boxes = if tag == "img"
+                    current.inline.boxes = if matches!(tag, "img" | "canvas")
                         && (self.images.contains_key(&id)
                             || attribute(element, "alt").is_none_or(str::is_empty))
                     {
@@ -4914,7 +4914,7 @@ impl<'a> Context<'a, '_> {
 
                 if current.float_side != FloatSide::None
                     && display != Display::Contents
-                    && tag != "img"
+                    && !matches!(tag, "img" | "canvas")
                 {
                     let side = current.float_side;
                     self.emit(items, inherited, containing_x, containing_width);
@@ -4980,7 +4980,7 @@ impl<'a> Context<'a, '_> {
                 } else if display == Display::Table {
                     self.emit(items, inherited, containing_x, containing_width);
                     self.table(id, current, containing_x, containing_width);
-                } else if tag == "img" {
+                } else if matches!(tag, "img" | "canvas") {
                     if is_block_level_display(display) {
                         self.emit(items, inherited, containing_x, containing_width);
                         let image = self.images.get(&id).cloned();

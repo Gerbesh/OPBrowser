@@ -181,6 +181,9 @@ enum BuiltinFunction {
     DomBlur,
     DomSetSelectionRange,
     DomDispatchEvent,
+    CanvasGetContext,
+    CanvasFillRect,
+    CanvasClearRect,
     DomEventConstructor,
     DomElementConstructor,
     DomCustomEventConstructor,
@@ -381,6 +384,108 @@ pub struct TextResponse {
     pub status_text: String,
     pub headers: Vec<(String, String)>,
     pub redirected: bool,
+}
+
+/// Page-owned canvas pixels in top-down premultiplied BGRA order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanvasFrame {
+    pub node: usize,
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct CanvasSurface {
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
+}
+
+impl CanvasSurface {
+    fn create(width: u32, height: u32) -> Result<Self, JsError> {
+        if width == 0
+            || height == 0
+            || width > 1024
+            || height > 1024
+            || width.saturating_mul(height) > 512 * 512
+        {
+            return Err(JsError::execution_limit(
+                "canvas surface pixel budget exceeded",
+            ));
+        }
+        Ok(Self {
+            width,
+            height,
+            pixels: vec![0; (width * height * 4) as usize],
+        })
+    }
+
+    fn rect(&mut self, values: &[JsValue], color: Option<[u8; 4]>) {
+        let args = [0, 1, 2, 3].map(|n| values.get(n).unwrap_or(&JsValue::Undefined).to_number());
+        if args.iter().any(|v| !v.is_finite()) || args[2] == 0.0 || args[3] == 0.0 {
+            return;
+        }
+        let x1 = args[0]
+            .min(args[0] + args[2])
+            .floor()
+            .max(0.0)
+            .min(self.width as f64) as usize;
+        let y1 = args[1]
+            .min(args[1] + args[3])
+            .floor()
+            .max(0.0)
+            .min(self.height as f64) as usize;
+        let x2 = args[0]
+            .max(args[0] + args[2])
+            .ceil()
+            .max(0.0)
+            .min(self.width as f64) as usize;
+        let y2 = args[1]
+            .max(args[1] + args[3])
+            .ceil()
+            .max(0.0)
+            .min(self.height as f64) as usize;
+        for y in y1..y2 {
+            for x in x1..x2 {
+                let at = (y * self.width as usize + x) * 4;
+                let pixel = &mut self.pixels[at..at + 4];
+                if let Some(src) = color {
+                    let a = u16::from(src[3]);
+                    let inverse = 255 - a;
+                    for channel in 0..3 {
+                        let premul = (u16::from(src[channel]) * a + 127) / 255;
+                        pixel[channel] = (premul
+                            + (u16::from(pixel[channel]) * inverse + 127) / 255)
+                            .min(255) as u8;
+                    }
+                    pixel[3] = (a + (u16::from(pixel[3]) * inverse + 127) / 255).min(255) as u8;
+                } else {
+                    pixel.copy_from_slice(&[0, 0, 0, 0]);
+                }
+            }
+        }
+    }
+}
+
+fn canvas_fill_color(value: &str) -> Option<[u8; 4]> {
+    let color = value.trim().to_ascii_lowercase();
+    let rgba = match color.as_str() {
+        "black" => [0, 0, 0, 255],
+        "white" => [255, 255, 255, 255],
+        "red" => [0, 0, 255, 255],
+        "green" => [0, 128, 0, 255],
+        "blue" => [255, 0, 0, 255],
+        "transparent" => [0, 0, 0, 0],
+        _ if color.starts_with('#') && color.len() == 7 => {
+            let r = u8::from_str_radix(&color[1..3], 16).ok()?;
+            let g = u8::from_str_radix(&color[3..5], 16).ok()?;
+            let b = u8::from_str_radix(&color[5..7], 16).ok()?;
+            [b, g, r, 255]
+        }
+        _ => return None,
+    };
+    Some(rgba)
 }
 
 /// A host mutation applied by the browser only after VM execution.
@@ -660,6 +765,9 @@ pub struct JsRuntime {
     dom_tag_collections: HashMap<ObjectId, (usize, String)>,
     dom_query_lists: HashMap<ObjectId, Vec<usize>>,
     dom_styles: HashMap<usize, ObjectId>,
+    canvas_surfaces: HashMap<usize, CanvasSurface>,
+    canvas_contexts: HashMap<usize, ObjectId>,
+    canvas_dirty: bool,
     dom_scroll_tops: HashMap<usize, i32>,
     dom_scroll_limits: HashMap<usize, i32>,
     dom_scroll_limits_known: bool,
@@ -824,6 +932,9 @@ impl Default for JsRuntime {
             dom_tag_collections: HashMap::new(),
             dom_query_lists: HashMap::new(),
             dom_styles: HashMap::new(),
+            canvas_surfaces: HashMap::new(),
+            canvas_contexts: HashMap::new(),
+            canvas_dirty: false,
             dom_scroll_tops: HashMap::new(),
             dom_scroll_limits: HashMap::new(),
             dom_scroll_limits_known: false,
@@ -1265,6 +1376,9 @@ impl JsRuntime {
         self.dom_tag_collections.clear();
         self.dom_query_lists.clear();
         self.dom_styles.clear();
+        self.canvas_surfaces.clear();
+        self.canvas_contexts.clear();
+        self.canvas_dirty = false;
         self.dom_children.clear();
         self.dom_text_nodes.clear();
         self.dom_tags.clear();
@@ -3304,6 +3418,117 @@ impl JsRuntime {
             self.dom_attached.insert(element.node);
         }
     }
+    /// Snapshot first-party Canvas 2D backing stores for the original image painter.
+    pub fn canvas_frames(&self) -> Vec<CanvasFrame> {
+        self.canvas_surfaces
+            .iter()
+            .map(|(&node, surface)| CanvasFrame {
+                node: self.resolve_dom_node(node),
+                width: surface.width,
+                height: surface.height,
+                pixels: surface.pixels.clone(),
+            })
+            .collect()
+    }
+
+    pub fn canvas_is_dirty(&self) -> bool {
+        self.canvas_dirty
+    }
+
+    pub fn take_canvas_dirty(&mut self) -> bool {
+        std::mem::take(&mut self.canvas_dirty)
+    }
+
+    fn canvas_dimensions(&self, node: usize) -> (u32, u32) {
+        let attrs = self.dom_attributes.get(&node);
+        let dimension = |name: &str, default: u32| -> u32 {
+            attrs
+                .and_then(|attrs| attrs.get(name))
+                .and_then(|text| text.parse::<u32>().ok())
+                .unwrap_or(default)
+        };
+        (dimension("width", 300), dimension("height", 150))
+    }
+
+    fn canvas_get_context(
+        &mut self,
+        receiver: JsValue,
+        args: Vec<JsValue>,
+    ) -> Result<CallOutcome, JsError> {
+        let JsValue::Object(element) = receiver else {
+            return Err(JsError::type_error("getContext requires canvas element"));
+        };
+        let ObjectKind::DomElement(node) = self.object(element)?.kind else {
+            return Err(JsError::type_error("getContext requires canvas element"));
+        };
+        if self.dom_tags.get(&node).is_none_or(|tag| tag != "canvas") {
+            return Err(JsError::type_error("getContext requires canvas element"));
+        }
+        if args.first().map(JsValue::to_js_string).as_deref() != Some("2d") {
+            return Ok(CallOutcome::Value(JsValue::Null));
+        }
+        if let Some(&context) = self.canvas_contexts.get(&node) {
+            return Ok(CallOutcome::Value(JsValue::Object(context)));
+        }
+        if self.canvas_contexts.len() >= 8 {
+            return Err(JsError::execution_limit("canvas context count exceeded"));
+        }
+        let (width, height) = self.canvas_dimensions(node);
+        let surface = CanvasSurface::create(width, height)?;
+        let fill = self.allocate_lifecycle_method("fillRect", BuiltinFunction::CanvasFillRect)?;
+        let clear =
+            self.allocate_lifecycle_method("clearRect", BuiltinFunction::CanvasClearRect)?;
+        let context = self.allocate_object(
+            ObjectKind::Ordinary,
+            Some(self.object_prototype),
+            HashMap::from([
+                ("canvas".into(), JsValue::Object(element)),
+                ("fillStyle".into(), JsValue::String("#000000".into())),
+                ("fillRect".into(), JsValue::Object(fill)),
+                ("clearRect".into(), JsValue::Object(clear)),
+            ]),
+        )?;
+        self.canvas_contexts.insert(node, context);
+        self.canvas_surfaces.insert(node, surface);
+        self.canvas_dirty = true;
+        Ok(CallOutcome::Value(JsValue::Object(context)))
+    }
+
+    fn canvas_rect(
+        &mut self,
+        receiver: JsValue,
+        args: Vec<JsValue>,
+        clear: bool,
+    ) -> Result<CallOutcome, JsError> {
+        let JsValue::Object(context) = receiver else {
+            return Err(JsError::type_error(
+                "Canvas 2D method requires context receiver",
+            ));
+        };
+        let node = self
+            .canvas_contexts
+            .iter()
+            .find_map(|(&node, &value)| (context == value).then_some(node))
+            .ok_or_else(|| JsError::type_error("Canvas 2D method requires context receiver"))?;
+        let color = if clear {
+            None
+        } else {
+            let value = self
+                .get_object_property(context, "fillStyle")?
+                .to_js_string();
+            Some(
+                canvas_fill_color(&value)
+                    .ok_or_else(|| JsError::type_error("unsupported Canvas 2D fillStyle"))?,
+            )
+        };
+        self.canvas_surfaces
+            .get_mut(&node)
+            .expect("existing Canvas 2D context has backing store")
+            .rect(&args, color);
+        self.canvas_dirty = true;
+        Ok(CallOutcome::Value(JsValue::Undefined))
+    }
+
     /// Synchronize real parsed-node attributes at parser script boundaries.
     /// Detached/created attributes are kept by the VM across host commits.
     pub fn sync_dom_attributes(&mut self, node: usize, attributes: Vec<(String, String)>) {
@@ -4903,6 +5128,11 @@ impl JsRuntime {
             .insert("length".into(), JsValue::Number(1.0));
         let remove_attr =
             self.allocate_lifecycle_method("removeAttribute", BuiltinFunction::DomRemoveAttribute)?;
+        let canvas_context = if self.dom_tags.get(&node).is_some_and(|tag| tag == "canvas") {
+            Some(self.allocate_lifecycle_method("getContext", BuiltinFunction::CanvasGetContext)?)
+        } else {
+            None
+        };
         let element = self.allocate_object(
             ObjectKind::DomElement(node),
             match self.global("Element").cloned() {
@@ -4950,6 +5180,11 @@ impl JsRuntime {
             ]),
         )?;
         self.dom_node_objects.insert(node, element);
+        if let Some(method) = canvas_context {
+            self.object_mut(element)?
+                .properties
+                .insert("getContext".into(), JsValue::Object(method));
+        }
         Ok(element)
     }
 
@@ -5450,6 +5685,7 @@ impl JsRuntime {
                 &self.dom_node_lists,
                 &self.dom_html_collections,
                 &self.dom_styles,
+                &self.canvas_contexts,
             ] {
                 if let Some(&id) = map.get(&node) {
                     edges.push(TraceWork::Object(id));
@@ -7095,6 +7331,15 @@ impl JsRuntime {
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
         match builtin {
+            BuiltinFunction::CanvasGetContext => {
+                return self.canvas_get_context(this_value, arguments);
+            }
+            BuiltinFunction::CanvasFillRect => {
+                return self.canvas_rect(this_value, arguments, false);
+            }
+            BuiltinFunction::CanvasClearRect => {
+                return self.canvas_rect(this_value, arguments, true);
+            }
             BuiltinFunction::DomElementConstructor | BuiltinFunction::DomCustomEventConstructor => {
                 return Err(JsError::type_error(
                     "DOM interface constructor requires new",
@@ -9941,6 +10186,9 @@ impl JsRuntime {
             | BuiltinFunction::DomSetSelectionRange
             | BuiltinFunction::DomDispatchEvent
             | BuiltinFunction::DomEventConstructor
+            | BuiltinFunction::CanvasGetContext
+            | BuiltinFunction::CanvasFillRect
+            | BuiltinFunction::CanvasClearRect
             | BuiltinFunction::DomElementConstructor
             | BuiltinFunction::DomCustomEventConstructor
             | BuiltinFunction::DomCreateEvent
@@ -10833,6 +11081,15 @@ impl JsRuntime {
                         return Ok(JsValue::Boolean(!prevented));
                     }
                     ObjectKind::DomElement(node) | ObjectKind::DomText(node) => {
+                        if matches!(key, "width" | "height")
+                            && matches!(kind, ObjectKind::DomElement(_))
+                            && self.dom_tags.get(&node).is_some_and(|tag| tag == "canvas")
+                        {
+                            let (width, height) = self.canvas_dimensions(node);
+                            return Ok(JsValue::Number(
+                                if key == "width" { width } else { height } as f64,
+                            ));
+                        }
                         if matches!(kind, ObjectKind::DomElement(_))
                             && matches!(
                                 key,
@@ -11507,6 +11764,35 @@ impl JsRuntime {
             }
             let name = Self::style_property_name(key);
             self.set_dom_style_property(node, &name, Some(value.to_js_string()))?;
+            return Ok(());
+        }
+        if matches!(key, "width" | "height")
+            && let ObjectKind::DomElement(node) = self.object(*id)?.kind
+            && self.dom_tags.get(&node).is_some_and(|tag| tag == "canvas")
+        {
+            let numeric = value.to_number();
+            if !numeric.is_finite() || numeric < 0.0 || numeric > u32::MAX as f64 {
+                return Err(JsError::type_error(
+                    "canvas dimension must be an unsigned integer",
+                ));
+            }
+            let next = numeric.trunc() as u32;
+            let (old_width, old_height) = self.canvas_dimensions(node);
+            let (width, height) = if key == "width" {
+                (next, old_height)
+            } else {
+                (old_width, next)
+            };
+            let new_surface = if self.canvas_surfaces.contains_key(&node) {
+                Some(CanvasSurface::create(width, height)?)
+            } else {
+                None
+            };
+            self.stage_dom_attribute(node, key, next.to_string())?;
+            if let Some(surface) = new_surface {
+                self.canvas_surfaces.insert(node, surface);
+                self.canvas_dirty = true;
+            }
             return Ok(());
         }
         if key == "value"
@@ -16072,6 +16358,75 @@ mod tests {
         assert_eq!(output.len(), 64);
         assert_eq!(output.first().unwrap(), &("info".into(), "6".into()));
         assert_eq!(output.last().unwrap(), &("info".into(), "69".into()));
+    }
+
+    #[test]
+    fn canvas_2d_owns_premultiplied_pixels_and_reuses_context() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 2,
+            id: "painting".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.sync_dom_tag(2, "canvas".into());
+        vm.sync_dom_attributes(
+            2,
+            vec![("width".into(), "4".into()), ("height".into(), "2".into())],
+        );
+        vm.eval_script(
+            r#"
+            var el=document.getElementById('painting');
+            var ctx=el.getContext('2d');
+            var same=ctx===el.getContext('2d')&&el.getContext('webgl')===null;
+            ctx.fillStyle='#ff0000';
+            ctx.fillRect(0,0,4,2);
+            ctx.clearRect(1,0,1,1);
+            var invalid=false;
+            try {ctx.fillRect.call({},0,0,1,1);}catch(e){invalid=true;}
+            var success=same&&invalid&&ctx.canvas===el;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("success"), Some(&JsValue::Boolean(true)));
+        let frame = vm.canvas_frames().pop().unwrap();
+        assert_eq!((frame.width, frame.height), (4, 2));
+        assert_eq!(&frame.pixels[0..4], &[0, 0, 255, 255]);
+        assert_eq!(&frame.pixels[4..8], &[0, 0, 0, 0]);
+        assert_eq!(&frame.pixels[8..12], &[0, 0, 255, 255]);
+        assert!(vm.take_canvas_dirty());
+        assert!(!vm.take_canvas_dirty());
+    }
+
+    #[test]
+    fn canvas_width_resets_backing_store_and_invalid_size_is_rejected() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 9,
+            id: "canvas".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.sync_dom_tag(9, "canvas".into());
+        vm.eval_script(
+            r#"
+            var el=document.getElementById('canvas');
+            var defaults=el.width===300&&el.height===150;
+            el.width=4; el.height=2;
+            var ctx=el.getContext('2d');
+            ctx.fillStyle='blue';ctx.fillRect(0,0,4,2);
+            el.width=4;
+            var preserved=ctx===el.getContext('2d')&&el.width===4&&el.height===2;
+            var ok=defaults&&preserved&&el.width===4;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("ok"), Some(&JsValue::Boolean(true)));
+        assert!(vm.eval_script("el.width=99999;").is_err());
+        assert_eq!(vm.eval_script("el.width;").unwrap(), JsValue::Number(4.0));
+        let frame = vm.canvas_frames().pop().unwrap();
+        assert_eq!((frame.width, frame.height), (4, 2));
+        assert!(frame.pixels.iter().all(|pixel| *pixel == 0));
     }
 
     #[test]

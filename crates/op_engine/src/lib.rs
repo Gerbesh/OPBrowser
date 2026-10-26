@@ -1038,6 +1038,29 @@ impl PreparedDocument {
     }
 
     fn render(&mut self, width: i32, height: i32) -> RenderedPage {
+        if let Some(runtime) = self.runtime.as_mut()
+            && runtime.take_canvas_dirty()
+        {
+            for frame in runtime.canvas_frames() {
+                let Some(id) = self.document.node_id(frame.node) else {
+                    continue;
+                };
+                if !self
+                    .document
+                    .element(id)
+                    .is_some_and(|element| element.tag_name == "canvas")
+                {
+                    continue;
+                }
+                if let Ok(image) = op_image::RasterImage::from_premultiplied_bgra(
+                    frame.width,
+                    frame.height,
+                    frame.pixels,
+                ) {
+                    self.images.elements.insert(id, std::sync::Arc::new(image));
+                }
+            }
+        }
         // Script calls to Element.focus()/blur() already dispatched their DOM
         // events in the VM; synchronize CSS :focus and the native indicator
         // once at the host paint boundary, without firing the events twice.
@@ -2835,7 +2858,11 @@ impl Engine {
         let checkpoint = scripts::collect_at_idle(&mut prepared.document, runtime, false);
         let scroll_changed = runtime.take_scroll_dirty();
         prepared.finish_gc_checkpoint(checkpoint);
-        if changes == 0 && !scroll_changed {
+        let canvas_changed = prepared
+            .runtime
+            .as_ref()
+            .is_some_and(op_js::JsRuntime::canvas_is_dirty);
+        if changes == 0 && !scroll_changed && !canvas_changed {
             return None;
         }
         if changes > 0 {
@@ -3065,6 +3092,73 @@ impl Default for Engine {
 mod tests {
     use super::*;
     use op_paint::PaintCommand;
+
+    #[test]
+    fn original_canvas_2d_rects_reach_native_image_paint_commands() {
+        let mut engine = Engine::new();
+        let paint = engine.set_html_page(
+            r#"<body><canvas id='draw' width='4' height='2'></canvas>
+               <script>
+                 var ctx=document.getElementById('draw').getContext('2d');
+                 ctx.fillStyle='#0000ff';
+                 ctx.fillRect(0,0,4,2);
+                 ctx.clearRect(1,0,1,1);
+               </script></body>"#,
+            320,
+            240,
+        );
+        let found = paint
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Image { image, .. } if image.width() == 4 && image.height() == 2 => {
+                    Some(image)
+                }
+                _ => None,
+            })
+            .expect("canvas image must participate in native display list");
+        assert_eq!(&found.pixels()[0..4], &[255, 0, 0, 255]);
+        assert_eq!(&found.pixels()[4..8], &[0, 0, 0, 0]);
+        assert_eq!(&found.pixels()[8..12], &[255, 0, 0, 255]);
+        assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    }
+
+    #[test]
+    fn canvas_timer_draw_triggers_new_native_frame_without_dom_mutations() {
+        let mut engine = Engine::new();
+        let initial = engine.set_html_page(
+            r#"<body><canvas id='draw' width='3' height='2'></canvas>
+               <script>
+                 var ctx=document.getElementById('draw').getContext('2d');
+                 setTimeout(function(){ctx.fillStyle='red';ctx.fillRect(0,0,3,2);},0);
+               </script></body>"#,
+            320,
+            240,
+        );
+        let old = initial
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Image { image, .. } if image.width() == 3 => Some(image),
+                _ => None,
+            })
+            .expect("initial transparent canvas paint");
+        assert_eq!(&old.pixels()[0..4], &[0, 0, 0, 0]);
+        let updated = engine
+            .tick_timers(320, 240)
+            .expect("timer drawing must repaint");
+        let new_pixels = updated
+            .display_list
+            .commands
+            .iter()
+            .find_map(|command| match command {
+                PaintCommand::Image { image, .. } if image.width() == 3 => Some(image),
+                _ => None,
+            })
+            .expect("updated canvas pixels");
+        assert_eq!(&new_pixels.pixels()[0..4], &[0, 0, 255, 255]);
+        assert!(engine.tick_timers(320, 240).is_none());
+    }
 
     #[test]
     fn prevented_keydown_suppresses_the_corresponding_native_text_input() {
