@@ -1,5 +1,13 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 26 October 2026: 20-site test-first JavaScript correction
+
+Original Release 20-site manifest, 1280x720, 1300ms settle, 23-second per-site timeout: 10 rendered with JS errors (Google, DeviantArt, Pikabu, Figma, Notion, Habr, Wikipedia, MDN, Hacker News, Amazon), 2 skeleton/no text (YouTube, Twitch), 3 blank (Reddit, TikTok, X), 2 navigation failures (Stack Overflow, Instagram), 2 rendered but visually unverified (GitHub Explore, Canva), and 1 timeout (Discord). Ignored evidence: `artifacts/live_web/all-before-2026-10-26/`. These are changing third-party pages, NOT browser compatibility passes.
+
+Opt-in JS failure context identifies Pikabu `function loadAsyncScript(key, url, attrs = {})` as a parser blocker and a missing `includes` member method. Original plain-identifier function default initializers and native Array.prototype.includes now have regression tests. Focused native Release Pikabu changed from 5 executed / 11 failed initial scripts to 7 executed / 9 failed; intermediate runs confirm the individual contributions. Post-fix output: `artifacts/live_web/pikabu-both-after-2026-10-26/`. Status remains `rendered_with_js_errors`; text primitives, screenshot, and elapsed time are not comparable visual/performance oracles across changing public page responses.
+
+Open real-site blockers: object spread and array destructuring syntax, failed DOM node access (`appendChild`/`append` on null), downstream globals such as `s`, YouTube's four null/undefined property accesses and 27 skipped scripts, Google's missing eval and unsupported regex lookahead, missing module semantics, incomplete CSS/layout, and site-specific blocking. No bot bypass or raw site-source archival.
+
 ## 20 October 2026: native editable controls Release sample
 
 Original Release suite at ignored `artifacts/live_web/native-form-editing-2026-10-20/`: Google rendered_with_js_errors (2 failures, 378 ms, 6 paint commands), YouTube no_text_rendered (4, 1,595 ms, 130 commands), Reddit blank_viewport (0, 242 ms, 1 command), DeviantArt rendered_with_js_errors (3, 8,901 ms, 2,609 commands), Pikabu rendered_with_js_errors (11, 12,740 ms, 1,522 commands). Statuses unchanged; changing remote pages prevent rigorous paint/performance comparison. Native WM_CHAR Unicode and local HTML editing are tested offline; public load probes do not type into forms. Full-browser compatibility still limited.

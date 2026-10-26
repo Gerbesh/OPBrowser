@@ -4025,3 +4025,12 @@ This file is append-only project history.
 - Added forms::TextareaScrollbar geometry with a proportional thumb, native PaintCommand::FillRect track/thumb overlay, and click precedence in Engine::click_at. Track clicks jump to a bounded visual row without firing the textarea's JS click listeners. No Windows EDIT/WebView or external browser renderer involved.
 - Added unit and real Engine/DOM tests for focused/unfocused wheel, edge chaining, Unicode insertion restoring caret visibility, scroll state, thumb geometry, track-click JS event suppression and source-shrink clamping. Existing full workspace, strict Clippy and Win32 smoke pass.
 - Still incomplete: draggable thumb/captured drag, touch gestures, precise CSS padding/partial glyph clipping, visual-row Up/Down keyboard navigation, IME/grapheme/BiDi typography.
+
+## 2026-10-26 - P0 real-site baseline and JS failure-directed correction
+
+- Ran all 20 anonymous public URLs through the original native Release probe (1280x720, 1300ms settle, 23s timeout) under ignored `artifacts/live_web/all-before-2026-10-26/`. No page certified functional; Reddit/TikTok/X blank, YouTube/Twitch no text, Discord timed out.
+- Opt-in bounded failure context on Pikabu isolated unsupported function default initializer (`attrs = {}`) in `loadAsyncScript` and unavailable array `includes` method.
+- First-party JS parser lowers supported identifier defaults to per-invocation undefined-argument guards; original VM implements array includes with SameValueZero NaN, holes, and fromIndex. Unit tests cover effects, null, ordering, arrays and bounds. Missing: destructuring/arrow defaults, exact default-parameter Function.length and generic array-like includes.
+- Focused Release Pikabu rechecks: 5 executed / 11 failed initial scripts before, 6/10 after default parameters, 7/9 after array includes. Site remains `rendered_with_js_errors` with object spread, array destructuring, null DOM append, missing globals and visual/layout failures. No changed-site screenshot or timing claims.
+- Cargo formatting, strict workspace Clippy, native Win32 startup smoke and workspace tests on final rerun pass; generated code intelligence refreshed and checked. The pre-existing `interval_self_cancel_runs_twice_without_orphaned_tasks` flake failed once on initial full test run, then passed alone and in full rerun. Root cause unresolved. Roadmap, code graph/slice, real web baseline and Wiki updated.
+

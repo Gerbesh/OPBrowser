@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## Real-site driven function defaults and Array.includes (26 October 2026)
+
+An anonymous full 20-site native browser sweep exposed specific Pikabu JavaScript failures. The original parser now accepts basic named function parameters with per-call default expressions, including `function loadAsyncScript(key, url, attrs = {})`, lowering them into guarded assignments only when the argument is undefined. The original VM now exposes `Array.prototype.includes` on actual arrays with SameValueZero comparisons, handling NaN, holes, and positive/negative fromIndex. Targeted unit regressions pass, and in a focused Release Pikabu sample initial scripts executed rose 5 to 7 while failures fell 11 to 9. The page still does not pass visually or functionally. Destructuring/default-arrow syntax, precise default-parameter Function.length, generic array-like includes and object spread remain incomplete.
+
 ## Native Windows Unicode copy, cut and paste (23 October 2026)
 
 The first-party HTML input/textarea editor now supports Ctrl+C, Ctrl+X and Ctrl+V without platform text-widget delegation. Keydown listeners run through the original JS runtime first, including preventDefault cancellation; selected ranges are mapped from JS UTF-16 offsets to Unicode scalars. Windows CF_UNICODETEXT transfers only text; native cut/paste route through existing beforeinput/input DOM mutation and selection synchronization. Passwords cannot be copied and readonly fields remain copy-only. HTML ClipboardEvents, custom clipboard MIME types, IME and undo/redo remain unsupported.

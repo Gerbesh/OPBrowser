@@ -140,6 +140,7 @@ enum BuiltinFunction {
     SymbolValueOf,
     RegExpTest,
     RegExpExec,
+    ArrayIncludes,
     ArrayPush,
     ArrayPop,
     ArrayShift,
@@ -1476,6 +1477,7 @@ impl JsRuntime {
             ("toString".into(), JsValue::Object(to_string)),
         ]);
         for (name, builtin, length) in [
+            ("includes", BuiltinFunction::ArrayIncludes, 1.0),
             ("push", BuiltinFunction::ArrayPush, 1.0),
             ("pop", BuiltinFunction::ArrayPop, 0.0),
             ("shift", BuiltinFunction::ArrayShift, 0.0),
@@ -7071,6 +7073,42 @@ impl JsRuntime {
                     .insert("length".into(), JsValue::Number(new_length as f64));
                 return Ok(CallOutcome::Value(JsValue::Number(new_length as f64)));
             }
+            BuiltinFunction::ArrayIncludes => {
+                let JsValue::Object(id) = this_value else {
+                    return Err(JsError::type_error(
+                        "Array.includes receiver must be an array",
+                    ));
+                };
+                if self.object(id)?.kind != ObjectKind::Array {
+                    return Err(JsError::type_error(
+                        "Array.includes receiver must be an array",
+                    ));
+                }
+                let length = self.array_length(id)?;
+                let needle = arguments.first().cloned().unwrap_or(JsValue::Undefined);
+                let from = arguments
+                    .get(1)
+                    .map(JsValue::to_number)
+                    .unwrap_or(0.0)
+                    .trunc();
+                let start = if from.is_nan() {
+                    0
+                } else if from.is_sign_negative() {
+                    (length as f64 + from).max(0.0) as usize
+                } else {
+                    from.min(length as f64) as usize
+                };
+                for index in start..length {
+                    let value = self.get_object_property(id, &index.to_string())?;
+                    let same = strict_equal(&value, &needle)
+                        || matches!((&value, &needle),
+                            (JsValue::Number(a), JsValue::Number(b)) if a.is_nan() && b.is_nan());
+                    if same {
+                        return Ok(CallOutcome::Value(JsValue::Boolean(true)));
+                    }
+                }
+                return Ok(CallOutcome::Value(JsValue::Boolean(false)));
+            }
             BuiltinFunction::ArrayPush => {
                 let JsValue::Object(id) = this_value else {
                     return Err(JsError::type_error("Array.push receiver must be an array"));
@@ -9211,6 +9249,7 @@ impl JsRuntime {
             | BuiltinFunction::SymbolValueOf
             | BuiltinFunction::RegExpTest
             | BuiltinFunction::RegExpExec
+            | BuiltinFunction::ArrayIncludes
             | BuiltinFunction::ArrayPush
             | BuiltinFunction::ArrayPop
             | BuiltinFunction::ArrayShift
@@ -9281,6 +9320,7 @@ impl JsRuntime {
                     | BuiltinFunction::StringCharAt
                     | BuiltinFunction::StringIndexOf
                     | BuiltinFunction::StringIncludes
+                    | BuiltinFunction::ArrayIncludes
                     | BuiltinFunction::ArrayPush
                     | BuiltinFunction::ArrayPop
                     | BuiltinFunction::ArrayShift
@@ -11314,6 +11354,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn function_default_parameters_only_run_for_undefined_arguments() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("function f(a=2,b=a+3){return b;}f()", JsValue::Number(5.0)),
+            (
+                "function f(a=2,b=a+3){return b;}f(10)",
+                JsValue::Number(13.0),
+            ),
+            ("function f(a=2){return a;}f(null)", JsValue::Null),
+            (
+                "var f=function(a={value:7}){return a.value;};f(undefined)",
+                JsValue::Number(7.0),
+            ),
+            (
+                "function loadAsyncScript(key,url,attrs={}){return attrs.kind || key;}loadAsyncScript('script','/a')",
+                JsValue::String("script".into()),
+            ),
+            (
+                "var count=0;function f(x=(count=count+1)){return x;}f(4);f(undefined);count",
+                JsValue::Number(1.0),
+            ),
+        ] {
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        assert!(vm.eval_script("function bad(a=){}").is_err());
+    }
+
+    #[test]
     fn string_search_uses_utf16_positions_and_receiver_rules() {
         let mut vm = JsRuntime::new();
         for (script, expected) in [
@@ -11529,6 +11597,35 @@ mod tests {
             vm.dom_namespaces.is_empty(),
             "stale document namespace state"
         );
+    }
+
+    #[test]
+    fn array_includes_uses_same_value_zero_and_respects_from_index() {
+        let mut vm = JsRuntime::new();
+        for (source, expected) in [
+            ("[1,2,3].includes(2)", true),
+            ("[1,2,3].includes(4)", false),
+            ("[1,2,3].includes(2,2)", false),
+            ("[1,2,3].includes(2,-2)", true),
+            ("[1,2,3].includes(1,-1)", false),
+            ("[1,2,3].includes(3,Infinity)", false),
+            ("[NaN].includes(NaN)", true),
+            ("[,].includes(undefined)", true),
+            ("[null].includes(undefined)", false),
+            ("var item={};[item].includes(item)", true),
+            ("Array.prototype.includes.length===1", true),
+        ] {
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::Boolean(expected),
+                "{source}"
+            );
+        }
+        assert!(
+            vm.eval_script("Array.prototype.includes.call(null, 2)")
+                .is_err()
+        );
+        assert!(vm.eval_script("new Array.prototype.includes(2)").is_err());
     }
 
     #[test]

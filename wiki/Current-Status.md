@@ -1,5 +1,9 @@
 # Current Project Status
 
+## 20-site original-engine compatibility sweep (26 October 2026)
+
+All 20 anonymous manifest sites were rechecked in native Release. None is verified fully functional; YouTube and Twitch paint no text, Reddit/TikTok/X remain blank, Discord timed out, some public sites refused navigation, and other sites have JS errors or unverified layout. Directly reproed Pikabu failed parser defaults and a missing array includes method; original Rust JS work reduced its failed initial scripts 11 to 9 and raised executed scripts 5 to 7 in a new Release sample, without establishing visual acceptance. Remaining JS parsing, DOM access, script scheduling, renderer fidelity and site-response limitations continue to block modern compatibility.
+
 ## Textarea native wheel and clickable scrollbar track (24 October 2026)
 
 Win32 wheel over an unfocused or focused textarea now scrolls measured visual rows without altering the DOM caret or selection; input at a boundary chains to the existing nested/page scroll path. An original PaintCommand overlay draws a proportional track and thumb only for overflowing fields, and clicking the track changes the viewport without dispatching a DOM click. Native per-control scroll positions survive blur, and the wheel-scrolled focused view remains until editing resumes. Layout/engine and Win32 smoke tests pass. Thumb dragging/touch, wrapped Up/Down keyboard navigation, exact CSS padding and IME/BiDi/grapheme handling remain incomplete.

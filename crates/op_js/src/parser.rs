@@ -866,6 +866,7 @@ impl Parser {
         }
 
         let mut params = Vec::new();
+        let mut defaults = Vec::new();
         if !self.take(&TokenKind::RightParen) {
             loop {
                 let token = self.advance().clone();
@@ -877,6 +878,10 @@ impl Parser {
                         token.start,
                         "await cannot be an async parameter",
                     ));
+                }
+                // Evaluate defaults when the function is called.
+                if self.take(&TokenKind::Equal) {
+                    defaults.push((name.clone(), self.assignment()?));
                 }
                 params.push(name);
                 if self.take(&TokenKind::RightParen) {
@@ -954,6 +959,27 @@ impl Parser {
             crate::await_lowering::lower_async_await(body)
         } else {
             body
+        };
+        let body = if defaults.is_empty() {
+            body
+        } else {
+            let mut initializers = Vec::with_capacity(defaults.len() + body.len());
+            for (name, default) in defaults {
+                initializers.push(Statement::If {
+                    test: Expression::Binary {
+                        left: Box::new(Expression::Identifier(name.clone())),
+                        op: BinaryOp::StrictEqual,
+                        right: Box::new(Expression::Literal(JsValue::Undefined)),
+                    },
+                    consequent: Box::new(Statement::Expression(Expression::Assignment {
+                        target: AssignmentTarget::Identifier(name),
+                        value: Box::new(default),
+                    })),
+                    alternate: None,
+                });
+            }
+            initializers.extend(body);
+            initializers
         };
         Ok((params, body))
     }

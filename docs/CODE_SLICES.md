@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S123 - Live Pikabu errors to own JS parser and array builtin
+
+Twenty real anonymous sites -> original native Release probe and bounded script error context -> Pikabu's function default syntax and Array.includes callable diagnostic -> first-party parser guards default expressions by undefined argument in function-local environment -> compiler uses existing guarded If/Assign bytecode -> VM installs native Array.prototype.includes with NaN equality, hole-as-undefined, fromIndex and fixed array bound -> site scripts now execute 7 instead of 5 and fail 9 instead of 11, still broken visually. Rust VM regression covers defaults with object literals, ordering, explicit null, side effects, SameValueZero, holes and index offsets. Unsupported: object spread/destructuring, default-parameter Function.length, generic includes receivers, complete modern sites.
+
 ## S122 - Win32 textarea wheel, scroll state and clickable track
 
 Win32 WM_MOUSEWHEEL -> op_browser NavigationEvent::Scroll -> Engine::scroll_at -> PreparedDocument::scroll_textarea_at -> shared measured textarea visual rows -> forms::textarea_wheel_row clamps first visible row and yields existing CSS/page fallback when at the edge. Native page-owned textarea_scroll_starts survive blur and repaint; focused TextEditor.manual_scroll_caret holds the wheel position until a keyboard edit. Native PaintCommand::FillRect draws a proportionate scrollbar track/thumb and Engine::click_at intercepts track clicks ahead of JS DOM click handlers. Layout clamps stale rows after script-shortened content. Tests cover focused/unfocused wheel, event chaining, native click interception, Unicode value and selection preservation and caret reveal on editing. Remaining: thumb drag, touch, Up/Down wrapped caret movement, complete CSS clipping/IME/BiDi/grapheme behavior.

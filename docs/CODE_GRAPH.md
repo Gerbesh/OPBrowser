@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 26 October 2026: real-site JS compatibility path
+
+`tests/live_web_sites.json` -> `tools/live_web_suite.py` -> native `live_site_probe` loads third-party pages using original OPBrowser renderer and reports bounded JS diagnostics -> `op_js::parser::Parser::function_tail` converts supported identifier default initializers into guarded in-function assignments -> existing `op_js::bytecode` compiles function body and VM parameter environments evaluate missing/undefined arguments per invocation. `JsRuntime::install_standard_primitives` registers `Array.prototype.includes` -> owned builtin dispatch traverses original array objects and uses strict identity/NaN SameValueZero with optional fromIndex. Runtime regressions and before/after Pikabu site counters measure this subset; no external JS engine and no visual pass claimed.
+
 ## 24 October 2026: textarea wheel/track through native input to original pixels
 
 Win32 WM_MOUSEWHEEL -> NavigationEvent::Scroll -> original op_browser worker -> Engine::scroll_at -> PreparedDocument::scroll_textarea_at checks paint-ordered hit regions and native textarea visual rows, then forms::textarea_wheel_row clamps whole-row movement or returns edge fallback -> page-owned textarea_scroll_starts and focused TextEditor.scroll_start + manual_scroll_caret -> layout_document_with_form_scrolling paints the correct subset without modifying cursor/JS DOM value -> PreparedDocument::textarea_scrollbar_for_hit returns bounded forms::TextareaScrollbar track/thumb -> original PaintCommand::FillRect overlay draws scrollbar over textarea text/selection; Engine::click_at intercepts textarea_scrollbar track before DOM click and maps track y to row. Keyboard edits or JS value/selection changes resume caret reveal. Empty/shortened DOM values clamp layout's scroll origin; at scroll edge regular CSS overflow / page fallback remains active. No external OS text widget, WebView or hidden browser renderer.
