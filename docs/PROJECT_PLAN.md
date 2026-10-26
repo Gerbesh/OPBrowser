@@ -1,5 +1,11 @@
 # OPBrowser: active project plan
 
+## P0 YouTube DOM interface prototypes and Reddit content triage (26 October 2026)
+
+Fresh native opt-in diagnostics before edits showed YouTube's initial TypeErrors on `performance.timing.responseStart`, `Element.prototype`, and `CustomEvent.prototype`; Reddit parsed to an empty visible body (0 body-text characters, 0 image elements, 1 script executed, 0 JS errors). Added first-party Element.prototype inheriting EventTarget.prototype, Event.prototype, and CustomEvent.prototype inheriting Event.prototype, with original dispatchable CustomEvent including `detail` and standard event flags. `Element` cannot be constructed directly, `CustomEvent` requires new; real DOM elements now inherit Element.prototype. First-party native unit tests verify identity, instanceof, cancellation, custom detail, listener dispatch and invalid construction.
+
+Release YouTube recheck now progresses from Element.prototype to absent canvas `getContext` while other failures remain (`responseStart` and an additional prototype access). YouTube is still no_text_rendered; Reddit remains blank_viewport with no body text. 20-site post-fix diagnostic outcomes are unchanged: 4 rendered_unverified, 9 rendered_with_js_errors and 7 blank/textless/navigation/timeout. Next priority: actual first-party canvas rendering, standards-grounded navigation timing, remaining module/external script execution and HTML content diagnostics. Do not synthesize page text, spoof server responses or relax origin rules silently.
+
 ## 26 October: globalThis and console blockers
 
 Completed: reran the complete 20-URL native Release test list before and after implementing two observed JS blockers. globalThis now resolves to the same first-party Window object through normal global-property lookup, preserving lexical shadowing. console.log/info/warn/error/debug now produce real, bounded page-local diagnostic records (64 messages, at most 2048 UTF-8 bytes each) without printing web contents to stderr. Native unit tests cover Window identity, global writes, shadowing, logging, non-constructibility and record limits.

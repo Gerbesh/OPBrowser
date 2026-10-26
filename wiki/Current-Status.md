@@ -1,5 +1,9 @@
 # Current Project Status
 
+## YouTube DOM interface progression, Reddit blank response (26 October 2026)
+
+Original anonymous YouTube and Reddit diagnostic with opt-in sanitized member context showed YouTube nullish property errors involving `performance.timing.responseStart`, `Element.prototype`, and `CustomEvent.prototype`, and Reddit with zero parsed body text and a single initial JS script. The original VM now exposes Event/Element/CustomEvent constructor-prototype chains; real DOM elements inherit from Element and custom events retain dispatchable Event behavior, options/detail and canceled semantics. A native VM regression passes. New YouTube Release now encounters unsupported `canvas.getContext` plus other bootstrap failures; still no visible text. Reddit remains blank. The complete 20-site regression retained all broad outcome categories (4 rendered_unverified, 9 with JS errors, 7 blank/textless/nav failures/timeout). Treat this as corrected API coverage, not a usable YouTube/Reddit implementation.
+
 ## 20-site original native Release recheck: globalThis and console (26 October 2026)
 
 Original 20-site release baseline before and after first-party globalThis/console fixes is at ignored `artifacts/live_web/all-regression-next-2026-10-26/` and `artifacts/live_web/all-console-global-after-2026-10-26/`. Notion fell from 6 to 5 initial JS failures; MDN's missing-console failure cleared and moved to rendered_unverified. Across the 20 sites, the diagnostic counts changed from 3 to 4 rendered_unverified and from 10 to 9 rendered_with_js_errors; 7 blank/textless/navigation-failed/timeout categories were unchanged. Pikabu stayed 16 executed/0 failed/18 skipped. Rust workspace, Clippy, fmt and Win32 smoke pass. None is certified visually accurate, fully interactive, or standards-complete.

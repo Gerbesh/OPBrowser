@@ -182,6 +182,8 @@ enum BuiltinFunction {
     DomSetSelectionRange,
     DomDispatchEvent,
     DomEventConstructor,
+    DomElementConstructor,
+    DomCustomEventConstructor,
     DomCreateEvent,
     DomInitEvent,
     DomStyleSetProperty,
@@ -909,6 +911,18 @@ impl Default for JsRuntime {
             false,
             VariableKind::Const,
         );
+        let event_prototype = runtime
+            .allocate_object(
+                ObjectKind::Ordinary,
+                Some(object_prototype),
+                HashMap::from([("constructor".into(), JsValue::Object(event_ctor))]),
+            )
+            .expect("Event.prototype fits initial VM budget");
+        runtime
+            .object_mut(event_ctor)
+            .expect("Event constructor exists")
+            .properties
+            .insert("prototype".into(), JsValue::Object(event_prototype));
         // A single owned EventTarget prototype is shared by custom targets,
         // window/document, Elements and AbortSignal. The original VM still
         // owns dispatch and callback metadata; no browser engine is embedded.
@@ -981,6 +995,50 @@ impl Default for JsRuntime {
         runtime.install_global_binding(
             "EventTarget",
             JsValue::Object(target_constructor),
+            false,
+            VariableKind::Const,
+        );
+        // Element is an interface constructor: scripts may examine and extend
+        // its prototype, but creating a native DOM Element requires document.
+        let element_ctor = runtime
+            .allocate_lifecycle_method("Element", BuiltinFunction::DomElementConstructor)
+            .expect("Element constructor fits initial VM budget");
+        let element_prototype = runtime
+            .allocate_object(
+                ObjectKind::Ordinary,
+                Some(event_target_prototype),
+                HashMap::from([("constructor".into(), JsValue::Object(element_ctor))]),
+            )
+            .expect("Element.prototype fits VM budget");
+        runtime
+            .object_mut(element_ctor)
+            .expect("Element constructor exists")
+            .properties
+            .insert("prototype".into(), JsValue::Object(element_prototype));
+        runtime.install_global_binding(
+            "Element",
+            JsValue::Object(element_ctor),
+            false,
+            VariableKind::Const,
+        );
+        let custom_event_ctor = runtime
+            .allocate_lifecycle_method("CustomEvent", BuiltinFunction::DomCustomEventConstructor)
+            .expect("CustomEvent constructor fits VM budget");
+        let custom_event_prototype = runtime
+            .allocate_object(
+                ObjectKind::Ordinary,
+                Some(event_prototype),
+                HashMap::from([("constructor".into(), JsValue::Object(custom_event_ctor))]),
+            )
+            .expect("CustomEvent.prototype fits VM budget");
+        runtime
+            .object_mut(custom_event_ctor)
+            .expect("CustomEvent constructor exists")
+            .properties
+            .insert("prototype".into(), JsValue::Object(custom_event_prototype));
+        runtime.install_global_binding(
+            "CustomEvent",
+            JsValue::Object(custom_event_ctor),
             false,
             VariableKind::Const,
         );
@@ -4847,7 +4905,15 @@ impl JsRuntime {
             self.allocate_lifecycle_method("removeAttribute", BuiltinFunction::DomRemoveAttribute)?;
         let element = self.allocate_object(
             ObjectKind::DomElement(node),
-            Some(self.event_target_prototype),
+            match self.global("Element").cloned() {
+                Some(JsValue::Object(constructor)) => {
+                    match self.get_object_property(constructor, "prototype")? {
+                        JsValue::Object(prototype) => Some(prototype),
+                        _ => Some(self.event_target_prototype),
+                    }
+                }
+                _ => Some(self.event_target_prototype),
+            },
             HashMap::from([
                 ("id".into(), JsValue::String(id)),
                 (
@@ -7029,6 +7095,11 @@ impl JsRuntime {
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
         match builtin {
+            BuiltinFunction::DomElementConstructor | BuiltinFunction::DomCustomEventConstructor => {
+                return Err(JsError::type_error(
+                    "DOM interface constructor requires new",
+                ));
+            }
             BuiltinFunction::Console(index) => {
                 let mut line = String::new();
                 for value in arguments {
@@ -8826,7 +8897,15 @@ impl JsRuntime {
                 self.allocate_lifecycle_method("initEvent", BuiltinFunction::DomInitEvent)?;
             let event = self.allocate_object(
                 ObjectKind::DomEvent,
-                Some(self.object_prototype),
+                match self.global("Event").cloned() {
+                    Some(JsValue::Object(constructor)) => {
+                        match self.get_object_property(constructor, "prototype")? {
+                            JsValue::Object(proto) => Some(proto),
+                            _ => Some(self.object_prototype),
+                        }
+                    }
+                    _ => Some(self.object_prototype),
+                },
                 HashMap::from([
                     ("type".into(), JsValue::String(String::new())),
                     ("target".into(), JsValue::Null),
@@ -8888,6 +8967,9 @@ impl JsRuntime {
             return Ok(CallOutcome::Value(JsValue::Undefined));
         }
         if builtin == BuiltinFunction::DomEventConstructor {
+            // HTML interface constructors are not ordinary callable functions.
+            // CustomEvent is invoked only from construct_value, which creates
+            // a genuine dispatchable DomEvent with its own detail field.
             let event_type = arguments
                 .first()
                 .unwrap_or(&JsValue::Undefined)
@@ -8929,7 +9011,15 @@ impl JsRuntime {
                 self.allocate_lifecycle_method("initEvent", BuiltinFunction::DomInitEvent)?;
             let event = self.allocate_object(
                 ObjectKind::DomEvent,
-                Some(self.object_prototype),
+                match self.global("Event").cloned() {
+                    Some(JsValue::Object(constructor)) => {
+                        match self.get_object_property(constructor, "prototype")? {
+                            JsValue::Object(proto) => Some(proto),
+                            _ => Some(self.object_prototype),
+                        }
+                    }
+                    _ => Some(self.object_prototype),
+                },
                 HashMap::from([
                     ("initEvent".into(), JsValue::Object(init)),
                     ("__initialized".into(), JsValue::Boolean(true)),
@@ -9851,6 +9941,8 @@ impl JsRuntime {
             | BuiltinFunction::DomSetSelectionRange
             | BuiltinFunction::DomDispatchEvent
             | BuiltinFunction::DomEventConstructor
+            | BuiltinFunction::DomElementConstructor
+            | BuiltinFunction::DomCustomEventConstructor
             | BuiltinFunction::DomCreateEvent
             | BuiltinFunction::DomInitEvent
             | BuiltinFunction::DomStyleSetProperty
@@ -9996,6 +10088,33 @@ impl JsRuntime {
             ));
         }
         if let FunctionImplementation::Builtin(builtin) = function.implementation {
+            if builtin == BuiltinFunction::DomElementConstructor {
+                return Err(JsError::type_error("Illegal constructor: Element"));
+            }
+            if builtin == BuiltinFunction::DomCustomEventConstructor {
+                let detail = match arguments.get(1) {
+                    Some(JsValue::Object(options)) => {
+                        self.get_object_property(*options, "detail")?
+                    }
+                    _ => JsValue::Null,
+                };
+                let result = self.call_builtin(
+                    BuiltinFunction::DomEventConstructor,
+                    JsValue::Undefined,
+                    arguments,
+                )?;
+                let CallOutcome::Value(JsValue::Object(event)) = result else {
+                    unreachable!("Event constructor returns a DOM event object")
+                };
+                let prototype = match self.get_object_property(function_id, "prototype")? {
+                    JsValue::Object(proto) => Some(proto),
+                    _ => Some(self.object_prototype),
+                };
+                let instance = self.object_mut(event)?;
+                instance.prototype = prototype;
+                instance.properties.insert("detail".into(), detail);
+                return Ok(CallOutcome::Value(JsValue::Object(event)));
+            }
             if builtin == BuiltinFunction::DateConstructor {
                 let milliseconds = self.date_constructor_milliseconds(&arguments);
                 let prototype = match self.get_object_property(function_id, "prototype")? {
@@ -15953,6 +16072,60 @@ mod tests {
         assert_eq!(output.len(), 64);
         assert_eq!(output.first().unwrap(), &("info".into(), "6".into()));
         assert_eq!(output.last().unwrap(), &("info".into(), "69".into()));
+    }
+
+    #[test]
+    fn youtube_element_and_custom_event_expose_real_dom_prototypes() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([DomElementSnapshot {
+            node: 1,
+            id: "target".into(),
+            text_content: String::new(),
+        }])
+        .unwrap();
+        vm.eval_script(
+            r#"
+            var element=document.getElementById('target');
+            var custom=new CustomEvent('ping',{detail:{answer:42},bubbles:true,cancelable:true,composed:true});
+            var ordinary=new Event('ping');
+            var received=false;
+            element.addEventListener('ping',function(event){
+                received=event===custom&&event.detail.answer===42&&event.bubbles&&event.composed;
+                event.preventDefault();
+            });
+            var before=element instanceof Element&&element instanceof EventTarget&&
+                element.constructor===Element&&CustomEvent.prototype.constructor===CustomEvent;
+            var mk1=custom instanceof CustomEvent;
+            var mk2=custom instanceof Event;
+            var mk3=ordinary instanceof Event;
+            var mk4=!(ordinary instanceof CustomEvent);
+            var mk5=custom.detail.answer===42;
+            var marker=mk1&&mk2&&mk3&&mk4&&mk5;
+            var emptyDetail=(new CustomEvent('empty')).detail===null;
+            var canceled=element.dispatchEvent(custom)===false&&custom.defaultPrevented;
+            var illegal=false,requiresNew=false;
+            try {new Element();}catch(e){illegal=true;}
+            try {CustomEvent('ping');}catch(e){requiresNew=true;}
+            var result=before&&marker&&canceled&&received&&illegal&&requiresNew;
+        "#,
+        )
+        .unwrap();
+        for name in [
+            "before",
+            "mk1",
+            "mk2",
+            "mk3",
+            "mk4",
+            "mk5",
+            "marker",
+            "canceled",
+            "received",
+            "illegal",
+            "requiresNew",
+        ] {
+            assert_eq!(vm.global(name), Some(&JsValue::Boolean(true)), "{name}");
+        }
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
     }
 
     #[test]

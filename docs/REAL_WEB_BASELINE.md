@@ -1,5 +1,11 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 26 October 2026: YouTube Element/CustomEvent prototypes and Reddit empty-body diagnosis
+
+Opt-in original Release baseline `artifacts/live_web/youtube-reddit-trace-2026-10-26/` reported YouTube 13 executed/3 failed/27 skipped initial scripts. The errors named `responseStart` after absent `timing`, `prototype` after absent `Element`, and `prototype` after absent `CustomEvent`; these recent-nullish observations are explicitly not proven call-site traces. Reddit completed navigation but its parser-derived DOM census had 0 body text nodes/characters, zero images, one initial script and 0 JS errors, leaving a 1-command white viewport. This is not proof of which site/server response behavior causes the absence of content.
+
+Following first-party Element, Event and CustomEvent constructor/prototype integration, new native Release `artifacts/live_web/youtube-element-custom-event-2026-10-26/` reports the next YouTube error as non-callable `getContext` with residual `responseStart` and another nullish prototype, still 13 executed/3 failed/27 skipped. Reddit remains blank_viewport. Complete post-change 20-site run `artifacts/live_web/all-dom-interface-after-2026-10-26/` retains 4 rendered_unverified, 9 rendered_with_js_errors and 7 content/navigation/timeout failures. This is blocker progression only; no live site visually passed or had true Canvas API support added.
+
 ## 26 October 2026: repeat of all 20 sites with globalThis and console
 
 Original native Release before fixes: `artifacts/live_web/all-regression-next-2026-10-26/` (1280x720, 1300ms settle, 23s/site): 3 rendered_unverified, 10 rendered_with_js_errors and 7 blank/no-text/navigation-error/timeout. Real diagnostics included Notion `globalThis is not defined` and MDN `console is not defined`.

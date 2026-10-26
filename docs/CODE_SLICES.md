@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S129 - YouTube Element/CustomEvent bootstrap to native DOM dispatch
+
+Original YouTube Release diagnostic -> missing `Element.prototype` and `CustomEvent.prototype` -> native op_js constructor/prototype graph (Element -> EventTarget; CustomEvent -> Event) -> parsed DOM elements gain prototype identity through `dom_element_object` -> `new CustomEvent(type,{detail,bubbles,cancelable,composed})` reuses original Event construction and DOM dispatch/cancellation -> native VM regression tests for `instanceof`, prototype constructor, non-constructible Element, CustomEvent `new`, listeners and canceled return value -> rebuilt Release YouTube advances to missing native canvas `getContext` while retaining no-text classification. Reddit baseline confirms missing parser body text rather than a known JS exception. No Canvas context or page-content fabrication.
+
 ## S128 - Real-site missing globalThis and console in original JS
 
 Native 20-site original Release probe -> Notion's absent globalThis and MDN's absent console -> native Window self-reference plus own JS Console builtin methods -> existing bytecode/global identifier lookup and call_builtin dispatch -> bounded per-page queue, host drainage and no stderr log leak -> first-party tests for alias identity, shadowing, property writes, bounded ordered console logging and invalid `new` -> repeated original Release 20-site run. Notion initially failed 6 scripts then 5; MDN's missing-console exception disappeared; Pikabu's 16/0/18 frontier remains. Rendering and interactions are unverified.

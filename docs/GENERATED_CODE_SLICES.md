@@ -21,14 +21,14 @@ op_engine::xhr_real_http_404_reaches_page_callbacks_and_native_paint
 ```
 
 - [`op_engine::sync_dom_tree`](../crates/op_engine/src/scripts.rs#L160)
-- [`op_js::load_binding`](../crates/op_js/src/runtime.rs#L5953)
+- [`op_js::load_binding`](../crates/op_js/src/runtime.rs#L6019)
 - [`op_js::XMLHttpRequest.prototype.send`](../crates/op_js/src/xhr.js#L140)
-- [`op_js::OpFetchText`](../crates/op_js/src/runtime.rs#L217)
+- [`op_js::OpFetchText`](../crates/op_js/src/runtime.rs#L219)
 - [`op_engine::dispatch_text_requests`](../crates/op_engine/src/lib.rs#L2724)
 - [`op_net::load_text_response_for_page_with_options`](../crates/op_net/src/lib.rs#L190)
-- [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L1479)
+- [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L1537)
 - [`op_js::window.postMessage`](../crates/op_js/src/window_message.js#L7)
-- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L2603)
+- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L2661)
 - [`op_engine::xhr_real_http_404_reaches_page_callbacks_and_native_paint`](../crates/op_engine/tests/scripts.rs#L3594)
 
 GET/text/json subset only: no POST, sync XHR, streamed progress, cross-origin scripts, full structured clone, true frames or visual site acceptance. 18 Pikabu scripts remain skipped.
@@ -137,7 +137,7 @@ op_js::sync_native_control_selection
 - [`op_platform_win::read_clipboard_text`](../crates/op_platform_win/src/lib.rs#L226)
 - [`op_engine::selected_clipboard_text`](../crates/op_engine/src/lib.rs#L1936)
 - [`op_engine::DeleteSelection`](../crates/op_engine/src/forms.rs#L32)
-- [`op_js::sync_native_control_selection`](../crates/op_js/src/runtime.rs#L3298)
+- [`op_js::sync_native_control_selection`](../crates/op_js/src/runtime.rs#L3356)
 
 No ClipboardEvent/custom MIME support, IME, undo or physical OS clipboard roundtrip automated test.
 
@@ -156,7 +156,7 @@ op_engine::selection_fragments
 - [`op_platform_win::NavigationEvent::PointerMove`](../crates/op_platform_win/src/lib.rs#L650)
 - [`op_browser::NavigationEvent::PointerMove`](../crates/op_browser/src/main.rs#L98)
 - [`op_engine::drag_text_selection_at`](../crates/op_engine/src/lib.rs#L2299)
-- [`op_js::sync_native_control_selection`](../crates/op_js/src/runtime.rs#L3298)
+- [`op_js::sync_native_control_selection`](../crates/op_js/src/runtime.rs#L3356)
 - [`op_engine::selection_fragments`](../crates/op_engine/src/forms.rs#L525)
 
 Provisional glyph hit geometry, no soft wrapping, bidi/graphemes, IME or clipboard.
@@ -176,7 +176,7 @@ op_engine::expression_await_updates_real_native_paint
 - [`op_js::Await`](../crates/op_js/src/parser.rs#L153)
 - [`op_js::split_statement`](../crates/op_js/src/await_lowering.rs#L497)
 - [`op_js::CallWithReceiver`](../crates/op_js/src/bytecode.rs#L883)
-- [`op_js::Instruction::Call`](../crates/op_js/src/runtime.rs#L6361)
+- [`op_js::Instruction::Call`](../crates/op_js/src/runtime.rs#L6427)
 - [`op_engine::expression_await_updates_real_native_paint`](../crates/op_engine/tests/scripts.rs#L55)
 
 Conditional branches, short-circuit RHS, loops and try/finally await still unsupported; public Reddit blank and YouTube textless.
@@ -198,7 +198,7 @@ op_engine::parse_and_execute
 - [`op_js::CompoundAssignment`](../crates/op_js/src/parser.rs#L210)
 - [`op_js::Sequence`](../crates/op_js/src/parser.rs#L209)
 - [`op_js::Dup2`](../crates/op_js/src/bytecode.rs#L82)
-- [`op_js::Dup2`](../crates/op_js/src/runtime.rs#L6579)
+- [`op_js::Dup2`](../crates/op_js/src/runtime.rs#L6645)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L413)
 
 Only += and -= compound operations; comma operator only in explicitly supported expression contexts; real YouTube still displays no text.
@@ -218,7 +218,7 @@ op_engine::parse_and_execute
 - [`op_js::RegExp`](../crates/op_js/src/lexer.rs#L14)
 - [`op_js::RegExp`](../crates/op_js/src/parser.rs#L136)
 - [`op_js::CreateRegExp`](../crates/op_js/src/bytecode.rs#L65)
-- [`op_js::build_js_regex`](../crates/op_js/src/runtime.rs#L1971)
+- [`op_js::build_js_regex`](../crates/op_js/src/runtime.rs#L2029)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L413)
 
 A finite automata regular-expression backend is not a full JavaScript RegExp implementation; unsupported patterns and flags reject.
@@ -237,7 +237,7 @@ op_engine::parse_and_execute
 
 - [`op_js::ForIn`](../crates/op_js/src/parser.rs#L40)
 - [`op_js::ToForInKeys`](../crates/op_js/src/bytecode.rs#L70)
-- [`op_js::ToForInKeys`](../crates/op_js/src/runtime.rs#L6238)
+- [`op_js::ToForInKeys`](../crates/op_js/src/runtime.rs#L6304)
 - [`op_engine::bounded_js_error_context`](../crates/op_engine/src/scripts.rs#L536)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L413)
 
@@ -256,7 +256,7 @@ op_engine::parse_and_execute
 
 - [`op_js::for_statement`](../crates/op_js/src/parser.rs#L349)
 - [`op_js::for_of_statement`](../crates/op_js/src/bytecode.rs#L173)
-- [`op_js::ToForOfValues`](../crates/op_js/src/runtime.rs#L6186)
+- [`op_js::ToForOfValues`](../crates/op_js/src/runtime.rs#L6252)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L413)
 
 Snapshots arrays, strings and selected DOM lists; no generic iterator protocol or live array mutation semantics.
@@ -276,7 +276,7 @@ op_engine::parse_and_execute
 - [`op_js::QuestionQuestion`](../crates/op_js/src/lexer.rs#L95)
 - [`op_js::nullish`](../crates/op_js/src/parser.rs#L1296)
 - [`op_js::JumpIfNullish`](../crates/op_js/src/bytecode.rs#L90)
-- [`op_js::JumpIfNullish`](../crates/op_js/src/runtime.rs#L6625)
+- [`op_js::JumpIfNullish`](../crates/op_js/src/runtime.rs#L6691)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L413)
 
 Five live public sites remain visually incomplete; grammar and expression compatibility are partial.
@@ -386,7 +386,7 @@ op_paint::build_display_list
 
 - [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L413)
-- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L1190)
+- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L1248)
 - [`op_js::DomGetElementById`](../crates/op_js/src/runtime.rs#L154)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L21)
@@ -413,7 +413,7 @@ op_engine::prepare_source
 - [`op_net::resolve_script_source`](../crates/op_net/src/scripts.rs#L14)
 - [`op_net::load_script_for_page`](../crates/op_net/src/lib.rs#L157)
 - [`op_net::load_script`](../crates/op_net/src/http.rs#L197)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L1104)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L1162)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L1761)
 
@@ -439,7 +439,7 @@ op_engine::compute_styles
 - [`op_engine::click_at`](../crates/op_engine/src/lib.rs#L1807)
 - [`op_layout::click_regions`](../crates/op_layout/src/flow.rs#L76)
 - [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L1091)
-- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3801)
+- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3859)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_engine::compute_styles`](../crates/op_engine/src/lib.rs#L4)
 
@@ -462,8 +462,8 @@ op_engine::prepare_source
 - [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
 - [`op_engine::parse_and_execute`](../crates/op_engine/src/scripts.rs#L413)
 - [`op_engine::ParserScriptRunner`](../crates/op_engine/src/scripts.rs#L418)
-- [`op_js::refresh_dom_snapshot`](../crates/op_js/src/runtime.rs#L3241)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L1104)
+- [`op_js::refresh_dom_snapshot`](../crates/op_js/src/runtime.rs#L3299)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L1162)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L1761)
 
@@ -490,7 +490,7 @@ op_dom::set_text_content
 - [`op_net::load_script_for_page`](../crates/op_net/src/lib.rs#L157)
 - [`op_engine::drain_ready`](../crates/op_engine/src/scripts.rs#L438)
 - [`op_engine::evaluate_loaded`](../crates/op_engine/src/scripts.rs#L474)
-- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L1104)
+- [`op_js::eval_script`](../crates/op_js/src/runtime.rs#L1162)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 
 Concurrent fetch and initial-load JS polling only; no event loop, DOMContentLoaded, module scripts or SRI.
@@ -511,9 +511,9 @@ op_engine::prepare_source
 
 - [`op_html::parse_document_with_script_hook`](../crates/op_html/src/tree_builder.rs#L54)
 - [`op_engine::advance_state`](../crates/op_engine/src/scripts.rs#L459)
-- [`op_js::set_document_ready_state`](../crates/op_js/src/runtime.rs#L2703)
+- [`op_js::set_document_ready_state`](../crates/op_js/src/runtime.rs#L2761)
 - [`op_engine::dispatch_lifecycle`](../crates/op_engine/src/scripts.rs#L479)
-- [`op_js::dispatch_lifecycle_event`](../crates/op_js/src/runtime.rs#L3097)
+- [`op_js::dispatch_lifecycle_event`](../crates/op_js/src/runtime.rs#L3155)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_engine::prepare_source`](../crates/op_engine/src/lib.rs#L1761)
 
@@ -534,11 +534,11 @@ op_engine::render
 op_platform_win::present_reflow
 ```
 
-- [`op_js::SetTimeout`](../crates/op_js/src/runtime.rs#L212)
-- [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L2586)
+- [`op_js::SetTimeout`](../crates/op_js/src/runtime.rs#L214)
+- [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L2644)
 - [`op_browser::recv_timeout`](../crates/op_browser/src/main.rs#L206)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L2796)
-- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L2603)
+- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L2661)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_engine::render`](../crates/op_engine/src/lib.rs#L1040)
 - [`op_platform_win::present_reflow`](../crates/op_platform_win/src/lib.rs#L477)
@@ -561,12 +561,12 @@ op_dom::set_text_content
 op_platform_win::present_reflow
 ```
 
-- [`op_js::SetInterval`](../crates/op_js/src/runtime.rs#L214)
-- [`op_js::QueueMicrotask`](../crates/op_js/src/runtime.rs#L216)
-- [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L2586)
+- [`op_js::SetInterval`](../crates/op_js/src/runtime.rs#L216)
+- [`op_js::QueueMicrotask`](../crates/op_js/src/runtime.rs#L218)
+- [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L2644)
 - [`op_browser::recv_timeout`](../crates/op_browser/src/main.rs#L206)
-- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L2603)
-- [`op_js::drain_microtasks`](../crates/op_js/src/runtime.rs#L1527)
+- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L2661)
+- [`op_js::drain_microtasks`](../crates/op_js/src/runtime.rs#L1585)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L2796)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_platform_win::present_reflow`](../crates/op_platform_win/src/lib.rs#L477)
@@ -589,13 +589,13 @@ op_dom::set_text_content
 op_platform_win::present_reflow
 ```
 
-- [`op_js::OpFetchText`](../crates/op_js/src/runtime.rs#L217)
-- [`op_js::take_text_requests`](../crates/op_js/src/runtime.rs#L1468)
+- [`op_js::OpFetchText`](../crates/op_js/src/runtime.rs#L219)
+- [`op_js::take_text_requests`](../crates/op_js/src/runtime.rs#L1526)
 - [`op_engine::dispatch_text_requests`](../crates/op_engine/src/lib.rs#L2724)
 - [`op_net::load_text_for_page`](../crates/op_net/src/lib.rs#L169)
 - [`op_net::load_text`](../crates/op_net/src/http.rs#L236)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L2796)
-- [`op_js::complete_text_request`](../crates/op_js/src/runtime.rs#L1478)
+- [`op_js::complete_text_request`](../crates/op_js/src/runtime.rs#L1536)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_platform_win::present_reflow`](../crates/op_platform_win/src/lib.rs#L477)
 
@@ -618,14 +618,14 @@ op_dom::set_text_content
 op_platform_win::present_reflow
 ```
 
-- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L1190)
-- [`op_js::OpFetchText`](../crates/op_js/src/runtime.rs#L217)
-- [`op_js::take_text_requests`](../crates/op_js/src/runtime.rs#L1468)
+- [`op_js::install_dom_snapshot`](../crates/op_js/src/runtime.rs#L1248)
+- [`op_js::OpFetchText`](../crates/op_js/src/runtime.rs#L219)
+- [`op_js::take_text_requests`](../crates/op_js/src/runtime.rs#L1526)
 - [`op_engine::dispatch_text_requests`](../crates/op_engine/src/lib.rs#L2724)
 - [`op_net::load_text_for_page`](../crates/op_net/src/lib.rs#L169)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L2796)
-- [`op_js::complete_text_request`](../crates/op_js/src/runtime.rs#L1478)
-- [`op_js::drain_microtasks`](../crates/op_js/src/runtime.rs#L1527)
+- [`op_js::complete_text_request`](../crates/op_js/src/runtime.rs#L1536)
+- [`op_js::drain_microtasks`](../crates/op_js/src/runtime.rs#L1585)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_platform_win::present_reflow`](../crates/op_platform_win/src/lib.rs#L477)
 
@@ -654,10 +654,10 @@ op_platform_win::present_reflow
 - [`op_net::load_text_response_for_page`](../crates/op_net/src/lib.rs#L175)
 - [`op_engine::dispatch_text_requests`](../crates/op_engine/src/lib.rs#L2724)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L2796)
-- [`op_js::TextResponse`](../crates/op_js/src/runtime.rs#L375)
-- [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L1479)
-- [`op_js::HeadersGet`](../crates/op_js/src/runtime.rs#L219)
-- [`op_js::drain_microtasks`](../crates/op_js/src/runtime.rs#L1527)
+- [`op_js::TextResponse`](../crates/op_js/src/runtime.rs#L377)
+- [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L1537)
+- [`op_js::HeadersGet`](../crates/op_js/src/runtime.rs#L221)
+- [`op_js::drain_microtasks`](../crates/op_js/src/runtime.rs#L1585)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_platform_win::present_reflow`](../crates/op_platform_win/src/lib.rs#L477)
 
@@ -682,16 +682,16 @@ op_dom::set_text_content
 op_platform_win::present_reflow
 ```
 
-- [`op_js::read_headers_init`](../crates/op_js/src/runtime.rs#L2457)
-- [`op_js::HeadersConstructor`](../crates/op_js/src/runtime.rs#L218)
-- [`op_js::allowed_request_headers`](../crates/op_js/src/runtime.rs#L2556)
+- [`op_js::read_headers_init`](../crates/op_js/src/runtime.rs#L2515)
+- [`op_js::HeadersConstructor`](../crates/op_js/src/runtime.rs#L220)
+- [`op_js::allowed_request_headers`](../crates/op_js/src/runtime.rs#L2614)
 - [`op_engine::dispatch_text_requests`](../crates/op_engine/src/lib.rs#L2724)
 - [`op_net::load_text_response_for_page_with_options`](../crates/op_net/src/lib.rs#L190)
 - [`op_net::load_text_with_options`](../crates/op_net/src/http.rs#L240)
 - [`op_net::load_with_headers`](../crates/op_net/src/http.rs#L259)
 - [`op_net::resolve_link`](../crates/op_net/src/links.rs#L5)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L2796)
-- [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L1479)
+- [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L1537)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_platform_win::present_reflow`](../crates/op_platform_win/src/lib.rs#L477)
 
@@ -715,13 +715,13 @@ op_platform_win::present_reflow
 ```
 
 - [`op_js::parse`](../crates/op_js/src/json.rs#L17)
-- [`op_js::JsonParse`](../crates/op_js/src/runtime.rs#L224)
-- [`op_js::json_to_value`](../crates/op_js/src/runtime.rs#L2309)
-- [`op_js::json_from_value`](../crates/op_js/src/runtime.rs#L2347)
+- [`op_js::JsonParse`](../crates/op_js/src/runtime.rs#L226)
+- [`op_js::json_to_value`](../crates/op_js/src/runtime.rs#L2367)
+- [`op_js::json_from_value`](../crates/op_js/src/runtime.rs#L2405)
 - [`op_engine::dispatch_text_requests`](../crates/op_engine/src/lib.rs#L2724)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L2796)
-- [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L1479)
-- [`op_js::drain_microtasks`](../crates/op_js/src/runtime.rs#L1527)
+- [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L1537)
+- [`op_js::drain_microtasks`](../crates/op_js/src/runtime.rs#L1585)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_platform_win::present_reflow`](../crates/op_platform_win/src/lib.rs#L477)
 
@@ -843,8 +843,8 @@ op_engine::reflow
 
 - [`op_layout::max_scroll_top`](../crates/op_layout/src/flow.rs#L1389)
 - [`op_engine::render`](../crates/op_engine/src/lib.rs#L1040)
-- [`op_js::sync_dom_scroll_limits`](../crates/op_js/src/runtime.rs#L3334)
-- [`op_js::set_dom_scroll_top`](../crates/op_js/src/runtime.rs#L3349)
+- [`op_js::sync_dom_scroll_limits`](../crates/op_js/src/runtime.rs#L3392)
+- [`op_js::set_dom_scroll_top`](../crates/op_js/src/runtime.rs#L3407)
 - [`op_engine::reflow`](../crates/op_engine/src/lib.rs#L2795)
 
 JS range readback synchronizes after render/reflow, not synchronously in parser-time scripts; vertical normal-flow only, no scrollbars/overflow-x/y.
@@ -860,9 +860,9 @@ op_js::trace_js_value
 op_engine::active_script_heap_reachability
 ```
 
-- [`op_js::trace_heap_reachability`](../crates/op_js/src/runtime.rs#L5272)
-- [`op_js::TraceWork`](../crates/op_js/src/runtime.rs#L562)
-- [`op_js::trace_js_value`](../crates/op_js/src/runtime.rs#L567)
+- [`op_js::trace_heap_reachability`](../crates/op_js/src/runtime.rs#L5338)
+- [`op_js::TraceWork`](../crates/op_js/src/runtime.rs#L564)
+- [`op_js::trace_js_value`](../crates/op_js/src/runtime.rs#L569)
 - [`op_engine::active_script_heap_reachability`](../crates/op_engine/src/lib.rs#L1692)
 
 Read-only conservative mark at idle checkpoint; no native activation stack roots, arena sweeping, generation-safe slots, or automatic GC.
@@ -881,7 +881,7 @@ op_platform_win::NavigationEvent
 op_browser::LoadResult
 ```
 
-- [`op_js::set_dom_scroll_top`](../crates/op_js/src/runtime.rs#L3349)
+- [`op_js::set_dom_scroll_top`](../crates/op_js/src/runtime.rs#L3407)
 - [`op_layout::layout_document_with_scrolling`](../crates/op_layout/src/lib.rs#L575)
 - [`op_layout::ScrollContainer`](../crates/op_layout/src/flow.rs#L239)
 - [`op_engine::scroll_at`](../crates/op_engine/src/lib.rs#L2584)
@@ -924,9 +924,9 @@ op_js::allocate_environment
 op_engine::execute_retained
 ```
 
-- [`op_js::heap_usage`](../crates/op_js/src/runtime.rs#L5881)
-- [`op_js::allocate_object_with_function`](../crates/op_js/src/runtime.rs#L1250)
-- [`op_js::allocate_environment`](../crates/op_js/src/runtime.rs#L6590)
+- [`op_js::heap_usage`](../crates/op_js/src/runtime.rs#L5947)
+- [`op_js::allocate_object_with_function`](../crates/op_js/src/runtime.rs#L1308)
+- [`op_js::allocate_environment`](../crates/op_js/src/runtime.rs#L6656)
 - [`op_engine::execute_retained`](../crates/op_engine/src/scripts.rs#L899)
 
 Append-only arenas; diagnostic counts include unreachable slots; no collection, no long-session memory plateau.
@@ -945,9 +945,9 @@ op_paint::PaintCommand
 ```
 
 - [`op_engine::sync_dom_tree`](../crates/op_engine/src/scripts.rs#L160)
-- [`op_js::set_dom_document_element_node`](../crates/op_js/src/runtime.rs#L3665)
-- [`op_js::dispatch_custom_event_inner`](../crates/op_js/src/runtime.rs#L4119)
-- [`op_js::finish_event_dispatch`](../crates/op_js/src/runtime.rs#L3141)
+- [`op_js::set_dom_document_element_node`](../crates/op_js/src/runtime.rs#L3723)
+- [`op_js::dispatch_custom_event_inner`](../crates/op_js/src/runtime.rs#L4177)
+- [`op_js::finish_event_dispatch`](../crates/op_js/src/runtime.rs#L3199)
 - [`op_engine::instrument`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L32)
 - [`op_paint::PaintCommand`](../crates/op_paint/src/lib.rs#L37)
 
@@ -970,10 +970,10 @@ op_paint::PaintCommand
 
 - [`op_engine::instrument`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L32)
 - [`op_js::FunctionCall`](../crates/op_js/src/runtime.rs#L152)
-- [`op_js::call_value`](../crates/op_js/src/runtime.rs#L1518)
-- [`op_js::DomInitEvent`](../crates/op_js/src/runtime.rs#L186)
-- [`op_js::finish_event_dispatch`](../crates/op_js/src/runtime.rs#L3141)
-- [`op_js::get_property`](../crates/op_js/src/runtime.rs#L2717)
+- [`op_js::call_value`](../crates/op_js/src/runtime.rs#L1576)
+- [`op_js::DomInitEvent`](../crates/op_js/src/runtime.rs#L188)
+- [`op_js::finish_event_dispatch`](../crates/op_js/src/runtime.rs#L3199)
+- [`op_js::get_property`](../crates/op_js/src/runtime.rs#L2775)
 - [`op_engine::run`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L101)
 - [`op_paint::PaintCommand`](../crates/op_paint/src/lib.rs#L37)
 
@@ -994,12 +994,12 @@ op_engine::apply_dom_operations
 op_paint::build_display_list
 ```
 
-- [`op_js::EventTargetConstructor`](../crates/op_js/src/runtime.rs#L202)
-- [`op_js::is_global_event_target`](../crates/op_js/src/runtime.rs#L2946)
-- [`op_js::dispatch_global_custom_event`](../crates/op_js/src/runtime.rs#L2940)
-- [`op_js::call_isolated_registered_listener`](../crates/op_js/src/runtime.rs#L3070)
-- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L2976)
-- [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L4043)
+- [`op_js::EventTargetConstructor`](../crates/op_js/src/runtime.rs#L204)
+- [`op_js::is_global_event_target`](../crates/op_js/src/runtime.rs#L3004)
+- [`op_js::dispatch_global_custom_event`](../crates/op_js/src/runtime.rs#L2998)
+- [`op_js::call_isolated_registered_listener`](../crates/op_js/src/runtime.rs#L3128)
+- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L3034)
+- [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L4101)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1021,11 +1021,11 @@ op_paint::build_display_list
 ```
 
 - [`op_engine::click_at`](../crates/op_engine/src/lib.rs#L1807)
-- [`op_js::dispatch_dom_click_path_with_trust`](../crates/op_js/src/runtime.rs#L3873)
+- [`op_js::dispatch_dom_click_path_with_trust`](../crates/op_js/src/runtime.rs#L3931)
 - [`op_js::DomEventConstructor`](../crates/op_js/src/runtime.rs#L184)
-- [`op_js::dispatch_lifecycle_event`](../crates/op_js/src/runtime.rs#L3097)
-- [`op_js::dispatch_abort_signal_event`](../crates/op_js/src/runtime.rs#L2903)
-- [`op_js::set_property`](../crates/op_js/src/runtime.rs#L6034)
+- [`op_js::dispatch_lifecycle_event`](../crates/op_js/src/runtime.rs#L3155)
+- [`op_js::dispatch_abort_signal_event`](../crates/op_js/src/runtime.rs#L2961)
+- [`op_js::set_property`](../crates/op_js/src/runtime.rs#L6100)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1046,12 +1046,12 @@ op_engine::apply_dom_operations
 op_paint::build_display_list
 ```
 
-- [`op_js::install_element_event_path`](../crates/op_js/src/runtime.rs#L4030)
-- [`op_js::install_global_event_path`](../crates/op_js/src/runtime.rs#L3138)
-- [`op_js::EventComposedPath`](../crates/op_js/src/runtime.rs#L198)
-- [`op_js::dispatch_custom_event_inner`](../crates/op_js/src/runtime.rs#L4119)
-- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3801)
-- [`op_js::finish_event_dispatch`](../crates/op_js/src/runtime.rs#L3141)
+- [`op_js::install_element_event_path`](../crates/op_js/src/runtime.rs#L4088)
+- [`op_js::install_global_event_path`](../crates/op_js/src/runtime.rs#L3196)
+- [`op_js::EventComposedPath`](../crates/op_js/src/runtime.rs#L200)
+- [`op_js::dispatch_custom_event_inner`](../crates/op_js/src/runtime.rs#L4177)
+- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3859)
+- [`op_js::finish_event_dispatch`](../crates/op_js/src/runtime.rs#L3199)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1070,10 +1070,10 @@ op_engine::apply_dom_operations
 op_paint::build_display_list
 ```
 
-- [`op_js::lifecycle_handler_property`](../crates/op_js/src/runtime.rs#L2955)
-- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L2976)
-- [`op_js::deliver_lifecycle_target`](../crates/op_js/src/runtime.rs#L3082)
-- [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L4043)
+- [`op_js::lifecycle_handler_property`](../crates/op_js/src/runtime.rs#L3013)
+- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L3034)
+- [`op_js::deliver_lifecycle_target`](../crates/op_js/src/runtime.rs#L3140)
+- [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L4101)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1092,10 +1092,10 @@ op_engine::apply_dom_operations
 op_paint::build_display_list
 ```
 
-- [`op_js::version_listener_options`](../crates/op_js/src/runtime.rs#L2795)
-- [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L4043)
-- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L2976)
-- [`op_js::bind_dom_node`](../crates/op_js/src/runtime.rs#L3455)
+- [`op_js::version_listener_options`](../crates/op_js/src/runtime.rs#L2853)
+- [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L4101)
+- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L3034)
+- [`op_js::bind_dom_node`](../crates/op_js/src/runtime.rs#L3513)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1115,10 +1115,10 @@ op_engine::apply_dom_operations
 op_paint::build_display_list
 ```
 
-- [`op_js::abort_signal`](../crates/op_js/src/runtime.rs#L2619)
-- [`op_js::take_text_requests`](../crates/op_js/src/runtime.rs#L1468)
+- [`op_js::abort_signal`](../crates/op_js/src/runtime.rs#L2677)
+- [`op_js::take_text_requests`](../crates/op_js/src/runtime.rs#L1526)
 - [`op_engine::dispatch_text_requests`](../crates/op_engine/src/lib.rs#L2724)
-- [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L1479)
+- [`op_js::complete_text_response_request`](../crates/op_js/src/runtime.rs#L1537)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L2796)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
@@ -1139,13 +1139,13 @@ op_engine::tick_timers
 op_js::deliver_lifecycle_listeners
 ```
 
-- [`op_js::new_dom_exception`](../crates/op_js/src/runtime.rs#L2618)
-- [`op_js::new_abort_signal`](../crates/op_js/src/runtime.rs#L2761)
-- [`op_js::abort_signal`](../crates/op_js/src/runtime.rs#L2619)
-- [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L2586)
-- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L2603)
+- [`op_js::new_dom_exception`](../crates/op_js/src/runtime.rs#L2676)
+- [`op_js::new_abort_signal`](../crates/op_js/src/runtime.rs#L2819)
+- [`op_js::abort_signal`](../crates/op_js/src/runtime.rs#L2677)
+- [`op_js::next_timer_wait`](../crates/op_js/src/runtime.rs#L2644)
+- [`op_js::run_due_timers`](../crates/op_js/src/runtime.rs#L2661)
 - [`op_engine::tick_timers`](../crates/op_engine/src/lib.rs#L2796)
-- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L2976)
+- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L3034)
 
 No generic iterable AbortSignal.any, timeout >60 seconds, or broad WebIDL DOMException conformance.
 
@@ -1164,12 +1164,12 @@ op_engine::apply_dom_operations
 op_paint::build_display_list
 ```
 
-- [`op_js::new_abort_signal`](../crates/op_js/src/runtime.rs#L2761)
-- [`op_js::listener_abort_signal`](../crates/op_js/src/runtime.rs#L2802)
-- [`op_js::remove_aborted_signal_listeners`](../crates/op_js/src/runtime.rs#L2820)
-- [`op_js::dispatch_abort_signal_event`](../crates/op_js/src/runtime.rs#L2903)
-- [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L4043)
-- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L2976)
+- [`op_js::new_abort_signal`](../crates/op_js/src/runtime.rs#L2819)
+- [`op_js::listener_abort_signal`](../crates/op_js/src/runtime.rs#L2860)
+- [`op_js::remove_aborted_signal_listeners`](../crates/op_js/src/runtime.rs#L2878)
+- [`op_js::dispatch_abort_signal_event`](../crates/op_js/src/runtime.rs#L2961)
+- [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L4101)
+- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L3034)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1192,12 +1192,12 @@ op_paint::build_display_list
 ```
 
 - [`op_engine::sync_dom_tree`](../crates/op_engine/src/scripts.rs#L160)
-- [`op_js::element_event_path`](../crates/op_js/src/runtime.rs#L3388)
-- [`op_js::path_reaches_document`](../crates/op_js/src/runtime.rs#L3378)
-- [`op_js::deliver_element_global_capture`](../crates/op_js/src/runtime.rs#L3806)
-- [`op_js::dispatch_custom_event_inner`](../crates/op_js/src/runtime.rs#L4119)
-- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3801)
-- [`op_js::has_dom_click_path_listener`](../crates/op_js/src/runtime.rs#L3845)
+- [`op_js::element_event_path`](../crates/op_js/src/runtime.rs#L3446)
+- [`op_js::path_reaches_document`](../crates/op_js/src/runtime.rs#L3436)
+- [`op_js::deliver_element_global_capture`](../crates/op_js/src/runtime.rs#L3864)
+- [`op_js::dispatch_custom_event_inner`](../crates/op_js/src/runtime.rs#L4177)
+- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3859)
+- [`op_js::has_dom_click_path_listener`](../crates/op_js/src/runtime.rs#L3903)
 - [`op_engine::dispatch_click`](../crates/op_engine/src/scripts.rs#L1091)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1217,10 +1217,10 @@ op_dom::set_text_content
 op_paint::build_display_list
 ```
 
-- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L2976)
-- [`op_js::dispatch_lifecycle_event`](../crates/op_js/src/runtime.rs#L3097)
-- [`op_js::dispatch_global_custom_event`](../crates/op_js/src/runtime.rs#L2940)
-- [`op_js::call_isolated_event_handler`](../crates/op_js/src/runtime.rs#L3034)
+- [`op_js::deliver_lifecycle_listeners`](../crates/op_js/src/runtime.rs#L3034)
+- [`op_js::dispatch_lifecycle_event`](../crates/op_js/src/runtime.rs#L3155)
+- [`op_js::dispatch_global_custom_event`](../crates/op_js/src/runtime.rs#L2998)
+- [`op_js::call_isolated_event_handler`](../crates/op_js/src/runtime.rs#L3092)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
@@ -1240,9 +1240,9 @@ op_engine::apply_dom_operations
 op_paint::build_display_list
 ```
 
-- [`op_js::DomListenerOptions`](../crates/op_js/src/runtime.rs#L444)
-- [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L4043)
-- [`op_js::call_isolated_event_handler`](../crates/op_js/src/runtime.rs#L3034)
+- [`op_js::DomListenerOptions`](../crates/op_js/src/runtime.rs#L446)
+- [`op_js::deliver_element_listeners`](../crates/op_js/src/runtime.rs#L4101)
+- [`op_js::call_isolated_event_handler`](../crates/op_js/src/runtime.rs#L3092)
 - [`op_engine::active_event_listener_errors`](../crates/op_engine/src/lib.rs#L1701)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
@@ -1261,9 +1261,9 @@ op_engine::apply_dom_operations
 op_paint::build_display_list
 ```
 
-- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3801)
-- [`op_js::dispatch_custom_event_inner`](../crates/op_js/src/runtime.rs#L4119)
-- [`op_js::event_immediate_stopped`](../crates/op_js/src/runtime.rs#L3036)
+- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3859)
+- [`op_js::dispatch_custom_event_inner`](../crates/op_js/src/runtime.rs#L4177)
+- [`op_js::event_immediate_stopped`](../crates/op_js/src/runtime.rs#L3094)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1282,9 +1282,9 @@ op_dom::append_child
 op_paint::build_display_list
 ```
 
-- [`op_js::selector_chain_matches`](../crates/op_js/src/runtime.rs#L4589)
-- [`op_js::query_descendants`](../crates/op_js/src/runtime.rs#L4630)
-- [`op_js::dispatch_custom_event`](../crates/op_js/src/runtime.rs#L4074)
+- [`op_js::selector_chain_matches`](../crates/op_js/src/runtime.rs#L4647)
+- [`op_js::query_descendants`](../crates/op_js/src/runtime.rs#L4688)
+- [`op_js::dispatch_custom_event`](../crates/op_js/src/runtime.rs#L4132)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_dom::append_child`](../crates/op_dom/src/lib.rs#L194)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
@@ -1306,9 +1306,9 @@ op_paint::build_display_list
 ```
 
 - [`op_js::comparison`](../crates/op_js/src/parser.rs#L1435)
-- [`op_js::binary_with_coercion`](../crates/op_js/src/runtime.rs#L2186)
-- [`op_js::query_descendants`](../crates/op_js/src/runtime.rs#L4630)
-- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3801)
+- [`op_js::binary_with_coercion`](../crates/op_js/src/runtime.rs#L2244)
+- [`op_js::query_descendants`](../crates/op_js/src/runtime.rs#L4688)
+- [`op_js::dispatch_dom_click_path`](../crates/op_js/src/runtime.rs#L3859)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_dom::append_child`](../crates/op_dom/src/lib.rs#L194)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
@@ -1332,8 +1332,8 @@ op_paint::build_display_list
 - [`op_engine::instrument`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L32)
 - [`op_engine::run`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L101)
 - [`op_engine::set_html_page`](../crates/op_engine/src/lib.rs#L1766)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6906)
-- [`op_js::elements_by_tag`](../crates/op_js/src/runtime.rs#L2167)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6972)
+- [`op_js::elements_by_tag`](../crates/op_js/src/runtime.rs#L2225)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1355,8 +1355,8 @@ op_paint::build_display_list
 
 - [`op_engine::instrument`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L32)
 - [`op_engine::run`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L101)
-- [`op_js::get_property`](../crates/op_js/src/runtime.rs#L2717)
-- [`op_js::dom_html_collection_object`](../crates/op_js/src/runtime.rs#L4460)
+- [`op_js::get_property`](../crates/op_js/src/runtime.rs#L2775)
+- [`op_js::dom_html_collection_object`](../crates/op_js/src/runtime.rs#L4518)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_dom::remove_child`](../crates/op_dom/src/lib.rs#L286)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
@@ -1380,7 +1380,7 @@ op_paint::build_display_list
 - [`op_engine::instrument`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L32)
 - [`op_engine::run`](../crates/op_engine/src/bin/wpt_dom_probe.rs#L101)
 - [`op_engine::set_html_page`](../crates/op_engine/src/lib.rs#L1766)
-- [`op_js::get_property`](../crates/op_js/src/runtime.rs#L2717)
+- [`op_js::get_property`](../crates/op_js/src/runtime.rs#L2775)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_dom::remove_child`](../crates/op_dom/src/lib.rs#L286)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
@@ -1402,8 +1402,8 @@ op_paint::build_display_list
 ```
 
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L1732)
-- [`op_js::get_property`](../crates/op_js/src/runtime.rs#L2717)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6906)
+- [`op_js::get_property`](../crates/op_js/src/runtime.rs#L2775)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6972)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_dom::replace_child`](../crates/op_dom/src/lib.rs#L267)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L21)
@@ -1427,8 +1427,8 @@ op_paint::build_display_list
 ```
 
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L1732)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6906)
-- [`op_js::take_dom_operations`](../crates/op_js/src/runtime.rs#L3791)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6972)
+- [`op_js::take_dom_operations`](../crates/op_js/src/runtime.rs#L3849)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_dom::insert_before`](../crates/op_dom/src/lib.rs#L195)
 - [`op_css::collect_author_styles_with_linked`](../crates/op_css/src/lib.rs#L28)
@@ -1453,8 +1453,8 @@ op_paint::build_display_list
 ```
 
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L1732)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6906)
-- [`op_js::take_dom_operations`](../crates/op_js/src/runtime.rs#L3791)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6972)
+- [`op_js::take_dom_operations`](../crates/op_js/src/runtime.rs#L3849)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_dom::append_child`](../crates/op_dom/src/lib.rs#L194)
 - [`op_css::compute_styles`](../crates/op_css/src/lib.rs#L21)
@@ -1477,9 +1477,9 @@ op_paint::build_display_list
 ```
 
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L1732)
-- [`op_js::install_standard_primitives`](../crates/op_js/src/runtime.rs#L1063)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6906)
-- [`op_js::get_property`](../crates/op_js/src/runtime.rs#L2717)
+- [`op_js::install_standard_primitives`](../crates/op_js/src/runtime.rs#L1121)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6972)
+- [`op_js::get_property`](../crates/op_js/src/runtime.rs#L2775)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1504,8 +1504,8 @@ op_paint::build_display_list
 - [`op_js::conditional`](../crates/op_js/src/parser.rs#L1256)
 - [`op_js::compile_program`](../crates/op_js/src/bytecode.rs#L110)
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L1732)
-- [`op_js::typeof_value`](../crates/op_js/src/runtime.rs#L2050)
-- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6906)
+- [`op_js::typeof_value`](../crates/op_js/src/runtime.rs#L2108)
+- [`op_js::call_builtin`](../crates/op_js/src/runtime.rs#L6972)
 - [`op_dom::set_text_content`](../crates/op_dom/src/lib.rs#L354)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 
@@ -1528,12 +1528,12 @@ op_js::evaluate
 ```
 
 - [`op_engine::render_html`](../crates/op_engine/src/lib.rs#L1732)
-- [`op_js::install_standard_primitives`](../crates/op_js/src/runtime.rs#L1063)
-- [`op_js::box_primitive`](../crates/op_js/src/runtime.rs#L1998)
-- [`op_js::construct_value`](../crates/op_js/src/runtime.rs#L6439)
-- [`op_js::coerce_to_primitive`](../crates/op_js/src/runtime.rs#L2017)
-- [`op_js::binary_with_coercion`](../crates/op_js/src/runtime.rs#L2186)
-- [`op_js::apply_binary`](../crates/op_js/src/runtime.rs#L2277)
+- [`op_js::install_standard_primitives`](../crates/op_js/src/runtime.rs#L1121)
+- [`op_js::box_primitive`](../crates/op_js/src/runtime.rs#L2056)
+- [`op_js::construct_value`](../crates/op_js/src/runtime.rs#L6505)
+- [`op_js::coerce_to_primitive`](../crates/op_js/src/runtime.rs#L2075)
+- [`op_js::binary_with_coercion`](../crates/op_js/src/runtime.rs#L2244)
+- [`op_js::apply_binary`](../crates/op_js/src/runtime.rs#L2335)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 - [`op_js::evaluate`](../crates/op_js/src/bin/test262_runtime_probe.rs#L170)
 
@@ -1567,8 +1567,8 @@ op_engine::active_document_node_slots
 op_engine::main
 ```
 
-- [`op_js::collect_if_needed_at_idle`](../crates/op_js/src/runtime.rs#L5793)
-- [`op_js::JsGcPauseHistogram`](../crates/op_js/src/runtime.rs#L488)
+- [`op_js::collect_if_needed_at_idle`](../crates/op_js/src/runtime.rs#L5859)
+- [`op_js::JsGcPauseHistogram`](../crates/op_js/src/runtime.rs#L490)
 - [`op_engine::active_script_gc_telemetry`](../crates/op_engine/src/lib.rs#L1680)
 - [`op_engine::active_document_node_slots`](../crates/op_engine/src/lib.rs#L1655)
 - [`op_engine::main`](../crates/op_engine/src/bin/gc_stress_probe.rs#L107)
@@ -1586,10 +1586,10 @@ op_js::bind_dom_node
 op_js::collect_if_needed_at_idle
 ```
 
-- [`op_js::allocate_virtual_dom_node`](../crates/op_js/src/runtime.rs#L3709)
+- [`op_js::allocate_virtual_dom_node`](../crates/op_js/src/runtime.rs#L3767)
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
-- [`op_js::bind_dom_node`](../crates/op_js/src/runtime.rs#L3455)
-- [`op_js::collect_if_needed_at_idle`](../crates/op_js/src/runtime.rs#L5793)
+- [`op_js::bind_dom_node`](../crates/op_js/src/runtime.rs#L3513)
+- [`op_js::collect_if_needed_at_idle`](../crates/op_js/src/runtime.rs#L5859)
 
 Authoritative native Document storage remains append-only; staging quota recovery does not reclaim the native arena.
 
@@ -1609,9 +1609,9 @@ op_engine::main
 
 - [`op_engine::apply_dom_operations`](../crates/op_engine/src/scripts.rs#L224)
 - [`op_engine::collect_at_idle`](../crates/op_engine/src/scripts.rs#L380)
-- [`op_js::native_dom_roots`](../crates/op_js/src/runtime.rs#L3731)
+- [`op_js::native_dom_roots`](../crates/op_js/src/runtime.rs#L3789)
 - [`op_dom::collect_garbage`](../crates/op_dom/src/lib.rs#L427)
-- [`op_js::forget_collected_native_nodes`](../crates/op_js/src/runtime.rs#L3748)
+- [`op_js::forget_collected_native_nodes`](../crates/op_js/src/runtime.rs#L3806)
 - [`op_engine::prune_native_resources`](../crates/op_engine/src/lib.rs#L987)
 - [`op_engine::main`](../crates/op_engine/src/bin/gc_stress_probe.rs#L107)
 
@@ -1656,8 +1656,8 @@ op_js::apply_binary
 - [`op_browser::script_diag_`](../crates/op_browser/src/bin/live_site_probe.rs#L204)
 - [`op_js::Caret`](../crates/op_js/src/lexer.rs#L84)
 - [`op_js::bitwise_xor`](../crates/op_js/src/parser.rs#L1396)
-- [`op_js::to_int32`](../crates/op_js/src/runtime.rs#L11933)
-- [`op_js::apply_binary`](../crates/op_js/src/runtime.rs#L2277)
+- [`op_js::to_int32`](../crates/op_js/src/runtime.rs#L12052)
+- [`op_js::apply_binary`](../crates/op_js/src/runtime.rs#L2335)
 
 Only initial parser-script diagnostics are enumerated; callbacks/timers require broader tracing. Successful parsing of individual bitwise operators does not imply the modern Google/Pikabu scripts now work.
 

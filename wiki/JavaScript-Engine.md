@@ -1,5 +1,11 @@
 # JavaScript Engine
 
+## DOM Element and CustomEvent prototypes (26 October 2026)
+
+The original JS VM registers Element as a real DOM interface constructor (not directly constructible) with a prototype inheriting EventTarget.prototype; parsed and created DOM elements inherit it, so normal instance identity checks work. Event now exposes Event.prototype, and `new CustomEvent(type, options)` uses the existing native Event machinery with its own detail payload, bubbles/cancelable/composed flags and real dispatch/preventDefault semantics; CustomEvent.prototype inherits Event.prototype. The implementation remains a subset: DOM constructors/method prototypes are not fully standards-complete, and CanvasRenderingContext2D is not implemented.
+
+Native Release site diagnostics confirmed the original YouTube `Element.prototype` failure advanced to `getContext`, with no visual page-content success yet. Reddit's parsed body remains textless. No external JS/browser engine was introduced.
+
 ## globalThis and native console logging (26 October 2026)
 
 globalThis now points to the real first-party Window object, with classic identifier lookup and local parameter shadowing. The original JavaScript VM now implements console.log/info/warn/error/debug as non-constructible methods whose output is retained as up to 64 bounded, drainable page-local records, 2048 UTF-8 bytes each. Web script messages are not printed to stderr or sent to a telemetry service. There is no existing DevTools console UI or complete object-inspection/formatting support.

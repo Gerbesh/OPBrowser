@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 26 October 2026: YouTube DOM constructor and prototype chain
+
+`crates/op_js/src/runtime.rs::JsRuntime::default` registers Event.prototype, Element.prototype inheriting the existing EventTarget.prototype, and CustomEvent.prototype inheriting Event.prototype. First-party `dom_element_object` assigns real parsed/created elements their Element prototype while retaining native node IDs/DOM method dispatch; the existing `DomEventConstructor` allocates dispatchable Event objects with Event.prototype. New `construct_value` handles `new CustomEvent(type, options)` by creating a native DomEvent, preserving event flags and adding `detail` plus CustomEvent.prototype. `Element()` and `new Element()` reject unsupported direct DOM construction. Existing DOM event cancellation/listener routing consumes these real native event objects without a substituted engine.
+
 ## 26 October 2026: globalThis and console in own runtime
 
 `tests/live_web_sites.json` -> `tools/live_web_suite.py` -> original native `live_site_probe` -> op_engine page-owned JsRuntime. `JsRuntime::default` attaches globalThis to its canonical global_object, resolved through existing classic Window identifier lookup; local lexical parameters may shadow it. Default initialization also registers console.log/info/warn/error/debug as native BuiltinFunction::Console(level) methods. On call, the original VM formats bounded arguments into a page-local `console_records` queue (64 x 2048 bytes); `take_console_records` drains those records without stderr/network output. Nothing is delegated to an external browser engine.
