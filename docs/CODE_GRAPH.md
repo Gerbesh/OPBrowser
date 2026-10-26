@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 26 October 2026: first-party spread, destructure, bind, forEach graph
+
+Original JS lexer Ellipsis token -> parser::object_literal creates Spread ObjectPropertyKind -> compiler::Expression::ObjectLiteral emits existing CreateObject metadata -> VM enumerates own enumerable string/symbol keys, filters array length, copies values into new original object with 4,096-property bounds. Parser::variable_declarations recognizes simple `[identifier,,identifier]` patterns -> VariableDeclarator::array_binding -> bytecode::DeclareArray -> VM array indexed property reads and lexical declarations. Browser-global `self` is identical to native `window` object. Function.prototype.bind -> first-party FunctionImplementation::Bound captures target/receiver/leading args, recurses into original call_value/construct_value and is traced by owned mark-GC. Array.prototype.forEach -> first-party callback path through call_value for each present array index. Default nested-call cap 32 due to Windows recursion test stack safety.
+
 ## 26 October 2026: real-site JS compatibility path
 
 `tests/live_web_sites.json` -> `tools/live_web_suite.py` -> native `live_site_probe` loads third-party pages using original OPBrowser renderer and reports bounded JS diagnostics -> `op_js::parser::Parser::function_tail` converts supported identifier default initializers into guarded in-function assignments -> existing `op_js::bytecode` compiles function body and VM parameter environments evaluate missing/undefined arguments per invocation. `JsRuntime::install_standard_primitives` registers `Array.prototype.includes` -> owned builtin dispatch traverses original array objects and uses strict identity/NaN SameValueZero with optional fromIndex. Runtime regressions and before/after Pikabu site counters measure this subset; no external JS engine and no visual pass claimed.

@@ -73,6 +73,7 @@ pub enum Statement {
 #[derive(Debug, Clone, PartialEq)]
 pub struct VariableDeclarator {
     pub name: String,
+    pub array_binding: Option<Vec<Option<String>>>,
     pub initializer: Option<Expression>,
 }
 
@@ -87,6 +88,7 @@ pub struct ObjectProperty {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ObjectPropertyKind {
     Data,
+    Spread,
     Getter,
     Setter,
 }
@@ -1014,11 +1016,50 @@ impl Parser {
         let mut declarations = Vec::new();
         loop {
             let token = self.advance().clone();
-            let TokenKind::Identifier(name) = token.kind else {
-                return Err(JsError::syntax(
-                    token.start,
-                    "expected identifier after variable declaration",
-                ));
+            let (name, array_binding) = match token.kind {
+                TokenKind::Identifier(name) => (name, None),
+                TokenKind::LeftBracket => {
+                    let mut elements = Vec::new();
+                    loop {
+                        if self.take(&TokenKind::RightBracket) {
+                            break;
+                        }
+                        if self.take(&TokenKind::Comma) {
+                            elements.push(None);
+                            continue;
+                        }
+                        let binding = self.advance().clone();
+                        let TokenKind::Identifier(name) = binding.kind else {
+                            return Err(JsError::syntax(
+                                binding.start,
+                                "expected array binding name",
+                            ));
+                        };
+                        elements.push(Some(name));
+                        if elements.len() > 128 {
+                            return Err(JsError::syntax(
+                                binding.start,
+                                "array binding pattern too long",
+                            ));
+                        }
+                        if self.take(&TokenKind::RightBracket) {
+                            break;
+                        }
+                        if !self.take(&TokenKind::Comma) {
+                            return Err(JsError::syntax(
+                                self.current().start,
+                                "expected ',' or ']' after array binding",
+                            ));
+                        }
+                    }
+                    (String::new(), Some(elements))
+                }
+                _ => {
+                    return Err(JsError::syntax(
+                        token.start,
+                        "expected identifier after variable declaration",
+                    ));
+                }
             };
 
             let initializer = if self.take(&TokenKind::Equal) {
@@ -1032,7 +1073,17 @@ impl Parser {
                     "const declaration requires an initializer",
                 ));
             }
-            declarations.push(VariableDeclarator { name, initializer });
+            if array_binding.is_some() && initializer.is_none() {
+                return Err(JsError::syntax(
+                    token.start,
+                    "array binding requires an initializer",
+                ));
+            }
+            declarations.push(VariableDeclarator {
+                name,
+                array_binding,
+                initializer,
+            });
 
             if !self.take(&TokenKind::Comma) {
                 break;
@@ -1806,111 +1857,120 @@ impl Parser {
         }
 
         loop {
-            let token = self.advance().clone();
-            let (key, shorthand) = match token.kind {
-                TokenKind::Identifier(name) => (name.clone(), Some(name)),
-                TokenKind::String(name) => (name, None),
-                TokenKind::Number(value) => (JsValue::Number(value).to_js_string(), None),
-                kind => {
-                    let Some(name) = identifier_name(&kind) else {
+            if self.take(&TokenKind::Ellipsis) {
+                properties.push(ObjectProperty {
+                    key: String::new(),
+                    value: self.assignment()?,
+                    prototype_setter: false,
+                    kind: ObjectPropertyKind::Spread,
+                });
+            } else {
+                let token = self.advance().clone();
+                let (key, shorthand) = match token.kind {
+                    TokenKind::Identifier(name) => (name.clone(), Some(name)),
+                    TokenKind::String(name) => (name, None),
+                    TokenKind::Number(value) => (JsValue::Number(value).to_js_string(), None),
+                    kind => {
+                        let Some(name) = identifier_name(&kind) else {
+                            return Err(JsError::syntax(
+                                token.start,
+                                "expected object property name",
+                            ));
+                        };
+                        (name, None)
+                    }
+                };
+
+                // Accessor names are contextual: get(), {get: value} and
+                // {get} are ordinary properties.
+                let accessor = matches!(key.as_str(), "get" | "set")
+                    && !self.check(&TokenKind::LeftParen)
+                    && !self.check(&TokenKind::Colon)
+                    && self
+                        .tokens
+                        .get(self.index + 1)
+                        .is_some_and(|next| same_variant(&next.kind, &TokenKind::LeftParen));
+                let (key, kind, value, prototype_setter) = if accessor {
+                    let name_token = self.advance().clone();
+                    let property_name = match name_token.kind {
+                        TokenKind::Identifier(name) | TokenKind::String(name) => name,
+                        TokenKind::Number(number) => JsValue::Number(number).to_js_string(),
+                        other => identifier_name(&other).ok_or_else(|| {
+                            JsError::syntax(name_token.start, "expected accessor property name")
+                        })?,
+                    };
+                    let (params, body) = self.function_tail(false)?;
+                    let kind = if key == "get" {
+                        ObjectPropertyKind::Getter
+                    } else {
+                        ObjectPropertyKind::Setter
+                    };
+                    let expected = if kind == ObjectPropertyKind::Getter {
+                        0
+                    } else {
+                        1
+                    };
+                    if params.len() != expected {
                         return Err(JsError::syntax(
-                            token.start,
-                            "expected object property name",
+                            name_token.start,
+                            "invalid accessor parameter count",
+                        ));
+                    }
+                    (
+                        property_name,
+                        kind,
+                        Expression::Function {
+                            name: None,
+                            params,
+                            body,
+                            is_async: false,
+                        },
+                        false,
+                    )
+                } else if self.check(&TokenKind::LeftParen) {
+                    let (params, body) = self.function_tail(false)?;
+                    (
+                        key.clone(),
+                        ObjectPropertyKind::Data,
+                        Expression::Function {
+                            name: Some(key),
+                            params,
+                            body,
+                            is_async: false,
+                        },
+                        false,
+                    )
+                } else {
+                    let has_colon = self.take(&TokenKind::Colon);
+                    let value = if has_colon {
+                        self.assignment()?
+                    } else if let Some(name) = shorthand {
+                        Expression::Identifier(name)
+                    } else {
+                        return Err(JsError::syntax(
+                            self.current().start,
+                            "expected ':' after object property name",
                         ));
                     };
-                    (name, None)
+                    let prototype_setter = has_colon && key == "__proto__";
+                    (key, ObjectPropertyKind::Data, value, prototype_setter)
+                };
+                if prototype_setter {
+                    if saw_prototype_setter {
+                        return Err(JsError::syntax(
+                            token.start,
+                            "duplicate __proto__ fields are not allowed in object literals",
+                        ));
+                    }
+                    saw_prototype_setter = true;
                 }
-            };
-
-            // Accessor names are contextual: get(), {get: value} and
-            // {get} are ordinary properties.
-            let accessor = matches!(key.as_str(), "get" | "set")
-                && !self.check(&TokenKind::LeftParen)
-                && !self.check(&TokenKind::Colon)
-                && self
-                    .tokens
-                    .get(self.index + 1)
-                    .is_some_and(|next| same_variant(&next.kind, &TokenKind::LeftParen));
-            let (key, kind, value, prototype_setter) = if accessor {
-                let name_token = self.advance().clone();
-                let property_name = match name_token.kind {
-                    TokenKind::Identifier(name) | TokenKind::String(name) => name,
-                    TokenKind::Number(number) => JsValue::Number(number).to_js_string(),
-                    other => identifier_name(&other).ok_or_else(|| {
-                        JsError::syntax(name_token.start, "expected accessor property name")
-                    })?,
-                };
-                let (params, body) = self.function_tail(false)?;
-                let kind = if key == "get" {
-                    ObjectPropertyKind::Getter
-                } else {
-                    ObjectPropertyKind::Setter
-                };
-                let expected = if kind == ObjectPropertyKind::Getter {
-                    0
-                } else {
-                    1
-                };
-                if params.len() != expected {
-                    return Err(JsError::syntax(
-                        name_token.start,
-                        "invalid accessor parameter count",
-                    ));
-                }
-                (
-                    property_name,
+                properties.push(ObjectProperty {
+                    key,
+                    value,
+                    prototype_setter,
                     kind,
-                    Expression::Function {
-                        name: None,
-                        params,
-                        body,
-                        is_async: false,
-                    },
-                    false,
-                )
-            } else if self.check(&TokenKind::LeftParen) {
-                let (params, body) = self.function_tail(false)?;
-                (
-                    key.clone(),
-                    ObjectPropertyKind::Data,
-                    Expression::Function {
-                        name: Some(key),
-                        params,
-                        body,
-                        is_async: false,
-                    },
-                    false,
-                )
-            } else {
-                let has_colon = self.take(&TokenKind::Colon);
-                let value = if has_colon {
-                    self.assignment()?
-                } else if let Some(name) = shorthand {
-                    Expression::Identifier(name)
-                } else {
-                    return Err(JsError::syntax(
-                        self.current().start,
-                        "expected ':' after object property name",
-                    ));
-                };
-                let prototype_setter = has_colon && key == "__proto__";
-                (key, ObjectPropertyKind::Data, value, prototype_setter)
-            };
-            if prototype_setter {
-                if saw_prototype_setter {
-                    return Err(JsError::syntax(
-                        token.start,
-                        "duplicate __proto__ fields are not allowed in object literals",
-                    ));
-                }
-                saw_prototype_setter = true;
+                });
             }
-            properties.push(ObjectProperty {
-                key,
-                value,
-                prototype_setter,
-                kind,
-            });
 
             if self.take(&TokenKind::RightBrace) {
                 break;

@@ -90,6 +90,7 @@ pub enum TokenKind {
     LeftBracket,
     RightBracket,
     Dot,
+    Ellipsis,
     Question,
     QuestionQuestion,
     Colon,
@@ -270,6 +271,10 @@ impl<'a> Lexer<'a> {
             b'}' => TokenKind::RightBrace,
             b'[' => TokenKind::LeftBracket,
             b']' => TokenKind::RightBracket,
+            b'.' if self.bytes.get(self.index..self.index + 2) == Some(b"..") => {
+                self.index += 2;
+                TokenKind::Ellipsis
+            }
             b'.' => TokenKind::Dot,
             b':' => TokenKind::Colon,
             b'?' if self.take(b'?') => TokenKind::QuestionQuestion,
@@ -714,6 +719,7 @@ fn can_start_regex(previous: Option<&TokenKind>) -> bool {
                 | TokenKind::LeftParen
                 | TokenKind::LeftBracket
                 | TokenKind::LeftBrace
+                | TokenKind::Ellipsis
                 | TokenKind::Comma
                 | TokenKind::Colon
                 | TokenKind::Semicolon

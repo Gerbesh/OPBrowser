@@ -46,6 +46,10 @@ pub(crate) enum Instruction {
         kind: VariableKind,
         has_initializer: bool,
     },
+    DeclareArray {
+        names: Vec<Option<String>>,
+        kind: VariableKind,
+    },
     Assign(String),
     UpdateBinding {
         name: String,
@@ -267,11 +271,18 @@ impl Compiler {
             } else {
                 self.code.push(Instruction::Push(JsValue::Undefined));
             }
-            self.code.push(Instruction::Declare {
-                name: declaration.name.clone(),
-                kind,
-                has_initializer,
-            });
+            if let Some(names) = &declaration.array_binding {
+                self.code.push(Instruction::DeclareArray {
+                    names: names.clone(),
+                    kind,
+                });
+            } else {
+                self.code.push(Instruction::Declare {
+                    name: declaration.name.clone(),
+                    kind,
+                    has_initializer,
+                });
+            }
         }
     }
 
@@ -458,6 +469,7 @@ impl Compiler {
                 kind,
                 declarations: vec![VariableDeclarator {
                     name: name.to_owned(),
+                    array_binding: None,
                     initializer: Some(item),
                 }],
             },
@@ -472,6 +484,7 @@ impl Compiler {
                 declarations: vec![
                     VariableDeclarator {
                         name: values_name.clone(),
+                        array_binding: None,
                         initializer: Some(if for_in {
                             Expression::ForInKeys(Box::new(iterable.clone()))
                         } else {
@@ -480,6 +493,7 @@ impl Compiler {
                     },
                     VariableDeclarator {
                         name: index_name.clone(),
+                        array_binding: None,
                         initializer: Some(Expression::Literal(JsValue::Number(0.0))),
                     },
                 ],

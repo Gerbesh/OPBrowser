@@ -33,6 +33,7 @@ fn declaration(name: String, value: Expression) -> Statement {
         kind: VariableKind::Const,
         declarations: vec![VariableDeclarator {
             name,
+            array_binding: None,
             initializer: Some(value),
         }],
     }

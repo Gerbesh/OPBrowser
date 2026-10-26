@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Pikabu execution frontier after original JavaScript follow-up (26 October 2026)
+
+Actual Release Pikabu initial JS counters: 7 scripts executed / 9 failed before; 8 executed / 8 failed after real object spread and identifier-array destructuring syntax support. Further first-party window.self, Function.prototype.bind and Array.prototype.forEach changes move the next diagnostic to null/undefined indexOf access but do not reduce the 8 failures. YouTube textless and Reddit blank statuses persist in five-site rerun; no site is certified visually usable. Original JS default call depth now 32 for Windows recursion stack safety; full tests and native smoke must remain green.
+
 ## 20-site original-engine compatibility sweep (26 October 2026)
 
 All 20 anonymous manifest sites were rechecked in native Release. None is verified fully functional; YouTube and Twitch paint no text, Reddit/TikTok/X remain blank, Discord timed out, some public sites refused navigation, and other sites have JS errors or unverified layout. Directly reproed Pikabu failed parser defaults and a missing array includes method; original Rust JS work reduced its failed initial scripts 11 to 9 and raised executed scripts 5 to 7 in a new Release sample, without establishing visual acceptance. Remaining JS parsing, DOM access, script scheduling, renderer fidelity and site-response limitations continue to block modern compatibility.

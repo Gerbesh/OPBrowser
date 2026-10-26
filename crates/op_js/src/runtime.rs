@@ -18,7 +18,7 @@ use std::{
 const DEFAULT_INSTRUCTION_BUDGET: usize = 1_000_000;
 const DEFAULT_OBJECT_BUDGET: usize = 100_000;
 const DEFAULT_ENVIRONMENT_BUDGET: usize = 100_000;
-const DEFAULT_CALL_DEPTH_BUDGET: usize = 64;
+const DEFAULT_CALL_DEPTH_BUDGET: usize = 32;
 const MAX_PENDING_TIMERS: usize = 64;
 const MAX_TOTAL_TIMERS: u32 = 512;
 const MAX_TIMER_DELAY_MS: u64 = 60_000;
@@ -141,11 +141,13 @@ enum BuiltinFunction {
     RegExpTest,
     RegExpExec,
     ArrayIncludes,
+    ArrayForEach,
     ArrayPush,
     ArrayPop,
     ArrayShift,
     ArrayUnshift,
     FunctionCall,
+    FunctionBind,
     DomGetElementById,
     DomGetElementsByTagName,
     DomQuerySelector,
@@ -245,6 +247,11 @@ enum FunctionImplementation {
     User {
         template: Arc<FunctionTemplate>,
         closure: EnvironmentId,
+    },
+    Bound {
+        target: JsValue,
+        receiver: JsValue,
+        arguments: Vec<JsValue>,
     },
     Builtin(BuiltinFunction),
 }
@@ -890,6 +897,19 @@ impl Default for JsRuntime {
             .expect("original Function prototype exists")
             .properties
             .insert("call".into(), JsValue::Object(function_call));
+        let function_bind = runtime
+            .allocate_lifecycle_method("bind", BuiltinFunction::FunctionBind)
+            .expect("Function.prototype.bind fits VM initial budget");
+        runtime
+            .object_mut(function_bind)
+            .expect("Function.prototype.bind exists")
+            .properties
+            .insert("length".into(), JsValue::Number(1.0));
+        runtime
+            .object_mut(function_prototype)
+            .expect("original Function prototype exists")
+            .properties
+            .insert("bind".into(), JsValue::Object(function_bind));
         let target_constructor = runtime
             .allocate_lifecycle_method("EventTarget", BuiltinFunction::EventTargetConstructor)
             .expect("EventTarget constructor fits VM initial budget");
@@ -1329,6 +1349,12 @@ impl JsRuntime {
             VariableKind::Const,
         );
         self.install_global_binding(
+            "self",
+            JsValue::Object(self.global_object),
+            false,
+            VariableKind::Const,
+        );
+        self.install_global_binding(
             "document",
             JsValue::Object(document),
             false,
@@ -1478,6 +1504,7 @@ impl JsRuntime {
         ]);
         for (name, builtin, length) in [
             ("includes", BuiltinFunction::ArrayIncludes, 1.0),
+            ("forEach", BuiltinFunction::ArrayForEach, 1.0),
             ("push", BuiltinFunction::ArrayPush, 1.0),
             ("pop", BuiltinFunction::ArrayPop, 0.0),
             ("shift", BuiltinFunction::ArrayShift, 0.0),
@@ -5353,11 +5380,24 @@ impl JsRuntime {
                             trace_js_value(&mut pending, value);
                         }
                     }
-                    if let Some(FunctionObject {
-                        implementation: FunctionImplementation::User { closure, .. },
-                    }) = &object.function
-                    {
-                        pending.push(TraceWork::Environment(*closure));
+                    if let Some(FunctionObject { implementation }) = &object.function {
+                        match implementation {
+                            FunctionImplementation::User { closure, .. } => {
+                                pending.push(TraceWork::Environment(*closure))
+                            }
+                            FunctionImplementation::Bound {
+                                target,
+                                receiver,
+                                arguments,
+                            } => {
+                                trace_js_value(&mut pending, target);
+                                trace_js_value(&mut pending, receiver);
+                                for argument in arguments {
+                                    trace_js_value(&mut pending, argument);
+                                }
+                            }
+                            FunctionImplementation::Builtin(_) => {}
+                        }
                     }
                 }
                 TraceWork::Environment(id) => {
@@ -5739,6 +5779,34 @@ impl JsRuntime {
                         .expect("compiler must push declaration initializer");
                     self.declare_binding(env, name, *kind, *has_initializer, value)?;
                 }
+                Instruction::DeclareArray { names, kind } => {
+                    let source = stack.pop().expect("compiled array initializer must exist");
+                    let mut values = Vec::with_capacity(names.len());
+                    match &source {
+                        JsValue::Object(id) if self.object(*id)?.kind == ObjectKind::Array => {
+                            for (index, name) in names.iter().enumerate() {
+                                if name.is_some() {
+                                    values.push(self.get_property(&source, &index.to_string())?);
+                                }
+                            }
+                        }
+                        _ => {
+                            return Err(JsError::type_error(
+                                "array destructuring requires an array",
+                            ));
+                        }
+                    }
+                    let mut values = values.into_iter();
+                    for name in names.iter().flatten() {
+                        self.declare_binding(
+                            env,
+                            name,
+                            *kind,
+                            true,
+                            values.next().expect("value for binding"),
+                        )?;
+                    }
+                }
                 Instruction::Assign(name) => {
                     let value = stack
                         .last()
@@ -5788,9 +5856,64 @@ impl JsRuntime {
                     entries.reverse();
 
                     let mut properties = HashMap::new();
+                    let mut symbols = HashMap::new();
                     let mut prototype = Some(self.object_prototype);
                     for (key, value, (prototype_setter, kind)) in entries {
-                        if prototype_setter {
+                        if kind == ObjectPropertyKind::Spread {
+                            match value {
+                                JsValue::Object(source) => {
+                                    let donor = self.object(source)?.clone();
+                                    if donor.properties.len() > 4096 {
+                                        return Err(JsError::execution_limit(
+                                            "object spread property budget exceeded",
+                                        ));
+                                    }
+                                    for name in donor.properties.keys() {
+                                        if donor.kind == ObjectKind::Array && name == "length" {
+                                            continue;
+                                        }
+                                        if self
+                                            .own_property_attributes(
+                                                source,
+                                                &PropertyKey::Name(name.clone()),
+                                            )?
+                                            .enumerable
+                                        {
+                                            let item =
+                                                self.get_property(&JsValue::Object(source), name)?;
+                                            properties.insert(name.clone(), item);
+                                        }
+                                    }
+                                    if let Some(source_symbols) = donor.symbol_properties {
+                                        for (symbol, item) in *source_symbols {
+                                            if self
+                                                .own_property_attributes(
+                                                    source,
+                                                    &PropertyKey::Symbol(symbol),
+                                                )?
+                                                .enumerable
+                                            {
+                                                symbols.insert(symbol, item);
+                                            }
+                                        }
+                                    }
+                                }
+                                JsValue::String(text) => {
+                                    if text.chars().count() > 4096 {
+                                        return Err(JsError::execution_limit(
+                                            "string spread property budget exceeded",
+                                        ));
+                                    }
+                                    for (index, ch) in text.chars().enumerate() {
+                                        properties.insert(
+                                            index.to_string(),
+                                            JsValue::String(ch.to_string()),
+                                        );
+                                    }
+                                }
+                                _ => {}
+                            }
+                        } else if prototype_setter {
                             match value {
                                 JsValue::Object(id) => prototype = Some(id),
                                 JsValue::Null => prototype = None,
@@ -5833,6 +5956,9 @@ impl JsRuntime {
                     }
 
                     let id = self.allocate_object(ObjectKind::Ordinary, prototype, properties)?;
+                    if !symbols.is_empty() {
+                        self.object_mut(id)?.symbol_properties = Some(Box::new(symbols));
+                    }
                     stack.push(JsValue::Object(id));
                 }
                 Instruction::CreateRegExp { pattern, flags } => {
@@ -6442,6 +6568,107 @@ impl JsRuntime {
                     steps,
                     call_depth + 1,
                 )
+            }
+            FunctionImplementation::Builtin(BuiltinFunction::FunctionBind) => {
+                let JsValue::Object(target) = this_value.clone() else {
+                    return Err(JsError::type_error(
+                        "Function.prototype.bind needs a callable receiver",
+                    ));
+                };
+                if self.object(target)?.function.is_none() {
+                    return Err(JsError::type_error(
+                        "Function.prototype.bind needs a callable receiver",
+                    ));
+                }
+                let receiver = arguments.first().cloned().unwrap_or(JsValue::Undefined);
+                let pre_args: Vec<_> = arguments.into_iter().skip(1).collect();
+                if pre_args.len() > 4096 {
+                    return Err(JsError::execution_limit(
+                        "bound function argument budget exceeded",
+                    ));
+                }
+                let original_length = self.get_object_property(target, "length")?.to_number();
+                let length = if original_length.is_nan() {
+                    0.0
+                } else {
+                    (original_length - pre_args.len() as f64).max(0.0)
+                };
+                let original_name = self.get_object_property(target, "name")?.to_js_string();
+                let bound = self.allocate_object_with_function(
+                    ObjectKind::Function,
+                    Some(self.function_prototype),
+                    HashMap::from([
+                        ("length".into(), JsValue::Number(length)),
+                        (
+                            "name".into(),
+                            JsValue::String(format!("bound {original_name}")),
+                        ),
+                    ]),
+                    Some(FunctionObject {
+                        implementation: FunctionImplementation::Bound {
+                            target: this_value,
+                            receiver,
+                            arguments: pre_args,
+                        },
+                    }),
+                )?;
+                Ok(CallOutcome::Value(JsValue::Object(bound)))
+            }
+            FunctionImplementation::Bound {
+                target,
+                receiver,
+                arguments: pre_args,
+            } => {
+                if pre_args.len().saturating_add(arguments.len()) > 4096 {
+                    return Err(JsError::execution_limit(
+                        "bound function argument budget exceeded",
+                    ));
+                }
+                let mut merged = pre_args;
+                merged.extend(arguments);
+                self.call_value(target, receiver, merged, steps, call_depth + 1)
+            }
+            FunctionImplementation::Builtin(BuiltinFunction::ArrayForEach) => {
+                let JsValue::Object(array) = this_value.clone() else {
+                    return Err(JsError::type_error(
+                        "Array.forEach receiver must be an array",
+                    ));
+                };
+                if self.object(array)?.kind != ObjectKind::Array {
+                    return Err(JsError::type_error(
+                        "Array.forEach receiver must be an array",
+                    ));
+                }
+                let callback = arguments.first().cloned().unwrap_or(JsValue::Undefined);
+                if !matches!(&callback, JsValue::Object(id) if self.object(*id)?.function.is_some())
+                {
+                    return Err(JsError::type_error(
+                        "Array.forEach callback must be callable",
+                    ));
+                }
+                let receiver = arguments.get(1).cloned().unwrap_or(JsValue::Undefined);
+                let length = self.array_length(array)?;
+                for index in 0..length {
+                    if !self
+                        .object(array)?
+                        .properties
+                        .contains_key(&index.to_string())
+                    {
+                        continue;
+                    }
+                    let value = self.get_property(&this_value, &index.to_string())?;
+                    match self.call_value(
+                        callback.clone(),
+                        receiver.clone(),
+                        vec![value, JsValue::Number(index as f64), this_value.clone()],
+                        steps,
+                        call_depth + 1,
+                    )? {
+                        CallOutcome::Value(_) => {}
+                        CallOutcome::Thrown(value) => return Ok(CallOutcome::Thrown(value)),
+                    }
+                }
+                Ok(CallOutcome::Value(JsValue::Undefined))
             }
             FunctionImplementation::Builtin(builtin) => {
                 self.call_builtin(builtin, this_value, arguments)
@@ -9209,6 +9436,7 @@ impl JsRuntime {
             | BuiltinFunction::LifecycleAddEventListener
             | BuiltinFunction::LifecycleRemoveEventListener
             | BuiltinFunction::FunctionCall
+            | BuiltinFunction::FunctionBind
             | BuiltinFunction::LifecycleDispatchEvent
             | BuiltinFunction::EventTargetConstructor
             | BuiltinFunction::AbortControllerConstructor
@@ -9250,6 +9478,7 @@ impl JsRuntime {
             | BuiltinFunction::RegExpTest
             | BuiltinFunction::RegExpExec
             | BuiltinFunction::ArrayIncludes
+            | BuiltinFunction::ArrayForEach
             | BuiltinFunction::ArrayPush
             | BuiltinFunction::ArrayPop
             | BuiltinFunction::ArrayShift
@@ -9297,6 +9526,23 @@ impl JsRuntime {
             .function
             .clone()
             .ok_or_else(|| JsError::type_error("value is not a constructor"))?;
+        if let FunctionImplementation::Bound {
+            target,
+            arguments: pre_args,
+            ..
+        } = &function.implementation
+        {
+            if pre_args.len().saturating_add(arguments.len()) > 4096
+                || call_depth >= self.call_depth_budget
+            {
+                return Err(JsError::execution_limit(
+                    "bound constructor budget exceeded",
+                ));
+            }
+            let mut merged = pre_args.clone();
+            merged.extend(arguments);
+            return self.construct_value(target.clone(), merged, steps, call_depth + 1);
+        }
 
         if let FunctionImplementation::User { template, .. } = &function.implementation
             && (template.is_arrow || template.is_async)
@@ -9320,7 +9566,9 @@ impl JsRuntime {
                     | BuiltinFunction::StringCharAt
                     | BuiltinFunction::StringIndexOf
                     | BuiltinFunction::StringIncludes
+                    | BuiltinFunction::FunctionBind
                     | BuiltinFunction::ArrayIncludes
+                    | BuiltinFunction::ArrayForEach
                     | BuiltinFunction::ArrayPush
                     | BuiltinFunction::ArrayPop
                     | BuiltinFunction::ArrayShift
@@ -11352,6 +11600,141 @@ fn build_js_regex(pattern: &str, flags: &str) -> Result<regex::Regex, JsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn array_for_each_uses_callbacks_sparse_slots_and_fixed_initial_length() {
+        for (source, expected) in [
+            (
+                "var sum=0;[2,3,4].forEach(function(x){sum+=x;});sum",
+                JsValue::Number(9.0),
+            ),
+            (
+                "var s='';[,2,,4].forEach(function(x,i){s+=i+':'+x+';';});s",
+                JsValue::String("1:2;3:4;".into()),
+            ),
+            (
+                "var o={total:0};[2,3].forEach(function(x){this.total+=x},o);o.total",
+                JsValue::Number(5.0),
+            ),
+            (
+                "var a=[4];var ok=false;a.forEach(function(x,i,from){ok=x===4&&i===0&&from===a});ok",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var a=[1];var sum=0;a.forEach(function(x){sum+=x;a.push(2)});sum",
+                JsValue::Number(1.0),
+            ),
+            (
+                "var a=[1,2];var sum=0;a.forEach(function(x,i){sum+=x;if(i===0){delete a[1]}});sum",
+                JsValue::Number(1.0),
+            ),
+            ("[].forEach(function(){return 12;})", JsValue::Undefined),
+            ("[2].forEach(function(){return 12;})", JsValue::Undefined),
+        ] {
+            let mut vm = JsRuntime::new();
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        let mut vm = JsRuntime::new();
+        assert!(vm.eval_script("[1].forEach(12)").is_err());
+        assert!(
+            vm.eval_script("[1].forEach.call(null,function(){})")
+                .is_err()
+        );
+        assert!(
+            vm.eval_script("[1].forEach(function(){throw 'stop'})")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn function_bind_reuses_original_calls_constructors_and_gc_roots() {
+        for source in [
+            "function f(a,b){return this.n+a+b;}var b=f.bind({n:3},4);b(5)===12",
+            "function f(a,b){return a+b;}var b=f.bind(null,4);b.length===1&&b.name==='bound f'&&b(5)===9",
+            "function f(a,b,c){return a+b+c;}var b=f.bind(null,2);var c=b.bind({n:5},3);c(4)===9",
+            "function F(x){this.x=x;}var B=F.bind({x:100},7);var value=new B();value.x===7",
+            "function f(){}typeof f.bind==='function'&&f.bind.length===1",
+        ] {
+            let mut vm = JsRuntime::new();
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::Boolean(true),
+                "{source}"
+            );
+        }
+        let mut vm = JsRuntime::new();
+        assert!(
+            vm.eval_script("function f(){}f.bind.call({},null)")
+                .is_err()
+        );
+        vm.eval_script("var kept=(function(){var object={n:14};function f(x){return this.n+x;}return f.bind(object,6);})()")
+            .unwrap();
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert_eq!(
+            vm.eval_script("kept()===20").unwrap(),
+            JsValue::Boolean(true)
+        );
+    }
+
+    #[test]
+    fn pikabu_spread_and_identifier_array_destructuring() {
+        for (source, expected) in [
+            (
+                "var a={x:1};var b={before:5,...a,x:3};b.x===3 && b.before===5",
+                true,
+            ),
+            ("var b={...null,...undefined,...{a:4}};b.a===4", true),
+            ("var b={...'hi'};b[0]==='h' && b[1]==='i'", true),
+            (
+                "var b={...[9,8]};b[0]===9 && b[1]===8 && b.length===undefined",
+                true,
+            ),
+            ("var b={...{a:1},...{a:2,b:3}};b.a===2&&b.b===3", true),
+            (
+                "var s=Symbol('s');var o={};o[s]=4;var b={...o};b[s]===4",
+                true,
+            ),
+            (
+                "var o={visible:1};Object.defineProperty(o,'secret',{value:2});var b={...o};b.visible===1&&b.secret===undefined",
+                true,
+            ),
+            ("var o={get n(){return 8;}};var b={...o};b.n===8", true),
+            ("var [a,b,c]=[3,4,5];a+b+c===12", true),
+            ("let [,x,,y]=[1,2,3,4];x===2&&y===4", true),
+            ("const [x]=[];x===undefined", true),
+            (
+                "var calls=0;function f(){calls++;return [4,5];}var [a,b]=f();calls===1&&a===4&&b===5",
+                true,
+            ),
+            (
+                "var sum=0;for(var[t,o,n]=[2,3,4],i=0;i<1;i++){sum=t+o+n;}sum===9",
+                true,
+            ),
+        ] {
+            let mut vm = JsRuntime::new();
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::Boolean(expected),
+                "{source}"
+            );
+        }
+        let mut vm = JsRuntime::new();
+        for source in [
+            "var [x] = null",
+            "var [x] = 2",
+            "let [a]",
+            "var [a, {...b}] = [[1,2]]",
+        ] {
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        assert_eq!(
+            vm.eval_script("window===self&&self.document===document")
+                .unwrap(),
+            JsValue::Boolean(true)
+        );
+    }
 
     #[test]
     fn function_default_parameters_only_run_for_undefined_arguments() {

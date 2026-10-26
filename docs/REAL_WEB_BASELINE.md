@@ -1,5 +1,15 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 26 October 2026: follow-up Pikabu syntax, callable and native GC pass
+
+Fresh original-Release Pikabu before new changes (`artifacts/live_web/pikabu-before-spread-2026-10-26/`) reported 7 executed / 9 failed initial scripts. Adding bounded object spread and simple identifier-array variable destructuring removed both targeted Syntax errors; subsequent Release checks reached 8 executed / 8 failed (`pikabu-spread-array-after-2026-10-26/`). Exposing the real window `self` alias moved the next call-site diagnostic from undefined `self` to unavailable `bind`. Adding original Function.prototype.bind (including GC-traced captured target/this/arguments) moved it to unavailable array `forEach`, and implementing array forEach moved it to a null/undefined `indexOf` receiver; the final focused run `artifacts/live_web/pikabu-foreach-after-2026-10-26/` is still 8 executed / 8 failed and `rendered_with_js_errors`. This is a diagnostic progression, not a visual pass.
+
+The rebuilt Release after the call-depth safety change is archived at `artifacts/live_web/pikabu-final-depth32-2026-10-26/`: 8 initial scripts executed / 8 failed, with null appendChild/append/indexOf and missing s references remaining.
+
+A five-site Release regression (`artifacts/live_web/five-after-spread-bind-2026-10-26/`) retained existing classifications: Google and DeviantArt rendered with JS errors, YouTube no text, Reddit blank, and Pikabu rendered with JS errors. Current Pikabu issues include null `appendChild`, null `append`, null `indexOf`, and multiple undefined `s` references. Remote page variability prevents exact visual/performance equivalence assertions.
+
+Implemented language/runtime subsets are intentionally not complete ECMAScript: object spread copies only owned enumerable properties and currently defers property copying until object construction (source mutations later in the literal may affect copies); simple array destructuring accepts only arrays and identifier slots/holes, no general iterators/defaults/rest/nested patterns; Array.forEach accepts only actual arrays, while bind does not install the full global Function constructor. JavaScript call-depth safety cap is 32 rather than 64 on this Windows test configuration due to deterministic stack overflow in the previous full-workspace run. No browser engine substitution or bot bypass.
+
 ## 26 October 2026: 20-site test-first JavaScript correction
 
 Original Release 20-site manifest, 1280x720, 1300ms settle, 23-second per-site timeout: 10 rendered with JS errors (Google, DeviantArt, Pikabu, Figma, Notion, Habr, Wikipedia, MDN, Hacker News, Amazon), 2 skeleton/no text (YouTube, Twitch), 3 blank (Reddit, TikTok, X), 2 navigation failures (Stack Overflow, Instagram), 2 rendered but visually unverified (GitHub Explore, Canva), and 1 timeout (Discord). Ignored evidence: `artifacts/live_web/all-before-2026-10-26/`. These are changing third-party pages, NOT browser compatibility passes.
