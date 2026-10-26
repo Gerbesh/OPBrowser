@@ -1,5 +1,9 @@
 # Current Project Status
 
+## 20-site original native Release recheck: globalThis and console (26 October 2026)
+
+Original 20-site release baseline before and after first-party globalThis/console fixes is at ignored `artifacts/live_web/all-regression-next-2026-10-26/` and `artifacts/live_web/all-console-global-after-2026-10-26/`. Notion fell from 6 to 5 initial JS failures; MDN's missing-console failure cleared and moved to rendered_unverified. Across the 20 sites, the diagnostic counts changed from 3 to 4 rendered_unverified and from 10 to 9 rendered_with_js_errors; 7 blank/textless/navigation-failed/timeout categories were unchanged. Pikabu stayed 16 executed/0 failed/18 skipped. Rust workspace, Clippy, fmt and Win32 smoke pass. None is certified visually accurate, fully interactive, or standards-complete.
+
 ## Pikabu initial-script zero-error checkpoint, native XHR and message events (26 October 2026)
 
 Measured real original Release Pikabu: **16 executed, 0 JS failed, 18 skipped** after fixing missing XMLHttpRequest, `window.s` bare identifier resolution, real DOM parentElement and queued one-argument postMessage. It is classified rendered_unverified, not a verified usable page. Standalone Windows native HTTP 404/XHR integration test confirms GET status, response header and response body reach the painted document. Full Rust tests, strict Clippy, native smoke pass. Additional compatibility work: same-origin-only external scripts, 11 scripts skipped by count cap, unsupported module types, visual text/layout, XHR non-GET and cross-window messaging. Canary cap=24 produced 17/7 executed/failed due to external script URL rejections, so original cap=16 remains.

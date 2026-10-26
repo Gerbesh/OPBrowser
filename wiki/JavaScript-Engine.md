@@ -1,5 +1,11 @@
 # JavaScript Engine
 
+## globalThis and native console logging (26 October 2026)
+
+globalThis now points to the real first-party Window object, with classic identifier lookup and local parameter shadowing. The original JavaScript VM now implements console.log/info/warn/error/debug as non-constructible methods whose output is retained as up to 64 bounded, drainable page-local records, 2048 UTF-8 bytes each. Web script messages are not printed to stderr or sent to a telemetry service. There is no existing DevTools console UI or complete object-inspection/formatting support.
+
+The original Release 20-site before/after samples improved Notion initial script failures 6 to 5 and removed MDN's missing-console exception. Pikabu remains 16 executed/0 failed/18 skipped. Modern pages are not visually/functionally certified, and YouTube/Reddit still have major rendering gaps.
+
 ## Native XMLHttpRequest GET, Window global properties and window messages (26 October 2026)
 
 First-party JavaScript XMLHttpRequest provides an asynchronous same-origin GET subset backed by the existing original op_net request queue, not a mocked HTTP response. Supports open/send/setRequestHeader/getResponseHeader, real HTTP status/statusText/responseURL/responseText, limited text/JSON response types, readystatechange/load/error/abort/loadend callbacks, GC-safe pending closures, and document-relative URLs through native networking. Sync requests, POST, bodies, timeouts, credentials, full header enumeration and real streaming remain unsupported. A native HTTP 404 integration test verifies real headers and response body rendered into the HTML document.

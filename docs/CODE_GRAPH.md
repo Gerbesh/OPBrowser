@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 26 October 2026: globalThis and console in own runtime
+
+`tests/live_web_sites.json` -> `tools/live_web_suite.py` -> original native `live_site_probe` -> op_engine page-owned JsRuntime. `JsRuntime::default` attaches globalThis to its canonical global_object, resolved through existing classic Window identifier lookup; local lexical parameters may shadow it. Default initialization also registers console.log/info/warn/error/debug as native BuiltinFunction::Console(level) methods. On call, the original VM formats bounded arguments into a page-local `console_records` queue (64 x 2048 bytes); `take_console_records` drains those records without stderr/network output. Nothing is delegated to an external browser engine.
+
 ## 26 October 2026: XHR and Window property/page message vertical slice
 
 op_html parser and op_engine::scripts::sync_dom_tree -> original op_js::JsRuntime::install_dom_snapshot loads `xhr.js` and `window_message.js` host facades. JavaScript XMLHttpRequest.open/send -> original `opFetchText` queues bounded same-origin GET -> JsRuntime::take_text_requests -> Engine::dispatch_text_requests resolves document-relative URL and spawns bounded native network worker -> op_net::NetworkContext::load_text_response_for_page_with_options -> Engine::tick_timers -> JsRuntime::complete_text_response_request -> XHR callback (real HTTP status, response headers, text, readyState, native listeners) -> op_engine::scripts::apply_dom_operations -> native reflow and paint. Windows native HTTP 404 integration test verifies entire cycle.

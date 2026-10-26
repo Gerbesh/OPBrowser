@@ -1,5 +1,13 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 26 October 2026: repeat of all 20 sites with globalThis and console
+
+Original native Release before fixes: `artifacts/live_web/all-regression-next-2026-10-26/` (1280x720, 1300ms settle, 23s/site): 3 rendered_unverified, 10 rendered_with_js_errors and 7 blank/no-text/navigation-error/timeout. Real diagnostics included Notion `globalThis is not defined` and MDN `console is not defined`.
+
+After original VM fixes and Release build: `artifacts/live_web/all-console-global-after-2026-10-26/`: 4 rendered_unverified (Pikabu, GitHub Explore, Canva, MDN), 9 with JS errors and 7 other blockers. The targeted Notion recheck changed from 2 executed/6 failed to 3/5; MDN no longer registered its missing-console error; Pikabu remained 16 executed/0 failed/18 skipped. Public site content changes, and no page has been compared successfully to a reference browser.
+
+globalThis points at the original Window property object. Native console.log/info/warn/error/debug collect bounded page-local records (64 entries, 2048 UTF-8 bytes each) for explicit host draining, not raw stderr output. Developer tools UI, complete console formatting and deep object inspection are not implemented. YouTube/Twitch still have no text; Reddit/TikTok/X remain blank; Discord still times out.
+
 ## 26 October 2026: native XHR, global Window lookup, parentElement and message tasks
 
 Reproduced Pikabu `XMLHttpRequest is not defined` (10 executed/6 failed initial scripts). Added a first-party JavaScript XMLHttpRequest façade on the original op_js VM; GET requests use the existing native `opFetchText` -> `Engine::dispatch_text_requests` -> `NetworkContext::load_text_response_for_page_with_options` -> `JsRuntime::complete_text_response_request` pipeline. It exposes readyState, status/statusText, responseText/responseURL, responseType text/JSON, validated headers, load/error/abort/readystatechange/loadend events. A real native WinHTTP test served an HTTP 404 with body and custom header and verified that XHR updated the page's painted text. XHR cleared the next blocker and Pikabu advanced to 11 executed / 5 failed.

@@ -1,5 +1,13 @@
 # OPBrowser: active project plan
 
+## 26 October: globalThis and console blockers
+
+Completed: reran the complete 20-URL native Release test list before and after implementing two observed JS blockers. globalThis now resolves to the same first-party Window object through normal global-property lookup, preserving lexical shadowing. console.log/info/warn/error/debug now produce real, bounded page-local diagnostic records (64 messages, at most 2048 UTF-8 bytes each) without printing web contents to stderr. Native unit tests cover Window identity, global writes, shadowing, logging, non-constructibility and record limits.
+
+Notion improved from 2 initial scripts executed/6 failed to 3/5. MDN moved from a missing console error to rendered_unverified. Pikabu remains 16 executed/0 failed/18 skipped. In the repeated full 20-site sweep, 4 are rendered_unverified, 9 render with JS errors and 7 remain blank, textless, blocked by navigation, or timed out. None is verified fully functional or visually accurate.
+
+Next blockers: Notion unsupported syntax, Google eval/lookahead, YouTube nullish bootstrap and missing body text, Reddit/TikTok/X empty viewports and script-origin/type/limit policy. Preserve privacy/adblock constraints and do not count a pixel sample or absent exceptions as complete site support.
+
 ## P0 original XHR and global Window blocking fixes (26 October 2026)
 
 Completed: existing native same-origin GET worker wired to XMLHttpRequest façade, onload/error/abort/readyState callbacks, status/headers/body including actual HTTP 404 verified into native glyph paint. Global classic-script identifier lookup reads fresh Window properties (`window.s; s.type`); top-level `var` mirrors to Window and preserves lexical let/const separation. Real parser DOM exposes parentElement and single top-level window schedules postMessage message events via original timers with origin checks and bounded JSON-safe data cloning. Live Pikabu moved 10/6 -> 11/5 -> 12/4 -> 16/0 executed/failed; 18 scripts still skipped. Do not declare site usable from zero JS errors alone.

@@ -244,6 +244,7 @@ enum BuiltinFunction {
     DateUtcField(usize),
     DateSetMilliseconds,
     PerformanceNow,
+    Console(usize),
     ArrayIsArray,
     ArrayOf,
     NumberIsNaN,
@@ -675,6 +676,7 @@ pub struct JsRuntime {
     dom_listener_options: HashMap<(usize, String, bool, ObjectId), DomListenerOptions>,
     next_listener_registration_id: u64,
     event_listener_errors: Vec<String>,
+    console_records: VecDeque<(String, String)>,
     event_paths: HashMap<ObjectId, Vec<ObjectId>>,
     dom_dispatch_depth: usize,
     dom_programmatic_click_depth: usize,
@@ -838,6 +840,7 @@ impl Default for JsRuntime {
             dom_listener_options: HashMap::new(),
             next_listener_registration_id: 1,
             event_listener_errors: Vec::new(),
+            console_records: VecDeque::new(),
             event_paths: HashMap::new(),
             dom_dispatch_depth: 0,
             dom_programmatic_click_depth: 0,
@@ -870,6 +873,13 @@ impl Default for JsRuntime {
             false,
             VariableKind::Const,
         );
+        // Expose the real Window identity via globalThis in classic scripts.
+        // A Window property (not a lexical binding) permits local shadowing.
+        runtime
+            .object_mut(global_object)
+            .expect("global Window exists")
+            .properties
+            .insert("globalThis".into(), JsValue::Object(global_object));
         runtime
             .install_error_constructor("Error", BuiltinFunction::Error, error_prototype)
             .expect("built-in Error constructor must fit initial runtime budgets");
@@ -1052,6 +1062,31 @@ impl Default for JsRuntime {
         runtime
             .install_standard_primitives()
             .expect("standard primitive builtins must fit initial VM budgets");
+        // Keep console output in a bounded page-local diagnostic queue.
+        // Web content is not printed to the application process or the network.
+        let mut console_methods = HashMap::new();
+        for (index, name) in ["log", "info", "warn", "error", "debug"]
+            .into_iter()
+            .enumerate()
+        {
+            let function = runtime
+                .allocate_lifecycle_method(name, BuiltinFunction::Console(index))
+                .expect("console method fits VM initial budget");
+            console_methods.insert(name.into(), JsValue::Object(function));
+        }
+        let console = runtime
+            .allocate_object(
+                ObjectKind::Ordinary,
+                Some(object_prototype),
+                console_methods,
+            )
+            .expect("console object fits VM initial budget");
+        runtime.install_global_binding(
+            "console",
+            JsValue::Object(console),
+            false,
+            VariableKind::Const,
+        );
         // Promise reactions use the original FIFO microtask queue.
         let microtask = runtime
             .allocate_lifecycle_method("queueMicrotask", BuiltinFunction::QueueMicrotask)
@@ -1186,6 +1221,7 @@ impl JsRuntime {
         self.dom_listener_options.clear();
         self.next_listener_registration_id = 1;
         self.event_listener_errors.clear();
+        self.console_records.clear();
         self.event_paths.clear();
         self.dom_dispatch_depth = 0;
         self.dom_programmatic_click_depth = 0;
@@ -4992,6 +5028,11 @@ impl JsRuntime {
         std::mem::take(&mut self.event_listener_errors)
     }
 
+    /// Drain up to 64 bounded console records without echoing web content to stderr.
+    pub fn take_console_records(&mut self) -> Vec<(String, String)> {
+        self.console_records.drain(..).collect()
+    }
+
     pub fn event_listener_errors(&self) -> &[String] {
         &self.event_listener_errors
     }
@@ -6988,6 +7029,29 @@ impl JsRuntime {
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
         match builtin {
+            BuiltinFunction::Console(index) => {
+                let mut line = String::new();
+                for value in arguments {
+                    if !line.is_empty() && line.len() < 2048 {
+                        line.push(' ');
+                    }
+                    for ch in value.to_js_string().chars() {
+                        if line.len() + ch.len_utf8() > 2048 {
+                            break;
+                        }
+                        line.push(ch);
+                    }
+                    if line.len() >= 2048 {
+                        break;
+                    }
+                }
+                let level = ["log", "info", "warn", "error", "debug"][index];
+                if self.console_records.len() >= 64 {
+                    self.console_records.pop_front();
+                }
+                self.console_records.push_back((level.into(), line));
+                return Ok(CallOutcome::Value(JsValue::Undefined));
+            }
             BuiltinFunction::StringConcat => {
                 if matches!(this_value, JsValue::Null | JsValue::Undefined) {
                     return Err(JsError::type_error(
@@ -9874,6 +9938,7 @@ impl JsRuntime {
             | BuiltinFunction::DateUtcField(_)
             | BuiltinFunction::DateSetMilliseconds
             | BuiltinFunction::PerformanceNow
+            | BuiltinFunction::Console(_)
             | BuiltinFunction::ArrayIsArray
             | BuiltinFunction::ArrayOf
             | BuiltinFunction::NumberIsNaN
@@ -9960,6 +10025,7 @@ impl JsRuntime {
                     | BuiltinFunction::DateUtcField(_)
                     | BuiltinFunction::DateSetMilliseconds
                     | BuiltinFunction::PerformanceNow
+                    | BuiltinFunction::Console(_)
                     | BuiltinFunction::ArrayOf
                     | BuiltinFunction::StringCharAt
                     | BuiltinFunction::StringIndexOf
@@ -15833,6 +15899,60 @@ mod tests {
         )
         .unwrap();
         assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn real_site_global_this_is_live_window_alias_and_can_be_shadowed() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var initial=globalThis===window&&globalThis===self&&
+                window.globalThis===globalThis&&globalThis.document===document;
+            globalThis.siteFeature=42;
+            var propertyRead=siteFeature===42&&window.siteFeature===42;
+            function localShadow(globalThis){return globalThis===7;}
+            var result=initial&&propertyRead&&localShadow(7);
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+    }
+
+    #[test]
+    fn real_site_console_records_bounded_logs_without_printing_web_content() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot([]).unwrap();
+        vm.eval_script(
+            r#"
+            var invalid=false;
+            try { new console.log('unexpected'); } catch(e) { invalid=true; }
+            var result=invalid&&console===window.console&&
+                typeof console.info==='function'&&
+                console.log('ready',4,null)===undefined;
+            console.error('failure');
+            console.warn('careful');
+            console.debug('trace');
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("result"), Some(&JsValue::Boolean(true)));
+        assert_eq!(
+            vm.take_console_records(),
+            vec![
+                ("log".into(), "ready 4 null".into()),
+                ("error".into(), "failure".into()),
+                ("warn".into(), "careful".into()),
+                ("debug".into(), "trace".into()),
+            ]
+        );
+        assert!(vm.take_console_records().is_empty());
+        vm.eval_script("for(var i=0;i<70;i++)console.info(i);")
+            .unwrap();
+        let output = vm.take_console_records();
+        assert_eq!(output.len(), 64);
+        assert_eq!(output.first().unwrap(), &("info".into(), "6".into()));
+        assert_eq!(output.last().unwrap(), &("info".into(), "69".into()));
     }
 
     #[test]

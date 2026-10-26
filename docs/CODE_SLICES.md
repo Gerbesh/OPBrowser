@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S128 - Real-site missing globalThis and console in original JS
+
+Native 20-site original Release probe -> Notion's absent globalThis and MDN's absent console -> native Window self-reference plus own JS Console builtin methods -> existing bytecode/global identifier lookup and call_builtin dispatch -> bounded per-page queue, host drainage and no stderr log leak -> first-party tests for alias identity, shadowing, property writes, bounded ordered console logging and invalid `new` -> repeated original Release 20-site run. Notion initially failed 6 scripts then 5; MDN's missing-console exception disappeared; Pikabu's 16/0/18 frontier remains. Rendering and interactions are unverified.
+
 ## S127 - Original XHR GET through native HTTP to pixels, plus Pikabu global/DOM/message blockers
 
 Real Pikabu missing XMLHttpRequest -> first-party `crates/op_js/src/xhr.js` installed by `JsRuntime::install_dom_snapshot` -> original `opFetchText` native request queue -> op_engine::Engine worker -> op_net same-origin guarded WinHTTP text load -> JsRuntime completion callback -> XMLHTTPRequest real status/headers/body + DOM textContent repaint. End-to-end local WinHTTP test validates HTTP 404 response into native pixels. Next Pikabu `s is not defined` -> opt-in bounded token candidates reveal `window.s = ...; s.type = ...` -> original global environment property fallback and var/Window synchronization. Next null parentElement -> real parsed DOM ancestor accessor. Next postMessage -> same-window queued message Event via native timers with default targetOrigin and origin checks. Final Pikabu initial JS 16 executed/0 failed/18 skipped; 24-script canary has 7 failed external URLs under same-origin policy and was reverted.
