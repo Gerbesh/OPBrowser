@@ -5,6 +5,7 @@
 
 mod await_lowering;
 mod bytecode;
+mod date;
 mod error;
 mod json;
 mod lexer;

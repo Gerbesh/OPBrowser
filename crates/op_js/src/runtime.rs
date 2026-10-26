@@ -80,6 +80,7 @@ enum ObjectKind {
     AccessorDescriptor,
     Array,
     RegExp,
+    Date,
     Function,
     DomElement(usize),
     DomText(usize),
@@ -129,6 +130,7 @@ enum BuiltinFunction {
     StringCharAt,
     StringIndexOf,
     StringIncludes,
+    StringConcat,
     StringReplace,
     StringMatch,
     StringSplit,
@@ -141,6 +143,7 @@ enum BuiltinFunction {
     RegExpTest,
     RegExpExec,
     ArrayIncludes,
+    ArrayConcat,
     ArrayForEach,
     ArrayPush,
     ArrayPop,
@@ -231,6 +234,15 @@ enum BuiltinFunction {
     IsNaN,
     IsFinite,
     Math(MathBuiltin),
+    DateConstructor,
+    DateNow,
+    DateParse,
+    DateUtc,
+    DateGetTime,
+    DateToISOString,
+    DateToUTCString,
+    DateUtcField(usize),
+    DateSetMilliseconds,
     PerformanceNow,
     ArrayIsArray,
     ArrayOf,
@@ -1496,6 +1508,116 @@ impl JsRuntime {
         )
     }
 
+    fn install_date_primitives(&mut self) -> Result<(), JsError> {
+        let constructor =
+            self.allocate_lifecycle_method("Date", BuiltinFunction::DateConstructor)?;
+        self.object_mut(constructor)?
+            .properties
+            .insert("length".into(), JsValue::Number(7.0));
+        let prototype = self.allocate_object(
+            ObjectKind::Date,
+            Some(self.object_prototype),
+            HashMap::from([("constructor".into(), JsValue::Object(constructor))]),
+        )?;
+        self.boxed_values
+            .insert(prototype, JsValue::Number(f64::NAN));
+        for (name, builtin, length) in [
+            ("getTime", BuiltinFunction::DateGetTime, 0.0),
+            ("valueOf", BuiltinFunction::DateGetTime, 0.0),
+            ("toISOString", BuiltinFunction::DateToISOString, 0.0),
+            ("toUTCString", BuiltinFunction::DateToUTCString, 0.0),
+            ("toString", BuiltinFunction::DateToUTCString, 0.0),
+            ("getUTCFullYear", BuiltinFunction::DateUtcField(0), 0.0),
+            ("getUTCMonth", BuiltinFunction::DateUtcField(1), 0.0),
+            ("getUTCDate", BuiltinFunction::DateUtcField(2), 0.0),
+            ("getUTCHours", BuiltinFunction::DateUtcField(3), 0.0),
+            ("getUTCMinutes", BuiltinFunction::DateUtcField(4), 0.0),
+            ("getUTCSeconds", BuiltinFunction::DateUtcField(5), 0.0),
+            ("getUTCMilliseconds", BuiltinFunction::DateUtcField(6), 0.0),
+            ("getMilliseconds", BuiltinFunction::DateUtcField(6), 0.0),
+            ("setMilliseconds", BuiltinFunction::DateSetMilliseconds, 1.0),
+            (
+                "setUTCMilliseconds",
+                BuiltinFunction::DateSetMilliseconds,
+                1.0,
+            ),
+        ] {
+            let method = self.allocate_lifecycle_method(name, builtin)?;
+            self.object_mut(method)?
+                .properties
+                .insert("length".into(), JsValue::Number(length));
+            self.object_mut(prototype)?
+                .properties
+                .insert(name.into(), JsValue::Object(method));
+        }
+        self.object_mut(constructor)?
+            .properties
+            .insert("prototype".into(), JsValue::Object(prototype));
+        for (name, builtin, length) in [
+            ("now", BuiltinFunction::DateNow, 0.0),
+            ("parse", BuiltinFunction::DateParse, 1.0),
+            ("UTC", BuiltinFunction::DateUtc, 7.0),
+        ] {
+            let method = self.allocate_lifecycle_method(name, builtin)?;
+            self.object_mut(method)?
+                .properties
+                .insert("length".into(), JsValue::Number(length));
+            self.object_mut(constructor)?
+                .properties
+                .insert(name.into(), JsValue::Object(method));
+        }
+        self.install_global_binding(
+            "Date",
+            JsValue::Object(constructor),
+            true,
+            VariableKind::Var,
+        );
+        Ok(())
+    }
+
+    fn date_milliseconds(&self, receiver: &JsValue) -> Result<f64, JsError> {
+        let JsValue::Object(id) = receiver else {
+            return Err(JsError::type_error("Date method requires Date receiver"));
+        };
+        if self.object(*id)?.kind != ObjectKind::Date {
+            return Err(JsError::type_error("Date method requires Date receiver"));
+        }
+        match self.boxed_values.get(id) {
+            Some(JsValue::Number(ms)) => Ok(*ms),
+            _ => Err(JsError::type_error("invalid Date backing value")),
+        }
+    }
+
+    fn date_constructor_milliseconds(&self, arguments: &[JsValue]) -> f64 {
+        match arguments {
+            [] => Self::epoch_milliseconds(),
+            [JsValue::String(text)] => crate::date::parse_iso(text),
+            [JsValue::Object(id)] if self.object(*id).is_ok_and(|o| o.kind == ObjectKind::Date) => {
+                match self.boxed_values.get(id) {
+                    Some(JsValue::Number(ms)) => *ms,
+                    _ => f64::NAN,
+                }
+            }
+            [single] => crate::date::clip(single.to_number()),
+            multiple => Self::date_fields_from_arguments(multiple),
+        }
+    }
+
+    fn date_fields_from_arguments(arguments: &[JsValue]) -> f64 {
+        let mut fields = [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
+        for (field, value) in fields.iter_mut().zip(arguments.iter()) {
+            *field = value.to_number();
+        }
+        crate::date::from_fields(fields, true)
+    }
+
+    fn epoch_milliseconds() -> f64 {
+        SystemTime::now().duration_since(UNIX_EPOCH).map_or_else(
+            |err| -(err.duration().as_millis() as f64),
+            |duration| duration.as_millis() as f64,
+        )
+    }
+
     fn install_standard_primitives(&mut self) -> Result<(), JsError> {
         let value_of =
             self.allocate_lifecycle_method("valueOf", BuiltinFunction::ObjectPrototypeValueOf)?;
@@ -1507,6 +1629,7 @@ impl JsRuntime {
         ]);
         for (name, builtin, length) in [
             ("includes", BuiltinFunction::ArrayIncludes, 1.0),
+            ("concat", BuiltinFunction::ArrayConcat, 1.0),
             ("forEach", BuiltinFunction::ArrayForEach, 1.0),
             ("push", BuiltinFunction::ArrayPush, 1.0),
             ("pop", BuiltinFunction::ArrayPop, 0.0),
@@ -1581,6 +1704,7 @@ impl JsRuntime {
                         .insert("charAt".into(), JsValue::Object(char_at));
                     for (method, builtin, length) in [
                         ("indexOf", BuiltinFunction::StringIndexOf, 1.0),
+                        ("concat", BuiltinFunction::StringConcat, 1.0),
                         ("includes", BuiltinFunction::StringIncludes, 1.0),
                         ("replace", BuiltinFunction::StringReplace, 2.0),
                         ("match", BuiltinFunction::StringMatch, 1.0),
@@ -1599,6 +1723,9 @@ impl JsRuntime {
             self.install_global_binding(name, JsValue::Object(id), true, VariableKind::Var);
         }
         if let Some(JsValue::Object(number_id)) = self.global("Number").cloned() {
+            // The Date constructor and prototype are original Rust VM intrinsics,
+            // not a delegated JavaScript engine or a fabricated clock.
+            self.install_date_primitives()?;
             self.object_mut(number_id)?
                 .properties
                 .extend(HashMap::from([
@@ -6859,6 +6986,137 @@ impl JsRuntime {
         arguments: Vec<JsValue>,
     ) -> Result<CallOutcome, JsError> {
         match builtin {
+            BuiltinFunction::StringConcat => {
+                if matches!(this_value, JsValue::Null | JsValue::Undefined) {
+                    return Err(JsError::type_error(
+                        "String.concat requires non-null receiver",
+                    ));
+                }
+                let mut text = match &this_value {
+                    JsValue::Object(id) => self
+                        .boxed_values
+                        .get(id)
+                        .unwrap_or(&this_value)
+                        .to_js_string(),
+                    _ => this_value.to_js_string(),
+                };
+                for argument in arguments {
+                    let addition = argument.to_js_string();
+                    if text.len().saturating_add(addition.len()) > 64 * 1024 {
+                        return Err(JsError::execution_limit(
+                            "String.concat output budget exceeded",
+                        ));
+                    }
+                    text.push_str(&addition);
+                }
+                return Ok(CallOutcome::Value(JsValue::String(text)));
+            }
+            BuiltinFunction::ArrayConcat => {
+                let JsValue::Object(id) = this_value.clone() else {
+                    return Err(JsError::type_error("Array.concat requires array receiver"));
+                };
+                if self.object(id)?.kind != ObjectKind::Array {
+                    return Err(JsError::type_error("Array.concat requires array receiver"));
+                }
+                let mut props = HashMap::new();
+                let mut length = 0_usize;
+                for item in std::iter::once(this_value).chain(arguments) {
+                    if let JsValue::Object(source) = &item
+                        && self.object(*source)?.kind == ObjectKind::Array
+                    {
+                        let source_len = self.array_length(*source)?;
+                        if length.saturating_add(source_len) > 4096 {
+                            return Err(JsError::execution_limit(
+                                "Array.concat output budget exceeded",
+                            ));
+                        }
+                        let source_properties = &self.object(*source)?.properties;
+                        for index in 0..source_len {
+                            if let Some(value) = source_properties.get(&index.to_string()) {
+                                props.insert((length + index).to_string(), value.clone());
+                            }
+                        }
+                        length += source_len;
+                    } else {
+                        if length >= 4096 {
+                            return Err(JsError::execution_limit(
+                                "Array.concat output budget exceeded",
+                            ));
+                        }
+                        props.insert(length.to_string(), item);
+                        length += 1;
+                    }
+                }
+                props.insert("length".into(), JsValue::Number(length as f64));
+                let result =
+                    self.allocate_object(ObjectKind::Array, Some(self.array_prototype), props)?;
+                return Ok(CallOutcome::Value(JsValue::Object(result)));
+            }
+            BuiltinFunction::DateNow => {
+                return Ok(CallOutcome::Value(JsValue::Number(
+                    Self::epoch_milliseconds(),
+                )));
+            }
+            BuiltinFunction::DateConstructor => {
+                // Calling Date without new always returns the current textual date.
+                return Ok(CallOutcome::Value(JsValue::String(
+                    crate::date::utc_string(Self::epoch_milliseconds()),
+                )));
+            }
+            BuiltinFunction::DateParse => {
+                let milliseconds = arguments.first().map_or(f64::NAN, |value| {
+                    crate::date::parse_iso(&value.to_js_string())
+                });
+                return Ok(CallOutcome::Value(JsValue::Number(milliseconds)));
+            }
+            BuiltinFunction::DateUtc => {
+                let milliseconds = if arguments.is_empty() {
+                    f64::NAN
+                } else {
+                    Self::date_fields_from_arguments(&arguments)
+                };
+                return Ok(CallOutcome::Value(JsValue::Number(milliseconds)));
+            }
+            BuiltinFunction::DateGetTime => {
+                return Ok(CallOutcome::Value(JsValue::Number(
+                    self.date_milliseconds(&this_value)?,
+                )));
+            }
+            BuiltinFunction::DateToISOString => {
+                let ms = self.date_milliseconds(&this_value)?;
+                let string = crate::date::iso(ms).ok_or_else(|| {
+                    JsError::type_error("Invalid time value for Date.toISOString")
+                })?;
+                return Ok(CallOutcome::Value(JsValue::String(string)));
+            }
+            BuiltinFunction::DateToUTCString => {
+                return Ok(CallOutcome::Value(JsValue::String(
+                    crate::date::utc_string(self.date_milliseconds(&this_value)?),
+                )));
+            }
+            BuiltinFunction::DateUtcField(index) => {
+                let ms = self.date_milliseconds(&this_value)?;
+                return Ok(CallOutcome::Value(JsValue::Number(
+                    crate::date::fields(ms).map_or(f64::NAN, |fields| fields[index] as f64),
+                )));
+            }
+            BuiltinFunction::DateSetMilliseconds => {
+                let current = self.date_milliseconds(&this_value)?;
+                let input = arguments.first().unwrap_or(&JsValue::Undefined).to_number();
+                let updated = if let Some(mut fields) = crate::date::fields(current) {
+                    fields[6] = 0;
+                    crate::date::clip(
+                        crate::date::from_fields(fields.map(|v| v as f64), false) + input.trunc(),
+                    )
+                } else {
+                    f64::NAN
+                };
+                let JsValue::Object(id) = this_value else {
+                    unreachable!("validated Date receiver")
+                };
+                self.boxed_values.insert(id, JsValue::Number(updated));
+                return Ok(CallOutcome::Value(JsValue::Number(updated)));
+            }
             BuiltinFunction::SymbolConstructor => {
                 let description = match arguments.first() {
                     None | Some(JsValue::Undefined) => None,
@@ -9574,6 +9832,7 @@ impl JsRuntime {
             | BuiltinFunction::StringCharAt
             | BuiltinFunction::StringIndexOf
             | BuiltinFunction::StringIncludes
+            | BuiltinFunction::StringConcat
             | BuiltinFunction::StringReplace
             | BuiltinFunction::StringMatch
             | BuiltinFunction::StringSplit
@@ -9586,6 +9845,7 @@ impl JsRuntime {
             | BuiltinFunction::RegExpTest
             | BuiltinFunction::RegExpExec
             | BuiltinFunction::ArrayIncludes
+            | BuiltinFunction::ArrayConcat
             | BuiltinFunction::ArrayForEach
             | BuiltinFunction::ArrayPush
             | BuiltinFunction::ArrayPop
@@ -9602,6 +9862,15 @@ impl JsRuntime {
             | BuiltinFunction::IsNaN
             | BuiltinFunction::IsFinite
             | BuiltinFunction::Math(_)
+            | BuiltinFunction::DateConstructor
+            | BuiltinFunction::DateNow
+            | BuiltinFunction::DateParse
+            | BuiltinFunction::DateUtc
+            | BuiltinFunction::DateGetTime
+            | BuiltinFunction::DateToISOString
+            | BuiltinFunction::DateToUTCString
+            | BuiltinFunction::DateUtcField(_)
+            | BuiltinFunction::DateSetMilliseconds
             | BuiltinFunction::PerformanceNow
             | BuiltinFunction::ArrayIsArray
             | BuiltinFunction::ArrayOf
@@ -9660,6 +9929,17 @@ impl JsRuntime {
             ));
         }
         if let FunctionImplementation::Builtin(builtin) = function.implementation {
+            if builtin == BuiltinFunction::DateConstructor {
+                let milliseconds = self.date_constructor_milliseconds(&arguments);
+                let prototype = match self.get_object_property(function_id, "prototype")? {
+                    JsValue::Object(id) => Some(id),
+                    _ => Some(self.object_prototype),
+                };
+                let date = self.allocate_object(ObjectKind::Date, prototype, HashMap::new())?;
+                self.boxed_values
+                    .insert(date, JsValue::Number(milliseconds));
+                return Ok(CallOutcome::Value(JsValue::Object(date)));
+            }
             if matches!(
                 builtin,
                 BuiltinFunction::ArrayIsArray
@@ -9669,13 +9949,23 @@ impl JsRuntime {
                     | BuiltinFunction::SymbolToString
                     | BuiltinFunction::SymbolValueOf
                     | BuiltinFunction::Math(_)
+                    | BuiltinFunction::DateNow
+                    | BuiltinFunction::DateParse
+                    | BuiltinFunction::DateUtc
+                    | BuiltinFunction::DateGetTime
+                    | BuiltinFunction::DateToISOString
+                    | BuiltinFunction::DateToUTCString
+                    | BuiltinFunction::DateUtcField(_)
+                    | BuiltinFunction::DateSetMilliseconds
                     | BuiltinFunction::PerformanceNow
                     | BuiltinFunction::ArrayOf
                     | BuiltinFunction::StringCharAt
                     | BuiltinFunction::StringIndexOf
                     | BuiltinFunction::StringIncludes
+                    | BuiltinFunction::StringConcat
                     | BuiltinFunction::FunctionBind
                     | BuiltinFunction::ArrayIncludes
+                    | BuiltinFunction::ArrayConcat
                     | BuiltinFunction::ArrayForEach
                     | BuiltinFunction::ArrayPush
                     | BuiltinFunction::ArrayPop
@@ -11760,6 +12050,141 @@ fn build_js_regex(pattern: &str, flags: &str) -> Result<regex::Regex, JsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn site_driven_concat_handles_string_and_sparse_arrays() {
+        for (source, expected) in [
+            ("'a'.concat('b',2)", JsValue::String("ab2".into())),
+            ("'a'.concat()", JsValue::String("a".into())),
+            ("[1,2].concat([3,4],5).length", JsValue::Number(5.0)),
+            (
+                "var a=[1].concat([2],[3]);a[0]+a[1]+a[2]",
+                JsValue::Number(6.0),
+            ),
+            (
+                "var a=[,1].concat([,2]);a.length===4 && !(0 in a) && !(2 in a) && a[1]===1 && a[3]===2",
+                JsValue::Boolean(true),
+            ),
+            (
+                "var a=[3];var b=a.concat([4]);a.length===1&&b.length===2",
+                JsValue::Boolean(true),
+            ),
+            (
+                "typeof [].concat==='function'&&typeof ''.concat==='function'",
+                JsValue::Boolean(true),
+            ),
+        ] {
+            let mut vm = JsRuntime::new();
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        for source in [
+            "[1].concat.call({},3)",
+            "[1].concat.apply(null)",
+            "'a'.concat.call(null,'b')",
+        ] {
+            let mut vm = JsRuntime::new();
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
+    }
+
+    #[test]
+    fn date_global_constructs_utc_instances_and_uses_real_epoch_time() {
+        let samples = [
+            ("new Date(0).getTime()", JsValue::Number(0.0)),
+            (
+                "new Date(-1).toISOString()",
+                JsValue::String("1969-12-31T23:59:59.999Z".into()),
+            ),
+            (
+                "new Date('2024-02-29T12:13:14.125Z').getUTCFullYear()",
+                JsValue::Number(2024.0),
+            ),
+            (
+                "new Date('2024-02-29T12:13:14.125Z').getUTCMonth()",
+                JsValue::Number(1.0),
+            ),
+            (
+                "new Date('2024-02-29T12:13:14.125Z').getUTCDate()",
+                JsValue::Number(29.0),
+            ),
+            (
+                "new Date('2024-02-29T12:13:14.125Z').getUTCHours()",
+                JsValue::Number(12.0),
+            ),
+            (
+                "new Date('2024-02-29T12:13:14.125Z').getUTCMinutes()",
+                JsValue::Number(13.0),
+            ),
+            (
+                "new Date('2024-02-29T12:13:14.125Z').getUTCSeconds()",
+                JsValue::Number(14.0),
+            ),
+            (
+                "new Date('2024-02-29T12:13:14.125Z').getUTCMilliseconds()",
+                JsValue::Number(125.0),
+            ),
+            ("Date.UTC(70,0,1)", JsValue::Number(0.0)),
+            ("Date.parse('1970-01-01T01:00+01:00')", JsValue::Number(0.0)),
+            (
+                "new Date(0).toUTCString()",
+                JsValue::String("Thu, 01 Jan 1970 00:00:00 GMT".into()),
+            ),
+            ("new Date(0).valueOf()", JsValue::Number(0.0)),
+            (
+                "new Date(new Date(12000)).getTime()",
+                JsValue::Number(12000.0),
+            ),
+            ("new Date(2000,1,29).getUTCDate()", JsValue::Number(29.0)),
+            (
+                "var d=new Date(1515);d.setMilliseconds(0)",
+                JsValue::Number(1000.0),
+            ),
+            (
+                "var d=new Date(1515);d.setUTCMilliseconds(2500)",
+                JsValue::Number(3500.0),
+            ),
+            (
+                "var d=new Date(-1);d.setMilliseconds(0)",
+                JsValue::Number(-1000.0),
+            ),
+            (
+                "var d=new Date(0);d.setMilliseconds(-1);d.toISOString()",
+                JsValue::String("1969-12-31T23:59:59.999Z".into()),
+            ),
+            ("new Date(1200).getMilliseconds()", JsValue::Number(200.0)),
+        ];
+        for (source, expected) in samples {
+            let mut vm = JsRuntime::new();
+            assert_eq!(vm.eval_script(source).unwrap(), expected, "{source}");
+        }
+        for source in [
+            "typeof Date==='function'&&typeof Date.now==='function'&&typeof Date.parse==='function'",
+            "new Date(0) instanceof Date",
+            "isNaN(new Date('2023-02-29').getTime())",
+            "isNaN(Date.parse('2023-02-29'))",
+            "isNaN(new Date(undefined).getTime())",
+            "typeof Date()==='string'&&Date().includes('GMT')",
+            "Date.now()>1600000000000&&Date.now()<3000000000000",
+            "new Date().getTime()>1600000000000",
+            "Date.UTC.length===7&&Date.now.length===0&&Date.length===7",
+        ] {
+            let mut vm = JsRuntime::new();
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::Boolean(true),
+                "{source}"
+            );
+        }
+        for source in [
+            "new Date('not-a-date').toISOString()",
+            "new Date(0).getTime.call({})",
+            "new Date(0).toISOString.call(null)",
+            "new Date(0).getTime.call(33)",
+        ] {
+            let mut vm = JsRuntime::new();
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
+    }
 
     #[test]
     fn array_for_each_uses_callbacks_sparse_slots_and_fixed_initial_length() {

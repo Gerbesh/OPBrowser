@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Date and concat site-driven correction (26 October 2026)
+
+Implemented own bounded Date builtins and strict ISO UTC calendar, Date milliseconds setter, Array.prototype.concat and String.prototype.concat. Native Pikabu went from first missing Date to missing setMilliseconds, then concat, now XMLHttpRequest, while retaining 10 executed/6 failed JS initial scripts. Five undefined s references persist and the page remains visually unverified. Five-site rerun Google/YouTube/Reddit/Pikabu/DeviantArt unchanged in broad failure classification; full Rust workspace, Clippy, native Win32 smoke pass. Date locale/timezone behavior and XHR remain incomplete; no Chromium/WebView.
+
 ## Native real DOM head/append and script cookie follow-up (26 October 2026)
 
 Original native Release Pikabu improved from 8 executed / 8 failed initial scripts to 9/7 after binding real document.head, then to 10/6 after Element.append(Node | string, ...). The remaining indexOf-on-null error was eliminated by exposing standards-shaped empty document.cookie plus bounded in-memory same-document string writes; no real HTTP cookie jar exists. Next missing global is Date and five downstream undefined s references remain; despite error progression, Pikabu remains rendered_with_js_errors. Focused real DOM/parser tests cover head identity, ordered append of mixed text and elements, and cookie read/write. Full visual/site compatibility is still open.

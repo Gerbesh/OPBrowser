@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 26 October 2026: original Date calendar and concat VM path
+
+op_js::date pure Rust helpers days_from_civil/civil_from_days -> UTC field normalization/TimeClip/strict ISO conversion -> runtime::install_date_primitives global Date constructor and prototype -> call_builtin Date.now/Date.UTC/Date.parse/getTime/UTC getters/toISOString/setMilliseconds -> construct_value allocates ObjectKind::Date storing clipped epoch in existing GC-traced boxed_values, preserving Date identity. Script runtime executes Array.prototype.concat by bounded own array slot copying (sparse slots intact) and String.prototype.concat by bounded primitive text concatenation. Native Release Pikabu now passes measured Date, setMilliseconds, and concat call sites and reaches XMLHttpRequest first, followed by undefined s errors. XHR requires network lifecycle integration.
+
 ## 26 October 2026: parsed HTML head and native DOM append/cookie path
 
 op_html tree builder -> op_engine::scripts::sync_dom_tree visits actual parser-built head -> op_js::set_dom_head_node points document.head at canonical node identity; no synthetic element. JS document.head.append(child, 'text') -> first-party builtin DomAppend -> original DomCreateTextNode for string arguments / existing DOM node identity for node arguments -> original DomAppendChild validates cycles, records staged operations and updates pending tree -> engine replays original changes to live DOM. JS document.cookie -> initial empty-string property; per-document name/value assignments stay in VM only with max 64 pairs and 8192 characters; op_net intentionally neither receives nor sends cookies. Script-level opt-in nullish-source diagnostics label recent method names but never values or complete scripts. Live Pikabu now progresses 10 executed / 6 failed initial JS scripts, with Date missing as next concrete language runtime blocker.

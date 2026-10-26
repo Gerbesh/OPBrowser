@@ -1,5 +1,13 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 26 October 2026: Date and concat measured next blockers
+
+After the previous native Pikabu baseline with 10 initial scripts executed / 6 failed, the opt-in diagnostic reported `Date is not defined`. Implemented first-party original Rust JS `Date` global using SystemTime and bounded UTC Gregorian calendar helpers in op_js::date (epoch milliseconds, TimeClip, ISO date parsing/formatting, Date.now, new Date, Date.UTC, Date.parse, UTC component getters, getTime/valueOf). Native Release `artifacts/live_web/pikabu-date-after-2026-10-26/` advanced to missing `setMilliseconds`; real bounded Date.setMilliseconds/setUTCMilliseconds then advanced to missing `concat` (`artifacts/live_web/pikabu-date-setter-after-2026-10-26/`). Own Array.prototype.concat and String.prototype.concat removed that error and exposed missing XMLHttpRequest (`artifacts/live_web/pikabu-date-concat-after-2026-10-26/`). Five downstream undefined s errors remain.
+
+Pikabu classification remains `rendered_with_js_errors` with 10 executed / 6 failed initial JS scripts, despite real downstream execution progress. A five-site original Release rerun `artifacts/live_web/five-after-date-concat-2026-10-26/` retained Google and DeviantArt with JS failures, YouTube without visible text, Reddit blank, Pikabu with JS errors. Changes to script counts or pixels across mutable remote responses are not acceptance criteria.
+
+Explicit subset limitations: Date textual representation, date-only/timezone-free parsing and multi-argument constructors currently use UTC rather than browser-local timezone rules; only strict bounded ISO strings parse, locale formatting/most setters/ECMAScript Date protocol are missing. Array.concat currently handles first-party arrays and their own indexed slots, preserving sparse holes within its 4096-element limit; generic array-like/species/inherited holes are unsupported. String.concat output bounded to 64 KiB. XMLHttpRequest is not implemented, and fabricating a no-op constructor would not be acceptable.
+
 ## 26 October 2026: DOM head/append and document.cookie error chain
 
 The original Release Pikabu baseline (`artifacts/live_web/pikabu-dom-baseline-2026-10-26/`) was 8 executed / 8 failed initial scripts, including nullish appendChild, append and indexOf property reads and five downstream undefined s references. A concrete DOM omission was confirmed: document.head had no binding, while document.body and document.documentElement did. Exposing the parser-built head through original sync_dom_tree removed the appendChild null-receiver error and improved Pikabu to 9 executed / 7 failed (`artifacts/live_web/pikabu-head-after-2026-10-26/`).

@@ -1,5 +1,11 @@
 # OPBrowser: active project plan
 
+## P0 measured Date -> concat -> XHR follow-up (26 October 2026)
+
+From original native Pikabu failure `Date is not defined`, implemented independent epoch/Gregorian Date primitives, JS Date constructor and static/instance methods. Isolated live Release results exposed Date.setMilliseconds, then concat, both implemented with native VM tests; current next actual failure is XMLHttpRequest is not defined, with five repeated undefined s references. Original Pikabu counts remain 10 executed / 6 failed. Prioritize correct XMLHttpRequest networking, same-origin/CORS/event loop and readyState behavior via first-party op_net and op_engine rather than an empty API shim. Do not use Chromium, WebView, other JS runtimes, or fake network results.
+
+Deliberate limitations before full Date compliance: UTC approximation for local Date methods and multi-argument construction, strict ISO parsing subset only, no complete locale/time-zone offsets; Array.concat own sparse-index implementation lacks generic receivers and species semantics. Full validation requires independent test262/WPT additions after API vertical slices. Every live-site result is unverified visually.
+
 ## P0 error-driven native DOM and cookie checkpoint (26 October 2026)
 
 Original real Pikabu failures for appendChild, append and indexOf traced to missing real document.head, then absent Element.append, then absent document.cookie. Native document.head now points at the tree-builder's actual HTML head, Element.append uses existing original node and text creation/move operations, and document.cookie exposes empty JS cookie state and bounded same-document name/value updates. HTTP transport intentionally strips Set-Cookie and never sends Cookie; this is not full cookie persistence, scope, expiry or domain semantics. An opt-in bounded last-nullish-member/call diagnostic keeps sanitized names only and says the observations may not be causal. Pikabu initial scripts progressed 8 executed / 8 failed -> 9/7 after head -> 10/6 after append, and cookie moved the next failure to the previously absent Date global (10/6), with five downstream s references. The page is not functionally accepted. Next: implement a standards-shaped bounded Date subset and investigate global s only if grounded by continued failures; do not fake missing data.

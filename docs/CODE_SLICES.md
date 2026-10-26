@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S126 - Date and concat next original-JS site execution slice
+
+Native Pikabu first error Date missing -> op_js::date original UTC Gregorian algorithms, bounded epoch and ISO parsing -> global Date methods and first-party Date object with GC-traced numeric slot -> Release Pikabu reaches Date.setMilliseconds -> original VM Date setter updates epoch value -> next missing concat -> first-party sparse Array.concat and bounded String.concat -> real Pikabu advances to missing XMLHttpRequest but remains 10 successful/6 failed initial JS scripts. Targeted Date/calendar/construction/invalid-date/receiver/concat tests and full-workspace Clippy/test suite added; no fake XMLHttpRequest. Existing five-site manifest still reveals no visually accepted site.
+
 ## S125 - Live Pikabu missing head to append and cookie first-party vertical slice
 
 Pikabu real Release error `appendChild` of null/undefined -> parser-built op_html head synchronization to document.head in op_engine -> canonical op_js DOM object -> `appendChild` succeeds; missing Element.append -> first-party DomAppend delegates each argument to actual original DomAppendChild and DOM CreateTextNode operations -> live script 10 success / 6 error. Remaining nullish `indexOf` was examined using opt-in sanitized last-nullish-member/call observations and revealed missing document.cookie, implemented in VM as empty initial script-visible string and bounded local JS writes, not HTTP cookie persistence. Native engine regression tests prove mixed Node/string append order and same-document cookie readback. Next site blocker is Date, not a solved page.
