@@ -560,6 +560,38 @@ fn bounded_js_error_context(source: &str, offset: usize) -> String {
     format!(" [byte {offset}, near {fragment:?}]")
 }
 
+/// Candidate token locations only; without bytecode spans they are not exact call sites.
+/// Opt-in, bounded and sanitized; no script body or literal values are retained.
+fn bounded_reference_name_candidates(source: &str, name: &str) -> String {
+    if name.len() > 48
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        return String::new();
+    }
+    let Ok(tokens) = op_js::tokenize(source) else {
+        return String::new();
+    };
+    let mut total = 0_usize;
+    let mut fragments = Vec::new();
+    for token in tokens {
+        if matches!(token.kind, op_js::TokenKind::Identifier(ref value) if value == name) {
+            total += 1;
+            if fragments.len() < 3 {
+                fragments.push(bounded_js_error_context(source, token.start));
+            }
+        }
+    }
+    if total == 0 {
+        return String::new();
+    }
+    format!(
+        " [identifier {name:?}, {total} candidate tokens, not exact call site:{}]",
+        fragments.join("")
+    )
+}
+
 struct ParserScriptRunner<'a> {
     runtime: Option<JsRuntime>,
     report: ScriptReport,
@@ -591,6 +623,16 @@ impl ParserScriptRunner<'_> {
                     == Some(std::ffi::OsStr::new("1"))
             {
                 bounded_js_error_context(source, error.offset)
+            } else if error.kind == op_js::JsErrorKind::Reference
+                && std::env::var_os("OPBROWSER_JS_ERROR_CONTEXT").as_deref()
+                    == Some(std::ffi::OsStr::new("1"))
+            {
+                error
+                    .message
+                    .strip_suffix(" is not defined")
+                    .map_or_else(String::new, |name| {
+                        bounded_reference_name_candidates(source, name)
+                    })
             } else {
                 String::new()
             };
@@ -1130,8 +1172,11 @@ mod tests {
             "browser scripts must hit real GC checkpoints"
         );
         assert!(
-            vm.heap_usage().object_slots < 1000,
-            "second script must recycle object slots"
+            // The XHR and window messaging facades add a fixed set of
+            // intrinsic objects. The script must still recycle 1,400 temporaries.
+            vm.heap_usage().object_slots < 1100,
+            "second script must recycle temporary object slots; got {}",
+            vm.heap_usage().object_slots
         );
         vm.eval_script("var retained=keeper.answer;").unwrap();
         assert_eq!(vm.global("retained"), Some(&op_js::JsValue::Number(42.0)));
@@ -1178,6 +1223,16 @@ mod tests {
         assert!(!rendered.contains(char::from(10)));
         let at_middle_of_utf8 = bounded_js_error_context("a🐈z", 3);
         assert!(at_middle_of_utf8.contains("byte 1"));
+    }
+
+    #[test]
+    fn opt_in_reference_candidates_are_bounded_and_exclude_string_literals() {
+        let source = "var text='s s s'; window.s=1; s.type='lazy'; s.setAttribute('id','x');";
+        let rendered = bounded_reference_name_candidates(source, "s");
+        assert!(rendered.contains("3 candidate tokens"), "{rendered}");
+        assert!(rendered.contains("not exact call site"));
+        assert!(rendered.len() < 500);
+        assert!(bounded_reference_name_candidates(source, "s;bad").is_empty());
     }
 
     #[test]

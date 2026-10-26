@@ -1424,6 +1424,8 @@ impl JsRuntime {
         );
         // Standards-shaped host facade; no networking work is done in JS.
         self.eval_script(include_str!("async_fetch.js"))?;
+        self.eval_script(include_str!("xhr.js"))?;
+        self.eval_script(include_str!("window_message.js"))?;
         Ok(())
     }
     /// Drain only requests, never JS closures, to the network dispatcher.
@@ -10025,19 +10027,36 @@ impl JsRuntime {
     }
 
     pub fn global(&self, name: &str) -> Option<&JsValue> {
-        Some(
-            &self.environments[self.global_env.slot()]
-                .bindings
-                .get(name)?
-                .value,
-        )
+        let binding = self.environments[self.global_env.slot()]
+            .bindings
+            .get(name)?;
+        if binding.declaration_kind == VariableKind::Var
+            && let Some(value) = self.heap[self.global_object.slot()].properties.get(name)
+        {
+            return Some(value);
+        }
+        Some(&binding.value)
     }
 
     fn load_binding(&self, start: EnvironmentId, name: &str) -> Result<&JsValue, JsError> {
-        let environment = self
-            .find_binding_environment(start, name)
-            .ok_or_else(|| JsError::reference(format!("{name} is not defined")))?;
-        Ok(&self.environments[environment.slot()].bindings[name].value)
+        if let Some(environment) = self.find_binding_environment(start, name) {
+            let binding = &self.environments[environment.slot()].bindings[name];
+            // A classic var global is a window property: writes through window
+            // must be visible to bare-name reads without creating a second value.
+            if environment == self.global_env
+                && binding.declaration_kind == VariableKind::Var
+                && let Some(value) = self.heap[self.global_object.slot()].properties.get(name)
+            {
+                return Ok(value);
+            }
+            return Ok(&binding.value);
+        }
+        // HTML classic global environment record includes the Window object.
+        // This fixes actual page code such as `window.s = node; s.type = ...`.
+        self.heap[self.global_object.slot()]
+            .properties
+            .get(name)
+            .ok_or_else(|| JsError::reference(format!("{name} is not defined")))
     }
 
     fn assign_binding(
@@ -10064,7 +10083,14 @@ impl JsRuntime {
                 "assignment to constant variable {name}"
             )));
         }
-        binding.value = value;
+        let mirror =
+            environment == self.global_env && binding.declaration_kind == VariableKind::Var;
+        binding.value = value.clone();
+        if mirror {
+            self.heap[self.global_object.slot()]
+                .properties
+                .insert(name.to_owned(), value);
+        }
         Ok(())
     }
 
@@ -10085,7 +10111,12 @@ impl JsRuntime {
         if let Some(existing) = self.environments[target.slot()].bindings.get_mut(name) {
             if kind == VariableKind::Var && existing.declaration_kind == VariableKind::Var {
                 if has_initializer {
-                    existing.value = value;
+                    existing.value = value.clone();
+                    if target == self.global_env {
+                        self.heap[self.global_object.slot()]
+                            .properties
+                            .insert(name.to_owned(), value);
+                    }
                 }
                 return Ok(());
             }
@@ -10098,11 +10129,19 @@ impl JsRuntime {
         self.environments[target.slot()].bindings.insert(
             name.to_owned(),
             Binding {
-                value,
+                value: value.clone(),
                 mutable: kind != VariableKind::Const,
                 declaration_kind: kind,
             },
         );
+        if target == self.global_env && kind == VariableKind::Var {
+            let properties = &mut self.heap[self.global_object.slot()].properties;
+            if has_initializer {
+                properties.insert(name.to_owned(), value);
+            } else {
+                properties.entry(name.to_owned()).or_insert(value);
+            }
+        }
         Ok(())
     }
 
@@ -10773,6 +10812,14 @@ impl JsRuntime {
                                     self.dom_any_node_object(parent).map(JsValue::Object)
                                 }
                                 None => Ok(JsValue::Null),
+                            };
+                        }
+                        if key == "parentElement" {
+                            return match self.dom_pending_parents.get(&node).copied() {
+                                Some(parent) if self.dom_tags.contains_key(&parent) => {
+                                    self.dom_element_object(parent).map(JsValue::Object)
+                                }
+                                _ => Ok(JsValue::Null),
                             };
                         }
                         if key == "childNodes" {
@@ -12050,6 +12097,187 @@ fn build_js_regex(pattern: &str, flags: &str) -> Result<regex::Regex, JsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn classic_global_var_binding_mirrors_window_without_exposing_let() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        assert_eq!(
+            vm.eval_script(
+                r#"
+            var scriptVar=1;
+            var first=window.scriptVar===1;
+            window.scriptVar=2;
+            var second=scriptVar===2;
+            scriptVar=3;
+            var third=window.scriptVar===3;
+            let lexicalName=91;
+            first && second && third && !('lexicalName' in window);
+        "#
+            )
+            .unwrap(),
+            JsValue::Boolean(true)
+        );
+        assert_eq!(vm.global("scriptVar"), Some(&JsValue::Number(3.0)));
+    }
+
+    #[test]
+    fn same_window_postmessage_delivers_async_cloned_origin_checked_events() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        vm.set_page_location(Some("https://example.test/root"))
+            .unwrap();
+        vm.eval_script(
+            r#"
+            var seen='';
+            window.addEventListener('message',function(event){
+                seen += event.data.note+':'+event.origin+':'+(event.source===window);
+            });
+            var original={note:'before'};
+            window.postMessage(original,'https://example.test');
+            original.note='after';
+            window.postMessage({note:'ignored'},'https://unrelated.test');
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("seen"), Some(&JsValue::String(String::new())));
+        assert_eq!(vm.run_due_timers(8).failed, 0);
+        assert_eq!(
+            vm.global("seen"),
+            Some(&JsValue::String("before:https://example.test:true".into()))
+        );
+        assert_eq!(
+            vm.eval_script("parent===window && top===window").unwrap(),
+            JsValue::Boolean(true)
+        );
+        assert_eq!(
+            vm.eval_script("window.postMessage({note:'default'})")
+                .unwrap(),
+            JsValue::Undefined
+        );
+        assert_eq!(vm.run_due_timers(8).failed, 0);
+        assert_eq!(
+            vm.global("seen"),
+            Some(&JsValue::String(
+                "before:https://example.test:truedefault:https://example.test:true".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn window_new_properties_are_readable_as_classic_script_global_names() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        vm.eval_script(
+            r#"
+            window.s = document.createElement('script');
+            s.type = 'lazy-js';
+            var readBack = s === window.s && s.type === 'lazy-js';
+            var local = function(){var s=17;return s;};
+            var shadows = local() === 17 && s !== 17;
+        "#,
+        )
+        .unwrap();
+        assert_eq!(vm.global("readBack"), Some(&JsValue::Boolean(true)));
+        assert_eq!(vm.global("shadows"), Some(&JsValue::Boolean(true)));
+        assert_eq!(
+            vm.eval_script("typeof s").unwrap(),
+            JsValue::String("object".into())
+        );
+        assert_eq!(
+            vm.eval_script("typeof absentNeverDeclared").unwrap(),
+            JsValue::String("undefined".into())
+        );
+        assert!(vm.eval_script("absentNeverDeclared").is_err());
+    }
+
+    #[test]
+    fn xhr_get_uses_original_network_queue_and_delivers_real_metadata() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        vm.eval_script(r#"
+            var phases = ''; var observed = ''; var removed = 0;
+            var xhr = new XMLHttpRequest();
+            function onRead() { phases += xhr.readyState; }
+            xhr.addEventListener('readystatechange', onRead);
+            xhr.addEventListener('load', function(e) { observed = xhr.status + ':' + xhr.responseText + ':' + xhr.getResponseHeader('content-type'); });
+            xhr.open('GET','/original-resource');
+            xhr.setRequestHeader('accept','text/plain');
+            xhr.send();
+        "#).unwrap();
+        assert_eq!(vm.global("phases"), Some(&JsValue::String("1".into())));
+        let requests = vm.take_text_requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].url, "/original-resource");
+        assert!(requests[0].include_http_errors);
+        assert_eq!(
+            requests[0].request_headers,
+            vec![("accept".into(), "text/plain".into())]
+        );
+        vm.collect_garbage_with_roots(&[]).unwrap();
+        assert!(!vm.complete_text_response_request(
+            requests[0].id,
+            Ok(TextResponse {
+                text: "ACTUAL_BODY".into(),
+                address: "https://example.test/original-resource".into(),
+                status: 200,
+                status_text: "OK".into(),
+                headers: vec![("content-type".into(), "text/plain".into())],
+                redirected: false,
+            })
+        ));
+        assert_eq!(vm.global("phases"), Some(&JsValue::String("1234".into())));
+        assert_eq!(
+            vm.global("observed"),
+            Some(&JsValue::String("200:ACTUAL_BODY:text/plain".into()))
+        );
+        assert_eq!(
+            vm.eval_script("xhr.responseURL").unwrap(),
+            JsValue::String("https://example.test/original-resource".into())
+        );
+    }
+
+    #[test]
+    fn xhr_rejects_unsupported_methods_and_suppresses_aborted_stale_responses() {
+        let mut vm = JsRuntime::new();
+        vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+            .unwrap();
+        vm.eval_script(
+            r#"
+            var xhr = new XMLHttpRequest(); var events = '';
+            xhr.onabort = function(){ events += 'a'; };
+            xhr.onload = function(){ events += 'l'; };
+            xhr.onerror = function(){ events += 'e'; };
+            xhr.open('GET', '/delayed'); xhr.send(); xhr.abort();
+        "#,
+        )
+        .unwrap();
+        let pending = vm.take_text_requests();
+        assert_eq!(pending.len(), 1);
+        assert!(!vm.complete_text_request(pending[0].id, Ok("LATE_DATA".into())));
+        assert_eq!(vm.global("events"), Some(&JsValue::String("a".into())));
+        assert_eq!(
+            vm.eval_script("xhr.readyState").unwrap(),
+            JsValue::Number(0.0)
+        );
+        for script in [
+            "xhr.open('POST','/resource')",
+            "xhr.open('GET','/resource',false)",
+            "xhr.send()",
+            "xhr.open('GET','/resource');xhr.send('body')",
+        ] {
+            let mut vm = JsRuntime::new();
+            vm.install_dom_snapshot(Vec::<DomElementSnapshot>::new())
+                .unwrap();
+            vm.eval_script("var xhr=new XMLHttpRequest()").unwrap();
+            assert!(vm.eval_script(script).is_err(), "{script}");
+            assert!(vm.take_text_requests().is_empty(), "{script}");
+        }
+    }
 
     #[test]
     fn site_driven_concat_handles_string_and_sparse_arrays() {

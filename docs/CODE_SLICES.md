@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S127 - Original XHR GET through native HTTP to pixels, plus Pikabu global/DOM/message blockers
+
+Real Pikabu missing XMLHttpRequest -> first-party `crates/op_js/src/xhr.js` installed by `JsRuntime::install_dom_snapshot` -> original `opFetchText` native request queue -> op_engine::Engine worker -> op_net same-origin guarded WinHTTP text load -> JsRuntime completion callback -> XMLHTTPRequest real status/headers/body + DOM textContent repaint. End-to-end local WinHTTP test validates HTTP 404 response into native pixels. Next Pikabu `s is not defined` -> opt-in bounded token candidates reveal `window.s = ...; s.type = ...` -> original global environment property fallback and var/Window synchronization. Next null parentElement -> real parsed DOM ancestor accessor. Next postMessage -> same-window queued message Event via native timers with default targetOrigin and origin checks. Final Pikabu initial JS 16 executed/0 failed/18 skipped; 24-script canary has 7 failed external URLs under same-origin policy and was reverted.
+
 ## S126 - Date and concat next original-JS site execution slice
 
 Native Pikabu first error Date missing -> op_js::date original UTC Gregorian algorithms, bounded epoch and ISO parsing -> global Date methods and first-party Date object with GC-traced numeric slot -> Release Pikabu reaches Date.setMilliseconds -> original VM Date setter updates epoch value -> next missing concat -> first-party sparse Array.concat and bounded String.concat -> real Pikabu advances to missing XMLHttpRequest but remains 10 successful/6 failed initial JS scripts. Targeted Date/calendar/construction/invalid-date/receiver/concat tests and full-workspace Clippy/test suite added; no fake XMLHttpRequest. Existing five-site manifest still reveals no visually accepted site.

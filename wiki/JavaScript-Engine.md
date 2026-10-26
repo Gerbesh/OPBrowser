@@ -1,5 +1,13 @@
 # JavaScript Engine
 
+## Native XMLHttpRequest GET, Window global properties and window messages (26 October 2026)
+
+First-party JavaScript XMLHttpRequest provides an asynchronous same-origin GET subset backed by the existing original op_net request queue, not a mocked HTTP response. Supports open/send/setRequestHeader/getResponseHeader, real HTTP status/statusText/responseURL/responseText, limited text/JSON response types, readystatechange/load/error/abort/loadend callbacks, GC-safe pending closures, and document-relative URLs through native networking. Sync requests, POST, bodies, timeouts, credentials, full header enumeration and real streaming remain unsupported. A native HTTP 404 integration test verifies real headers and response body rendered into the HTML document.
+
+Classic script identifiers resolve new properties on window (and explicit top-level var bindings mirror to Window), fixing `window.s = element; s.type = ...`. DOM Node.parentElement now returns the actual parsed or staged parent element. Single top-level window aliases `parent`/`top` and provides queued postMessage to itself with default same-origin target, specific-origin comparison and bounded JSON-safe event data. There is no iframe communication or complete structured-clone algorithm; do not describe this as a full postMessage implementation.
+
+Native Pikabu now runs 16 initial scripts without JS errors (18 skipped, rendered_unverified), but 5-site rerun has other incomplete sites and no visual conformance acceptance. Larger script budget exposed seven disallowed external script URLs; conservative existing policy retained pending explicit third-party script security/privacy design.
+
 ## First-party Date and Array/String.concat compatibility (26 October 2026)
 
 OPBrowser now implements Date.now, new Date with current/system milliseconds, epoch inputs, strict ISO UTC strings and bounded field arguments, Date.parse/UTC/getTime/valueOf/toISOString/toUTCString and UTC getters, and native Date.setMilliseconds/setUTCMilliseconds. It uses its own Rust Gregorian calendar math and GC-traced Date object state, without third-party JS. ISO/timezone-free inputs and local setters are UTC approximations until actual local-timezone semantics are developed; incomplete Date methods/locale formatting must not be presented as standards-complete. Arrays and strings now have native concat with bounded memory and array-hole preservation, but not all JavaScript exotic objects/species. Focused real Pikabu progressed from missing Date to missing setMilliseconds, then concat, then XMLHttpRequest; script result stays 10 executed/6 failed. Next architecture goal is genuine XHR based on original network and host event loop.

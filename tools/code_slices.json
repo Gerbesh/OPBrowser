@@ -2,6 +2,24 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S127",
+      "title": "Original Pikabu XHR, global Window bindings, parentElement and queued same-window messaging",
+      "status": "Native same-origin GET, real WinHTTP 404, GC, message-event and 16/0 initial Pikabu scripts verified",
+      "steps": [
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "sync_dom_tree"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "load_binding"},
+        {"path": "crates/op_js/src/xhr.js", "symbol": "XMLHttpRequest.prototype.send"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "OpFetchText"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "dispatch_text_requests"},
+        {"path": "crates/op_net/src/lib.rs", "symbol": "load_text_response_for_page_with_options"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "complete_text_response_request"},
+        {"path": "crates/op_js/src/window_message.js", "symbol": "window.postMessage"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "run_due_timers"},
+        {"path": "crates/op_engine/tests/scripts.rs", "symbol": "xhr_real_http_404_reaches_page_callbacks_and_native_paint"}
+      ],
+      "limitation": "GET/text/json subset only: no POST, sync XHR, streamed progress, cross-origin scripts, full structured clone, true frames or visual site acceptance. 18 Pikabu scripts remain skipped."
+    },
+    {
       "id": "S122",
       "title": "Native textarea visual-row wheel, scrollbar track and click priority",
       "status": "First-party renderer DOM wheel/track integration, focused/unfocused caret, scroll limits and Windows startup tested",

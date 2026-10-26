@@ -1,5 +1,11 @@
 # OPBrowser: active project plan
 
+## P0 original XHR and global Window blocking fixes (26 October 2026)
+
+Completed: existing native same-origin GET worker wired to XMLHttpRequest façade, onload/error/abort/readyState callbacks, status/headers/body including actual HTTP 404 verified into native glyph paint. Global classic-script identifier lookup reads fresh Window properties (`window.s; s.type`); top-level `var` mirrors to Window and preserves lexical let/const separation. Real parser DOM exposes parentElement and single top-level window schedules postMessage message events via original timers with origin checks and bounded JSON-safe data cloning. Live Pikabu moved 10/6 -> 11/5 -> 12/4 -> 16/0 executed/failed; 18 scripts still skipped. Do not declare site usable from zero JS errors alone.
+
+Next priorities: investigate 11 count-limited script candidates and 5 unsupported type scripts against actual content and script trust policy, then inspect visual text/shaping/layout; missing cross-origin script support must not silently override adblock/privacy goals. Canary cap=24 yielded 17 executed / 7 URL resolution failures (same-origin external scripts) and was reverted. The current safe cap stays 16. Extend XHR only when native transport implements safe POST/body/timeout, and postMessage when actual frame isolation and full structured clone are available.
+
 ## P0 measured Date -> concat -> XHR follow-up (26 October 2026)
 
 From original native Pikabu failure `Date is not defined`, implemented independent epoch/Gregorian Date primitives, JS Date constructor and static/instance methods. Isolated live Release results exposed Date.setMilliseconds, then concat, both implemented with native VM tests; current next actual failure is XMLHttpRequest is not defined, with five repeated undefined s references. Original Pikabu counts remain 10 executed / 6 failed. Prioritize correct XMLHttpRequest networking, same-origin/CORS/event loop and readyState behavior via first-party op_net and op_engine rather than an empty API shim. Do not use Chromium, WebView, other JS runtimes, or fake network results.

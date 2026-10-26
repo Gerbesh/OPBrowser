@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Pikabu initial-script zero-error checkpoint, native XHR and message events (26 October 2026)
+
+Measured real original Release Pikabu: **16 executed, 0 JS failed, 18 skipped** after fixing missing XMLHttpRequest, `window.s` bare identifier resolution, real DOM parentElement and queued one-argument postMessage. It is classified rendered_unverified, not a verified usable page. Standalone Windows native HTTP 404/XHR integration test confirms GET status, response header and response body reach the painted document. Full Rust tests, strict Clippy, native smoke pass. Additional compatibility work: same-origin-only external scripts, 11 scripts skipped by count cap, unsupported module types, visual text/layout, XHR non-GET and cross-window messaging. Canary cap=24 produced 17/7 executed/failed due to external script URL rejections, so original cap=16 remains.
+
 ## Date and concat site-driven correction (26 October 2026)
 
 Implemented own bounded Date builtins and strict ISO UTC calendar, Date milliseconds setter, Array.prototype.concat and String.prototype.concat. Native Pikabu went from first missing Date to missing setMilliseconds, then concat, now XMLHttpRequest, while retaining 10 executed/6 failed JS initial scripts. Five undefined s references persist and the page remains visually unverified. Five-site rerun Google/YouTube/Reddit/Pikabu/DeviantArt unchanged in broad failure classification; full Rust workspace, Clippy, native Win32 smoke pass. Date locale/timezone behavior and XHR remain incomplete; no Chromium/WebView.

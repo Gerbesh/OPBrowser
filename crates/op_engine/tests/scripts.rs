@@ -448,6 +448,33 @@ fn m435_document_element_and_body_match_real_parser_tree() {
 }
 
 #[test]
+fn m438_parent_element_returns_real_connected_and_staged_dom_ancestors() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<!doctype html><html><head></head><body>",
+            "<div id='parent'><span id='child'>Text</span></div><p id='out'>WAIT</p><script>",
+            "var p=document.getElementById('parent');",
+            "var c=document.getElementById('child');",
+            "var fresh=document.createElement('script');",
+            "p.appendChild(fresh);",
+            "var ok=c.parentElement===p&&fresh.parentElement===p",
+            "&&p.parentElement===document.body",
+            "&&document.documentElement.parentElement===null;",
+            "document.getElementById('out').textContent=ok?'M438-PARENT-PASS':'M438-PARENT-FAIL';",
+            "</script></body></html>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|command| matches!(
+        command, op_paint::PaintCommand::Text {text,..}
+            if text.contains("M438-PARENT-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
 fn m436_document_head_append_moves_nodes_and_creates_text_in_order() {
     let mut engine = Engine::new();
     let page = engine.set_html_page(
@@ -3557,6 +3584,85 @@ fn fetch_http_404_has_real_status_headers_and_body_after_first_paint() {
     assert!(
         rendered,
         "404 response metadata/body did not reach native pixels"
+    );
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+    server.join().unwrap();
+}
+
+#[test]
+#[cfg(windows)]
+fn xhr_real_http_404_reaches_page_callbacks_and_native_paint() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        for index in 0..2 {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                .unwrap();
+            let mut bytes = [0_u8; 8192];
+            let count = stream.read(&mut bytes).unwrap();
+            let request = String::from_utf8_lossy(&bytes[..count]);
+            let (status, mime, headers, body) = if index == 0 {
+                assert!(request.starts_with("GET /index.html "), "{request}");
+                (
+                    "200 OK",
+                    "text/html",
+                    "",
+                    concat!(
+                        "<body><p id='out'>Before XHR</p><script>",
+                        "var xhr = new XMLHttpRequest();",
+                        "xhr.open('GET','missing.txt');",
+                        "xhr.onload=function(){ document.getElementById('out').textContent=",
+                        "xhr.status+'|'+xhr.statusText+'|'+xhr.getResponseHeader('X-Mixed')+",
+                        "'|'+xhr.responseText+'|'+xhr.readyState; };",
+                        "xhr.onerror=function(){document.getElementById('out').textContent='NETWORK-ERROR';};",
+                        "xhr.send();",
+                        "</script></body>"
+                    ),
+                )
+            } else {
+                assert!(request.starts_with("GET /missing.txt "), "{request}");
+                (
+                    "404 Not Found",
+                    "text/plain",
+                    "X-Mixed: RealHeader\r\n",
+                    "REAL-NATIVE-404",
+                )
+            };
+            write!(stream,
+                "HTTP/1.1 {status}\r\nContent-Type: {mime}; charset=UTF-8\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()).unwrap();
+            stream.flush().unwrap();
+        }
+    });
+    let mut engine = Engine::new();
+    let initial = engine
+        .navigate(&format!("{origin}/index.html"), 800, 600)
+        .unwrap();
+    assert!(initial.display_list.commands.iter().any(|command| matches!(
+        command, op_paint::PaintCommand::Text {text,..} if text.contains("Before XHR")
+    )));
+    let mut rendered = false;
+    for _ in 0..120 {
+        if let Some(page) = engine.tick_timers(800, 600) {
+            rendered = page.display_list.commands.iter().any(|command| {
+                matches!(
+                    command, op_paint::PaintCommand::Text {text,..}
+                        if text.contains("404|Not Found|RealHeader|REAL-NATIVE-404|4")
+                )
+            });
+            if rendered {
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(
+        rendered,
+        "XHR did not deliver genuine HTTP status and body to native paint"
     );
     assert_eq!(engine.active_script_report().unwrap().failed, 0);
     server.join().unwrap();

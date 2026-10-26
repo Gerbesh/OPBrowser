@@ -1,5 +1,11 @@
 # OPBrowser Code Graph
 
+## 26 October 2026: XHR and Window property/page message vertical slice
+
+op_html parser and op_engine::scripts::sync_dom_tree -> original op_js::JsRuntime::install_dom_snapshot loads `xhr.js` and `window_message.js` host facades. JavaScript XMLHttpRequest.open/send -> original `opFetchText` queues bounded same-origin GET -> JsRuntime::take_text_requests -> Engine::dispatch_text_requests resolves document-relative URL and spawns bounded native network worker -> op_net::NetworkContext::load_text_response_for_page_with_options -> Engine::tick_timers -> JsRuntime::complete_text_response_request -> XHR callback (real HTTP status, response headers, text, readyState, native listeners) -> op_engine::scripts::apply_dom_operations -> native reflow and paint. Windows native HTTP 404 integration test verifies entire cycle.
+
+Global Window classic environment record: `get_property(window, 's')` is mirrored by `load_binding(env, 's')`, top-level var declarations/assignments also update global object values; local lexical scope still shadows Window. `get_property` on DOM element/text exposes native `parentElement` through `dom_pending_parents`/`dom_tags`, null for Document ancestor. `window_message.js` attaches single-context parent/top self aliases, schedules message Event via original setTimeout and `dispatchEvent`; sender origin/target origin validated, JSON-safe copy limited. No fabricated iframe or cross-origin transport.
+
 ## 26 October 2026: original Date calendar and concat VM path
 
 op_js::date pure Rust helpers days_from_civil/civil_from_days -> UTC field normalization/TimeClip/strict ISO conversion -> runtime::install_date_primitives global Date constructor and prototype -> call_builtin Date.now/Date.UTC/Date.parse/getTime/UTC getters/toISOString/setMilliseconds -> construct_value allocates ObjectKind::Date storing clipped epoch in existing GC-traced boxed_values, preserving Date identity. Script runtime executes Array.prototype.concat by bounded own array slot copying (sparse slots intact) and String.prototype.concat by bounded primitive text concatenation. Native Release Pikabu now passes measured Date, setMilliseconds, and concat call sites and reaches XMLHttpRequest first, followed by undefined s errors. XHR requires network lifecycle integration.
