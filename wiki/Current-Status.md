@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Native real DOM head/append and script cookie follow-up (26 October 2026)
+
+Original native Release Pikabu improved from 8 executed / 8 failed initial scripts to 9/7 after binding real document.head, then to 10/6 after Element.append(Node | string, ...). The remaining indexOf-on-null error was eliminated by exposing standards-shaped empty document.cookie plus bounded in-memory same-document string writes; no real HTTP cookie jar exists. Next missing global is Date and five downstream undefined s references remain; despite error progression, Pikabu remains rendered_with_js_errors. Focused real DOM/parser tests cover head identity, ordered append of mixed text and elements, and cookie read/write. Full visual/site compatibility is still open.
+
 ## Pikabu execution frontier after original JavaScript follow-up (26 October 2026)
 
 Actual Release Pikabu initial JS counters: 7 scripts executed / 9 failed before; 8 executed / 8 failed after real object spread and identifier-array destructuring syntax support. Further first-party window.self, Function.prototype.bind and Array.prototype.forEach changes move the next diagnostic to null/undefined indexOf access but do not reduce the 8 failures. YouTube textless and Reddit blank statuses persist in five-site rerun; no site is certified visually usable. Original JS default call depth now 32 for Windows recursion stack safety; full tests and native smoke must remain green.

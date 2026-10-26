@@ -4044,3 +4044,11 @@ This file is append-only project history.
 - Enlarged native callback dispatch stack caused a reproducible Windows stack overflow in `calling_non_functions_and_excessive_recursion_fail_cleanly` at former depth 64. Reduced default JS call-depth limit to 32; isolated recursion and complete workspace pass. This narrows recursion support. Formatting, Clippy, native smoke and code intelligence checked.
 - Five-site regression `artifacts/live_web/five-after-spread-bind-2026-10-26/` retained Google/DeviantArt partial JS-error pages, YouTube no text, Reddit blank, Pikabu partial JS errors. Dynamic remote-site pixels/latency are not comparable conformance oracles.
 
+
+## 2026-10-26 - P0 real Pikabu DOM head, append and JS cookie chain
+
+- Fresh original Release Pikabu started 8 executed / 8 failed initial scripts, with nullish appendChild/append/indexOf and undefined s diagnostics. Confirmed missing real document.head while document.body/documentElement already worked.
+- Wired parser-built HTML head identity from op_engine sync_dom_tree into JsRuntime::set_dom_head_node; native parser/DOM integration regression passes and Pikabu advances to 9 executed / 7 failed. Implemented Element.append(...nodesOrStrings) using actual DomCreateTextNode/AppendChild operations in source order with safe type and mutation budgets; native mixed node/text test passes, Pikabu advances to 10/6.
+- Enabled opt-in, bounded, sanitized nullish-property/call name breadcrumbs, explicitly not causal proof; real Pikabu last nullish property was cookie before failing indexOf. First-party HTTP intentionally strips Set-Cookie and never sends Cookie, so added an initially empty document.cookie plus bounded, page-local JS name/value writes rather than claiming persistent network cookies. Native read/write regression passes; Pikabu 10/6 now proceeds to Date is not defined, then five undefined s errors.
+- Remaining work: standards-shaped Date implementation, investigate the upstream cause of s errors, supported modules/script load ceilings, proper network-cookie transport if authorized, and visual DOM/layout acceptance. None of the sites is certified usable; cookie domain/path/expiry/security and persistent storage are not implemented.
+

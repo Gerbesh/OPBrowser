@@ -193,6 +193,9 @@ fn sync_dom_tree(document: &Document, runtime: &mut JsRuntime) {
         if let Some(element) = document.element(node) {
             runtime.sync_dom_tag(node.index(), element.tag_name.clone());
             runtime.sync_dom_namespace(node.index(), element.namespace_uri.clone());
+            if element.tag_name == "head" {
+                let _ = runtime.set_dom_head_node(node.index());
+            }
         }
         if let Some(element) = document.element(node) {
             runtime.sync_dom_existing_node(

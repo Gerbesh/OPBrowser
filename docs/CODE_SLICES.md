@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S125 - Live Pikabu missing head to append and cookie first-party vertical slice
+
+Pikabu real Release error `appendChild` of null/undefined -> parser-built op_html head synchronization to document.head in op_engine -> canonical op_js DOM object -> `appendChild` succeeds; missing Element.append -> first-party DomAppend delegates each argument to actual original DomAppendChild and DOM CreateTextNode operations -> live script 10 success / 6 error. Remaining nullish `indexOf` was examined using opt-in sanitized last-nullish-member/call observations and revealed missing document.cookie, implemented in VM as empty initial script-visible string and bounded local JS writes, not HTTP cookie persistence. Native engine regression tests prove mixed Node/string append order and same-document cookie readback. Next site blocker is Date, not a solved page.
+
 ## S124 - Real Pikabu spread/destructuring and callback failures
 
 Live Pikabu bounded script diagnostic -> original lexer/parsing handles ... object entries and var/let/const array identifier patterns including `for(var[t,o,n]=...)` -> compiled object/array binding instructions -> original VM object enumerable-copy and array indexed destructuring -> subsequent site diagnostics name missing self/bind/forEach -> original window.self binding, Function.prototype.bind captures with GC roots and forwarded calls/constructors, and array.forEach callback pipeline -> native Release Pikabu progresses 7/9 to 8/8 executed/failed initial scripts. Regressions cover symbol keys, read-only/non-enumerable properties, object getters, holes, partial arguments, constructor this, captured object GC and sparse forEach. Renderer remains unverified; object copy order and limited iterable/receiver coverage are documented.

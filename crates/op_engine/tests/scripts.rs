@@ -428,9 +428,11 @@ fn m435_document_element_and_body_match_real_parser_tree() {
             "<body><div id='child'>Content</div><p id='out'>WAIT</p><script>",
             "var root=document.documentElement;",
             "var body=document.body;",
+            "var head=document.head;",
             "var child=document.getElementById('child');",
             "document.getElementById('out').textContent=",
             "root.tagName==='HTML'&&body.tagName==='BODY'&&",
+            "head.tagName==='HEAD'&&root.contains(head)&&",
             "root.contains(body)&&body.contains(child)?",
             "'M435-DOCUMENT-ROOT-PASS':'M435-DOCUMENT-ROOT-FAIL';",
             "</script></body></html>"
@@ -441,6 +443,58 @@ fn m435_document_element_and_body_match_real_parser_tree() {
     assert!(page.commands.iter().any(|cmd| matches!(
         cmd,op_paint::PaintCommand::Text{text,..}
             if text.contains("M435-DOCUMENT-ROOT-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m436_document_head_append_moves_nodes_and_creates_text_in_order() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<!doctype html><html><head><title>Test</title></head><body>",
+            "<p id='out'>WAIT</p><script>",
+            "var head=document.head;var before=head.childNodes.length;",
+            "var first=document.createElement('meta');var second=document.createElement('link');",
+            "var result=head.append(first,'HELLO',second);",
+            "var pass=result===undefined&&head.contains(first)&&head.contains(second)",
+            "&&head.childNodes.length===before+3",
+            "&&head.childNodes.item(before)===first",
+            "&&head.childNodes.item(before+1).nodeType===3",
+            "&&head.childNodes.item(before+1).textContent==='HELLO'",
+            "&&head.childNodes.item(before+2)===second",
+            "&&head.append()===undefined;",
+            "document.getElementById('out').textContent=pass?'M436-HEAD-APPEND-PASS':'M436-HEAD-APPEND-FAIL';",
+            "</script></body></html>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text{text,..} if text.contains("M436-HEAD-APPEND-PASS")
+    )));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}
+
+#[test]
+fn m437_document_cookie_is_empty_until_local_script_write() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<body><p id='out'>WAIT</p><script>",
+            "var initial=document.cookie===''&&document.cookie.indexOf('session')===-1;",
+            "document.cookie='session=first; path=/';",
+            "document.cookie='theme=light; Secure';",
+            "document.cookie='session=second; path=/';",
+            "var pass=initial&&document.cookie==='theme=light; session=second';",
+            "document.getElementById('out').textContent=pass?'M437-COOKIE-PASS':'M437-COOKIE-FAIL';",
+            "</script></body>"
+        ),
+        800,
+        600,
+    );
+    assert!(page.commands.iter().any(|cmd| matches!(
+        cmd, op_paint::PaintCommand::Text{text,..} if text.contains("M437-COOKIE-PASS")
     )));
     assert_eq!(engine.active_script_report().unwrap().failed, 0);
 }

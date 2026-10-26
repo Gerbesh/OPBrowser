@@ -1,5 +1,9 @@
 # JavaScript Engine
 
+## Browser DOM head, Element.append and in-memory document.cookie (26 October 2026)
+
+Real public Pikabu execution exposed missing `document.head`, an absent `Element.append()` method, and then missing `document.cookie`. The first-party native JS runtime now binds actual parser-built `<head>` to document.head, implements append with native DOM Node/text creation and staged DOM append operations, and gives document.cookie an initially empty value with bounded script-local name/value assignments. This is deliberately not a persistent/network cookie jar; the network loader does not send Cookie or retain Set-Cookie. New opt-in diagnostics report only bounded sanitized names of recent nullish member reads and method returns and warn that correlation is not proof of causation. Real Pikabu execution reached 10 successful and 6 failed initial scripts, then exposed the missing Date global. Full cookie RFC semantics and complete DOM compatibility remain pending.
+
 ## Live-site-driven spread, destructuring, bind and forEach (26 October 2026)
 
 From a new original-engine Pikabu live diagnostic, OPBrowser's own lexer/parser/VM now handle object `...source` spread of owned enumerable fields and simple identifier array destructuring (`var [a,b] = array`, including classic for initializers), with bounded source sizes. Browser `self` is the same window object. First-party Function.prototype.bind captures this/partial arguments, supports normal/constructor calls, and keeps those references alive through original GC. Array.prototype.forEach invokes native JS callbacks on present array entries with index/array arguments and optional thisArg. Pikabu initial script stats improved 7 executed / 9 failed to 8 / 8, but the page remains incomplete.

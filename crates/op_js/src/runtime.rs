@@ -161,6 +161,7 @@ enum BuiltinFunction {
     ImageConstructor,
     DomCreateTextNode,
     DomAppendChild,
+    DomAppend,
     DomInsertBefore,
     DomRemoveChild,
     DomReplaceChild,
@@ -1261,6 +1262,8 @@ impl JsRuntime {
                 ("createEvent".into(), JsValue::Object(create_event)),
                 ("dispatchEvent".into(), JsValue::Object(dispatch_listener)),
                 ("body".into(), JsValue::Null),
+                ("head".into(), JsValue::Null),
+                ("cookie".into(), JsValue::String(String::new())),
                 ("documentElement".into(), JsValue::Null),
                 ("activeElement".into(), JsValue::Null),
                 ("addEventListener".into(), JsValue::Object(add_listener)),
@@ -3504,6 +3507,18 @@ impl JsRuntime {
         Ok(())
     }
 
+    /// Expose the real parser-built HTML head without inventing an element.
+    pub fn set_dom_head_node(&mut self, node: usize) -> Result<(), JsError> {
+        let object = self.dom_element_object(node)?;
+        if let Some(document) = self.dom_document {
+            self.object_mut(document)?
+                .properties
+                .insert("head".into(), JsValue::Object(object));
+        }
+        self.dom_attached.insert(node);
+        Ok(())
+    }
+
     /// Expose the real tree-builder's body element as document.body.
     pub fn set_dom_body_node(&mut self, node: usize) -> Result<(), JsError> {
         let object = self.dom_element_object(node)?;
@@ -4593,6 +4608,10 @@ impl JsRuntime {
         )?;
         let append =
             self.allocate_lifecycle_method("appendChild", BuiltinFunction::DomAppendChild)?;
+        let append_many = self.allocate_lifecycle_method("append", BuiltinFunction::DomAppend)?;
+        self.object_mut(append_many)?
+            .properties
+            .insert("length".into(), JsValue::Number(0.0));
         let insert =
             self.allocate_lifecycle_method("insertBefore", BuiltinFunction::DomInsertBefore)?;
         let remove =
@@ -4676,6 +4695,7 @@ impl JsRuntime {
                     JsValue::Object(remove_listener),
                 ),
                 ("appendChild".into(), JsValue::Object(append)),
+                ("append".into(), JsValue::Object(append_many)),
                 ("insertBefore".into(), JsValue::Object(insert)),
                 ("removeChild".into(), JsValue::Object(remove)),
                 ("replaceChild".into(), JsValue::Object(replace)),
@@ -5743,6 +5763,7 @@ impl JsRuntime {
         let trace_calls = std::env::var_os("OPBROWSER_JS_ERROR_CONTEXT").as_deref()
             == Some(std::ffi::OsStr::new("1"));
         let mut recent_property_reads: Vec<(usize, JsValue, JsValue, String)> = Vec::new();
+        let mut recent_nullish_reads: Vec<String> = Vec::new();
         let mut completion = JsValue::Undefined;
         let mut env = start_env;
         let mut ip = 0usize;
@@ -6118,11 +6139,31 @@ impl JsRuntime {
                         None
                     };
                     let result = if let JsValue::Symbol(symbol) = key {
-                        self.get_symbol_property(&target, &symbol)?
+                        self.get_symbol_property(&target, &symbol)
                     } else {
-                        self.get_property(&target, &to_property_key(key))?
+                        self.get_property(&target, &to_property_key(key))
                     };
+                    let result = result.map_err(|error| {
+                        if trace_calls
+                            && matches!(target, JsValue::Null | JsValue::Undefined)
+                            && !recent_nullish_reads.is_empty()
+                        {
+                            JsError::type_error(format!(
+                                "{} [recent nullish reads, not necessarily causal: {}]",
+                                error.message,
+                                recent_nullish_reads.join(", ")
+                            ))
+                        } else {
+                            error
+                        }
+                    })?;
                     if let Some(name) = name {
+                        if matches!(result, JsValue::Null | JsValue::Undefined) {
+                            if recent_nullish_reads.len() == 4 {
+                                recent_nullish_reads.remove(0);
+                            }
+                            recent_nullish_reads.push(format!("property {name}"));
+                        }
                         if recent_property_reads.len() == 16 {
                             recent_property_reads.remove(0);
                         }
@@ -6188,8 +6229,29 @@ impl JsRuntime {
                             )));
                         }
                     }
+                    let call_name = if trace_calls && *has_receiver {
+                        recent_property_reads
+                            .iter()
+                            .rev()
+                            .find(|(slot, receiver, value, _)| {
+                                *slot == callee_slot && receiver == &this_value && value == &callee
+                            })
+                            .map(|(_, _, _, name)| name.clone())
+                    } else {
+                        None
+                    };
                     match self.call_value(callee, this_value, arguments, steps, call_depth + 1)? {
-                        CallOutcome::Value(value) => stack.push(value),
+                        CallOutcome::Value(value) => {
+                            if matches!(value, JsValue::Null | JsValue::Undefined)
+                                && let Some(name) = call_name
+                            {
+                                if recent_nullish_reads.len() == 4 {
+                                    recent_nullish_reads.remove(0);
+                                }
+                                recent_nullish_reads.push(format!("call {name}"));
+                            }
+                            stack.push(value)
+                        }
                         CallOutcome::Thrown(value) => return Ok(RunOutcome::Thrown(value)),
                     }
                 }
@@ -9200,6 +9262,51 @@ impl JsRuntime {
             }
             return Ok(CallOutcome::Value(JsValue::Object(*child_object)));
         }
+        if builtin == BuiltinFunction::DomAppend {
+            let JsValue::Object(parent_id) = this_value.clone() else {
+                return Err(JsError::type_error("append requires element receiver"));
+            };
+            if !matches!(self.object(parent_id)?.kind, ObjectKind::DomElement(_)) {
+                return Err(JsError::type_error("append requires element receiver"));
+            }
+            if arguments.len() > 256 {
+                return Err(JsError::execution_limit("append argument budget exceeded"));
+            }
+            for value in arguments {
+                let node = match value {
+                    JsValue::Object(id)
+                        if matches!(
+                            self.object(id)?.kind,
+                            ObjectKind::DomElement(_) | ObjectKind::DomText(_)
+                        ) =>
+                    {
+                        JsValue::Object(id)
+                    }
+                    other => {
+                        let document = self.dom_document.ok_or_else(|| {
+                            JsError::type_error("append requires document context")
+                        })?;
+                        match self.call_builtin(
+                            BuiltinFunction::DomCreateTextNode,
+                            JsValue::Object(document),
+                            vec![JsValue::String(other.to_js_string())],
+                        )? {
+                            CallOutcome::Value(node) => node,
+                            CallOutcome::Thrown(error) => return Ok(CallOutcome::Thrown(error)),
+                        }
+                    }
+                };
+                match self.call_builtin(
+                    BuiltinFunction::DomAppendChild,
+                    this_value.clone(),
+                    vec![node],
+                )? {
+                    CallOutcome::Value(_) => {}
+                    CallOutcome::Thrown(error) => return Ok(CallOutcome::Thrown(error)),
+                }
+            }
+            return Ok(CallOutcome::Value(JsValue::Undefined));
+        }
         if builtin == BuiltinFunction::DomAppendChild {
             let JsValue::Object(parent_id) = this_value else {
                 return Err(JsError::type_error("appendChild requires element receiver"));
@@ -9402,6 +9509,7 @@ impl JsRuntime {
             | BuiltinFunction::DomCreateElementNS
             | BuiltinFunction::DomCreateTextNode
             | BuiltinFunction::DomAppendChild
+            | BuiltinFunction::DomAppend
             | BuiltinFunction::DomInsertBefore
             | BuiltinFunction::DomRemoveChild
             | BuiltinFunction::DomReplaceChild
@@ -10699,6 +10807,58 @@ impl JsRuntime {
             || (key == "location" && (*id == self.global_object || self.dom_document == Some(*id)))
         {
             return Err(JsError::type_error("location navigation is not supported"));
+        }
+        if self.dom_document == Some(*id) && key == "cookie" {
+            // Original in-memory document cookie subset. HTTP intentionally strips
+            // Set-Cookie and never transmits Cookie; these values remain page-local.
+            let assignment = value.to_js_string();
+            if assignment.len() > 4096 {
+                return Err(JsError::execution_limit(
+                    "document.cookie setter budget exceeded",
+                ));
+            }
+            let Some((name, raw_value)) =
+                assignment.split(';').next().unwrap_or("").split_once('=')
+            else {
+                return Ok(());
+            };
+            let name = name.trim();
+            if name.is_empty()
+                || name.len() > 256
+                || name
+                    .chars()
+                    .any(|ch| ch.is_control() || matches!(ch, ';' | '=' | ','))
+            {
+                return Ok(());
+            }
+            let pair = format!("{}={}", name, raw_value.trim());
+            let existing = self
+                .object(*id)?
+                .properties
+                .get("cookie")
+                .and_then(|value| match value {
+                    JsValue::String(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .unwrap_or("");
+            let mut pairs = existing
+                .split("; ")
+                .filter(|part| !part.is_empty())
+                .filter(|part| part.split_once('=').is_none_or(|(old, _)| old != name))
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            if pairs.len() >= 64 {
+                return Err(JsError::execution_limit("document.cookie count exceeded"));
+            }
+            pairs.push(pair);
+            let joined = pairs.join("; ");
+            if joined.len() > 8192 {
+                return Err(JsError::execution_limit("document.cookie storage exceeded"));
+            }
+            self.object_mut(*id)?
+                .properties
+                .insert("cookie".into(), JsValue::String(joined));
+            return Ok(());
         }
         if self.dom_document == Some(*id)
             && matches!(key, "URL" | "documentURI" | "baseURI" | "activeElement")
