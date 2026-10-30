@@ -1,5 +1,9 @@
 # OPBrowser Code Slices
 
+## S131 - YouTube array callback builtins from original JS to new array values
+
+Original Release YouTube `value is not callable (member map)` -> first-party op_js `Array.prototype.map` uses existing `FunctionImplementation::Builtin` VM callback dispatch and sparse indexed source access -> returns new array retaining original index/length holes; contextual Release advanced to missing `filter` -> first-party `Array.prototype.filter` uses the same bounded VM callback path and dense result construction -> contextual Release advanced to `sort`. Tests exercise optional callback thisArg, value/index/source, throws, insertion/deletion during iteration, sparse input, output identity and non-constructibility. The end-to-end diagnostic remains 13/3/27 scripts and no painted text; source-array-only, own-index and 4096-element limits apply.
+
 ## S130 - First-party Canvas 2D fill/clear through native image paint
 
 HTML canvas element or document.createElement('canvas') -> original op_js DOM `getContext('2d')` -> bounded page-owned `CanvasSurface` BGRA pixels -> fillStyle, fillRect and clearRect with transparent clears and alpha-safe channel compositing -> (when dirty) op_engine PreparedDocument::render creates validated `op_image::RasterImage` -> op_layout canvas replaced-image geometry -> op_paint Image display command -> native Windows raster painter. Timed canvas changes trigger page repaint without DOM text mutation. Tests verify pixels, context identity, dimension reset/bounds, host display-list image and timer-only repaint. On original Release YouTube, getContext error advanced to a non-callable map error, with the page still textless. Remaining Canvas API and script-module dependencies are not implied by this slice.

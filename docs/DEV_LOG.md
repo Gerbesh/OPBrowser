@@ -4095,3 +4095,9 @@ This file is append-only project history.
 
 
 
+## 2026-10-30 - Native Array.prototype.map/filter from YouTube JS diagnostics
+
+- Implemented first-party Array.prototype.map/filter through the original bounded VM: callable callback, optional thisArg, value/index/source arguments, sparse own-index visitation with fixed initial length, throw propagation and fresh array output (map retains holes; filter compacts). Generic array-likes, inherited numeric properties, species and proxies remain unsupported; max array length 4096.
+- Regressions verify sparse slots, truthiness, callback context and identity, source mutation, non-callable callbacks and non-constructibility. Original Release live-site tests use the native renderer only.
+- YouTube contextual diagnostics advanced from missing map to filter and then sort; 13 executed / 3 failed / 27 skipped and zero text primitives persist, alongside performance.timing.responseStart and a missing prototype. Artifacts: youtube-map-context-2026-10-30 and youtube-array-map-filter-2026-10-30. Next: first-party stable sort, genuine timing properties, module policy and DOM content fidelity.
+

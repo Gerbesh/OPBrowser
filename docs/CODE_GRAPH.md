@@ -1,5 +1,9 @@
 # OPBrowser Code Graph
 
+## 30 October 2026: original VM Array.map and Array.filter
+
+`op_js::runtime::JsRuntime::install_standard_primitives` installs `map` and `filter` on the canonical Array prototype with length=1. Both dispatch in `call_value`, passing each present own array index and original source through the existing callback VM and active execution guard/call-depth budget, preserve exception propagation, and use `allocate_object(ObjectKind::Array)` with the existing 4096-slot cap to return a new array. The mapped array retains source holes and length; filtered arrays use dense output indices. No new crates, network execution path, or external JS engine. Native Release `live_site_probe` confirms YouTube blocker sequence map -> filter -> sort without visible text yet.
+
 ## 26 October 2026: original Canvas 2D pixels -> replaced image -> paint
 
 Native VM `JsRuntime` owns `canvas_surfaces` (node -> bounded BGRA CanvasSurface), `canvas_contexts` and `canvas_dirty`. DOM Element `getContext('2d')` validates receiver, allocates native Canvas context with `fillStyle`, `fillRect`, `clearRect`, and retains a stable identity for each node; intrinsic width/height setters reset backing pixels. A canvas frame is exported to host by `canvas_frames()` after pending virtual DOM aliases resolve. Engine `PreparedDocument::render` imports frames only on dirty paint and maps them into `PageImages.elements` as validated `op_image::RasterImage`; native op_layout treats canvas and img as replaced raster content, then op_paint emits ordinary Image paint commands. `Engine::tick_timers` checks canvas_dirty in addition to real DOM mutation and scroll changes. Original GC traces context ownership through DOM element native edges. This is an owned raster path with no WebView or ready-made Canvas engine.

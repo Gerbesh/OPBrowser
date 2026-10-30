@@ -145,6 +145,8 @@ enum BuiltinFunction {
     ArrayIncludes,
     ArrayConcat,
     ArrayForEach,
+    ArrayMap,
+    ArrayFilter,
     ArrayPush,
     ArrayPop,
     ArrayShift,
@@ -1841,6 +1843,8 @@ impl JsRuntime {
             ("includes", BuiltinFunction::ArrayIncludes, 1.0),
             ("concat", BuiltinFunction::ArrayConcat, 1.0),
             ("forEach", BuiltinFunction::ArrayForEach, 1.0),
+            ("map", BuiltinFunction::ArrayMap, 1.0),
+            ("filter", BuiltinFunction::ArrayFilter, 1.0),
             ("push", BuiltinFunction::ArrayPush, 1.0),
             ("pop", BuiltinFunction::ArrayPop, 0.0),
             ("shift", BuiltinFunction::ArrayShift, 0.0),
@@ -7204,6 +7208,109 @@ impl JsRuntime {
                 }
                 Ok(CallOutcome::Value(JsValue::Undefined))
             }
+            FunctionImplementation::Builtin(BuiltinFunction::ArrayMap) => {
+                let JsValue::Object(array) = this_value.clone() else {
+                    return Err(JsError::type_error("Array.map receiver must be an array"));
+                };
+                if self.object(array)?.kind != ObjectKind::Array {
+                    return Err(JsError::type_error("Array.map receiver must be an array"));
+                }
+                let callback = arguments.first().cloned().unwrap_or(JsValue::Undefined);
+                if !matches!(&callback, JsValue::Object(id) if self.object(*id)?.function.is_some())
+                {
+                    return Err(JsError::type_error("Array.map callback must be callable"));
+                }
+                let receiver = arguments.get(1).cloned().unwrap_or(JsValue::Undefined);
+                let length = self.array_length(array)?;
+                let mut properties = HashMap::new();
+                for index in 0..length {
+                    // Preserve holes and observe deletion/addition before each visit.
+                    if !self
+                        .object(array)?
+                        .properties
+                        .contains_key(&index.to_string())
+                    {
+                        continue;
+                    }
+                    let value = self.get_property(&this_value, &index.to_string())?;
+                    let mapped = match self.call_value(
+                        callback.clone(),
+                        receiver.clone(),
+                        vec![value, JsValue::Number(index as f64), this_value.clone()],
+                        steps,
+                        call_depth + 1,
+                    )? {
+                        CallOutcome::Value(value) => value,
+                        CallOutcome::Thrown(value) => return Ok(CallOutcome::Thrown(value)),
+                    };
+                    properties.insert(index.to_string(), mapped);
+                }
+                properties.insert("length".into(), JsValue::Number(length as f64));
+                let result = self.allocate_object(
+                    ObjectKind::Array,
+                    Some(self.array_prototype),
+                    properties,
+                )?;
+                Ok(CallOutcome::Value(JsValue::Object(result)))
+            }
+            FunctionImplementation::Builtin(BuiltinFunction::ArrayFilter) => {
+                let JsValue::Object(array) = this_value.clone() else {
+                    return Err(JsError::type_error(
+                        "Array.filter receiver must be an array",
+                    ));
+                };
+                if self.object(array)?.kind != ObjectKind::Array {
+                    return Err(JsError::type_error(
+                        "Array.filter receiver must be an array",
+                    ));
+                }
+                let callback = arguments.first().cloned().unwrap_or(JsValue::Undefined);
+                if !matches!(&callback, JsValue::Object(id) if self.object(*id)?.function.is_some())
+                {
+                    return Err(JsError::type_error(
+                        "Array.filter callback must be callable",
+                    ));
+                }
+                let receiver = arguments.get(1).cloned().unwrap_or(JsValue::Undefined);
+                let length = self.array_length(array)?;
+                let mut properties = HashMap::new();
+                let mut kept = 0_usize;
+                for index in 0..length {
+                    if !self
+                        .object(array)?
+                        .properties
+                        .contains_key(&index.to_string())
+                    {
+                        continue;
+                    }
+                    let value = self.get_property(&this_value, &index.to_string())?;
+                    let selected = match self.call_value(
+                        callback.clone(),
+                        receiver.clone(),
+                        vec![
+                            value.clone(),
+                            JsValue::Number(index as f64),
+                            this_value.clone(),
+                        ],
+                        steps,
+                        call_depth + 1,
+                    )? {
+                        CallOutcome::Value(result) => result.is_truthy(),
+                        CallOutcome::Thrown(value) => return Ok(CallOutcome::Thrown(value)),
+                    };
+                    if selected {
+                        properties.insert(kept.to_string(), value);
+                        kept += 1;
+                    }
+                }
+                properties.insert("length".into(), JsValue::Number(kept as f64));
+                let result = self.allocate_object(
+                    ObjectKind::Array,
+                    Some(self.array_prototype),
+                    properties,
+                )?;
+                Ok(CallOutcome::Value(JsValue::Object(result)))
+            }
             FunctionImplementation::Builtin(builtin) => {
                 self.call_builtin(builtin, this_value, arguments)
             }
@@ -10253,6 +10360,8 @@ impl JsRuntime {
             | BuiltinFunction::ArrayIncludes
             | BuiltinFunction::ArrayConcat
             | BuiltinFunction::ArrayForEach
+            | BuiltinFunction::ArrayMap
+            | BuiltinFunction::ArrayFilter
             | BuiltinFunction::ArrayPush
             | BuiltinFunction::ArrayPop
             | BuiltinFunction::ArrayShift
@@ -10402,6 +10511,8 @@ impl JsRuntime {
                     | BuiltinFunction::ArrayIncludes
                     | BuiltinFunction::ArrayConcat
                     | BuiltinFunction::ArrayForEach
+                    | BuiltinFunction::ArrayMap
+                    | BuiltinFunction::ArrayFilter
                     | BuiltinFunction::ArrayPush
                     | BuiltinFunction::ArrayPop
                     | BuiltinFunction::ArrayShift
@@ -12928,6 +13039,66 @@ mod tests {
             vm.eval_script("[1].forEach(function(){throw 'stop'})")
                 .is_err()
         );
+    }
+
+    #[test]
+    fn array_map_returns_new_array_preserves_holes_and_callback_semantics() {
+        for source in [
+            "var a=[2,3,4];var b=a.map(function(x){return x*2});b!==a&&b.length===3&&b[0]===4&&b[1]===6&&b[2]===8&&a[0]===2",
+            "var a=[,2,,4];var b=a.map(function(x,i){return x+i});b.length===4&&!(0 in b)&&b[1]===3&&!(2 in b)&&b[3]===7",
+            "var o={n:7};var a=[3];var b=a.map(function(x){return x+this.n},o);b[0]===10",
+            "var a=[4];var b=a.map(function(x,i,from){return x===4&&i===0&&from===a});b[0]===true",
+            "var a=[1];var b=a.map(function(x){a.push(3);return x+1});b.length===1&&b[0]===2",
+            "var a=[1,2];var b=a.map(function(x,i){if(i===0)delete a[1];return x});b.length===2&&b[0]===1&&!(1 in b)",
+            "var a=[1,,3];var b=a.map(function(x){return x*3});b.length===3&&b[0]===3&&!(1 in b)&&b[2]===9",
+            "Array.prototype.map.length===1&&[].map(function(){return 1}).length===0",
+        ] {
+            let mut vm = JsRuntime::new();
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::Boolean(true),
+                "{source}"
+            );
+        }
+        for source in [
+            "[1].map(12)",
+            "[1].map.call(null,function(x){return x})",
+            "[1].map(function(){throw 'stop'})",
+            "new Array.prototype.map()",
+        ] {
+            let mut vm = JsRuntime::new();
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
+    }
+
+    #[test]
+    fn array_filter_compacts_selected_slots_and_honors_callback_state() {
+        for source in [
+            "var a=[1,2,3,4];var b=a.filter(function(x){return x%2===0});b!==a&&b.length===2&&b[0]===2&&b[1]===4",
+            "var a=[,2,,4];var visits=0;var b=a.filter(function(x){visits++;return true});visits===2&&b.length===2&&b[0]===2&&b[1]===4",
+            "var o={min:3};var b=[1,3,5].filter(function(x){return x>=this.min},o);b.length===2&&b[0]===3&&b[1]===5",
+            "var a=[9];var b=a.filter(function(x,i,from){return i===0&&from===a&&x===9});b[0]===9",
+            "var a=[1];var b=a.filter(function(x){a.push(2);return true});b.length===1&&b[0]===1",
+            "var a=[1,2];var b=a.filter(function(x,i){if(i===0)delete a[1];return true});b.length===1&&b[0]===1",
+            "var a=[1,2];var b=a.filter(function(x){return x===1?'yes':''});b.length===1&&b[0]===1",
+            "Array.prototype.filter.length===1&&[].filter(function(){return true}).length===0",
+        ] {
+            let mut vm = JsRuntime::new();
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::Boolean(true),
+                "{source}"
+            );
+        }
+        for source in [
+            "[1].filter(12)",
+            "[1].filter.call(null,function(x){return x})",
+            "[1].filter(function(){throw 'stop'})",
+            "new Array.prototype.filter()",
+        ] {
+            let mut vm = JsRuntime::new();
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
     }
 
     #[test]

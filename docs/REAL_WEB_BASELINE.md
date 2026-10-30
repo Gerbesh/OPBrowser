@@ -1,5 +1,9 @@
 # OPBrowser: real public-web compatibility baseline
 
+## 30 October 2026: native Array.map/filter, measured YouTube progression
+
+Original Release source-of-truth diagnostics: `artifacts/live_web/youtube-map-after-2026-10-30/` showed 13 executed / 3 failed / 27 skipped, no visible text after adding map (without opt-in member context); contextual follow-up `youtube-map-context-2026-10-30/` identified the new failing member as `filter`. After adding native filter, contextual Release `artifacts/live_web/youtube-array-map-filter-2026-10-30/` identifies the next failing member as `sort`, with the same 13/3/27 counters, 0 text primitives, 130 paint commands and `no_text_rendered`. The first error still names `responseStart` after `timing`; a third names a nullish `prototype`; contextual trace names are bounded and correlation is not proof of the responsible call site. These are one-site sequential tests, not a new 20-site compatibility score. No visual/browser acceptance has been established.
+
 ## 26 October 2026: original Canvas 2D raster to pixels and YouTube next blocker
 
 Canvas 2D subset now executes in the original VM with a bounded first-party premultiplied BGRA surface, fills and clears rectangles, exposes canvas width/height and resizes/reset behavior, and reuses the same context. Native engine maps those pixels via op_image -> op_layout (canvas as replaced image) -> op_paint. Regression tests validate pixel colors, transparent clears, new frame after timer-only updates, and invalid size rejection. Limitations: no paths/measureText/drawImage/getImageData/textures/color functions/transforms; supported fillStyle is small, canvas sizes capped at 1024 per axis and 262144 pixels.

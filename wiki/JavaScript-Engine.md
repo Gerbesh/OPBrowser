@@ -1,5 +1,11 @@
 # JavaScript Engine
 
+## Array.prototype.map and filter: native VM subsets (30 October 2026)
+
+OPBrowser now exposes first-party Array.prototype.map and Array.prototype.filter. Each accepts a callable callback, optional thisArg, and invokes it with item, original index, and source array under the VM's existing call-depth/step budgets. Map produces a separate length-preserving sparse array; filter returns a new dense array of accepted original values. The original input is not changed by the builtin itself. Callback mutation is observed at later indexes, and callback exceptions propagate. Current compatibility is limited to first-party arrays and their own numeric slots (maximum 4096); generic array-like receivers, inherited indexes, Array species and proxies are not supported.
+
+A native YouTube Release diagnostic progressed from missing map, to missing filter, to missing sort. The page remains textless (13 executed/3 failed/27 skipped initial scripts); other missing APIs remain. This is not full YouTube support.
+
 ## Canvas 2D initial native pixel implementation (26 October 2026)
 
 An original page-owned Canvas 2D context is now available from canvas.getContext('2d'), with stable per-canvas identity and a real bounded premultiplied BGRA backing surface. Supported operations are fillRect, clearRect and a restricted fillStyle (`#rrggbb` or select simple CSS color names); direct canvas.width and canvas.height are reflected and resizing resets the pixels. Engine and layout send this buffer through the project's own raster image paint path; timer drawings cause new frames even without HTML changes. Canvas is currently limited to eight contexts, max 1024 per axis and 262144 pixels each; unsupported Canvas operations such as paths, text measurement, images, getImageData and transforms are not claimed. No external engine is used.

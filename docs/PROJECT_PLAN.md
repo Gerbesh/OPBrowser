@@ -1,5 +1,11 @@
 # OPBrowser: active project plan
 
+## 30 October 2026: first-party Array.map/filter from real YouTube blocker progression
+
+Added bounded native `Array.prototype.map` and `Array.prototype.filter` in `op_js` via the existing VM callback/call-depth mechanism. Both snapshot the initial length, visit existing indexed own slots, pass value/index/original array and optional `thisArg`, propagate callback throws, and return genuine new arrays; map preserves holes, filter compacts accepted values. Reuse the 4096-element array budget and reject non-callable callbacks or non-array receivers. These are intentionally own-array subsets: inherited numeric properties, generic array-likes, species and proxies are unsupported. Dedicated regression tests cover holes, indices, source identity, callback mutation, errors and non-constructibility.
+
+Original Release YouTube with opt-in sanitized diagnostics: before this change member `map` failed; with map it advanced to `filter`; with both it advanced to `sort`. All three focused passes retained 13 initial scripts executed, 3 failed, 27 skipped, and `no_text_rendered`. Other observed failures include `performance.timing.responseStart` and a prototype access. No improvement in visible page content is claimed. Next: an actual bounded stable `Array.prototype.sort`, real navigation timing data, missing interface prototypes, DOM/CSS fidelity and script trust/type policy; do not emulate success by stubbing APIs.
+
 ## 26 October 2026: first-party Canvas 2D to native pixels
 
 Implemented a real bounded Canvas 2D backing store in `op_js`, not a no-op: `getContext('2d')`, stable context identity, `fillStyle` limited to `#rrggbb` and several named colors, `fillRect`, `clearRect`, reflected intrinsic `canvas.width`/`canvas.height` with surface reset, and invalid-dimension rejection. At most eight live contexts, each <=1024 on each axis and <=262144 pixels. Premultiplied BGRA surfaces flow into original `op_image::RasterImage`, `op_layout`'s native replaced-image branch for canvas, and `op_paint` pixels; timers now request repaint on canvas changes even without DOM mutations. VM, engine-to-paint and timed redraw tests pass.

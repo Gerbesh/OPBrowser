@@ -1,5 +1,9 @@
 # Current Project Status
 
+## Array callback progression on YouTube (30 October 2026)
+
+First-party bounded Array.prototype.map and Array.prototype.filter are implemented and tested. Native contextual Release on YouTube progressed from the original non-callable map to filter, then sort after both implementations. Initial scripts remain 13 executed/3 failed/27 skipped and the output has zero text primitives. Other blockers still include performance.timing.responseStart and a missing prototype. This is measured blocker progression, not a compatibility/visual pass. Next engineering work: real Array.sort, navigation timing and further DOM/script execution diagnostics.
+
 ## Original Canvas 2D pixel path, live-site findings (26 October 2026)
 
 First-party Canvas 2D implements real, bounded BGRA pixel drawing for fillRect/clearRect and intrinsic dimensions in original JS/DOM runtime; the images pass through the original op_image -> op_layout -> op_paint path, with native repaint on timer-only changes. Pixel and timer integration regressions pass. This remains a small Canvas 2D subset, not spec-complete rendering or image/video support. In the focused native Release YouTube retest the former getContext error advanced to a member map call error; YouTube remains no_text_rendered at 13 executed / 3 failed / 27 skipped initial scripts. Reddit stays blank with 0 body-text characters.
