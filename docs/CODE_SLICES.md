@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## Native Array.sort slice
+
+JavaScript array method lookup -> native `ArraySort` -> snapshot own indexed values -> stable merge comparisons through VM callbacks or UTF-16 default string order -> write values and `undefined`, remove trailing own slots -> return original array. The 4096-element limit and existing partial coercion/property semantics apply; no new live-site result is claimed.
+
+
 ## S131 - YouTube array callback builtins from original JS to new array values
 
 Original Release YouTube `value is not callable (member map)` -> first-party op_js `Array.prototype.map` uses existing `FunctionImplementation::Builtin` VM callback dispatch and sparse indexed source access -> returns new array retaining original index/length holes; contextual Release advanced to missing `filter` -> first-party `Array.prototype.filter` uses the same bounded VM callback path and dense result construction -> contextual Release advanced to `sort`. Tests exercise optional callback thisArg, value/index/source, throws, insertion/deletion during iteration, sparse input, output identity and non-constructibility. The end-to-end diagnostic remains 13/3/27 scripts and no painted text; source-array-only, own-index and 4096-element limits apply.

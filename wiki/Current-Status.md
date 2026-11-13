@@ -1,5 +1,8 @@
 # Current Project Status
 
+Native stable Array.prototype.sort is implemented for bounded first-party arrays, with sparse slots and comparator dispatch. Its impact on live sites has not been measured; the earlier YouTube result below remains historical.
+
+
 ## Array callback progression on YouTube (30 October 2026)
 
 First-party bounded Array.prototype.map and Array.prototype.filter are implemented and tested. Native contextual Release on YouTube progressed from the original non-callable map to filter, then sort after both implementations. Initial scripts remain 13 executed/3 failed/27 skipped and the output has zero text primitives. Other blockers still include performance.timing.responseStart and a missing prototype. This is measured blocker progression, not a compatibility/visual pass. Next engineering work: real Array.sort, navigation timing and further DOM/script execution diagnostics.

@@ -1,5 +1,10 @@
 # JavaScript Engine
 
+## Array.prototype.sort: bounded native subset (14 November 2026)
+
+Native sort mutates and returns the original first-party array, using stable merge sorting, optional VM comparator calls, and default UTF-16 string ordering. It collects own indexed slots, sorts defined values, then places undefined values before holes. The existing 4096-element array bound applies. Generic receivers, inherited indexed properties, complete property descriptors and object-to-primitive conversions remain unsupported or incomplete.
+
+
 ## Array.prototype.map and filter: native VM subsets (30 October 2026)
 
 OPBrowser now exposes first-party Array.prototype.map and Array.prototype.filter. Each accepts a callable callback, optional thisArg, and invokes it with item, original index, and source array under the VM's existing call-depth/step budgets. Map produces a separate length-preserving sparse array; filter returns a new dense array of accepted original values. The original input is not changed by the builtin itself. Callback mutation is observed at later indexes, and callback exceptions propagate. Current compatibility is limited to first-party arrays and their own numeric slots (maximum 4096); generic array-like receivers, inherited indexes, Array species and proxies are not supported.

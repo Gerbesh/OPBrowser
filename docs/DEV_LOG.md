@@ -4101,3 +4101,8 @@ This file is append-only project history.
 - Regressions verify sparse slots, truthiness, callback context and identity, source mutation, non-callable callbacks and non-constructibility. Original Release live-site tests use the native renderer only.
 - YouTube contextual diagnostics advanced from missing map to filter and then sort; 13 executed / 3 failed / 27 skipped and zero text primitives persist, alongside performance.timing.responseStart and a missing prototype. Artifacts: youtube-map-context-2026-10-30 and youtube-array-map-filter-2026-10-30. Next: first-party stable sort, genuine timing properties, module policy and DOM content fidelity.
 
+
+## 2026-11-14 - Stable native Array.prototype.sort
+
+- Added bounded stable merge sort for own-array elements, preserving holes after undefined values, returning the original array, dispatching comparators in the VM and propagating throws. Default comparisons use UTF-16 string units.
+- Regression coverage checks lexical and numeric ordering, stability, sparse arrays, NaN comparator results and invalid calls. Generic receivers, inherited indexes, full descriptors and object coercion remain incomplete; live-site effects have not been measured.

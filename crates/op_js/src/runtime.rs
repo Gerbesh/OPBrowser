@@ -147,6 +147,7 @@ enum BuiltinFunction {
     ArrayForEach,
     ArrayMap,
     ArrayFilter,
+    ArraySort,
     ArrayPush,
     ArrayPop,
     ArrayShift,
@@ -1845,6 +1846,7 @@ impl JsRuntime {
             ("forEach", BuiltinFunction::ArrayForEach, 1.0),
             ("map", BuiltinFunction::ArrayMap, 1.0),
             ("filter", BuiltinFunction::ArrayFilter, 1.0),
+            ("sort", BuiltinFunction::ArraySort, 1.0),
             ("push", BuiltinFunction::ArrayPush, 1.0),
             ("pop", BuiltinFunction::ArrayPop, 0.0),
             ("shift", BuiltinFunction::ArrayShift, 0.0),
@@ -7311,6 +7313,97 @@ impl JsRuntime {
                 )?;
                 Ok(CallOutcome::Value(JsValue::Object(result)))
             }
+            FunctionImplementation::Builtin(BuiltinFunction::ArraySort) => {
+                let JsValue::Object(array) = this_value.clone() else {
+                    return Err(JsError::type_error("Array.sort receiver must be an array"));
+                };
+                if self.object(array)?.kind != ObjectKind::Array {
+                    return Err(JsError::type_error("Array.sort receiver must be an array"));
+                }
+                let compare = arguments.first().cloned().unwrap_or(JsValue::Undefined);
+                if !matches!(compare, JsValue::Undefined)
+                    && !matches!(&compare, JsValue::Object(id) if self.object(*id)?.function.is_some())
+                {
+                    return Err(JsError::type_error(
+                        "Array.sort comparator must be callable",
+                    ));
+                }
+                let length = self.array_length(array)?;
+                let mut values = Vec::with_capacity(length);
+                let mut undefined_count = 0;
+                for index in 0..length {
+                    let key = index.to_string();
+                    if self.object(array)?.properties.contains_key(&key) {
+                        let value = self.get_property(&this_value, &key)?;
+                        if matches!(value, JsValue::Undefined) {
+                            undefined_count += 1;
+                        } else {
+                            values.push(value);
+                        }
+                    }
+                }
+                // Bottom-up merge sort preserves equal-element order and bounds comparisons.
+                let mut width = 1;
+                while width < values.len() {
+                    let mut merged = Vec::with_capacity(values.len());
+                    for chunk in values.chunks(width * 2) {
+                        let mid = width.min(chunk.len());
+                        let (mut left, mut right) = (0, mid);
+                        while left < mid && right < chunk.len() {
+                            let order = if matches!(compare, JsValue::Undefined) {
+                                chunk[left]
+                                    .to_js_string()
+                                    .encode_utf16()
+                                    .cmp(chunk[right].to_js_string().encode_utf16())
+                            } else {
+                                let result = match self.call_value(
+                                    compare.clone(),
+                                    JsValue::Undefined,
+                                    vec![chunk[left].clone(), chunk[right].clone()],
+                                    steps,
+                                    call_depth + 1,
+                                )? {
+                                    CallOutcome::Value(value) => value.to_number(),
+                                    CallOutcome::Thrown(value) => {
+                                        return Ok(CallOutcome::Thrown(value));
+                                    }
+                                };
+                                if result < 0.0 {
+                                    std::cmp::Ordering::Less
+                                } else if result > 0.0 {
+                                    std::cmp::Ordering::Greater
+                                } else {
+                                    std::cmp::Ordering::Equal
+                                }
+                            };
+                            if order != std::cmp::Ordering::Greater {
+                                merged.push(chunk[left].clone());
+                                left += 1;
+                            } else {
+                                merged.push(chunk[right].clone());
+                                right += 1;
+                            }
+                        }
+                        merged.extend_from_slice(&chunk[left..mid]);
+                        merged.extend_from_slice(&chunk[right..]);
+                    }
+                    values = merged;
+                    width *= 2;
+                }
+                let defined_count = values.len();
+                for (index, value) in values.into_iter().enumerate() {
+                    self.set_property(&this_value, &index.to_string(), value)?;
+                }
+                for index in defined_count..defined_count + undefined_count {
+                    self.set_property(&this_value, &index.to_string(), JsValue::Undefined)?;
+                }
+                for index in defined_count + undefined_count..length {
+                    self.object_mut(array)?
+                        .properties
+                        .remove(&index.to_string());
+                }
+                Ok(CallOutcome::Value(this_value))
+            }
             FunctionImplementation::Builtin(builtin) => {
                 self.call_builtin(builtin, this_value, arguments)
             }
@@ -10362,6 +10455,7 @@ impl JsRuntime {
             | BuiltinFunction::ArrayForEach
             | BuiltinFunction::ArrayMap
             | BuiltinFunction::ArrayFilter
+            | BuiltinFunction::ArraySort
             | BuiltinFunction::ArrayPush
             | BuiltinFunction::ArrayPop
             | BuiltinFunction::ArrayShift
@@ -10513,6 +10607,7 @@ impl JsRuntime {
                     | BuiltinFunction::ArrayForEach
                     | BuiltinFunction::ArrayMap
                     | BuiltinFunction::ArrayFilter
+                    | BuiltinFunction::ArraySort
                     | BuiltinFunction::ArrayPush
                     | BuiltinFunction::ArrayPop
                     | BuiltinFunction::ArrayShift
@@ -13095,6 +13190,34 @@ mod tests {
             "[1].filter.call(null,function(x){return x})",
             "[1].filter(function(){throw 'stop'})",
             "new Array.prototype.filter()",
+        ] {
+            let mut vm = JsRuntime::new();
+            assert!(vm.eval_script(source).is_err(), "{source}");
+        }
+    }
+
+    #[test]
+    fn array_sort_is_stable_in_place_and_moves_holes_last() {
+        for source in [
+            "var a=[10,2,1];a.sort()===a&&a[0]===1&&a[1]===10&&a[2]===2",
+            "var a=[3,1,2];a.sort(function(a,b){return a-b});a[0]===1&&a[1]===2&&a[2]===3",
+            "var a=[{k:1,n:'a'},{k:0,n:'b'},{k:1,n:'c'}];a.sort(function(a,b){return a.k-b.k});a[0].n==='b'&&a[1].n==='a'&&a[2].n==='c'",
+            "var a=[,undefined,3,,1];var calls=0;a.sort(function(a,b){calls++;return a-b});a.length===5&&a[0]===1&&a[1]===3&&(2 in a)&&a[2]===undefined&&!(3 in a)&&!(4 in a)&&calls>0",
+            "var a=[3,2,1];a.sort(function(){return NaN});a[0]===3&&a[1]===2&&a[2]===1",
+            "Array.prototype.sort.length===1&&[].sort().length===0",
+        ] {
+            let mut vm = JsRuntime::new();
+            assert_eq!(
+                vm.eval_script(source).unwrap(),
+                JsValue::Boolean(true),
+                "{source}"
+            );
+        }
+        for source in [
+            "[1].sort(1)",
+            "[1].sort.call(null)",
+            "[2,1].sort(function(){throw 'stop'})",
+            "new Array.prototype.sort()",
         ] {
             let mut vm = JsRuntime::new();
             assert!(vm.eval_script(source).is_err(), "{source}");

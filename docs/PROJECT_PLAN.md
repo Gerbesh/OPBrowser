@@ -1,5 +1,10 @@
 # OPBrowser: active project plan
 
+## 14 November 2026: bounded native Array.sort
+
+Implemented stable in-place `Array.prototype.sort` using bounded merge sort and the original VM comparator dispatch. Own indexed values are collected at the initial length, `undefined` values precede holes, comparator exceptions propagate, and default ordering compares UTF-16 string units. This remains an array-only subset: inherited indices, generic receivers, full property descriptor semantics and ECMAScript object-to-primitive coercion are incomplete. No new live-site compatibility claim has been measured. Next: navigation timing, object coercion and remaining site bootstrap diagnostics.
+
+
 ## 30 October 2026: first-party Array.map/filter from real YouTube blocker progression
 
 Added bounded native `Array.prototype.map` and `Array.prototype.filter` in `op_js` via the existing VM callback/call-depth mechanism. Both snapshot the initial length, visit existing indexed own slots, pass value/index/original array and optional `thisArg`, propagate callback throws, and return genuine new arrays; map preserves holes, filter compacts accepted values. Reuse the 4096-element array budget and reject non-callable callbacks or non-array receivers. These are intentionally own-array subsets: inherited numeric properties, generic array-likes, species and proxies are unsupported. Dedicated regression tests cover holes, indices, source identity, callback mutation, errors and non-constructibility.

@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 14 November 2026: native Array.sort
+
+`op_js::JsRuntime` dispatches `BuiltinFunction::ArraySort` through the existing VM call path for comparator calls and bounded own-array storage; stable merge sorting introduces no new module or dependency.
+
+
 ## 30 October 2026: original VM Array.map and Array.filter
 
 `op_js::runtime::JsRuntime::install_standard_primitives` installs `map` and `filter` on the canonical Array prototype with length=1. Both dispatch in `call_value`, passing each present own array index and original source through the existing callback VM and active execution guard/call-depth budget, preserve exception propagation, and use `allocate_object(ObjectKind::Array)` with the existing 4096-slot cap to return a new array. The mapped array retains source holes and length; filtered arrays use dense output indices. No new crates, network execution path, or external JS engine. Native Release `live_site_probe` confirms YouTube blocker sequence map -> filter -> sort without visible text yet.
