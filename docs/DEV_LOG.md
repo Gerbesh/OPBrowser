@@ -4106,3 +4106,8 @@ This file is append-only project history.
 
 - Added bounded stable merge sort for own-array elements, preserving holes after undefined values, returning the original array, dispatching comparators in the VM and propagating throws. Default comparisons use UTF-16 string units.
 - Regression coverage checks lexical and numeric ordering, stability, sparse arrays, NaN comparator results and invalid calls. Generic receivers, inherited indexes, full descriptors and object coercion remain incomplete; live-site effects have not been measured.
+
+## 2026-11-14 - YouTube sort follow-up probe
+
+- Built the native Release live-site probe after the Array.sort change and attempted a focused YouTube run with opt-in bounded diagnostics. Navigation failed before page load with WinHTTP error 12007 (name resolution), so no conclusion about sort or current site rendering can be drawn. Local ignored artifacts: `artifacts/live_web/youtube-sort-2026-11-14/`.
+- Navigation timing investigation: `performance.now()` currently uses a runtime-creation origin, while the document loader does not carry network timing into the parser or JS runtime. Accurate navigation timing requires instrumentation and propagation across those layers; a receive-headers timestamp alone is not proof of the first response byte.
