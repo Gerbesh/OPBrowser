@@ -2,6 +2,18 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S138",
+      "title": "Flex row auto margins to native pixels",
+      "status": "Multiple margins, flex growth, overflow, wrapping, RTL and Windows pixels tested",
+      "steps": [
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn flex_item_zero_auto_margins"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn flex_row_atomic"},
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "fn flex_row_auto_margins_consume_free_space_after_growth"},
+        {"path": "crates/op_browser/src/main.rs", "symbol": "fn flex_auto_margin_pushes_item_to_edge_in_native_pixels"}
+      ],
+      "limitation": "Row direction only; column flex and full flex sizing remain incomplete."
+    },
+    {
       "id": "S137",
       "title": "Flex row direction and RTL to native pixels",
       "status": "CSS cascade, reverse/RTL, justify edges, ordered wrapping and native pixels tested",

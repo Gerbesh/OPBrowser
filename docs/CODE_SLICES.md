@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## Flex row automatic main-axis margins
+
+CSS margin auto -> computed item margins -> zero during flex sizing -> remaining line space shared across auto sides after flex grow/shrink -> direction-aware item positions -> normal paint and Windows pixels. Tests include multiple margins, RTL, reverse, overflow and wrapping. Flex columns and full sizing remain incomplete.
+
+
 ## Flex row direction and justification
 
 CSS flex-direction, direction and justify-content cascade -> computed flex style -> row main-axis placement with RTL/reverse and distinct flex/inline/physical edges -> ordinary paint and native Windows pixels. Tests cover ordered wraps and direction combinations; column flex and main-axis auto margins remain incomplete.

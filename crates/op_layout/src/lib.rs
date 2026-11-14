@@ -2309,6 +2309,115 @@ mod tests {
     }
 
     #[test]
+    fn flex_row_auto_margins_consume_free_space_after_growth() {
+        fn geometry(container: &str, first: &str, second: &str) -> [(i32, i32); 2] {
+            let html = format!(
+                "<body style='margin:0'><div style='display:flex;width:200px;{container}'>\
+                <div style='width:40px;height:20px;background:red;{first}'></div>\
+                <div style='width:40px;height:20px;background:blue;{second}'></div></div></body>"
+            );
+            let document = op_html::parse_document(&html);
+            let computed =
+                op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+            let tree = layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            );
+            let rect = |r, b| {
+                let d = tree
+                    .box_decorations
+                    .iter()
+                    .find(|d| d.background.red == r && d.background.blue == b)
+                    .unwrap();
+                (d.x, d.width)
+            };
+            [rect(255, 0), rect(0, 255)]
+        }
+        let base = geometry("", "", "")[0].0;
+        let relative = |rects: [(i32, i32); 2]| rects.map(|(x, w)| (x - base, w));
+        assert_eq!(
+            relative(geometry("justify-content:center", "", "margin-left:auto")),
+            [(0, 40), (160, 40)]
+        );
+        assert_eq!(
+            relative(geometry(
+                "",
+                "margin-left:auto",
+                "margin-left:auto;margin-right:auto"
+            )),
+            [(40, 40), (120, 40)]
+        );
+        assert_eq!(
+            relative(geometry(
+                "flex-direction:row-reverse",
+                "",
+                "margin-left:auto"
+            )),
+            [(160, 40), (120, 40)]
+        );
+        assert_eq!(
+            relative(geometry(
+                "flex-direction:row-reverse",
+                "",
+                "margin-right:auto"
+            )),
+            [(160, 40), (0, 40)]
+        );
+        assert_eq!(
+            relative(geometry("direction:rtl", "", "margin-right:auto")),
+            [(160, 40), (0, 40)]
+        );
+        assert_eq!(
+            relative(geometry("", "flex-grow:1", "margin-left:auto")),
+            [(0, 160), (160, 40)]
+        );
+        assert_eq!(
+            relative(geometry(
+                "",
+                "width:120px;flex-shrink:0",
+                "width:120px;flex-shrink:0;margin-left:auto"
+            )),
+            [(0, 120), (120, 120)]
+        );
+    }
+
+    #[test]
+    fn flex_auto_margins_are_distributed_independently_on_wrapped_lines() {
+        let html = "<body style='margin:0'><div style='display:flex;flex-wrap:wrap;width:100px;gap:10px'>\
+            <div style='width:40px;height:20px;background:red'></div>\
+            <div style='width:40px;height:20px;margin-left:auto;background:blue'></div>\
+            <div style='width:40px;height:20px;margin-left:auto;background:green'></div></div></body>";
+        let document = op_html::parse_document(html);
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let tree = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let rect = |r, g, b| {
+            let d = tree
+                .box_decorations
+                .iter()
+                .find(|d| {
+                    d.background.red == r && d.background.green == g && d.background.blue == b
+                })
+                .unwrap();
+            (d.x, d.y)
+        };
+        let red = rect(255, 0, 0);
+        let blue = rect(0, 0, 255);
+        let green = rect(0, 128, 0);
+        assert_eq!(blue, (red.0 + 60, red.1));
+        assert_eq!(green, (red.0 + 60, red.1 + 30));
+    }
+
+    #[test]
     fn flex_row_reverse_respects_rtl_and_justify_edges() {
         fn positions(direction: &str, flex: &str, justify: &str) -> Vec<i32> {
             let html = format!(

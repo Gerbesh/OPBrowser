@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 14 November 2026: flex row auto margins
+
+`op_layout::flow::flex_item_zero_auto_margins` prevents block auto-margin resolution during item sizing; `Context::flex_row_atomic` distributes each line's remaining main-axis space across the physical auto margins before normal item placement and paint. No dependency changes.
+
+
 ## 14 November 2026: reversed flex main axis
 
 `op_css::FlexDirection` and distinct `JustifyContent` edge variants flow into `op_layout::flow::Style`. `Context::flex_row_atomic` derives the main-axis direction from flex direction and text direction and translates ordered items before normal paint.

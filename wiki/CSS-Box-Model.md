@@ -1,5 +1,10 @@
 # CSS Block Box Model
 
+## Flex row main-axis auto margins (14 November 2026)
+
+Horizontal auto margins on row flex items are zero while item sizes are resolved. Positive free space is then divided among auto margins on each line, before `justify-content`; physical left/right sides are respected under RTL and row-reverse. Tests cover wrapping, growth and overflow. Flex columns and full Flexbox remain incomplete.
+
+
 ## Flex row direction (14 November 2026)
 
 Row flex supports `row` and `row-reverse`; the main-axis direction also follows `direction:ltr/rtl`. `justify-content` distinguishes flex-relative, inline and physical left/right values. Stable ordering and wrapping occur before positions are assigned. Column directions, main-axis auto margins, vertical writing modes and full Flexbox remain incomplete.

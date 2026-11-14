@@ -1,5 +1,10 @@
 # OPBrowser: active project plan
 
+## 14 November 2026: flex row main-axis auto margins
+
+Row flex items treat horizontal auto margins as zero during sizing and distribute positive remaining line space among them after flexing, before `justify-content`. Physical left/right margins account for RTL and row-reverse; each wrapped line is independent. Geometry and native pixel tests cover multiple margins, growth, overflow and reversed directions. Flex columns, baseline, positioned stacking order and full flex sizing remain incomplete; real-site compatibility remains unverified.
+
+
 ## 14 November 2026: row-reverse and RTL flex main axis
 
 Row flex layout now supports `flex-direction:row-reverse` and direction-aware row placement, including RTL, stable item order, wrapping and distinct `justify-content` flex-relative, inline-start/end and physical left/right values. CSS, geometry and Windows pixel tests cover these combinations. Flex columns, main-axis auto margins, positioned stacking order, baseline alignment, vertical writing modes and full flex sizing remain incomplete; real-site visual compatibility remains unverified.

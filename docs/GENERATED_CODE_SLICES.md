@@ -3,6 +3,24 @@
 > Generated from `tools/code_slices.json` and validated against live Rust files.
 > This is a curated vertical feature map, **not** an AST/call/data-flow slicer.
 
+## S138 — Flex row auto margins to native pixels
+
+Status: **Multiple margins, flex growth, overflow, wrapping, RTL and Windows pixels tested**.
+
+```text
+op_layout::fn flex_item_zero_auto_margins
+op_layout::fn flex_row_atomic
+op_layout::fn flex_row_auto_margins_consume_free_space_after_growth
+op_browser::fn flex_auto_margin_pushes_item_to_edge_in_native_pixels
+```
+
+- [`op_layout::fn flex_item_zero_auto_margins`](../crates/op_layout/src/flow.rs#L6336)
+- [`op_layout::fn flex_row_atomic`](../crates/op_layout/src/flow.rs#L2139)
+- [`op_layout::fn flex_row_auto_margins_consume_free_space_after_growth`](../crates/op_layout/src/lib.rs#L2312)
+- [`op_browser::fn flex_auto_margin_pushes_item_to_edge_in_native_pixels`](../crates/op_browser/src/main.rs#L1036)
+
+Row direction only; column flex and full flex sizing remain incomplete.
+
 ## S137 — Flex row direction and RTL to native pixels
 
 Status: **CSS cascade, reverse/RTL, justify edges, ordered wrapping and native pixels tested**.
@@ -18,8 +36,8 @@ op_browser::fn flex_row_reverse_paints_from_the_right
 - [`op_css::fn parse_flex_direction`](../crates/op_css/src/computed.rs#L2496)
 - [`op_css::fn parse_justify_content`](../crates/op_css/src/computed.rs#L2519)
 - [`op_layout::fn flex_row_atomic`](../crates/op_layout/src/flow.rs#L2139)
-- [`op_layout::fn flex_row_reverse_respects_rtl_and_justify_edges`](../crates/op_layout/src/lib.rs#L2312)
-- [`op_browser::fn flex_row_reverse_paints_from_the_right`](../crates/op_browser/src/main.rs#L1036)
+- [`op_layout::fn flex_row_reverse_respects_rtl_and_justify_edges`](../crates/op_layout/src/lib.rs#L2421)
+- [`op_browser::fn flex_row_reverse_paints_from_the_right`](../crates/op_browser/src/main.rs#L1065)
 
 Column flex, main-axis auto margins, vertical writing and complete flex sizing remain incomplete.
 
@@ -37,9 +55,9 @@ op_browser::fn flex_order_changes_native_pixel_positions
 
 - [`op_css::fn parse_order`](../crates/op_css/src/computed.rs#L2373)
 - [`op_layout::fn flex_row_atomic`](../crates/op_layout/src/flow.rs#L2139)
-- [`op_layout::fn flex_order_is_stable_and_applied_before_wrapping`](../crates/op_layout/src/lib.rs#L2395)
+- [`op_layout::fn flex_order_is_stable_and_applied_before_wrapping`](../crates/op_layout/src/lib.rs#L2504)
 - [`op_engine::fn flex_order_changes_visual_order_without_reordering_dom_children`](../crates/op_engine/tests/scripts.rs#L3855)
-- [`op_browser::fn flex_order_changes_native_pixel_positions`](../crates/op_browser/src/main.rs#L1062)
+- [`op_browser::fn flex_order_changes_native_pixel_positions`](../crates/op_browser/src/main.rs#L1091)
 
 Row flex only; positioned stacking-context ordering and full flex sizing remain incomplete.
 
@@ -56,8 +74,8 @@ op_browser::fn flex_wrap_reverse_paints_rows_bottom_to_top
 
 - [`op_css::fn parse_flex_wrap`](../crates/op_css/src/computed.rs#L2507)
 - [`op_layout::fn flex_row_atomic`](../crates/op_layout/src/flow.rs#L2139)
-- [`op_layout::fn flex_wrap_reverse_preserves_order_and_aligns_against_correct_edges`](../crates/op_layout/src/lib.rs#L2442)
-- [`op_browser::fn flex_wrap_reverse_paints_rows_bottom_to_top`](../crates/op_browser/src/main.rs#L1090)
+- [`op_layout::fn flex_wrap_reverse_preserves_order_and_aligns_against_correct_edges`](../crates/op_layout/src/lib.rs#L2551)
+- [`op_browser::fn flex_wrap_reverse_paints_rows_bottom_to_top`](../crates/op_browser/src/main.rs#L1119)
 
 Horizontal writing mode and row direction only; baseline, column flex and full sizing remain incomplete.
 
@@ -75,9 +93,9 @@ op_browser::fn flex_align_content_stretches_wrapped_lines_in_native_pixels
 
 - [`op_css::fn parse_align_content`](../crates/op_css/src/computed.rs#L2538)
 - [`op_layout::fn flex_row_atomic`](../crates/op_layout/src/flow.rs#L2139)
-- [`op_layout::fn stretch_flex_item_to_outer_height`](../crates/op_layout/src/flow.rs#L2482)
-- [`op_layout::fn flex_align_content_distributes_lines_with_gaps_and_overflow_fallbacks`](../crates/op_layout/src/lib.rs#L2517)
-- [`op_browser::fn flex_align_content_stretches_wrapped_lines_in_native_pixels`](../crates/op_browser/src/main.rs#L1116)
+- [`op_layout::fn stretch_flex_item_to_outer_height`](../crates/op_layout/src/flow.rs#L2514)
+- [`op_layout::fn flex_align_content_distributes_lines_with_gaps_and_overflow_fallbacks`](../crates/op_layout/src/lib.rs#L2626)
+- [`op_browser::fn flex_align_content_stretches_wrapped_lines_in_native_pixels`](../crates/op_browser/src/main.rs#L1145)
 
 No baseline, wrap-reverse, vertical writing modes, min/max-only cross sizing or full flex sizing.
 
@@ -97,9 +115,9 @@ op_browser::fn flex_cross_alignment_and_stretch_paint_native_pixels
 - [`op_css::fn parse_align_items`](../crates/op_css/src/computed.rs#L2556)
 - [`op_css::fn parse_align_self`](../crates/op_css/src/computed.rs#L2571)
 - [`op_layout::fn flex_row_atomic`](../crates/op_layout/src/flow.rs#L2139)
-- [`op_layout::fn stretch_flex_item_to_outer_height`](../crates/op_layout/src/flow.rs#L2482)
-- [`op_layout::fn flex_cross_alignment_offsets_each_wrapped_line_and_respects_auto_margin`](../crates/op_layout/src/lib.rs#L2565)
-- [`op_browser::fn flex_cross_alignment_and_stretch_paint_native_pixels`](../crates/op_browser/src/main.rs#L1154)
+- [`op_layout::fn stretch_flex_item_to_outer_height`](../crates/op_layout/src/flow.rs#L2514)
+- [`op_layout::fn flex_cross_alignment_offsets_each_wrapped_line_and_respects_auto_margin`](../crates/op_layout/src/lib.rs#L2674)
+- [`op_browser::fn flex_cross_alignment_and_stretch_paint_native_pixels`](../crates/op_browser/src/main.rs#L1183)
 
 No baseline alignment, align-content, wrapped line distribution for definite-height containers, flex column/order or complete flex sizing.
 

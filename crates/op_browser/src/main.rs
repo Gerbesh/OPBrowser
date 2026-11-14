@@ -1033,6 +1033,35 @@ mod overflow_tests {
     }
 
     #[test]
+    fn flex_auto_margin_pushes_item_to_edge_in_native_pixels() {
+        let page=Engine::new().render_html(
+            "<body style='margin:0'><div style='display:flex;width:200px;justify-content:center'>\
+            <div style='width:40px;height:30px;background:#f00000'></div>\
+            <div style='width:40px;height:30px;margin-left:auto;background:#0000f0'></div></div></body>",240,140);
+        let rect = |r, b| {
+            page.commands
+                .iter()
+                .find_map(|cmd| {
+                    let op_paint::PaintCommand::FillRect { x, y, color, .. } = cmd else {
+                        return None;
+                    };
+                    (color.r == r && color.b == b).then_some((*x, *y))
+                })
+                .unwrap()
+        };
+        let red = rect(240, 0);
+        let blue = rect(0, 240);
+        assert_eq!(blue.0 - red.0, 160);
+        let pixels = op_platform_win::render_display_list_to_bgra(&page, 240, 140).unwrap();
+        assert_eq!(rgb_at(&pixels, 240, red.0 + 10, red.1 + 10), (240, 0, 0));
+        assert_eq!(rgb_at(&pixels, 240, blue.0 + 10, blue.1 + 10), (0, 0, 240));
+        assert_eq!(
+            rgb_at(&pixels, 240, red.0 + 100, red.1 + 10),
+            (255, 255, 255)
+        );
+    }
+
+    #[test]
     fn flex_row_reverse_paints_from_the_right() {
         let page = Engine::new().render_html(
             "<body style='margin:0'><div style='display:flex;flex-direction:row-reverse;width:100px'>\

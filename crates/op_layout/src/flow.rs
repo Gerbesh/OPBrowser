@@ -2255,7 +2255,7 @@ impl<'a> Context<'a, '_> {
                         if item.node.is_none() {
                             return item.atomic.width.max(0);
                         }
-                        let mut zero = item.style;
+                        let mut zero = flex_item_zero_auto_margins(item.style);
                         zero.width = Some(LengthPercentage::Px(0.0));
                         let metrics = resolve_block_horizontal(zero, limit);
                         metrics
@@ -2350,6 +2350,16 @@ impl<'a> Context<'a, '_> {
                 .map(|item| item.atomic.width.max(0))
                 .fold(gap_total, i32::saturating_add);
             let remaining = limit.saturating_sub(used).max(0);
+            let auto_margin_count = line
+                .iter()
+                .filter(|item| item.node.is_some())
+                .map(|item| {
+                    usize::from(item.style.margin.left == MarginValue::Auto)
+                        + usize::from(item.style.margin.right == MarginValue::Auto)
+                })
+                .sum::<usize>();
+            let mut allocated_margins = 0usize;
+            let justify_free = if auto_margin_count > 0 { 0 } else { remaining };
             let mut x = 0i32;
             let natural_line_height = natural_heights[line_index];
             let positive_free = i64::from(available_cross.max(0));
@@ -2429,22 +2439,40 @@ impl<'a> Context<'a, '_> {
                 if i > 0 {
                     x = x.saturating_add(column_gap);
                 }
+                let left_auto =
+                    child.node.is_some() && child.style.margin.left == MarginValue::Auto;
+                let right_auto =
+                    child.node.is_some() && child.style.margin.right == MarginValue::Auto;
+                let (before_auto, after_auto) = if main_reversed {
+                    (right_auto, left_auto)
+                } else {
+                    (left_auto, right_auto)
+                };
+                let share = |index: usize| -> i32 {
+                    let free = i64::from(remaining);
+                    (free * (index + 1) as i64 / auto_margin_count as i64
+                        - free * index as i64 / auto_margin_count as i64) as i32
+                };
+                if before_auto {
+                    x = x.saturating_add(share(allocated_margins));
+                    allocated_margins += 1;
+                }
                 let offset = match style.justify_content {
                     JustifyContent::Start => 0,
-                    JustifyContent::End => remaining,
-                    JustifyContent::InlineStart if main_reversed != inline_reversed => remaining,
-                    JustifyContent::InlineEnd if main_reversed == inline_reversed => remaining,
-                    JustifyContent::Left if main_reversed => remaining,
-                    JustifyContent::Right if !main_reversed => remaining,
-                    JustifyContent::Center => remaining / 2,
+                    JustifyContent::End => justify_free,
+                    JustifyContent::InlineStart if main_reversed != inline_reversed => justify_free,
+                    JustifyContent::InlineEnd if main_reversed == inline_reversed => justify_free,
+                    JustifyContent::Left if main_reversed => justify_free,
+                    JustifyContent::Right if !main_reversed => justify_free,
+                    JustifyContent::Center => justify_free / 2,
                     JustifyContent::SpaceBetween if count > 1 => {
-                        (i64::from(remaining) * i as i64 / (count - 1) as i64) as i32
+                        (i64::from(justify_free) * i as i64 / (count - 1) as i64) as i32
                     }
                     JustifyContent::SpaceAround => {
-                        (i64::from(remaining) * (2 * i + 1) as i64 / (2 * count) as i64) as i32
+                        (i64::from(justify_free) * (2 * i + 1) as i64 / (2 * count) as i64) as i32
                     }
                     JustifyContent::SpaceEvenly => {
-                        (i64::from(remaining) * (i + 1) as i64 / (count + 1) as i64) as i32
+                        (i64::from(justify_free) * (i + 1) as i64 / (count + 1) as i64) as i32
                     }
                     _ => 0,
                 };
@@ -2468,6 +2496,10 @@ impl<'a> Context<'a, '_> {
                 };
                 append_atomic(&mut row, child.atomic, child_x, child_y);
                 x = x.saturating_add(width);
+                if after_auto {
+                    x = x.saturating_add(share(allocated_margins));
+                    allocated_margins += 1;
+                }
                 row.width = row.width.max(x.saturating_add(offset));
             }
             y = y.saturating_add(line_height);
@@ -2486,7 +2518,7 @@ impl<'a> Context<'a, '_> {
         containing_width: i32,
     ) {
         let Some(node) = item.node else { return };
-        let mut resized = item.style;
+        let mut resized = flex_item_zero_auto_margins(item.style);
         let metrics = resolve_block_horizontal(resized, containing_width);
         let horizontal_extras = metrics
             .padding
@@ -2532,7 +2564,7 @@ impl<'a> Context<'a, '_> {
         containing_width: i32,
     ) {
         let Some(node) = item.node else { return };
-        let mut zero = item.style;
+        let mut zero = flex_item_zero_auto_margins(item.style);
         zero.width = Some(LengthPercentage::Px(0.0));
         let metrics = resolve_block_horizontal(zero, containing_width);
         let extras = metrics
@@ -2551,7 +2583,7 @@ impl<'a> Context<'a, '_> {
         } else {
             content
         };
-        let mut resized = item.style;
+        let mut resized = flex_item_zero_auto_margins(item.style);
         resized.width = Some(LengthPercentage::Px(specified as f32));
         item.atomic = self.flex_element_atomic(node, item.href, resized, containing_width);
     }
@@ -2710,6 +2742,7 @@ impl<'a> Context<'a, '_> {
         mut style: Style,
         containing_width: i32,
     ) -> InlineAtomic {
+        style = flex_item_zero_auto_margins(style);
         if style.width.is_none() {
             let mut text = String::new();
             for child in self.document.children(id) {
@@ -6296,6 +6329,18 @@ fn table_cell_slot_width(widths: &[i32], column: usize, colspan: usize, spacing:
         .fold(0i32, i32::saturating_add)
         .saturating_add(spacing.saturating_mul(end.saturating_sub(column + 1) as i32))
         .max(1)
+}
+
+// Auto margins on flex items are zero during sizing and only absorb
+// remaining line space after flexible lengths have been resolved.
+fn flex_item_zero_auto_margins(mut style: Style) -> Style {
+    if style.margin.left == MarginValue::Auto {
+        style.margin.left = MarginValue::ZERO;
+    }
+    if style.margin.right == MarginValue::Auto {
+        style.margin.right = MarginValue::ZERO;
+    }
+    style
 }
 
 fn resolve_block_horizontal(style: Style, containing_width: i32) -> UsedBlockHorizontal {

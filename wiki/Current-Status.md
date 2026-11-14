@@ -1,5 +1,8 @@
 # Current Project Status
 
+Row flex main-axis auto margins now absorb remaining line space after flexible sizing, including RTL and row-reverse. Flex columns and full sizing remain open.
+
+
 Row Flexbox supports `row-reverse` and RTL-aware main-axis placement. Column direction, main-axis auto margins and full Flexbox compliance remain open.
 
 

@@ -4141,3 +4141,8 @@ This file is append-only project history.
 
 - Added row-reverse and RTL-aware main-axis placement, preserving item ordering, wrapping and justification. Distinguished flex-relative, inline start/end and physical left/right justify-content values.
 - CSS cascade, RTL/reverse combinations, ordered wrapped geometry and native Windows pixels are tested. Flex columns, main-axis auto margins, baseline alignment, vertical writing modes and full flex sizing remain incomplete; no real-site visual acceptance is claimed.
+
+## 2026-11-14 - Flex row main-axis auto margins
+
+- Treat flex item horizontal auto margins as zero throughout sizing/reflow, then divide positive free space among them independently per line, before justification. Physical sides work with RTL and row-reverse.
+- Verified multiple auto margins, flex-grow, overflow, wrapped rows and native GDI pixels. Flex columns and full flex sizing remain incomplete; real-site rendering is unverified.
