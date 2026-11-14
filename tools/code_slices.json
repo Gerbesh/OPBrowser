@@ -2,6 +2,18 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S135",
+      "title": "Reverse wrapped flex rows to native pixels",
+      "status": "CSS cascade, alignment, auto margins, natural heights and Windows pixels tested",
+      "steps": [
+        {"path": "crates/op_css/src/computed.rs", "symbol": "fn parse_flex_wrap"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn flex_row_atomic"},
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "fn flex_wrap_reverse_preserves_order_and_aligns_against_correct_edges"},
+        {"path": "crates/op_browser/src/main.rs", "symbol": "fn flex_wrap_reverse_paints_rows_bottom_to_top"}
+      ],
+      "limitation": "Horizontal writing mode and row direction only; baseline, column flex and full sizing remain incomplete."
+    },
+    {
       "id": "S134",
       "title": "Wrapped flex line distribution to native pixels",
       "status": "CSS cascade, seven line distributions, overflow fallbacks and native pixels tested",

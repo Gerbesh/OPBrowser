@@ -2309,6 +2309,81 @@ mod tests {
     }
 
     #[test]
+    fn flex_wrap_reverse_preserves_order_and_aligns_against_correct_edges() {
+        fn geometry(content: &str, item: &str) -> Vec<(i32, i32)> {
+            let source = format!(
+                "<body style='margin:0'><div style='display:flex;flex-wrap:wrap-reverse;width:100px;height:100px;gap:10px;align-content:{content};align-items:flex-start'>\
+                <div style='width:45px;height:20px;{item};background:red'>A</div>\
+                <div style='width:45px;height:40px;background:blue'>B</div>\
+                <div style='width:45px;height:20px;background:green'>C</div></div></body>"
+            );
+            let document = op_html::parse_document(&source);
+            let computed =
+                op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+            let tree = layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            );
+            ["A", "B", "C"]
+                .iter()
+                .map(|label| {
+                    let text = tree.text_boxes.iter().find(|t| t.text == *label).unwrap();
+                    (text.x, text.y)
+                })
+                .collect()
+        }
+        let first = geometry("flex-start", "");
+        let base_x = first[0].0;
+        let base_y = first[1].1 - 60;
+        let relative = |positions: Vec<(i32, i32)>| {
+            positions
+                .into_iter()
+                .map(|(x, y)| (x - base_x, y - base_y))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(relative(first), [(0, 80), (55, 60), (0, 30)]);
+        assert_eq!(relative(geometry("start", "")), [(0, 50), (55, 30), (0, 0)]);
+        assert_eq!(
+            relative(geometry("center", "")),
+            [(0, 65), (55, 45), (0, 15)]
+        );
+        assert_eq!(
+            relative(geometry("flex-start", "align-self:start")),
+            [(0, 60), (55, 60), (0, 30)]
+        );
+        assert_eq!(
+            relative(geometry("flex-start", "margin-top:auto")),
+            [(0, 80), (55, 60), (0, 30)]
+        );
+        assert_eq!(
+            relative(geometry("flex-start", "margin-bottom:auto")),
+            [(0, 60), (55, 60), (0, 30)]
+        );
+    }
+
+    #[test]
+    fn flex_wrap_reverse_without_definite_height_reverses_natural_lines() {
+        let source = "<body style='margin:0'><div style='display:flex;flex-wrap:wrap-reverse;width:60px;gap:10px'>\
+            <div style='width:60px;height:20px'>A</div><div style='width:60px;height:30px'>B</div></div><p>C</p></body>";
+        let document = op_html::parse_document(source);
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let tree = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let y = |label: &str| tree.text_boxes.iter().find(|t| t.text == label).unwrap().y;
+        assert_eq!(y("A") - y("B"), 40);
+        assert!(y("C") >= y("A") + 20);
+    }
+
+    #[test]
     fn flex_align_content_distributes_lines_with_gaps_and_overflow_fallbacks() {
         fn positions(alignment: &str, height: i32) -> Vec<i32> {
             let source = format!(

@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## Reverse wrapped flex rows
+
+CSS `flex-wrap:wrap-reverse` and alignment values -> computed flex style -> row line sizing and cross-axis distribution -> reversed line/item positions without reversing main-axis item order -> normal display list and native GDI pixels. Tests cover physical versus flex-relative start, auto margins and both definite and natural container height. Full writing modes and column flex remain incomplete.
+
+
 ## Wrapped flex line distribution
 
 CSS `align-content` cascade -> computed line distribution -> flex line main-axis reflow -> measured line heights and row gaps -> cross-axis distribution or stretch -> per-item alignment -> display list -> native GDI pixels. Handles negative free-space fallbacks for the supported values. Flex column, wrap-reverse, baseline and min/max-only container cross sizing remain incomplete.

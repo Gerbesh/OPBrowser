@@ -4126,3 +4126,8 @@ This file is append-only project history.
 
 - Implemented CSS align-content cascade and cross-axis line distribution for definite-height wrapped row flex containers, including gaps, start/end/center, space-between/around/evenly, stretch and overflow fallbacks. Flexing widths now precedes cross-size measurement; stretched lines feed item stretch reflow.
 - Tested CSS global values, seven placements, negative free space and native Windows pixels. Baseline alignment, wrap-reverse, vertical writing modes, min/max-height-only cross sizing, flex column/order and full min-content sizing remain incomplete; no real-site visual acceptance is claimed.
+
+## 2026-11-14 - Reverse flex row wrapping
+
+- Added flex-wrap:wrap-reverse for row flex layouts, preserving main-axis item order while reversing cross-axis line progression. Distinguished flex-relative and writing-mode start/end and accounted for physical auto margins during reversed placement.
+- Verified CSS cascade, definite/natural container heights, line and item alignment, margins and Windows GDI pixels. Vertical writing modes, column direction, baseline alignment and full Flexbox conformance remain incomplete; real-site visual compatibility is unverified.

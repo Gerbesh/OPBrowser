@@ -37,6 +37,7 @@ pub enum Display {
 pub enum FlexWrap {
     NoWrap,
     Wrap,
+    WrapReverse,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +56,8 @@ pub enum AlignContent {
     Stretch,
     Start,
     End,
+    PhysicalStart,
+    PhysicalEnd,
     Center,
     SpaceBetween,
     SpaceAround,
@@ -67,6 +70,8 @@ pub enum AlignItems {
     Stretch,
     Start,
     End,
+    PhysicalStart,
+    PhysicalEnd,
     Center,
 }
 
@@ -2454,6 +2459,7 @@ fn parse_flex_wrap(tokens: &[TokenKind]) -> Option<Specified<FlexWrap>> {
     match single_ident(tokens)?.to_ascii_lowercase().as_str() {
         "nowrap" => Some(Specified::Value(FlexWrap::NoWrap)),
         "wrap" => Some(Specified::Value(FlexWrap::Wrap)),
+        "wrap-reverse" => Some(Specified::Value(FlexWrap::WrapReverse)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
         "unset" => Some(Specified::Unset),
@@ -2479,8 +2485,10 @@ fn parse_justify_content(tokens: &[TokenKind]) -> Option<Specified<JustifyConten
 fn parse_align_content(tokens: &[TokenKind]) -> Option<Specified<AlignContent>> {
     match single_ident(tokens)?.to_ascii_lowercase().as_str() {
         "stretch" | "normal" => Some(Specified::Value(AlignContent::Stretch)),
-        "start" | "flex-start" => Some(Specified::Value(AlignContent::Start)),
-        "end" | "flex-end" => Some(Specified::Value(AlignContent::End)),
+        "flex-start" => Some(Specified::Value(AlignContent::Start)),
+        "flex-end" => Some(Specified::Value(AlignContent::End)),
+        "start" => Some(Specified::Value(AlignContent::PhysicalStart)),
+        "end" => Some(Specified::Value(AlignContent::PhysicalEnd)),
         "center" => Some(Specified::Value(AlignContent::Center)),
         "space-between" => Some(Specified::Value(AlignContent::SpaceBetween)),
         "space-around" => Some(Specified::Value(AlignContent::SpaceAround)),
@@ -2495,8 +2503,10 @@ fn parse_align_content(tokens: &[TokenKind]) -> Option<Specified<AlignContent>> 
 fn parse_align_items(tokens: &[TokenKind]) -> Option<Specified<AlignItems>> {
     match single_ident(tokens)?.to_ascii_lowercase().as_str() {
         "stretch" | "normal" => Some(Specified::Value(AlignItems::Stretch)),
-        "start" | "flex-start" | "self-start" => Some(Specified::Value(AlignItems::Start)),
-        "end" | "flex-end" | "self-end" => Some(Specified::Value(AlignItems::End)),
+        "flex-start" => Some(Specified::Value(AlignItems::Start)),
+        "flex-end" => Some(Specified::Value(AlignItems::End)),
+        "start" | "self-start" => Some(Specified::Value(AlignItems::PhysicalStart)),
+        "end" | "self-end" => Some(Specified::Value(AlignItems::PhysicalEnd)),
         "center" => Some(Specified::Value(AlignItems::Center)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
@@ -4763,6 +4773,23 @@ mod tests {
     }
 
     #[test]
+    fn flex_wrap_reverse_and_start_keywords_preserve_alignment_semantics() {
+        let document = parse_document(
+            "<div id='parent' style='flex-wrap:wrap-reverse;align-content:start;align-items:start'>\
+             <div id='child' style='flex-wrap:inherit;align-content:flex-start;align-self:flex-start'></div></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let parent = computed.style_for(find_by_id(&document, "parent")).unwrap();
+        let child = computed.style_for(find_by_id(&document, "child")).unwrap();
+        assert_eq!(parent.flex_wrap, FlexWrap::WrapReverse);
+        assert_eq!(child.flex_wrap, FlexWrap::WrapReverse);
+        assert_eq!(parent.align_items, AlignItems::PhysicalStart);
+        assert_eq!(parent.align_content, AlignContent::PhysicalStart);
+        assert_eq!(child.align_content, AlignContent::Start);
+        assert_eq!(child.align_self, Some(AlignItems::Start));
+    }
+
+    #[test]
     fn flex_align_content_cascades_with_correct_initial_and_inheritance() {
         let document = parse_document(
             "<div id='parent' style='align-content:space-around'>\
@@ -4793,11 +4820,11 @@ mod tests {
         let computed = compute_styles(&document, &collect_author_styles(&document).styles);
         let style = |id| *computed.style_for(find_by_id(&document, id)).unwrap();
         assert_eq!(style("parent").align_items, AlignItems::Center);
-        assert_eq!(style("parent").align_self, Some(AlignItems::End));
+        assert_eq!(style("parent").align_self, Some(AlignItems::PhysicalEnd));
         assert_eq!(style("plain").align_items, AlignItems::Stretch);
         assert_eq!(style("plain").align_self, None);
         assert_eq!(style("inherit").align_items, AlignItems::Center);
-        assert_eq!(style("inherit").align_self, Some(AlignItems::End));
+        assert_eq!(style("inherit").align_self, Some(AlignItems::PhysicalEnd));
         assert_eq!(style("unset").align_items, AlignItems::Stretch);
         assert_eq!(style("unset").align_self, None);
         assert_eq!(style("priority").align_items, AlignItems::End);

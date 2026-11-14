@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 14 November 2026: reversed flex wrapping
+
+`op_css::FlexWrap::WrapReverse` and distinct start/end alignment variants flow through computed style to `op_layout::flow::Context::flex_row_atomic`; line and item cross positions are mirrored with physical auto-margin handling before normal paint. No new crate dependency.
+
+
 ## 14 November 2026: Flexbox line distribution
 
 `op_css::AlignContent` flows from CSS cascade through `ComputedStyle` into `op_layout::flow::Style`; `Context::flex_row_atomic` resolves main-axis flexing, measures lines, distributes cross-axis free space, then aligns and stretches item geometry. Existing paint and native raster consume these boxes.

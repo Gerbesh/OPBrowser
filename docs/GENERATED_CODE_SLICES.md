@@ -3,6 +3,24 @@
 > Generated from `tools/code_slices.json` and validated against live Rust files.
 > This is a curated vertical feature map, **not** an AST/call/data-flow slicer.
 
+## S135 — Reverse wrapped flex rows to native pixels
+
+Status: **CSS cascade, alignment, auto margins, natural heights and Windows pixels tested**.
+
+```text
+op_css::fn parse_flex_wrap
+op_layout::fn flex_row_atomic
+op_layout::fn flex_wrap_reverse_preserves_order_and_aligns_against_correct_edges
+op_browser::fn flex_wrap_reverse_paints_rows_bottom_to_top
+```
+
+- [`op_css::fn parse_flex_wrap`](../crates/op_css/src/computed.rs#L2458)
+- [`op_layout::fn flex_row_atomic`](../crates/op_layout/src/flow.rs#L2137)
+- [`op_layout::fn flex_wrap_reverse_preserves_order_and_aligns_against_correct_edges`](../crates/op_layout/src/lib.rs#L2312)
+- [`op_browser::fn flex_wrap_reverse_paints_rows_bottom_to_top`](../crates/op_browser/src/main.rs#L1036)
+
+Horizontal writing mode and row direction only; baseline, column flex and full sizing remain incomplete.
+
 ## S134 — Wrapped flex line distribution to native pixels
 
 Status: **CSS cascade, seven line distributions, overflow fallbacks and native pixels tested**.
@@ -15,11 +33,11 @@ op_layout::fn flex_align_content_distributes_lines_with_gaps_and_overflow_fallba
 op_browser::fn flex_align_content_stretches_wrapped_lines_in_native_pixels
 ```
 
-- [`op_css::fn parse_align_content`](../crates/op_css/src/computed.rs#L2479)
+- [`op_css::fn parse_align_content`](../crates/op_css/src/computed.rs#L2485)
 - [`op_layout::fn flex_row_atomic`](../crates/op_layout/src/flow.rs#L2137)
-- [`op_layout::fn stretch_flex_item_to_outer_height`](../crates/op_layout/src/flow.rs#L2445)
-- [`op_layout::fn flex_align_content_distributes_lines_with_gaps_and_overflow_fallbacks`](../crates/op_layout/src/lib.rs#L2312)
-- [`op_browser::fn flex_align_content_stretches_wrapped_lines_in_native_pixels`](../crates/op_browser/src/main.rs#L1036)
+- [`op_layout::fn stretch_flex_item_to_outer_height`](../crates/op_layout/src/flow.rs#L2459)
+- [`op_layout::fn flex_align_content_distributes_lines_with_gaps_and_overflow_fallbacks`](../crates/op_layout/src/lib.rs#L2387)
+- [`op_browser::fn flex_align_content_stretches_wrapped_lines_in_native_pixels`](../crates/op_browser/src/main.rs#L1062)
 
 No baseline, wrap-reverse, vertical writing modes, min/max-only cross sizing or full flex sizing.
 
@@ -36,12 +54,12 @@ op_layout::fn flex_cross_alignment_offsets_each_wrapped_line_and_respects_auto_m
 op_browser::fn flex_cross_alignment_and_stretch_paint_native_pixels
 ```
 
-- [`op_css::fn parse_align_items`](../crates/op_css/src/computed.rs#L2495)
-- [`op_css::fn parse_align_self`](../crates/op_css/src/computed.rs#L2508)
+- [`op_css::fn parse_align_items`](../crates/op_css/src/computed.rs#L2503)
+- [`op_css::fn parse_align_self`](../crates/op_css/src/computed.rs#L2518)
 - [`op_layout::fn flex_row_atomic`](../crates/op_layout/src/flow.rs#L2137)
-- [`op_layout::fn stretch_flex_item_to_outer_height`](../crates/op_layout/src/flow.rs#L2445)
-- [`op_layout::fn flex_cross_alignment_offsets_each_wrapped_line_and_respects_auto_margin`](../crates/op_layout/src/lib.rs#L2360)
-- [`op_browser::fn flex_cross_alignment_and_stretch_paint_native_pixels`](../crates/op_browser/src/main.rs#L1074)
+- [`op_layout::fn stretch_flex_item_to_outer_height`](../crates/op_layout/src/flow.rs#L2459)
+- [`op_layout::fn flex_cross_alignment_offsets_each_wrapped_line_and_respects_auto_margin`](../crates/op_layout/src/lib.rs#L2435)
+- [`op_browser::fn flex_cross_alignment_and_stretch_paint_native_pixels`](../crates/op_browser/src/main.rs#L1100)
 
 No baseline alignment, align-content, wrapped line distribution for definite-height containers, flex column/order or complete flex sizing.
 
@@ -803,8 +821,8 @@ op_layout::reflow_flex_item_to_outer_width
 op_platform_win::render_display_list_to_bgra
 ```
 
-- [`op_css::parse_flex_shorthand`](../crates/op_css/src/computed.rs#L1879)
-- [`op_css::parse_flex_basis`](../crates/op_css/src/computed.rs#L1910)
+- [`op_css::parse_flex_shorthand`](../crates/op_css/src/computed.rs#L1884)
+- [`op_css::parse_flex_basis`](../crates/op_css/src/computed.rs#L1915)
 - [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1255)
 - [`op_layout::reflow_flex_item_to_outer_width`](../crates/op_layout/src/flow.rs#L2224)
 - [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L135)
@@ -823,8 +841,8 @@ op_paint::build_display_list
 op_platform_win::render_display_list_to_bgra
 ```
 
-- [`op_css::parse_flex_grow`](../crates/op_css/src/computed.rs#L1897)
-- [`op_css::parse_justify_content`](../crates/op_css/src/computed.rs#L1852)
+- [`op_css::parse_flex_grow`](../crates/op_css/src/computed.rs#L1902)
+- [`op_css::parse_justify_content`](../crates/op_css/src/computed.rs#L1857)
 - [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1255)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 - [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L135)
@@ -843,8 +861,8 @@ op_paint::build_display_list
 op_platform_win::render_display_list_to_bgra
 ```
 
-- [`op_css::parse_flex_wrap`](../crates/op_css/src/computed.rs#L1836)
-- [`op_css::parse_flex_gap`](../crates/op_css/src/computed.rs#L1844)
+- [`op_css::parse_flex_wrap`](../crates/op_css/src/computed.rs#L1841)
+- [`op_css::parse_flex_gap`](../crates/op_css/src/computed.rs#L1849)
 - [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1255)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 - [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L135)
@@ -968,7 +986,7 @@ op_platform_win::paint_command
 op_engine::click_at
 ```
 
-- [`op_css::parse_overflow`](../crates/op_css/src/computed.rs#L2044)
+- [`op_css::parse_overflow`](../crates/op_css/src/computed.rs#L2049)
 - [`op_layout::collect_overflow_clips`](../crates/op_layout/src/flow.rs#L101)
 - [`op_layout::ClipRect`](../crates/op_layout/src/lib.rs#L187)
 - [`op_paint::clip_commands_since`](../crates/op_paint/src/lib.rs#L243)

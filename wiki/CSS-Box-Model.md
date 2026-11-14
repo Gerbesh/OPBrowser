@@ -1,5 +1,10 @@
 # CSS Block Box Model
 
+## Reverse flex wrapping (14 November 2026)
+
+Row flex containers support `flex-wrap:wrap-reverse`: lines progress upward while item order within a line is preserved. Flex-relative start/end and writing-mode start/end are distinguished for the supported horizontal writing mode, including line distribution and physical auto margins. Tests cover definite and natural heights and native pixels. Vertical writing modes, flex columns, baseline alignment and general Flexbox conformance remain open.
+
+
 ## Flex line distribution (14 November 2026)
 
 Wrapped row flex containers with a definite height support `align-content` start/end/center, space-between/around/evenly and stretch. Layout first resolves flex widths, then measures and distributes line heights and applies individual alignment; row gaps remain separate. The default stretch expands lines and auto-height items. Negative free space uses the supported positional fallbacks. Wrap-reverse, baseline alignment, vertical writing modes and min/max-height-only cross sizing remain incomplete.

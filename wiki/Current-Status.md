@@ -1,5 +1,8 @@
 # Current Project Status
 
+Row Flexbox supports reverse wrapping with cross-axis alignment and auto margins in the current horizontal writing mode. Column flex, baseline alignment and full Flexbox remain incomplete.
+
+
 Wrapped row Flexbox supports a bounded `align-content` subset, including distribution and default stretch within a definite-height container. Baseline, wrap-reverse, column direction and general Flexbox compliance remain open.
 
 

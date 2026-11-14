@@ -2177,7 +2177,7 @@ impl<'a> Context<'a, '_> {
             let next = current_width
                 .saturating_add(if current.is_empty() { 0 } else { column_gap })
                 .saturating_add(width);
-            if style.flex_wrap == FlexWrap::Wrap && !current.is_empty() && next > limit {
+            if style.flex_wrap != FlexWrap::NoWrap && !current.is_empty() && next > limit {
                 lines.push(std::mem::take(&mut current));
                 current_width = 0;
             }
@@ -2320,7 +2320,7 @@ impl<'a> Context<'a, '_> {
             .iter()
             .copied()
             .fold(gaps, i32::saturating_add);
-        let available_cross = if style.flex_wrap == FlexWrap::Wrap {
+        let available_cross = if style.flex_wrap != FlexWrap::NoWrap {
             definite_height.map_or(0, |height| height.saturating_sub(natural_height))
         } else {
             0
@@ -2351,9 +2351,15 @@ impl<'a> Context<'a, '_> {
             } else {
                 natural_line_height.saturating_add(stretch)
             };
-            let distribution_offset = if style.flex_wrap == FlexWrap::Wrap {
+            let distribution_offset = if style.flex_wrap != FlexWrap::NoWrap {
                 match style.align_content {
                     AlignContent::End => available_cross,
+                    AlignContent::PhysicalStart if style.flex_wrap == FlexWrap::WrapReverse => {
+                        available_cross
+                    }
+                    AlignContent::PhysicalEnd if style.flex_wrap != FlexWrap::WrapReverse => {
+                        available_cross
+                    }
                     AlignContent::Center => available_cross / 2,
                     AlignContent::SpaceBetween if available_cross > 0 && line_count > 1 => {
                         (positive_free * line_index as i64 / (line_count - 1) as i64) as i32
@@ -2389,10 +2395,11 @@ impl<'a> Context<'a, '_> {
                     self.stretch_flex_item_to_outer_height(&mut child, line_height, limit);
                 }
                 let free_cross = line_height.saturating_sub(child.atomic.height);
+                let reversed = style.flex_wrap == FlexWrap::WrapReverse;
                 let cross_offset = if top_auto || bottom_auto {
                     if top_auto && bottom_auto {
                         free_cross.max(0) / 2
-                    } else if top_auto {
+                    } else if top_auto != reversed {
                         free_cross.max(0)
                     } else {
                         0
@@ -2400,8 +2407,10 @@ impl<'a> Context<'a, '_> {
                 } else {
                     match align {
                         AlignItems::End => free_cross,
+                        AlignItems::PhysicalStart if reversed => free_cross,
+                        AlignItems::PhysicalEnd if !reversed => free_cross,
                         AlignItems::Center => free_cross / 2,
-                        AlignItems::Start | AlignItems::Stretch => 0,
+                        _ => 0,
                     }
                 };
                 if i > 0 {
@@ -2423,13 +2432,18 @@ impl<'a> Context<'a, '_> {
                     _ => 0,
                 };
                 let width = child.atomic.width.max(0);
-                append_atomic(
-                    &mut row,
-                    child.atomic,
-                    x.saturating_add(offset),
-                    y.saturating_add(distribution_offset)
-                        .saturating_add(cross_offset),
-                );
+                let logical_y = y
+                    .saturating_add(distribution_offset)
+                    .saturating_add(cross_offset);
+                let child_y = if reversed {
+                    definite_height
+                        .unwrap_or(natural_height)
+                        .saturating_sub(logical_y)
+                        .saturating_sub(child.atomic.height)
+                } else {
+                    logical_y
+                };
+                append_atomic(&mut row, child.atomic, x.saturating_add(offset), child_y);
                 x = x.saturating_add(width);
                 row.width = row.width.max(x.saturating_add(offset));
             }
