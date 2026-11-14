@@ -2309,6 +2309,61 @@ mod tests {
     }
 
     #[test]
+    fn flex_cross_alignment_offsets_each_wrapped_line_and_respects_auto_margin() {
+        let source = "<body style='margin:0'><div style='display:flex;flex-wrap:wrap;width:100px;gap:10px;align-items:center'>\
+            <div style='width:40px;height:60px;background:red'>A</div><div style='width:40px;height:20px;background:blue'>B</div>\
+            <div style='width:40px;height:40px;background:green'>C</div><div style='width:40px;height:20px;align-self:flex-end;background:yellow'>D</div>\
+            </div><div style='display:flex;width:100px;height:80px;align-items:center'>\
+            <div style='width:40px;height:20px;margin-top:auto;background:purple'>E</div>\
+            </div></body>";
+        let document = op_html::parse_document(source);
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let tree = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let y = |label: &str| tree.text_boxes.iter().find(|t| t.text == label).unwrap().y;
+        assert_eq!(y("B") - y("A"), 20);
+        assert_eq!(y("C") - y("A"), 70);
+        assert_eq!(y("D") - y("C"), 20);
+        assert_eq!(y("E") - y("C"), 100);
+    }
+
+    #[test]
+    fn flex_stretch_accounts_for_box_sizing_margins_and_max_height() {
+        let source = "<body style='margin:0'><div style='display:flex;width:180px;height:100px'>\
+            <div style='width:50px;box-sizing:border-box;padding:10px;border:2px solid red;margin:5px 0;background:red'></div>\
+            <div style='width:50px;max-height:40px;background:blue'></div></div></body>";
+        let document = op_html::parse_document(source);
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let tree = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let red = tree
+            .box_decorations
+            .iter()
+            .find(|d| d.background.red == 255 && d.background.green == 0 && d.background.blue == 0)
+            .unwrap();
+        let blue = tree
+            .box_decorations
+            .iter()
+            .find(|d| d.background.red == 0 && d.background.green == 0 && d.background.blue == 255)
+            .unwrap();
+        assert_eq!((red.width, red.height), (50, 90));
+        assert_eq!(red.y - blue.y, 5);
+        assert_eq!(blue.height, 40);
+    }
+
+    #[test]
     fn r2a_flex_gap_affects_column_advance_row_breaks_and_block_height() {
         let source = "<body style='margin:0'>\
             <div style='display:flex;flex-wrap:wrap;gap:7px 15px;width:200px'>\

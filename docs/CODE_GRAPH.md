@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 14 November 2026: Flexbox cross-axis alignment
+
+`op_css::AlignItems` and computed `align_items`/`align_self` values flow into `op_layout::flow::Style`; `Context::flex_row_atomic` measures line cross sizes and aligns or reflows items through `stretch_flex_item_to_outer_height`, preserving flexible widths. Existing paint and Windows raster paths consume the resulting geometry. No new crate dependencies.
+
+
 ## 14 November 2026: document-load clock propagation
 
 `op_engine::Engine::prepare_source` captures paired wall/monotonic clocks before `op_net::NetworkContext::load_document`; `op_engine::scripts::parse_and_execute` passes them to `op_js::JsRuntime::with_instruction_budget_and_time_origin`, which backs `performance.timeOrigin` and `performance.now()`. No new crate dependency.

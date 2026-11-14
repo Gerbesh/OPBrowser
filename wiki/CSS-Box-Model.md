@@ -1,5 +1,10 @@
 # CSS Block Box Model
 
+## Flex row cross-axis alignment (14 November 2026)
+
+The original row flex layout supports `align-items` and `align-self` start/end/center/stretch and cross-axis auto margins. Auto-height stretch reflows elements while retaining their flexed width and respecting box sizing, margins, padding, borders and height limits. A definite-height nowrap container supplies its line height; wrapped lines currently use their natural heights. Baseline alignment, `align-content`, wrapped-line distribution in a definite-height container, column direction and complete flex sizing remain unimplemented. Native geometry and GDI pixel tests cover the supported subset.
+
+
 DOM img sizes now use computed width/height/min/max and box-sizing around intrinsic raster
 dimensions. HTML bounded size attributes supply hints before author cascade; CSS auto and
 global keywords override them. Percent widths use containing content width; font-relative

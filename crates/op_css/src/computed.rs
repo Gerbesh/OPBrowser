@@ -49,6 +49,15 @@ pub enum JustifyContent {
     SpaceEvenly,
 }
 
+/// Supported flex cross-axis alignment values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlignItems {
+    Stretch,
+    Start,
+    End,
+    Center,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Position {
     Static,
@@ -417,6 +426,9 @@ pub struct ComputedStyle {
     /// Flex row/column gaps in CSS pixels; stored as horizontal/vertical spacing.
     pub flex_gap: BorderSpacing,
     pub justify_content: JustifyContent,
+    pub align_items: AlignItems,
+    /// None represents align-self:auto.
+    pub align_self: Option<AlignItems>,
     /// Positive unitless flex growth factor for this element as a flex item.
     pub flex_grow: f32,
     /// CSS initial shrink factor is 1, applied to the item's flex basis.
@@ -553,6 +565,8 @@ impl ComputedStyle {
             flex_wrap: FlexWrap::NoWrap,
             flex_gap: BorderSpacing::ZERO,
             justify_content: JustifyContent::Start,
+            align_items: AlignItems::Stretch,
+            align_self: None,
             flex_grow: 0.0,
             flex_shrink: 1.0,
             flex_basis: None,
@@ -1603,6 +1617,8 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             flex_wrap: initial.flex_wrap,
             flex_gap: initial.flex_gap,
             justify_content: initial.justify_content,
+            align_items: initial.align_items,
+            align_self: initial.align_self,
             flex_grow: initial.flex_grow,
             flex_shrink: initial.flex_shrink,
             flex_basis: initial.flex_basis,
@@ -1825,6 +1841,17 @@ fn apply_author_declarations(
             parent_style.map(|parent| parent.justify_content),
             JustifyContent::Start,
         );
+    }
+    if let Some((_, value)) = winning_value(declarations, "align-items", parse_align_items) {
+        style.align_items = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.align_items),
+            AlignItems::Stretch,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "align-self", parse_align_self) {
+        style.align_self =
+            resolve_non_inherited(value, parent_style.map(|parent| parent.align_self), None);
     }
     let shorthand = winning_value(declarations, "flex", |tokens| {
         parse_flex_shorthand(tokens, style.font_size_px)
@@ -2425,6 +2452,31 @@ fn parse_justify_content(tokens: &[TokenKind]) -> Option<Specified<JustifyConten
         "unset" => Some(Specified::Unset),
         _ => None,
     }
+}
+
+fn parse_align_items(tokens: &[TokenKind]) -> Option<Specified<AlignItems>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "stretch" | "normal" => Some(Specified::Value(AlignItems::Stretch)),
+        "start" | "flex-start" | "self-start" => Some(Specified::Value(AlignItems::Start)),
+        "end" | "flex-end" | "self-end" => Some(Specified::Value(AlignItems::End)),
+        "center" => Some(Specified::Value(AlignItems::Center)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_align_self(tokens: &[TokenKind]) -> Option<Specified<Option<AlignItems>>> {
+    if single_ident(tokens)?.eq_ignore_ascii_case("auto") {
+        return Some(Specified::Value(None));
+    }
+    parse_align_items(tokens).map(|value| match value {
+        Specified::Value(value) => Specified::Value(Some(value)),
+        Specified::Inherit => Specified::Inherit,
+        Specified::Initial => Specified::Initial,
+        Specified::Unset => Specified::Unset,
+    })
 }
 
 fn parse_flex_grow(tokens: &[TokenKind]) -> Option<Specified<f32>> {
@@ -4670,6 +4722,31 @@ mod tests {
         assert_flex("unset", 0.0, 1.0, None);
         assert_flex("invalid", 0.0, 1.0, None);
         assert_flex("important", 1.0, 1.0, Some(LengthPercentage::Px(5.0)));
+    }
+
+    #[test]
+    fn flex_cross_alignment_cascades_and_resolves_global_values() {
+        let document = parse_document(
+            "<div id='parent' style='align-items:center;align-self:end'>\
+             <div id='plain'></div><div id='inherit' style='align-items:inherit;align-self:inherit'></div>\
+             <div id='unset' style='align-items:unset;align-self:unset'></div>\
+             <div id='priority' style='align-items:flex-end!important;align-items:center;align-self:flex-start'></div>\
+             <div id='invalid' style='align-items:bogus;align-self:bogus'></div></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let style = |id| *computed.style_for(find_by_id(&document, id)).unwrap();
+        assert_eq!(style("parent").align_items, AlignItems::Center);
+        assert_eq!(style("parent").align_self, Some(AlignItems::End));
+        assert_eq!(style("plain").align_items, AlignItems::Stretch);
+        assert_eq!(style("plain").align_self, None);
+        assert_eq!(style("inherit").align_items, AlignItems::Center);
+        assert_eq!(style("inherit").align_self, Some(AlignItems::End));
+        assert_eq!(style("unset").align_items, AlignItems::Stretch);
+        assert_eq!(style("unset").align_self, None);
+        assert_eq!(style("priority").align_items, AlignItems::End);
+        assert_eq!(style("priority").align_self, Some(AlignItems::Start));
+        assert_eq!(style("invalid").align_items, AlignItems::Stretch);
+        assert_eq!(style("invalid").align_self, None);
     }
 
     #[test]

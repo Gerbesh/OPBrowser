@@ -1033,6 +1033,49 @@ mod overflow_tests {
     }
 
     #[test]
+    fn flex_cross_alignment_and_stretch_paint_native_pixels() {
+        let page = Engine::new().render_html(
+            "<body style='margin:0'><div style='display:flex;width:180px;height:100px;align-items:center'>\
+             <div style='width:40px;flex-grow:1;align-self:stretch;background:#f00000'></div>\
+             <div style='width:40px;height:20px;align-self:flex-end;background:#0000f0'></div>\
+             <div style='width:40px;height:20px;background:#00f000'></div>\
+             </div></body>", 240, 140,
+        );
+        let rect = |r, g, b| {
+            page.commands
+                .iter()
+                .find_map(|cmd| {
+                    let op_paint::PaintCommand::FillRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        color,
+                    } = cmd
+                    else {
+                        return None;
+                    };
+                    (color.r == r && color.g == g && color.b == b)
+                        .then_some((*x, *y, *width, *height))
+                })
+                .unwrap()
+        };
+        let red = rect(240, 0, 0);
+        let blue = rect(0, 0, 240);
+        let green = rect(0, 240, 0);
+        assert_eq!((red.2, red.3), (100, 100));
+        assert_eq!(blue.1 - red.1, 80);
+        assert_eq!(green.1 - red.1, 40);
+        let pixels = op_platform_win::render_display_list_to_bgra(&page, 240, 140).unwrap();
+        assert_eq!(rgb_at(&pixels, 240, red.0 + 90, red.1 + 90), (240, 0, 0));
+        assert_eq!(rgb_at(&pixels, 240, blue.0 + 10, blue.1 + 10), (0, 0, 240));
+        assert_eq!(
+            rgb_at(&pixels, 240, green.0 + 10, green.1 + 10),
+            (0, 240, 0)
+        );
+    }
+
+    #[test]
     fn r2b_justify_and_flex_grow_render_real_native_pixels() {
         let engine = Engine::new();
         let page = engine.render_html(

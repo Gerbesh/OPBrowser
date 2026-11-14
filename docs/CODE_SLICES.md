@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## Flex row cross-axis alignment
+
+CSS `align-items`/`align-self` cascade -> computed alignment -> flex row sizing and per-item offset or auto-height stretch reflow -> original box and text geometry -> display list -> Windows BGRA pixels. Tests cover nowrap definite height, wrapped natural lines, margins, box sizing, max-height and flex growth. Baselines, align-content and full Flexbox are not implemented.
+
+
 ## Document fetch to page performance clock
 
 Document load begins -> engine captures monotonic and epoch origins -> network loads document -> parser passes origins to the first page VM -> `performance.timeOrigin` exposes the wall-clock origin and `performance.now()` measures monotonic elapsed time. A delayed local HTTP server verifies inclusion of fetch latency and a fresh reload origin. Other navigation timing milestones are not implemented.

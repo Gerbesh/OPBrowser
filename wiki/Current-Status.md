@@ -1,5 +1,8 @@
 # Current Project Status
 
+Row Flexbox now supports a bounded cross-axis alignment subset, including start/end/center/stretch, per-item overrides and cross-axis auto margins. Multi-line `align-content`, baseline alignment and column direction remain open; no real-site visual acceptance is claimed.
+
+
 The performance clock for loaded documents starts before document loading, so fetch time is included. This does not yet provide `performance.timing.responseStart` or complete Navigation Timing.
 
 

@@ -4,11 +4,11 @@ use super::inline::{
 };
 use super::*;
 use op_css::{
-    BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide, Clear,
-    ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Direction, Display,
-    FlexWrap, FloatSide, FontStyle as CssFontStyle, InsetEdges, JustifyContent, LengthPercentage,
-    MarginEdges, MarginValue, Overflow, PaddingEdges, Position, PseudoElement, TableLayout,
-    TextAlign, TextTransform, VerticalAlign, Visibility, WhiteSpace,
+    AlignItems, BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide,
+    Clear, ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Direction,
+    Display, FlexWrap, FloatSide, FontStyle as CssFontStyle, InsetEdges, JustifyContent,
+    LengthPercentage, MarginEdges, MarginValue, Overflow, PaddingEdges, Position, PseudoElement,
+    TableLayout, TextAlign, TextTransform, VerticalAlign, Visibility, WhiteSpace,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -343,6 +343,8 @@ struct Style {
     flex_wrap: FlexWrap,
     flex_gap: BorderSpacing,
     justify_content: JustifyContent,
+    align_items: AlignItems,
+    align_self: Option<AlignItems>,
     flex_grow: f32,
     flex_shrink: f32,
     flex_basis: Option<LengthPercentage>,
@@ -1249,7 +1251,7 @@ impl<'a> Context<'a, '_> {
         if let BlockContent::Element(id) = content
             && matches!(display, Display::Flex | Display::InlineFlex)
         {
-            let row = self.flex_row_atomic(id, href, style, content_width);
+            let row = self.flex_row_atomic(id, href, style, content_width, definite_content_height);
             let row_height = row.height;
             self.append_atomic_output(row, content_x, content_top);
             self.y = content_top.saturating_add(row_height);
@@ -2052,7 +2054,7 @@ impl<'a> Context<'a, '_> {
             .max(1);
 
         if style.width.is_none() {
-            let intrinsic = self.flex_row_atomic(id, None, style, available);
+            let intrinsic = self.flex_row_atomic(id, None, style, available, None);
             style.width = Some(LengthPercentage::Px(intrinsic.width.max(1) as f32));
         }
 
@@ -2137,6 +2139,7 @@ impl<'a> Context<'a, '_> {
         href: Option<&'a str>,
         style: Style,
         containing_width: i32,
+        definite_height: Option<i32>,
     ) -> InlineAtomic {
         let children = self.document.children(id).to_vec();
         let mut pending = Vec::new();
@@ -2309,8 +2312,50 @@ impl<'a> Context<'a, '_> {
                 .fold(gap_total, i32::saturating_add);
             let remaining = limit.saturating_sub(used).max(0);
             let mut x = 0i32;
-            let mut line_height = 0i32;
-            for (i, child) in line.into_iter().enumerate() {
+            let natural_line_height = line
+                .iter()
+                .map(|item| item.atomic.height)
+                .max()
+                .unwrap_or(0);
+            // A single-line flex container's cross size is its definite content height.
+            let line_height = if style.flex_wrap == FlexWrap::NoWrap {
+                definite_height.unwrap_or(natural_line_height)
+            } else {
+                natural_line_height
+            };
+            for (i, mut child) in line.into_iter().enumerate() {
+                let align = if child.node.is_some() {
+                    child.style.align_self.unwrap_or(style.align_items)
+                } else {
+                    style.align_items
+                };
+                let top_auto = child.node.is_some() && child.style.margin.top == MarginValue::Auto;
+                let bottom_auto =
+                    child.node.is_some() && child.style.margin.bottom == MarginValue::Auto;
+                if align == AlignItems::Stretch
+                    && !top_auto
+                    && !bottom_auto
+                    && child.style.height.is_none()
+                    && child.node.is_some()
+                {
+                    self.stretch_flex_item_to_outer_height(&mut child, line_height, limit);
+                }
+                let free_cross = line_height.saturating_sub(child.atomic.height);
+                let cross_offset = if top_auto || bottom_auto {
+                    if top_auto && bottom_auto {
+                        free_cross.max(0) / 2
+                    } else if top_auto {
+                        free_cross.max(0)
+                    } else {
+                        0
+                    }
+                } else {
+                    match align {
+                        AlignItems::End => free_cross,
+                        AlignItems::Center => free_cross / 2,
+                        AlignItems::Start | AlignItems::Stretch => 0,
+                    }
+                };
                 if i > 0 {
                     x = x.saturating_add(column_gap);
                 }
@@ -2330,8 +2375,12 @@ impl<'a> Context<'a, '_> {
                     _ => 0,
                 };
                 let width = child.atomic.width.max(0);
-                line_height = line_height.max(child.atomic.height);
-                append_atomic(&mut row, child.atomic, x.saturating_add(offset), y);
+                append_atomic(
+                    &mut row,
+                    child.atomic,
+                    x.saturating_add(offset),
+                    y.saturating_add(cross_offset),
+                );
                 x = x.saturating_add(width);
                 row.width = row.width.max(x.saturating_add(offset));
             }
@@ -2340,6 +2389,52 @@ impl<'a> Context<'a, '_> {
         row.height = y;
         row.baseline = y;
         row
+    }
+
+    /// Re-layout auto-height items at the assigned line height, preserving
+    /// their width after flex growth/shrink and resolving border-box extras.
+    fn stretch_flex_item_to_outer_height(
+        &mut self,
+        item: &mut FlexItem<'a>,
+        outer_height: i32,
+        containing_width: i32,
+    ) {
+        let Some(node) = item.node else { return };
+        let mut resized = item.style;
+        let metrics = resolve_block_horizontal(resized, containing_width);
+        let horizontal_extras = metrics
+            .padding
+            .left
+            .saturating_add(metrics.padding.right)
+            .saturating_add(metrics.border.left.width)
+            .saturating_add(metrics.border.right.width);
+        let content_width = item
+            .atomic
+            .width
+            .saturating_sub(metrics.margin_left)
+            .saturating_sub(metrics.margin_right)
+            .saturating_sub(horizontal_extras)
+            .max(0);
+        resized.width = Some(LengthPercentage::Px(match resized.box_sizing {
+            BoxSizing::BorderBox => content_width.saturating_add(horizontal_extras),
+            BoxSizing::ContentBox => content_width,
+        } as f32));
+        let margins = resolve_vertical_margin(resized.margin.top, containing_width).saturating_add(
+            resolve_vertical_margin(resized.margin.bottom, containing_width),
+        );
+        let vertical_extras = metrics
+            .padding
+            .top
+            .saturating_add(metrics.padding.bottom)
+            .saturating_add(metrics.border.top.width)
+            .saturating_add(metrics.border.bottom.width);
+        let border_height = outer_height.saturating_sub(margins).max(0);
+        let specified_height = match resized.box_sizing {
+            BoxSizing::BorderBox => border_height,
+            BoxSizing::ContentBox => border_height.saturating_sub(vertical_extras).max(0),
+        };
+        resized.height = Some(LengthPercentage::Px(specified_height as f32));
+        item.atomic = self.flex_element_atomic(node, item.href, resized, containing_width);
     }
 
     /// Convert an assigned outer flex width back into a content/border
@@ -6484,6 +6579,8 @@ fn computed_style(style: ComputedStyle) -> Style {
         flex_wrap: style.flex_wrap,
         flex_gap: style.flex_gap,
         justify_content: style.justify_content,
+        align_items: style.align_items,
+        align_self: style.align_self,
         flex_grow: style.flex_grow,
         flex_shrink: style.flex_shrink,
         flex_basis: style.flex_basis,
@@ -6651,6 +6748,8 @@ fn default_style() -> Style {
         flex_wrap: FlexWrap::NoWrap,
         flex_gap: BorderSpacing::ZERO,
         justify_content: JustifyContent::Start,
+        align_items: AlignItems::Stretch,
+        align_self: None,
         flex_grow: 0.0,
         flex_shrink: 1.0,
         flex_basis: None,
@@ -6723,6 +6822,8 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         flex_wrap: FlexWrap::NoWrap,
         flex_gap: BorderSpacing::ZERO,
         justify_content: JustifyContent::Start,
+        align_items: AlignItems::Stretch,
+        align_self: None,
         flex_grow: 0.0,
         flex_shrink: 1.0,
         flex_basis: None,

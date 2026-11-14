@@ -12,13 +12,13 @@ mod style;
 mod tokenizer;
 
 pub use computed::{
-    BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide, Clear,
-    ComputedBorder, ComputedFontWeight, ComputedLineHeight, ComputedPseudoStyle, ComputedQuotes,
-    ComputedStyle, ComputedStyleMap, CssColor, CustomPropertyMap, Direction, Display, FlexWrap,
-    FloatSide, FontStyle, GeneratedContentItem, InsetEdges, JustifyContent, LengthPercentage,
-    MarginEdges, MarginValue, Overflow, PaddingEdges, PointerEvents, Position, TableLayout,
-    TextAlign, TextDecorationLine, TextTransform, VerticalAlign, Visibility, WhiteSpace,
-    compute_styles,
+    AlignItems, BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide,
+    Clear, ComputedBorder, ComputedFontWeight, ComputedLineHeight, ComputedPseudoStyle,
+    ComputedQuotes, ComputedStyle, ComputedStyleMap, CssColor, CustomPropertyMap, Direction,
+    Display, FlexWrap, FloatSide, FontStyle, GeneratedContentItem, InsetEdges, JustifyContent,
+    LengthPercentage, MarginEdges, MarginValue, Overflow, PaddingEdges, PointerEvents, Position,
+    TableLayout, TextAlign, TextDecorationLine, TextTransform, VerticalAlign, Visibility,
+    WhiteSpace, compute_styles,
 };
 pub use parser::{
     parse_color_profiles, parse_declaration_list, parse_stylesheet, parse_stylesheet_at_viewport,

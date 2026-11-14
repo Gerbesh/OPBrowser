@@ -4116,3 +4116,8 @@ This file is append-only project history.
 
 - Captured paired monotonic and wall clocks before source loading and propagated them through parser script setup to the original JS VM. Loaded-page `performance.now()` now includes fetch time; `timeOrigin` identifies the same load boundary and reload starts a new clock. In-memory page clocks remain VM-relative.
 - A delayed loopback HTTP response verifies fetch latency and fresh reload origin end to end. `performance.timing.responseStart` remains unavailable: WinHTTP documented receive notifications do not establish the exact first-response-byte instant. No live-site result is claimed.
+
+## 2026-11-14 - Flex row cross-axis alignment
+
+- Added CSS cascade for align-items/align-self and row flex cross-axis start/end/center/stretch with auto margins. Auto-height stretch reflows original item content and paint at its assigned cross size while preserving its grown/shrunk width; margins, padding, border-box and height limits are applied.
+- Verified CSS inheritance/invalid values, wrapped line geometry, auto margins, min/max-sensitive box sizing and native GDI pixel output. Baselines, align-content, cross-size distribution for wrapped lines, flex column/order and full min-content sizing remain incomplete. No real-site visual pass is claimed.

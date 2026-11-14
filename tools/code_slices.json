@@ -2,6 +2,20 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S133",
+      "title": "Flex row cross-axis CSS to native pixels",
+      "status": "CSS cascade, wrapped geometry, stretch constraints and native GDI pixels tested",
+      "steps": [
+        {"path": "crates/op_css/src/computed.rs", "symbol": "fn parse_align_items"},
+        {"path": "crates/op_css/src/computed.rs", "symbol": "fn parse_align_self"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn flex_row_atomic"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn stretch_flex_item_to_outer_height"},
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "fn flex_cross_alignment_offsets_each_wrapped_line_and_respects_auto_margin"},
+        {"path": "crates/op_browser/src/main.rs", "symbol": "fn flex_cross_alignment_and_stretch_paint_native_pixels"}
+      ],
+      "limitation": "No baseline alignment, align-content, wrapped line distribution for definite-height containers, flex column/order or complete flex sizing."
+    },
+    {
       "id": "S132",
       "title": "Document loading to page performance clock",
       "status": "Delayed local HTTP fetch and reload verified in original engine",

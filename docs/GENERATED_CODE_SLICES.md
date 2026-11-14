@@ -3,6 +3,28 @@
 > Generated from `tools/code_slices.json` and validated against live Rust files.
 > This is a curated vertical feature map, **not** an AST/call/data-flow slicer.
 
+## S133 — Flex row cross-axis CSS to native pixels
+
+Status: **CSS cascade, wrapped geometry, stretch constraints and native GDI pixels tested**.
+
+```text
+op_css::fn parse_align_items
+op_css::fn parse_align_self
+op_layout::fn flex_row_atomic
+op_layout::fn stretch_flex_item_to_outer_height
+op_layout::fn flex_cross_alignment_offsets_each_wrapped_line_and_respects_auto_margin
+op_browser::fn flex_cross_alignment_and_stretch_paint_native_pixels
+```
+
+- [`op_css::fn parse_align_items`](../crates/op_css/src/computed.rs#L2457)
+- [`op_css::fn parse_align_self`](../crates/op_css/src/computed.rs#L2470)
+- [`op_layout::fn flex_row_atomic`](../crates/op_layout/src/flow.rs#L2136)
+- [`op_layout::fn stretch_flex_item_to_outer_height`](../crates/op_layout/src/flow.rs#L2396)
+- [`op_layout::fn flex_cross_alignment_offsets_each_wrapped_line_and_respects_auto_margin`](../crates/op_layout/src/lib.rs#L2312)
+- [`op_browser::fn flex_cross_alignment_and_stretch_paint_native_pixels`](../crates/op_browser/src/main.rs#L1036)
+
+No baseline alignment, align-content, wrapped line distribution for definite-height containers, flex column/order or complete flex sizing.
+
 ## S132 — Document loading to page performance clock
 
 Status: **Delayed local HTTP fetch and reload verified in original engine**.
@@ -92,7 +114,7 @@ op_engine::textarea_soft_wrap_scroll_click_and_unicode_insert_keep_full_dom_valu
 ```
 
 - [`op_layout::fn textarea_visual_lines`](../crates/op_layout/src/lib.rs#L682)
-- [`op_layout::fn textarea_atomic`](../crates/op_layout/src/flow.rs#L1667)
+- [`op_layout::fn textarea_atomic`](../crates/op_layout/src/flow.rs#L1669)
 - [`op_engine::wrapped_textarea_caret_at_point`](../crates/op_engine/src/forms.rs#L394)
 - [`op_engine::wrapped_textarea_selection_fragments`](../crates/op_engine/src/forms.rs#L416)
 - [`op_engine::textarea_soft_wrap_scroll_click_and_unicode_insert_keep_full_dom_value`](../crates/op_engine/src/lib.rs#L3413)
@@ -113,7 +135,7 @@ op_engine::textarea_atomic_viewport_follows_caret_and_click_maps_to_scrolled_row
 ```
 
 - [`op_html::textarea`](../crates/op_html/src/tree_builder.rs#L2147)
-- [`op_layout::fn textarea_atomic`](../crates/op_layout/src/flow.rs#L1667)
+- [`op_layout::fn textarea_atomic`](../crates/op_layout/src/flow.rs#L1669)
 - [`op_layout::InlineAtomic`](../crates/op_layout/src/inline.rs#L338)
 - [`op_engine::reveal_textarea_row`](../crates/op_engine/src/forms.rs#L290)
 - [`op_engine::text_caret_at`](../crates/op_engine/src/lib.rs#L433)
@@ -134,8 +156,8 @@ op_engine::PreparedDocument
 ```
 
 - [`op_html::input`](../crates/op_html/src/tree_builder.rs#L53)
-- [`op_layout::fn textarea_atomic`](../crates/op_layout/src/flow.rs#L1667)
-- [`op_layout::fn text_input_atomic`](../crates/op_layout/src/flow.rs#L1811)
+- [`op_layout::fn textarea_atomic`](../crates/op_layout/src/flow.rs#L1669)
+- [`op_layout::fn text_input_atomic`](../crates/op_layout/src/flow.rs#L1813)
 - [`op_layout::form_size_and_cols_hints_change_native_inline_control_width`](../crates/op_layout/src/lib.rs#L2062)
 - [`op_engine::PreparedDocument`](../crates/op_engine/src/lib.rs#L282)
 
@@ -761,10 +783,10 @@ op_layout::reflow_flex_item_to_outer_width
 op_platform_win::render_display_list_to_bgra
 ```
 
-- [`op_css::parse_flex_shorthand`](../crates/op_css/src/computed.rs#L1830)
-- [`op_css::parse_flex_basis`](../crates/op_css/src/computed.rs#L1861)
-- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1252)
-- [`op_layout::reflow_flex_item_to_outer_width`](../crates/op_layout/src/flow.rs#L2223)
+- [`op_css::parse_flex_shorthand`](../crates/op_css/src/computed.rs#L1857)
+- [`op_css::parse_flex_basis`](../crates/op_css/src/computed.rs#L1888)
+- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1254)
+- [`op_layout::reflow_flex_item_to_outer_width`](../crates/op_layout/src/flow.rs#L2226)
 - [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L135)
 
 Horizontal row flex only, no full automatic min-content, column direction, cross-axis alignment/order, Grid or complete Flexbox conformance.
@@ -781,9 +803,9 @@ op_paint::build_display_list
 op_platform_win::render_display_list_to_bgra
 ```
 
-- [`op_css::parse_flex_grow`](../crates/op_css/src/computed.rs#L1848)
-- [`op_css::parse_justify_content`](../crates/op_css/src/computed.rs#L1821)
-- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1252)
+- [`op_css::parse_flex_grow`](../crates/op_css/src/computed.rs#L1875)
+- [`op_css::parse_justify_content`](../crates/op_css/src/computed.rs#L1837)
+- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1254)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 - [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L135)
 
@@ -801,9 +823,9 @@ op_paint::build_display_list
 op_platform_win::render_display_list_to_bgra
 ```
 
-- [`op_css::parse_flex_wrap`](../crates/op_css/src/computed.rs#L1805)
-- [`op_css::parse_flex_gap`](../crates/op_css/src/computed.rs#L1813)
-- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1252)
+- [`op_css::parse_flex_wrap`](../crates/op_css/src/computed.rs#L1821)
+- [`op_css::parse_flex_gap`](../crates/op_css/src/computed.rs#L1829)
+- [`op_layout::flex_row_atomic`](../crates/op_layout/src/flow.rs#L1254)
 - [`op_paint::build_display_list`](../crates/op_paint/src/lib.rs#L100)
 - [`op_platform_win::render_display_list_to_bgra`](../crates/op_platform_win/src/lib.rs#L135)
 
@@ -863,7 +885,7 @@ op_js::set_dom_scroll_top
 op_engine::reflow
 ```
 
-- [`op_layout::max_scroll_top`](../crates/op_layout/src/flow.rs#L1389)
+- [`op_layout::max_scroll_top`](../crates/op_layout/src/flow.rs#L1391)
 - [`op_engine::render`](../crates/op_engine/src/lib.rs#L1040)
 - [`op_js::sync_dom_scroll_limits`](../crates/op_js/src/runtime.rs#L3643)
 - [`op_js::set_dom_scroll_top`](../crates/op_js/src/runtime.rs#L3658)
@@ -926,7 +948,7 @@ op_platform_win::paint_command
 op_engine::click_at
 ```
 
-- [`op_css::parse_overflow`](../crates/op_css/src/computed.rs#L1995)
+- [`op_css::parse_overflow`](../crates/op_css/src/computed.rs#L2022)
 - [`op_layout::collect_overflow_clips`](../crates/op_layout/src/flow.rs#L101)
 - [`op_layout::ClipRect`](../crates/op_layout/src/lib.rs#L187)
 - [`op_paint::clip_commands_since`](../crates/op_paint/src/lib.rs#L243)
