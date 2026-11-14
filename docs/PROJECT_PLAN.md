@@ -1,5 +1,10 @@
 # OPBrowser: active project plan
 
+## 14 November 2026: document-load performance clock
+
+For loaded documents, the engine now pairs a monotonic instant and wall-clock value immediately before document loading and passes them into the page VM. `performance.now()` includes the document fetch and `performance.timeOrigin` reflects that load boundary; reloading starts a new clock. A delayed local HTTP response and reload are tested end to end. In-memory pages still use VM-creation time, and this is not complete navigation timing: responseStart and other network milestones remain unavailable. WinHTTP receive notifications do not establish the exact first-byte time. No live-site improvement is claimed.
+
+
 ## 14 November 2026: bounded native Array.sort
 
 Implemented stable in-place `Array.prototype.sort` using bounded merge sort and the original VM comparator dispatch. Own indexed values are collected at the initial length, `undefined` values precede holes, comparator exceptions propagate, and default ordering compares UTF-16 string units. This remains an array-only subset: inherited indices, generic receivers, full property descriptor semantics and ECMAScript object-to-primitive coercion are incomplete. No new live-site compatibility claim has been measured. Next: navigation timing, object coercion and remaining site bootstrap diagnostics.

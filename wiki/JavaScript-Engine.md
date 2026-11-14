@@ -1,5 +1,10 @@
 # JavaScript Engine
 
+## Loaded-document performance clock (14 November 2026)
+
+For loaded documents, the engine captures a wall/monotonic clock pair immediately before loading and passes it to the page VM. `performance.now()` therefore includes fetch time and stays monotonic; `timeOrigin` is the paired epoch value. Reload creates a fresh pair. In-memory pages retain a runtime-creation origin. Full navigation timing, including `responseStart`, remains unimplemented.
+
+
 ## Array.prototype.sort: bounded native subset (14 November 2026)
 
 Native sort mutates and returns the original first-party array, using stable merge sorting, optional VM comparator calls, and default UTF-16 string ordering. It collects own indexed slots, sorts defined values, then places undefined values before holes. The existing 4096-element array bound applies. Generic receivers, inherited indexed properties, complete property descriptors and object-to-primitive conversions remain unsupported or incomplete.

@@ -4111,3 +4111,8 @@ This file is append-only project history.
 
 - Built the native Release live-site probe after the Array.sort change and attempted a focused YouTube run with opt-in bounded diagnostics. Navigation failed before page load with WinHTTP error 12007 (name resolution), so no conclusion about sort or current site rendering can be drawn. Local ignored artifacts: `artifacts/live_web/youtube-sort-2026-11-14/`.
 - Navigation timing investigation: `performance.now()` currently uses a runtime-creation origin, while the document loader does not carry network timing into the parser or JS runtime. Accurate navigation timing requires instrumentation and propagation across those layers; a receive-headers timestamp alone is not proof of the first response byte.
+
+## 2026-11-14 - Document-load performance origin
+
+- Captured paired monotonic and wall clocks before source loading and propagated them through parser script setup to the original JS VM. Loaded-page `performance.now()` now includes fetch time; `timeOrigin` identifies the same load boundary and reload starts a new clock. In-memory page clocks remain VM-relative.
+- A delayed loopback HTTP response verifies fetch latency and fresh reload origin end to end. `performance.timing.responseStart` remains unavailable: WinHTTP documented receive notifications do not establish the exact first-response-byte instant. No live-site result is claimed.

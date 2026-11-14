@@ -12,7 +12,7 @@ use op_layout::{layout_document_with_backgrounds_and_resources, layout_document_
 use op_net::{LoadError, LoadedDocument, NetworkContext, resolve_link, resolve_script_source};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 static ACTIVE_NETWORK_WORKERS: AtomicUsize = AtomicUsize::new(0);
 const MAX_NETWORK_WORKERS: usize = 16;
@@ -1759,7 +1759,7 @@ impl Engine {
         viewport_height: i32,
     ) -> DisplayList {
         let (document, _script_report, _runtime, _diagnostics) =
-            scripts::parse_and_execute(html, None, None);
+            scripts::parse_and_execute(html, None, None, None);
         let style_collection =
             collect_author_styles_at_viewport(&document, viewport_width, viewport_height);
         let computed_styles = compute_styles(&document, &style_collection.styles);
@@ -1788,7 +1788,7 @@ impl Engine {
     /// Initialize an in-memory page and an empty navigation history for startup.
     pub fn set_html_page(&mut self, html: &str, width: i32, height: i32) -> DisplayList {
         let (document, script_report, runtime, diagnostics) =
-            scripts::parse_and_execute(html, None, None);
+            scripts::parse_and_execute(html, None, None, None);
         let style_collection = collect_author_styles_at_viewport(&document, width, height);
         let computed_styles = compute_styles(&document, &style_collection.styles);
         let mut prepared = PreparedDocument {
@@ -3016,9 +3016,14 @@ impl Engine {
         viewport_width: i32,
         viewport_height: i32,
     ) -> Result<PreparedDocument, LoadError> {
+        let time_origin = (Instant::now(), SystemTime::now());
         let loaded: LoadedDocument = self.network.load_document(source)?;
-        let (document, script_report, runtime, diagnostics) =
-            scripts::parse_and_execute(&loaded.text, Some(&self.network), Some(&loaded.address));
+        let (document, script_report, runtime, diagnostics) = scripts::parse_and_execute(
+            &loaded.text,
+            Some(&self.network),
+            Some(&loaded.address),
+            Some(time_origin),
+        );
         let linked_stylesheets = styles::load(&self.network, &document, &loaded.address);
         let mut style_collection = collect_author_styles_with_linked_at_viewport(
             &document,
@@ -10036,6 +10041,72 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
         let reflowed = engine.reflow(420, 480).unwrap();
         assert_styles(&reflowed);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn performance_clock_includes_document_fetch_and_resets_on_navigation() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::time::UNIX_EPOCH;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!("http://{}/", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut buffer = [0; 4096];
+                assert!(stream.read(&mut buffer).unwrap() > 0);
+                std::thread::sleep(Duration::from_millis(120));
+                let body = "<script>var observed=performance.now();var origin=performance.timeOrigin;</script><p>ok</p>";
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        let before = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64()
+            * 1000.0;
+        let mut engine = Engine::new();
+        engine.navigate(&address, 400, 300).unwrap();
+        let vm = engine
+            .active_document
+            .as_mut()
+            .unwrap()
+            .runtime
+            .as_mut()
+            .unwrap();
+        let op_js::JsValue::Number(first_origin) = vm.eval_script("origin").unwrap() else {
+            panic!("missing origin")
+        };
+        let op_js::JsValue::Number(first_elapsed) = vm.eval_script("observed").unwrap() else {
+            panic!("missing elapsed time")
+        };
+        assert!(first_origin >= before - 10.0);
+        assert!(
+            first_elapsed >= 100.0,
+            "fetch delay absent: {first_elapsed}"
+        );
+        engine.reload(400, 300).unwrap().unwrap();
+        let vm = engine
+            .active_document
+            .as_mut()
+            .unwrap()
+            .runtime
+            .as_mut()
+            .unwrap();
+        let op_js::JsValue::Number(second_origin) = vm.eval_script("origin").unwrap() else {
+            panic!("missing origin")
+        };
+        let op_js::JsValue::Number(second_elapsed) = vm.eval_script("observed").unwrap() else {
+            panic!("missing elapsed time")
+        };
+        assert!(second_origin > first_origin);
+        assert!(second_elapsed >= 100.0);
+        server.join().unwrap();
     }
 
     #[test]

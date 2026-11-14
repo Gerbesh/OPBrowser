@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 14 November 2026: document-load clock propagation
+
+`op_engine::Engine::prepare_source` captures paired wall/monotonic clocks before `op_net::NetworkContext::load_document`; `op_engine::scripts::parse_and_execute` passes them to `op_js::JsRuntime::with_instruction_budget_and_time_origin`, which backs `performance.timeOrigin` and `performance.now()`. No new crate dependency.
+
+
 ## 14 November 2026: native Array.sort
 
 `op_js::JsRuntime` dispatches `BuiltinFunction::ArraySort` through the existing VM call path for comparator calls and bounded own-array storage; stable merge sorting introduces no new module or dependency.

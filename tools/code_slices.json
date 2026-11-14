@@ -2,6 +2,20 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S132",
+      "title": "Document loading to page performance clock",
+      "status": "Delayed local HTTP fetch and reload verified in original engine",
+      "steps": [
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "fn prepare_source"},
+        {"path": "crates/op_net/src/lib.rs", "symbol": "fn load_document"},
+        {"path": "crates/op_engine/src/scripts.rs", "symbol": "fn parse_and_execute"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "fn with_instruction_budget_and_time_origin"},
+        {"path": "crates/op_js/src/runtime.rs", "symbol": "BuiltinFunction::PerformanceNow"},
+        {"path": "crates/op_engine/src/lib.rs", "symbol": "fn performance_clock_includes_document_fetch_and_resets_on_navigation"}
+      ],
+      "limitation": "Loaded documents only; in-memory pages use VM-creation origin. responseStart and other network milestones are not implemented."
+    },
+    {
       "id": "S127",
       "title": "Original Pikabu XHR, global Window bindings, parentElement and queued same-window messaging",
       "status": "Native same-origin GET, real WinHTTP 404, GC, message-event and 16/0 initial Pikabu scripts verified",

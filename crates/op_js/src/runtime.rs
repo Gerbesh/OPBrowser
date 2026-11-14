@@ -1292,6 +1292,26 @@ impl JsRuntime {
         }
     }
 
+    /// Start a page clock at the host's document-load boundary, before scripts run.
+    /// The paired wall-clock value is exposed as timeOrigin; elapsed time uses
+    /// the monotonic instant so subsequent wall-clock corrections do not affect it.
+    pub fn with_instruction_budget_and_time_origin(
+        instruction_budget: usize,
+        origin: Instant,
+        wall_origin: SystemTime,
+    ) -> Self {
+        Self {
+            instruction_budget,
+            performance_origin: origin,
+            performance_time_origin_ms: wall_origin
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64()
+                * 1000.0,
+            ..Self::default()
+        }
+    }
+
     /// Expose the loaded HTTP(S) page URL without simulating navigation.
     pub fn set_page_location(&mut self, page_url: Option<&str>) -> Result<(), JsError> {
         let href = page_url

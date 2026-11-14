@@ -1,5 +1,8 @@
 # Current Project Status
 
+The performance clock for loaded documents starts before document loading, so fetch time is included. This does not yet provide `performance.timing.responseStart` or complete Navigation Timing.
+
+
 Native stable Array.prototype.sort is implemented for bounded first-party arrays, with sparse slots and comparator dispatch. Its impact on live sites has not been measured; the earlier YouTube result below remains historical.
 
 

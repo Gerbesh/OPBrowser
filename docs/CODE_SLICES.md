@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## Document fetch to page performance clock
+
+Document load begins -> engine captures monotonic and epoch origins -> network loads document -> parser passes origins to the first page VM -> `performance.timeOrigin` exposes the wall-clock origin and `performance.now()` measures monotonic elapsed time. A delayed local HTTP server verifies inclusion of fetch latency and a fresh reload origin. Other navigation timing milestones are not implemented.
+
+
 ## Native Array.sort slice
 
 JavaScript array method lookup -> native `ArraySort` -> snapshot own indexed values -> stable merge comparisons through VM callbacks or UTF-16 default string order -> write values and `undefined`, remove trailing own slots -> return original array. The 4096-element limit and existing partial coercion/property semantics apply; no new live-site result is claimed.

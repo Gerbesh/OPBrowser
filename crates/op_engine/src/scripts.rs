@@ -5,7 +5,7 @@ use op_dom::{Attribute, Document, NodeId, NodeKind};
 use op_js::{DomElementSnapshot, DomOperation, JsError, JsRuntime};
 use op_net::{NetworkContext, resolve_script_source};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 const MAX_NODES: usize = 20_000;
 const MAX_ELEMENTS: usize = 4096;
@@ -414,6 +414,7 @@ pub(crate) fn parse_and_execute(
     html: &str,
     network: Option<&NetworkContext>,
     page_base: Option<&str>,
+    time_origin: Option<(Instant, SystemTime)>,
 ) -> (Document, ScriptReport, Option<JsRuntime>, Vec<String>) {
     let mut runner = ParserScriptRunner {
         runtime: None,
@@ -425,6 +426,7 @@ pub(crate) fn parse_and_execute(
         started: Instant::now(),
         network,
         page_base,
+        time_origin,
         next_request: 0,
         deferred_order: Vec::new(),
         deferred_ready: HashMap::new(),
@@ -602,6 +604,7 @@ struct ParserScriptRunner<'a> {
     started: Instant,
     network: Option<&'a NetworkContext>,
     page_base: Option<&'a str>,
+    time_origin: Option<(Instant, SystemTime)>,
     next_request: usize,
     deferred_order: Vec<usize>,
     deferred_ready: HashMap<usize, Result<String, op_net::LoadError>>,
@@ -849,7 +852,15 @@ impl ParserScriptRunner<'_> {
         if let Some(runtime) = self.runtime.as_mut() {
             runtime.refresh_dom_snapshot(elements);
         } else {
-            let mut runtime = JsRuntime::with_instruction_budget(JS_INSTRUCTION_BUDGET);
+            let mut runtime = if let Some((origin, wall_origin)) = self.time_origin {
+                JsRuntime::with_instruction_budget_and_time_origin(
+                    JS_INSTRUCTION_BUDGET,
+                    origin,
+                    wall_origin,
+                )
+            } else {
+                JsRuntime::with_instruction_budget(JS_INSTRUCTION_BUDGET)
+            };
             if runtime.install_dom_snapshot(elements).is_err() {
                 self.report.failed += 1;
                 return;
@@ -1137,7 +1148,7 @@ mod tests {
     fn live_page_parser_passes_real_origin_to_script_runtime() {
         let html = "<div id='host'>Before</div><script>document.getElementById('host').textContent = location.hostname;</script>";
         let (document, report, runtime, diagnostics) =
-            parse_and_execute(html, None, Some("https://pikabu.ru/feed?x=1"));
+            parse_and_execute(html, None, Some("https://pikabu.ru/feed?x=1"), None);
         assert_eq!(report.executed, 1, "{diagnostics:?}");
         assert_eq!(report.failed, 0, "{diagnostics:?}");
         let mut vm = runtime.expect("parser retains script VM");
@@ -1161,7 +1172,7 @@ mod tests {
             second=null;
             document.getElementById('content').textContent='Updated';
           </script>";
-        let (document, report, runtime, diagnostics) = parse_and_execute(html, None, None);
+        let (document, report, runtime, diagnostics) = parse_and_execute(html, None, None, None);
         assert!(diagnostics.is_empty());
         assert_eq!(report.executed, 2);
         assert_eq!(report.failed, 0);
@@ -1191,7 +1202,7 @@ mod tests {
             for (const value of query.split(/\d+/)) {count += value.length;}
             document.getElementById('out').textContent = query + ':' + count;
         </script>"#;
-        let (document, report, _, diagnostics) = parse_and_execute(source, None, None);
+        let (document, report, _, diagnostics) = parse_and_execute(source, None, None, None);
         assert_eq!(report.executed, 1, "{diagnostics:?}");
         assert_eq!(report.failed, 0, "{diagnostics:?}");
         assert!(report.mutations > 0);
@@ -1206,7 +1217,7 @@ mod tests {
             for (k in source) copied[k] = source[k];
             document.getElementById('out').textContent = copied.quality + '/' + copied.autoplay;
         </script>";
-        let (document, report, _, diagnostics) = parse_and_execute(html, None, None);
+        let (document, report, _, diagnostics) = parse_and_execute(html, None, None, None);
         assert_eq!(report.executed, 1, "{diagnostics:?}");
         assert_eq!(report.failed, 0, "{diagnostics:?}");
         assert_eq!(report.mutations, 1);
@@ -1243,7 +1254,7 @@ mod tests {
                 for (const node of document.querySelectorAll('span')) { count = count + 1; }
                 document.getElementById('result').textContent = count;
             </script>";
-        let (document, report, _, diagnostics) = parse_and_execute(source, None, None);
+        let (document, report, _, diagnostics) = parse_and_execute(source, None, None, None);
         assert_eq!(report.executed, 1, "{diagnostics:?}");
         assert_eq!(report.failed, 0, "{diagnostics:?}");
         assert_eq!(report.mutations, 1);
@@ -1257,7 +1268,7 @@ mod tests {
             function fallback() { called = called + 1; return 'fallback'; }
             document.getElementById('status').textContent = (0 ?? fallback()) + ':' + (null ?? 'ready');
         </script>";
-        let (document, report, runtime, diagnostics) = parse_and_execute(source, None, None);
+        let (document, report, runtime, diagnostics) = parse_and_execute(source, None, None, None);
         assert_eq!(report.executed, 1, "{diagnostics:?}");
         assert_eq!(report.failed, 0, "{diagnostics:?}");
         assert_eq!(report.mutations, 1);
