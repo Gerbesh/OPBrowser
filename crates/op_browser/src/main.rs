@@ -1033,6 +1033,34 @@ mod overflow_tests {
     }
 
     #[test]
+    fn flex_order_changes_native_pixel_positions() {
+        let page = Engine::new().render_html(
+            "<body style='margin:0'><div style='display:flex;width:100px'>\
+            <div style='width:50px;height:30px;order:1;background:#f00000'></div>\
+            <div style='width:50px;height:30px;order:-1;background:#0000f0'></div></div></body>",
+            240,
+            140,
+        );
+        let rect = |r, b| {
+            page.commands
+                .iter()
+                .find_map(|cmd| {
+                    let op_paint::PaintCommand::FillRect { x, y, color, .. } = cmd else {
+                        return None;
+                    };
+                    (color.r == r && color.b == b).then_some((*x, *y))
+                })
+                .unwrap()
+        };
+        let red = rect(240, 0);
+        let blue = rect(0, 240);
+        assert_eq!(red.0 - blue.0, 50);
+        let pixels = op_platform_win::render_display_list_to_bgra(&page, 240, 140).unwrap();
+        assert_eq!(rgb_at(&pixels, 240, blue.0 + 10, blue.1 + 10), (0, 0, 240));
+        assert_eq!(rgb_at(&pixels, 240, red.0 + 10, red.1 + 10), (240, 0, 0));
+    }
+
+    #[test]
     fn flex_wrap_reverse_paints_rows_bottom_to_top() {
         let page = Engine::new().render_html(
             "<body style='margin:0'><div style='display:flex;flex-wrap:wrap-reverse;width:60px;height:100px;gap:10px;align-content:flex-start'>\

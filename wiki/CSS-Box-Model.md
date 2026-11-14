@@ -1,5 +1,10 @@
 # CSS Block Box Model
 
+## Flex item order (14 November 2026)
+
+Row flex items are stably sorted by integer `order` before line construction. Equal values retain their flattened tree order and anonymous text items have order zero; DOM child order does not change. Positioned stacking-context ordering and full flex-direction support are still incomplete.
+
+
 ## Reverse flex wrapping (14 November 2026)
 
 Row flex containers support `flex-wrap:wrap-reverse`: lines progress upward while item order within a line is preserved. Flex-relative start/end and writing-mode start/end are distinguished for the supported horizontal writing mode, including line distribution and physical auto margins. Tests cover definite and natural heights and native pixels. Vertical writing modes, flex columns, baseline alignment and general Flexbox conformance remain open.

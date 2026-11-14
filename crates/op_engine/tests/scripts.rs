@@ -3850,3 +3850,30 @@ fn g3_real_http_navigation_discards_old_fetch_reply_when_request_ids_repeat() {
     assert_eq!(engine.active_script_gc_telemetry().unwrap().failed, 0);
     assert_eq!(engine.active_document_gc_telemetry().unwrap().failed, 0);
 }
+
+#[test]
+fn flex_order_changes_visual_order_without_reordering_dom_children() {
+    let mut engine = Engine::new();
+    let page = engine.set_html_page(
+        concat!(
+            "<div id='host' style='display:flex;width:200px'>",
+            "<div id='a' style='width:50px;height:20px;order:1'>A</div>",
+            "<div id='b' style='width:50px;height:20px;order:-1'>B</div></div>",
+            "<script>var h=document.getElementById('host');",
+            "if(h.children[0].id!=='a'||h.children[1].id!=='b')throw 'DOM reordered';</script>"
+        ),
+        400,
+        180,
+    );
+    let x = |label: &str| {
+        page.commands
+            .iter()
+            .find_map(|cmd| match cmd {
+                op_paint::PaintCommand::Text { x, text, .. } if text == label => Some(*x),
+                _ => None,
+            })
+            .unwrap()
+    };
+    assert!(x("B") < x("A"));
+    assert_eq!(engine.active_script_report().unwrap().failed, 0);
+}

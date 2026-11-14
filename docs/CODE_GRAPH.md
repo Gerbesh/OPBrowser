@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 14 November 2026: flex item order
+
+`op_css::ComputedStyle::order` flows to `op_layout::flow::Style` and is applied by stable sorting in `Context::flex_row_atomic` before flex line construction. Anonymous items use zero; DOM ownership and source tree are unchanged. Existing paint consumes the ordered layout.
+
+
 ## 14 November 2026: reversed flex wrapping
 
 `op_css::FlexWrap::WrapReverse` and distinct start/end alignment variants flow through computed style to `op_layout::flow::Context::flex_row_atomic`; line and item cross positions are mirrored with physical auto-margin handling before normal paint. No new crate dependency.

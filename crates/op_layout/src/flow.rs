@@ -346,6 +346,7 @@ struct Style {
     align_items: AlignItems,
     align_content: AlignContent,
     align_self: Option<AlignItems>,
+    order: i32,
     flex_grow: f32,
     flex_shrink: f32,
     flex_basis: Option<LengthPercentage>,
@@ -2154,6 +2155,15 @@ impl<'a> Context<'a, '_> {
             &mut children_out,
         );
         self.flush_anonymous_flex_item(&mut pending, style, &mut children_out);
+        // Stable ordering is visual only: anonymous items have the initial
+        // order of zero and equal values retain their flattened tree order.
+        children_out.sort_by_key(|item| {
+            if item.node.is_some() {
+                item.style.order
+            } else {
+                0
+            }
+        });
 
         let mut row = InlineAtomic {
             hit_node: None,
@@ -6645,6 +6655,7 @@ fn computed_style(style: ComputedStyle) -> Style {
         align_items: style.align_items,
         align_content: style.align_content,
         align_self: style.align_self,
+        order: style.order,
         flex_grow: style.flex_grow,
         flex_shrink: style.flex_shrink,
         flex_basis: style.flex_basis,
@@ -6815,6 +6826,7 @@ fn default_style() -> Style {
         align_items: AlignItems::Stretch,
         align_content: AlignContent::Stretch,
         align_self: None,
+        order: 0,
         flex_grow: 0.0,
         flex_shrink: 1.0,
         flex_basis: None,
@@ -6890,6 +6902,7 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         align_items: AlignItems::Stretch,
         align_content: AlignContent::Stretch,
         align_self: None,
+        order: 0,
         flex_grow: 0.0,
         flex_shrink: 1.0,
         flex_basis: None,

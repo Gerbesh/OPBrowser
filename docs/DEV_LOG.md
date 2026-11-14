@@ -4131,3 +4131,8 @@ This file is append-only project history.
 
 - Added flex-wrap:wrap-reverse for row flex layouts, preserving main-axis item order while reversing cross-axis line progression. Distinguished flex-relative and writing-mode start/end and accounted for physical auto margins during reversed placement.
 - Verified CSS cascade, definite/natural container heights, line and item alignment, margins and Windows GDI pixels. Vertical writing modes, column direction, baseline alignment and full Flexbox conformance remain incomplete; real-site visual compatibility is unverified.
+
+## 2026-11-14 - Stable flex item ordering
+
+- Implemented non-inherited integer CSS order and stable row flex item sorting before line construction. Equal values retain flattened tree order, anonymous text uses zero, and the DOM remains unchanged.
+- Verified invalid and global CSS values, negative and equal order, wrapping, anonymous text, JS-visible DOM child order and native Windows pixel positions. Positioned stacking-context ordering, column flex and full flex sizing remain incomplete; no real-site visual acceptance is claimed.

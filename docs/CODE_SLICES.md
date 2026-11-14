@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## Flex item order to visual layout
+
+CSS `order` cascade -> computed integer -> stable sort of flattened row flex items -> line breaking and layout -> display list -> Windows pixels, with the original DOM still exposed to JavaScript. Tests cover ties, negative values, anonymous text, wraps and DOM order. Full stacking-context order and non-row flex remain incomplete.
+
+
 ## Reverse wrapped flex rows
 
 CSS `flex-wrap:wrap-reverse` and alignment values -> computed flex style -> row line sizing and cross-axis distribution -> reversed line/item positions without reversing main-axis item order -> normal display list and native GDI pixels. Tests cover physical versus flex-relative start, auto margins and both definite and natural container height. Full writing modes and column flex remain incomplete.

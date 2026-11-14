@@ -2,6 +2,19 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S136",
+      "title": "CSS flex order to visual positions with unchanged DOM",
+      "status": "CSS cascade, stable wrapped layout, DOM order and native pixels tested",
+      "steps": [
+        {"path": "crates/op_css/src/computed.rs", "symbol": "fn parse_order"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn flex_row_atomic"},
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "fn flex_order_is_stable_and_applied_before_wrapping"},
+        {"path": "crates/op_engine/tests/scripts.rs", "symbol": "fn flex_order_changes_visual_order_without_reordering_dom_children"},
+        {"path": "crates/op_browser/src/main.rs", "symbol": "fn flex_order_changes_native_pixel_positions"}
+      ],
+      "limitation": "Row flex only; positioned stacking-context ordering and full flex sizing remain incomplete."
+    },
+    {
       "id": "S135",
       "title": "Reverse wrapped flex rows to native pixels",
       "status": "CSS cascade, alignment, auto margins, natural heights and Windows pixels tested",

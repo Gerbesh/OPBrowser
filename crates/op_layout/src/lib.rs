@@ -2309,6 +2309,53 @@ mod tests {
     }
 
     #[test]
+    fn flex_order_is_stable_and_applied_before_wrapping() {
+        let source = "<body style='margin:0'><div style='display:flex;flex-wrap:wrap;width:100px;gap:10px'>\
+            <div style='width:45px;height:20px;order:2'>A</div>\
+            <div style='width:45px;height:20px;order:-1'>B</div>\
+            <div style='width:45px;height:20px;order:2'>C</div>\
+            <div style='width:45px;height:20px'>D</div>\
+            <div style='width:45px;height:20px;order:-1'>E</div></div></body>";
+        let document = op_html::parse_document(source);
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let tree = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let at = |label: &str| {
+            let t = tree.text_boxes.iter().find(|t| t.text == label).unwrap();
+            (t.x, t.y)
+        };
+        let (x, y) = at("B");
+        assert_eq!(at("E"), (x + 55, y));
+        assert_eq!(at("D"), (x, y + 30));
+        assert_eq!(at("A"), (x + 55, y + 30));
+        assert_eq!(at("C"), (x, y + 60));
+    }
+
+    #[test]
+    fn flex_order_anonymous_text_has_initial_zero_order() {
+        let source = "<body style='margin:0'><div style='display:flex;order:9;width:300px'>\
+            <span style='order:1'>A</span>Text<span style='order:-1'>B</span><span>C</span></div></body>";
+        let document = op_html::parse_document(source);
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let tree = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let x = |label: &str| tree.text_boxes.iter().find(|t| t.text == label).unwrap().x;
+        assert!(x("B") < x("Text") && x("Text") < x("C") && x("C") < x("A"));
+    }
+
+    #[test]
     fn flex_wrap_reverse_preserves_order_and_aligns_against_correct_edges() {
         fn geometry(content: &str, item: &str) -> Vec<(i32, i32)> {
             let source = format!(

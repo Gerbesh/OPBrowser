@@ -447,6 +447,8 @@ pub struct ComputedStyle {
     pub align_content: AlignContent,
     /// None represents align-self:auto.
     pub align_self: Option<AlignItems>,
+    /// Flex/grid item ordering; ties retain tree order.
+    pub order: i32,
     /// Positive unitless flex growth factor for this element as a flex item.
     pub flex_grow: f32,
     /// CSS initial shrink factor is 1, applied to the item's flex basis.
@@ -586,6 +588,7 @@ impl ComputedStyle {
             align_items: AlignItems::Stretch,
             align_content: AlignContent::Stretch,
             align_self: None,
+            order: 0,
             flex_grow: 0.0,
             flex_shrink: 1.0,
             flex_basis: None,
@@ -1639,6 +1642,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             align_items: initial.align_items,
             align_content: initial.align_content,
             align_self: initial.align_self,
+            order: initial.order,
             flex_grow: initial.flex_grow,
             flex_shrink: initial.flex_shrink,
             flex_basis: initial.flex_basis,
@@ -1879,6 +1883,9 @@ fn apply_author_declarations(
     if let Some((_, value)) = winning_value(declarations, "align-self", parse_align_self) {
         style.align_self =
             resolve_non_inherited(value, parent_style.map(|parent| parent.align_self), None);
+    }
+    if let Some((_, value)) = winning_value(declarations, "order", parse_order) {
+        style.order = resolve_non_inherited(value, parent_style.map(|parent| parent.order), 0);
     }
     let shorthand = winning_value(declarations, "flex", |tokens| {
         parse_flex_shorthand(tokens, style.font_size_px)
@@ -2340,6 +2347,16 @@ fn parse_position(tokens: &[TokenKind]) -> Option<Specified<Position>> {
         "unset" => Some(Specified::Unset),
         _ => None,
     }
+}
+
+fn parse_order(tokens: &[TokenKind]) -> Option<Specified<i32>> {
+    if let Some(keyword) = global_keyword(tokens) {
+        return Some(keyword.map(|()| 0));
+    }
+    let TokenKind::Number(value) = single_significant_token(tokens)? else {
+        return None;
+    };
+    Some(Specified::Value(value.parse::<i32>().ok()?))
 }
 
 fn parse_z_index(tokens: &[TokenKind]) -> Option<Specified<Option<i32>>> {
@@ -4770,6 +4787,23 @@ mod tests {
         assert_flex("unset", 0.0, 1.0, None);
         assert_flex("invalid", 0.0, 1.0, None);
         assert_flex("important", 1.0, 1.0, Some(LengthPercentage::Px(5.0)));
+    }
+
+    #[test]
+    fn flex_order_cascade_validates_integer_and_global_keywords() {
+        let document = parse_document(
+            "<div id='parent' style='order:-2'><i id='plain'></i>\
+             <i id='inherit' style='order:inherit'></i><i id='unset' style='order:unset'></i>\
+             <i id='invalid' style='order:1.5'></i><i id='priority' style='order:3!important;order:-4'></i></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let order = |id| computed.style_for(find_by_id(&document, id)).unwrap().order;
+        assert_eq!(order("parent"), -2);
+        assert_eq!(order("plain"), 0);
+        assert_eq!(order("inherit"), -2);
+        assert_eq!(order("unset"), 0);
+        assert_eq!(order("invalid"), 0);
+        assert_eq!(order("priority"), 3);
     }
 
     #[test]
