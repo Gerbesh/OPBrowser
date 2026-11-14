@@ -1,5 +1,8 @@
 # Current Project Status
 
+Wrapped row Flexbox supports a bounded `align-content` subset, including distribution and default stretch within a definite-height container. Baseline, wrap-reverse, column direction and general Flexbox compliance remain open.
+
+
 Row Flexbox now supports a bounded cross-axis alignment subset, including start/end/center/stretch, per-item overrides and cross-axis auto margins. Multi-line `align-content`, baseline alignment and column direction remain open; no real-site visual acceptance is claimed.
 
 

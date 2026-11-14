@@ -2309,6 +2309,54 @@ mod tests {
     }
 
     #[test]
+    fn flex_align_content_distributes_lines_with_gaps_and_overflow_fallbacks() {
+        fn positions(alignment: &str, height: i32) -> Vec<i32> {
+            let source = format!(
+                "<body style='margin:0'><div style='display:flex;flex-wrap:wrap;width:60px;height:{height}px;gap:10px;align-items:flex-start;align-content:{alignment}'>\
+                <div style='width:60px;height:20px;background:red'>A</div>\
+                <div style='width:60px;height:20px;background:blue'>B</div>\
+                <div style='width:60px;height:20px;background:green'>C</div></div></body>"
+            );
+            let document = op_html::parse_document(&source);
+            let computed =
+                op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+            let tree = layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            );
+            ["A", "B", "C"]
+                .iter()
+                .map(|label| tree.text_boxes.iter().find(|t| t.text == *label).unwrap().y)
+                .collect()
+        }
+        let base = positions("flex-start", 200)[0];
+        for (value, expected) in [
+            ("flex-start", [0, 30, 60]),
+            ("flex-end", [120, 150, 180]),
+            ("center", [60, 90, 120]),
+            ("space-between", [0, 90, 180]),
+            ("space-around", [20, 90, 160]),
+            ("space-evenly", [30, 90, 150]),
+            ("stretch", [0, 70, 140]),
+        ] {
+            let actual: Vec<_> = positions(value, 200).iter().map(|y| y - base).collect();
+            assert_eq!(actual, expected, "{value}");
+        }
+        for (value, expected) in [
+            ("flex-end", [-40, -10, 20]),
+            ("center", [-20, 10, 40]),
+            ("space-between", [0, 30, 60]),
+            ("space-around", [-20, 10, 40]),
+        ] {
+            let actual: Vec<_> = positions(value, 40).iter().map(|y| y - base).collect();
+            assert_eq!(actual, expected, "overflow {value}");
+        }
+    }
+
+    #[test]
     fn flex_cross_alignment_offsets_each_wrapped_line_and_respects_auto_margin() {
         let source = "<body style='margin:0'><div style='display:flex;flex-wrap:wrap;width:100px;gap:10px;align-items:center'>\
             <div style='width:40px;height:60px;background:red'>A</div><div style='width:40px;height:20px;background:blue'>B</div>\

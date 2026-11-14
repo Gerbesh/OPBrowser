@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## Wrapped flex line distribution
+
+CSS `align-content` cascade -> computed line distribution -> flex line main-axis reflow -> measured line heights and row gaps -> cross-axis distribution or stretch -> per-item alignment -> display list -> native GDI pixels. Handles negative free-space fallbacks for the supported values. Flex column, wrap-reverse, baseline and min/max-only container cross sizing remain incomplete.
+
+
 ## Flex row cross-axis alignment
 
 CSS `align-items`/`align-self` cascade -> computed alignment -> flex row sizing and per-item offset or auto-height stretch reflow -> original box and text geometry -> display list -> Windows BGRA pixels. Tests cover nowrap definite height, wrapped natural lines, margins, box sizing, max-height and flex growth. Baselines, align-content and full Flexbox are not implemented.

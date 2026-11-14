@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 14 November 2026: Flexbox line distribution
+
+`op_css::AlignContent` flows from CSS cascade through `ComputedStyle` into `op_layout::flow::Style`; `Context::flex_row_atomic` resolves main-axis flexing, measures lines, distributes cross-axis free space, then aligns and stretches item geometry. Existing paint and native raster consume these boxes.
+
+
 ## 14 November 2026: Flexbox cross-axis alignment
 
 `op_css::AlignItems` and computed `align_items`/`align_self` values flow into `op_layout::flow::Style`; `Context::flex_row_atomic` measures line cross sizes and aligns or reflows items through `stretch_flex_item_to_outer_height`, preserving flexible widths. Existing paint and Windows raster paths consume the resulting geometry. No new crate dependencies.

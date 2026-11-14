@@ -4,9 +4,9 @@ use super::inline::{
 };
 use super::*;
 use op_css::{
-    AlignItems, BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing, CaptionSide,
-    Clear, ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap, Direction,
-    Display, FlexWrap, FloatSide, FontStyle as CssFontStyle, InsetEdges, JustifyContent,
+    AlignContent, AlignItems, BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing,
+    CaptionSide, Clear, ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap,
+    Direction, Display, FlexWrap, FloatSide, FontStyle as CssFontStyle, InsetEdges, JustifyContent,
     LengthPercentage, MarginEdges, MarginValue, Overflow, PaddingEdges, Position, PseudoElement,
     TableLayout, TextAlign, TextTransform, VerticalAlign, Visibility, WhiteSpace,
 };
@@ -344,6 +344,7 @@ struct Style {
     flex_gap: BorderSpacing,
     justify_content: JustifyContent,
     align_items: AlignItems,
+    align_content: AlignContent,
     align_self: Option<AlignItems>,
     flex_grow: f32,
     flex_shrink: f32,
@@ -2190,11 +2191,8 @@ impl<'a> Context<'a, '_> {
             lines.push(current);
         }
 
-        let mut y = 0i32;
-        for (line_index, mut line) in lines.into_iter().enumerate() {
-            if line_index > 0 {
-                y = y.saturating_add(row_gap);
-            }
+        // Resolve each line's main-axis flexing before measuring cross sizes.
+        for line in &mut lines {
             let count = line.len();
             let gap_total = column_gap.saturating_mul(count.saturating_sub(1) as i32);
             let occupied = line
@@ -2306,22 +2304,72 @@ impl<'a> Context<'a, '_> {
                     }
                 }
             }
+        }
+        let line_count = lines.len();
+        let natural_heights: Vec<i32> = lines
+            .iter()
+            .map(|line| {
+                line.iter()
+                    .map(|item| item.atomic.height)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .collect();
+        let gaps = row_gap.saturating_mul(line_count.saturating_sub(1) as i32);
+        let natural_height = natural_heights
+            .iter()
+            .copied()
+            .fold(gaps, i32::saturating_add);
+        let available_cross = if style.flex_wrap == FlexWrap::Wrap {
+            definite_height.map_or(0, |height| height.saturating_sub(natural_height))
+        } else {
+            0
+        };
+        let mut y = 0i32;
+        for (line_index, line) in lines.into_iter().enumerate() {
+            if line_index > 0 {
+                y = y.saturating_add(row_gap);
+            }
+            let count = line.len();
+            let gap_total = column_gap.saturating_mul(count.saturating_sub(1) as i32);
             let used = line
                 .iter()
                 .map(|item| item.atomic.width.max(0))
                 .fold(gap_total, i32::saturating_add);
             let remaining = limit.saturating_sub(used).max(0);
             let mut x = 0i32;
-            let natural_line_height = line
-                .iter()
-                .map(|item| item.atomic.height)
-                .max()
-                .unwrap_or(0);
-            // A single-line flex container's cross size is its definite content height.
+            let natural_line_height = natural_heights[line_index];
+            let positive_free = i64::from(available_cross.max(0));
+            let stretch = if style.align_content == AlignContent::Stretch && line_count > 0 {
+                (positive_free * (line_index + 1) as i64 / line_count as i64
+                    - positive_free * line_index as i64 / line_count as i64) as i32
+            } else {
+                0
+            };
             let line_height = if style.flex_wrap == FlexWrap::NoWrap {
                 definite_height.unwrap_or(natural_line_height)
             } else {
-                natural_line_height
+                natural_line_height.saturating_add(stretch)
+            };
+            let distribution_offset = if style.flex_wrap == FlexWrap::Wrap {
+                match style.align_content {
+                    AlignContent::End => available_cross,
+                    AlignContent::Center => available_cross / 2,
+                    AlignContent::SpaceBetween if available_cross > 0 && line_count > 1 => {
+                        (positive_free * line_index as i64 / (line_count - 1) as i64) as i32
+                    }
+                    AlignContent::SpaceAround if available_cross > 0 => {
+                        (positive_free * (2 * line_index + 1) as i64 / (2 * line_count) as i64)
+                            as i32
+                    }
+                    AlignContent::SpaceEvenly if available_cross > 0 => {
+                        (positive_free * (line_index + 1) as i64 / (line_count + 1) as i64) as i32
+                    }
+                    AlignContent::SpaceAround | AlignContent::SpaceEvenly => available_cross / 2,
+                    _ => 0,
+                }
+            } else {
+                0
             };
             for (i, mut child) in line.into_iter().enumerate() {
                 let align = if child.node.is_some() {
@@ -2379,7 +2427,8 @@ impl<'a> Context<'a, '_> {
                     &mut row,
                     child.atomic,
                     x.saturating_add(offset),
-                    y.saturating_add(cross_offset),
+                    y.saturating_add(distribution_offset)
+                        .saturating_add(cross_offset),
                 );
                 x = x.saturating_add(width);
                 row.width = row.width.max(x.saturating_add(offset));
@@ -6580,6 +6629,7 @@ fn computed_style(style: ComputedStyle) -> Style {
         flex_gap: style.flex_gap,
         justify_content: style.justify_content,
         align_items: style.align_items,
+        align_content: style.align_content,
         align_self: style.align_self,
         flex_grow: style.flex_grow,
         flex_shrink: style.flex_shrink,
@@ -6749,6 +6799,7 @@ fn default_style() -> Style {
         flex_gap: BorderSpacing::ZERO,
         justify_content: JustifyContent::Start,
         align_items: AlignItems::Stretch,
+        align_content: AlignContent::Stretch,
         align_self: None,
         flex_grow: 0.0,
         flex_shrink: 1.0,
@@ -6823,6 +6874,7 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
         flex_gap: BorderSpacing::ZERO,
         justify_content: JustifyContent::Start,
         align_items: AlignItems::Stretch,
+        align_content: AlignContent::Stretch,
         align_self: None,
         flex_grow: 0.0,
         flex_shrink: 1.0,

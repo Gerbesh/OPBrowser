@@ -4121,3 +4121,8 @@ This file is append-only project history.
 
 - Added CSS cascade for align-items/align-self and row flex cross-axis start/end/center/stretch with auto margins. Auto-height stretch reflows original item content and paint at its assigned cross size while preserving its grown/shrunk width; margins, padding, border-box and height limits are applied.
 - Verified CSS inheritance/invalid values, wrapped line geometry, auto margins, min/max-sensitive box sizing and native GDI pixel output. Baselines, align-content, cross-size distribution for wrapped lines, flex column/order and full min-content sizing remain incomplete. No real-site visual pass is claimed.
+
+## 2026-11-14 - Wrapped flex align-content
+
+- Implemented CSS align-content cascade and cross-axis line distribution for definite-height wrapped row flex containers, including gaps, start/end/center, space-between/around/evenly, stretch and overflow fallbacks. Flexing widths now precedes cross-size measurement; stretched lines feed item stretch reflow.
+- Tested CSS global values, seven placements, negative free space and native Windows pixels. Baseline alignment, wrap-reverse, vertical writing modes, min/max-height-only cross sizing, flex column/order and full min-content sizing remain incomplete; no real-site visual acceptance is claimed.

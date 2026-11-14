@@ -1,5 +1,10 @@
 # CSS Block Box Model
 
+## Flex line distribution (14 November 2026)
+
+Wrapped row flex containers with a definite height support `align-content` start/end/center, space-between/around/evenly and stretch. Layout first resolves flex widths, then measures and distributes line heights and applies individual alignment; row gaps remain separate. The default stretch expands lines and auto-height items. Negative free space uses the supported positional fallbacks. Wrap-reverse, baseline alignment, vertical writing modes and min/max-height-only cross sizing remain incomplete.
+
+
 ## Flex row cross-axis alignment (14 November 2026)
 
 The original row flex layout supports `align-items` and `align-self` start/end/center/stretch and cross-axis auto margins. Auto-height stretch reflows elements while retaining their flexed width and respecting box sizing, margins, padding, borders and height limits. A definite-height nowrap container supplies its line height; wrapped lines currently use their natural heights. Baseline alignment, `align-content`, wrapped-line distribution in a definite-height container, column direction and complete flex sizing remain unimplemented. Native geometry and GDI pixel tests cover the supported subset.

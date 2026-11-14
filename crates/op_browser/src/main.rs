@@ -1033,6 +1033,44 @@ mod overflow_tests {
     }
 
     #[test]
+    fn flex_align_content_stretches_wrapped_lines_in_native_pixels() {
+        let page = Engine::new().render_html(
+            "<body style='margin:0'><div style='display:flex;flex-wrap:wrap;width:60px;height:100px;gap:10px'>\
+            <div style='width:60px;background:#f00000'>A</div>\
+            <div style='width:60px;background:#0000f0'>B</div></div></body>", 240, 140,
+        );
+        let rect = |r, b| {
+            page.commands
+                .iter()
+                .find_map(|cmd| {
+                    let op_paint::PaintCommand::FillRect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        color,
+                    } = cmd
+                    else {
+                        return None;
+                    };
+                    (color.r == r && color.b == b).then_some((*x, *y, *width, *height))
+                })
+                .unwrap()
+        };
+        let red = rect(240, 0);
+        let blue = rect(0, 240);
+        assert_eq!((red.2, red.3, blue.3), (60, 45, 45));
+        assert_eq!(blue.1 - red.1, 55);
+        let pixels = op_platform_win::render_display_list_to_bgra(&page, 240, 140).unwrap();
+        assert_eq!(rgb_at(&pixels, 240, red.0 + 50, red.1 + 40), (240, 0, 0));
+        assert_eq!(rgb_at(&pixels, 240, blue.0 + 50, blue.1 + 40), (0, 0, 240));
+        assert_eq!(
+            rgb_at(&pixels, 240, red.0 + 50, red.1 + 50),
+            (255, 255, 255)
+        );
+    }
+
+    #[test]
     fn flex_cross_alignment_and_stretch_paint_native_pixels() {
         let page = Engine::new().render_html(
             "<body style='margin:0'><div style='display:flex;width:180px;height:100px;align-items:center'>\

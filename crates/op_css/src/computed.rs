@@ -49,6 +49,18 @@ pub enum JustifyContent {
     SpaceEvenly,
 }
 
+/// Supported distribution of flex lines across the cross axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlignContent {
+    Stretch,
+    Start,
+    End,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
 /// Supported flex cross-axis alignment values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlignItems {
@@ -427,6 +439,7 @@ pub struct ComputedStyle {
     pub flex_gap: BorderSpacing,
     pub justify_content: JustifyContent,
     pub align_items: AlignItems,
+    pub align_content: AlignContent,
     /// None represents align-self:auto.
     pub align_self: Option<AlignItems>,
     /// Positive unitless flex growth factor for this element as a flex item.
@@ -566,6 +579,7 @@ impl ComputedStyle {
             flex_gap: BorderSpacing::ZERO,
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
+            align_content: AlignContent::Stretch,
             align_self: None,
             flex_grow: 0.0,
             flex_shrink: 1.0,
@@ -1618,6 +1632,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
             flex_gap: initial.flex_gap,
             justify_content: initial.justify_content,
             align_items: initial.align_items,
+            align_content: initial.align_content,
             align_self: initial.align_self,
             flex_grow: initial.flex_grow,
             flex_shrink: initial.flex_shrink,
@@ -1847,6 +1862,13 @@ fn apply_author_declarations(
             value,
             parent_style.map(|parent| parent.align_items),
             AlignItems::Stretch,
+        );
+    }
+    if let Some((_, value)) = winning_value(declarations, "align-content", parse_align_content) {
+        style.align_content = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.align_content),
+            AlignContent::Stretch,
         );
     }
     if let Some((_, value)) = winning_value(declarations, "align-self", parse_align_self) {
@@ -2447,6 +2469,22 @@ fn parse_justify_content(tokens: &[TokenKind]) -> Option<Specified<JustifyConten
         "space-between" => Some(Specified::Value(JustifyContent::SpaceBetween)),
         "space-around" => Some(Specified::Value(JustifyContent::SpaceAround)),
         "space-evenly" => Some(Specified::Value(JustifyContent::SpaceEvenly)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
+fn parse_align_content(tokens: &[TokenKind]) -> Option<Specified<AlignContent>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "stretch" | "normal" => Some(Specified::Value(AlignContent::Stretch)),
+        "start" | "flex-start" => Some(Specified::Value(AlignContent::Start)),
+        "end" | "flex-end" => Some(Specified::Value(AlignContent::End)),
+        "center" => Some(Specified::Value(AlignContent::Center)),
+        "space-between" => Some(Specified::Value(AlignContent::SpaceBetween)),
+        "space-around" => Some(Specified::Value(AlignContent::SpaceAround)),
+        "space-evenly" => Some(Specified::Value(AlignContent::SpaceEvenly)),
         "inherit" => Some(Specified::Inherit),
         "initial" => Some(Specified::Initial),
         "unset" => Some(Specified::Unset),
@@ -4722,6 +4760,25 @@ mod tests {
         assert_flex("unset", 0.0, 1.0, None);
         assert_flex("invalid", 0.0, 1.0, None);
         assert_flex("important", 1.0, 1.0, Some(LengthPercentage::Px(5.0)));
+    }
+
+    #[test]
+    fn flex_align_content_cascades_with_correct_initial_and_inheritance() {
+        let document = parse_document(
+            "<div id='parent' style='align-content:space-around'>\
+             <div id='initial'></div><div id='inherit' style='align-content:inherit'></div>\
+             <div id='unset' style='align-content:unset'></div>\
+             <div id='priority' style='align-content:flex-end!important;align-content:center'></div>\
+             <div id='invalid' style='align-content:bogus'></div></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let style = |id| *computed.style_for(find_by_id(&document, id)).unwrap();
+        assert_eq!(style("parent").align_content, AlignContent::SpaceAround);
+        assert_eq!(style("initial").align_content, AlignContent::Stretch);
+        assert_eq!(style("inherit").align_content, AlignContent::SpaceAround);
+        assert_eq!(style("unset").align_content, AlignContent::Stretch);
+        assert_eq!(style("priority").align_content, AlignContent::End);
+        assert_eq!(style("invalid").align_content, AlignContent::Stretch);
     }
 
     #[test]
