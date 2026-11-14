@@ -1,5 +1,10 @@
 # OPBrowser Code Graph
 
+## 14 November 2026: reversed flex main axis
+
+`op_css::FlexDirection` and distinct `JustifyContent` edge variants flow into `op_layout::flow::Style`. `Context::flex_row_atomic` derives the main-axis direction from flex direction and text direction and translates ordered items before normal paint.
+
+
 ## 14 November 2026: flex item order
 
 `op_css::ComputedStyle::order` flows to `op_layout::flow::Style` and is applied by stable sorting in `Context::flex_row_atomic` before flex line construction. Anonymous items use zero; DOM ownership and source tree are unchanged. Existing paint consumes the ordered layout.

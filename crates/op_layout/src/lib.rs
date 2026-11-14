@@ -2309,6 +2309,89 @@ mod tests {
     }
 
     #[test]
+    fn flex_row_reverse_respects_rtl_and_justify_edges() {
+        fn positions(direction: &str, flex: &str, justify: &str) -> Vec<i32> {
+            let html = format!(
+                "<body style='margin:0'><div style='display:flex;width:200px;gap:10px;direction:{direction};flex-direction:{flex};justify-content:{justify}'>\
+                <div style='width:40px;height:20px;background:red'></div>\
+                <div style='width:40px;height:20px;background:blue'></div></div></body>"
+            );
+            let document = op_html::parse_document(&html);
+            let computed =
+                op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+            let tree = layout_document_with_computed_styles_and_metrics(
+                &document,
+                800,
+                &ImageResources::new(),
+                &computed,
+                &mut ApproximateTextMeasurer,
+            );
+            [(255, 0), (0, 255)]
+                .iter()
+                .map(|(r, b)| {
+                    tree.box_decorations
+                        .iter()
+                        .find(|d| d.background.red == *r && d.background.blue == *b)
+                        .unwrap()
+                        .x
+                })
+                .collect()
+        }
+        let base = positions("ltr", "row", "flex-start")[0];
+        for (direction, flex, justify, expected) in [
+            ("ltr", "row-reverse", "flex-start", [160, 110]),
+            ("rtl", "row", "flex-start", [160, 110]),
+            ("rtl", "row-reverse", "flex-start", [0, 50]),
+            ("ltr", "row-reverse", "flex-end", [50, 0]),
+            ("ltr", "row-reverse", "start", [50, 0]),
+            ("ltr", "row-reverse", "left", [50, 0]),
+            ("ltr", "row-reverse", "right", [160, 110]),
+            ("rtl", "row-reverse", "start", [110, 160]),
+            ("rtl", "row-reverse", "end", [0, 50]),
+        ] {
+            let actual: Vec<_> = positions(direction, flex, justify)
+                .iter()
+                .map(|x| x - base)
+                .collect();
+            assert_eq!(actual, expected, "{direction} {flex} {justify}");
+        }
+    }
+
+    #[test]
+    fn flex_row_reverse_wraps_after_stable_ordering() {
+        let html = "<body style='margin:0'><div style='display:flex;flex-wrap:wrap;flex-direction:row-reverse;width:180px;gap:10px'>\
+            <div style='width:80px;height:20px;order:1;background:red'></div>\
+            <div style='width:80px;height:20px;order:-1;background:blue'></div>\
+            <div style='width:80px;height:20px;background:green'></div></div></body>";
+        let document = op_html::parse_document(html);
+        let computed =
+            op_css::compute_styles(&document, &op_css::collect_author_styles(&document).styles);
+        let tree = layout_document_with_computed_styles_and_metrics(
+            &document,
+            800,
+            &ImageResources::new(),
+            &computed,
+            &mut ApproximateTextMeasurer,
+        );
+        let at = |r, g, b| {
+            let d = tree
+                .box_decorations
+                .iter()
+                .find(|d| {
+                    d.background.red == r && d.background.green == g && d.background.blue == b
+                })
+                .unwrap();
+            (d.x, d.y)
+        };
+        let blue = at(0, 0, 255);
+        let green = at(0, 128, 0);
+        let red = at(255, 0, 0);
+        assert_eq!(blue.0 - green.0, 90);
+        assert_eq!(blue.1, green.1);
+        assert_eq!((red.0, red.1), (blue.0, blue.1 + 30));
+    }
+
+    #[test]
     fn flex_order_is_stable_and_applied_before_wrapping() {
         let source = "<body style='margin:0'><div style='display:flex;flex-wrap:wrap;width:100px;gap:10px'>\
             <div style='width:45px;height:20px;order:2'>A</div>\

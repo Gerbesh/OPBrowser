@@ -6,9 +6,9 @@ use super::*;
 use op_css::{
     AlignContent, AlignItems, BorderCollapse, BorderEdges, BorderSpacing, BorderStyle, BoxSizing,
     CaptionSide, Clear, ComputedFontWeight, ComputedLineHeight, ComputedStyle, ComputedStyleMap,
-    Direction, Display, FlexWrap, FloatSide, FontStyle as CssFontStyle, InsetEdges, JustifyContent,
-    LengthPercentage, MarginEdges, MarginValue, Overflow, PaddingEdges, Position, PseudoElement,
-    TableLayout, TextAlign, TextTransform, VerticalAlign, Visibility, WhiteSpace,
+    Direction, Display, FlexDirection, FlexWrap, FloatSide, FontStyle as CssFontStyle, InsetEdges,
+    JustifyContent, LengthPercentage, MarginEdges, MarginValue, Overflow, PaddingEdges, Position,
+    PseudoElement, TableLayout, TextAlign, TextTransform, VerticalAlign, Visibility, WhiteSpace,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -341,6 +341,7 @@ struct UsedBlockHorizontal {
 struct Style {
     inline: InlineStyle,
     flex_wrap: FlexWrap,
+    flex_direction: FlexDirection,
     flex_gap: BorderSpacing,
     justify_content: JustifyContent,
     align_items: AlignItems,
@@ -2176,6 +2177,8 @@ impl<'a> Context<'a, '_> {
             order: Vec::new(),
         };
         let limit = containing_width.max(1);
+        let inline_reversed = style.direction == Direction::Rtl;
+        let main_reversed = inline_reversed ^ (style.flex_direction == FlexDirection::RowReverse);
         let row_gap = style.flex_gap.vertical_px.round().clamp(0.0, 4096.0) as i32;
         let column_gap = style.flex_gap.horizontal_px.round().clamp(0.0, 4096.0) as i32;
         let mut lines: Vec<Vec<FlexItem<'a>>> = Vec::new();
@@ -2429,6 +2432,10 @@ impl<'a> Context<'a, '_> {
                 let offset = match style.justify_content {
                     JustifyContent::Start => 0,
                     JustifyContent::End => remaining,
+                    JustifyContent::InlineStart if main_reversed != inline_reversed => remaining,
+                    JustifyContent::InlineEnd if main_reversed == inline_reversed => remaining,
+                    JustifyContent::Left if main_reversed => remaining,
+                    JustifyContent::Right if !main_reversed => remaining,
                     JustifyContent::Center => remaining / 2,
                     JustifyContent::SpaceBetween if count > 1 => {
                         (i64::from(remaining) * i as i64 / (count - 1) as i64) as i32
@@ -2453,7 +2460,13 @@ impl<'a> Context<'a, '_> {
                 } else {
                     logical_y
                 };
-                append_atomic(&mut row, child.atomic, x.saturating_add(offset), child_y);
+                let logical_x = x.saturating_add(offset);
+                let child_x = if main_reversed {
+                    limit.saturating_sub(logical_x).saturating_sub(width)
+                } else {
+                    logical_x
+                };
+                append_atomic(&mut row, child.atomic, child_x, child_y);
                 x = x.saturating_add(width);
                 row.width = row.width.max(x.saturating_add(offset));
             }
@@ -6650,6 +6663,7 @@ fn computed_style(style: ComputedStyle) -> Style {
 
     Style {
         flex_wrap: style.flex_wrap,
+        flex_direction: style.flex_direction,
         flex_gap: style.flex_gap,
         justify_content: style.justify_content,
         align_items: style.align_items,
@@ -6821,6 +6835,7 @@ fn anonymous_table_cell_style(parent: Style) -> Style {
 fn default_style() -> Style {
     Style {
         flex_wrap: FlexWrap::NoWrap,
+        flex_direction: FlexDirection::Row,
         flex_gap: BorderSpacing::ZERO,
         justify_content: JustifyContent::Start,
         align_items: AlignItems::Stretch,
@@ -6897,6 +6912,7 @@ fn fallback_style(tag: &str, inherited: Style) -> Style {
     };
     Style {
         flex_wrap: FlexWrap::NoWrap,
+        flex_direction: FlexDirection::Row,
         flex_gap: BorderSpacing::ZERO,
         justify_content: JustifyContent::Start,
         align_items: AlignItems::Stretch,

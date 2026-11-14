@@ -1,5 +1,10 @@
 # OPBrowser Code Slices
 
+## Flex row direction and justification
+
+CSS flex-direction, direction and justify-content cascade -> computed flex style -> row main-axis placement with RTL/reverse and distinct flex/inline/physical edges -> ordinary paint and native Windows pixels. Tests cover ordered wraps and direction combinations; column flex and main-axis auto margins remain incomplete.
+
+
 ## Flex item order to visual layout
 
 CSS `order` cascade -> computed integer -> stable sort of flattened row flex items -> line breaking and layout -> display list -> Windows pixels, with the original DOM still exposed to JavaScript. Tests cover ties, negative values, anonymous text, wraps and DOM order. Full stacking-context order and non-row flex remain incomplete.

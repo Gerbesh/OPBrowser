@@ -1,5 +1,10 @@
 # CSS Block Box Model
 
+## Flex row direction (14 November 2026)
+
+Row flex supports `row` and `row-reverse`; the main-axis direction also follows `direction:ltr/rtl`. `justify-content` distinguishes flex-relative, inline and physical left/right values. Stable ordering and wrapping occur before positions are assigned. Column directions, main-axis auto margins, vertical writing modes and full Flexbox remain incomplete.
+
+
 ## Flex item order (14 November 2026)
 
 Row flex items are stably sorted by integer `order` before line construction. Equal values retain their flattened tree order and anonymous text items have order zero; DOM child order does not change. Positioned stacking-context ordering and full flex-direction support are still incomplete.

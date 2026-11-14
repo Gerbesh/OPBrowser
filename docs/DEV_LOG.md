@@ -4136,3 +4136,8 @@ This file is append-only project history.
 
 - Implemented non-inherited integer CSS order and stable row flex item sorting before line construction. Equal values retain flattened tree order, anonymous text uses zero, and the DOM remains unchanged.
 - Verified invalid and global CSS values, negative and equal order, wrapping, anonymous text, JS-visible DOM child order and native Windows pixel positions. Positioned stacking-context ordering, column flex and full flex sizing remain incomplete; no real-site visual acceptance is claimed.
+
+## 2026-11-14 - Flex row direction and RTL
+
+- Added row-reverse and RTL-aware main-axis placement, preserving item ordering, wrapping and justification. Distinguished flex-relative, inline start/end and physical left/right justify-content values.
+- CSS cascade, RTL/reverse combinations, ordered wrapped geometry and native Windows pixels are tested. Flex columns, main-axis auto margins, baseline alignment, vertical writing modes and full flex sizing remain incomplete; no real-site visual acceptance is claimed.

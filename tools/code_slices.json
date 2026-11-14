@@ -2,6 +2,19 @@
   "schema_version": 1,
   "slices": [
     {
+      "id": "S137",
+      "title": "Flex row direction and RTL to native pixels",
+      "status": "CSS cascade, reverse/RTL, justify edges, ordered wrapping and native pixels tested",
+      "steps": [
+        {"path": "crates/op_css/src/computed.rs", "symbol": "fn parse_flex_direction"},
+        {"path": "crates/op_css/src/computed.rs", "symbol": "fn parse_justify_content"},
+        {"path": "crates/op_layout/src/flow.rs", "symbol": "fn flex_row_atomic"},
+        {"path": "crates/op_layout/src/lib.rs", "symbol": "fn flex_row_reverse_respects_rtl_and_justify_edges"},
+        {"path": "crates/op_browser/src/main.rs", "symbol": "fn flex_row_reverse_paints_from_the_right"}
+      ],
+      "limitation": "Column flex, main-axis auto margins, vertical writing and complete flex sizing remain incomplete."
+    },
+    {
       "id": "S136",
       "title": "CSS flex order to visual positions with unchanged DOM",
       "status": "CSS cascade, stable wrapped layout, DOM order and native pixels tested",

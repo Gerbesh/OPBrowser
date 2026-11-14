@@ -1,5 +1,8 @@
 # Current Project Status
 
+Row Flexbox supports `row-reverse` and RTL-aware main-axis placement. Column direction, main-axis auto margins and full Flexbox compliance remain open.
+
+
 Row Flexbox now applies stable `order` before wrapping, without reordering the DOM. Positioned stacking-context ordering and column flex remain open.
 
 

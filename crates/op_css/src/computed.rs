@@ -32,6 +32,13 @@ pub enum Display {
     None,
 }
 
+/// Supported main-axis directions for row flex formatting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlexDirection {
+    Row,
+    RowReverse,
+}
+
 /// Bounded first step toward a multi-line flex formatting context.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlexWrap {
@@ -44,6 +51,10 @@ pub enum FlexWrap {
 pub enum JustifyContent {
     Start,
     End,
+    InlineStart,
+    InlineEnd,
+    Left,
+    Right,
     Center,
     SpaceBetween,
     SpaceAround,
@@ -440,6 +451,7 @@ impl BorderSpacing {
 pub struct ComputedStyle {
     pub display: Display,
     pub flex_wrap: FlexWrap,
+    pub flex_direction: FlexDirection,
     /// Flex row/column gaps in CSS pixels; stored as horizontal/vertical spacing.
     pub flex_gap: BorderSpacing,
     pub justify_content: JustifyContent,
@@ -583,6 +595,7 @@ impl ComputedStyle {
         Self {
             display: Display::Inline,
             flex_wrap: FlexWrap::NoWrap,
+            flex_direction: FlexDirection::Row,
             flex_gap: BorderSpacing::ZERO,
             justify_content: JustifyContent::Start,
             align_items: AlignItems::Stretch,
@@ -1637,6 +1650,7 @@ fn inherited_base(parent: Option<ComputedStyle>) -> ComputedStyle {
         Some(parent) => ComputedStyle {
             display: initial.display,
             flex_wrap: initial.flex_wrap,
+            flex_direction: initial.flex_direction,
             flex_gap: initial.flex_gap,
             justify_content: initial.justify_content,
             align_items: initial.align_items,
@@ -1841,6 +1855,13 @@ fn apply_author_declarations(
 ) {
     if let Some((_, value)) = winning_value(declarations, "display", parse_display) {
         style.display = resolve_display(value, parent_style);
+    }
+    if let Some((_, value)) = winning_value(declarations, "flex-direction", parse_flex_direction) {
+        style.flex_direction = resolve_non_inherited(
+            value,
+            parent_style.map(|parent| parent.flex_direction),
+            FlexDirection::Row,
+        );
     }
     if let Some((_, value)) = winning_value(declarations, "flex-wrap", parse_flex_wrap) {
         style.flex_wrap = resolve_non_inherited(
@@ -2472,6 +2493,17 @@ fn parse_white_space(tokens: &[TokenKind]) -> Option<Specified<WhiteSpace>> {
     }
 }
 
+fn parse_flex_direction(tokens: &[TokenKind]) -> Option<Specified<FlexDirection>> {
+    match single_ident(tokens)?.to_ascii_lowercase().as_str() {
+        "row" => Some(Specified::Value(FlexDirection::Row)),
+        "row-reverse" => Some(Specified::Value(FlexDirection::RowReverse)),
+        "inherit" => Some(Specified::Inherit),
+        "initial" => Some(Specified::Initial),
+        "unset" => Some(Specified::Unset),
+        _ => None,
+    }
+}
+
 fn parse_flex_wrap(tokens: &[TokenKind]) -> Option<Specified<FlexWrap>> {
     match single_ident(tokens)?.to_ascii_lowercase().as_str() {
         "nowrap" => Some(Specified::Value(FlexWrap::NoWrap)),
@@ -2486,8 +2518,12 @@ fn parse_flex_wrap(tokens: &[TokenKind]) -> Option<Specified<FlexWrap>> {
 
 fn parse_justify_content(tokens: &[TokenKind]) -> Option<Specified<JustifyContent>> {
     match single_ident(tokens)?.to_ascii_lowercase().as_str() {
-        "flex-start" | "start" | "left" | "normal" => Some(Specified::Value(JustifyContent::Start)),
-        "flex-end" | "end" | "right" => Some(Specified::Value(JustifyContent::End)),
+        "flex-start" | "normal" => Some(Specified::Value(JustifyContent::Start)),
+        "flex-end" => Some(Specified::Value(JustifyContent::End)),
+        "start" => Some(Specified::Value(JustifyContent::InlineStart)),
+        "end" => Some(Specified::Value(JustifyContent::InlineEnd)),
+        "left" => Some(Specified::Value(JustifyContent::Left)),
+        "right" => Some(Specified::Value(JustifyContent::Right)),
         "center" => Some(Specified::Value(JustifyContent::Center)),
         "space-between" => Some(Specified::Value(JustifyContent::SpaceBetween)),
         "space-around" => Some(Specified::Value(JustifyContent::SpaceAround)),
@@ -4787,6 +4823,23 @@ mod tests {
         assert_flex("unset", 0.0, 1.0, None);
         assert_flex("invalid", 0.0, 1.0, None);
         assert_flex("important", 1.0, 1.0, Some(LengthPercentage::Px(5.0)));
+    }
+
+    #[test]
+    fn flex_row_direction_cascades_and_justify_keeps_distinct_edges() {
+        let document = parse_document(
+            "<div id='parent' style='flex-direction:row-reverse;justify-content:start'>\
+            <div id='child' style='flex-direction:inherit;justify-content:flex-start'></div>\
+            <div id='initial' style='flex-direction:unset;justify-content:right'></div></div>",
+        );
+        let computed = compute_styles(&document, &collect_author_styles(&document).styles);
+        let style = |id| *computed.style_for(find_by_id(&document, id)).unwrap();
+        assert_eq!(style("parent").flex_direction, FlexDirection::RowReverse);
+        assert_eq!(style("parent").justify_content, JustifyContent::InlineStart);
+        assert_eq!(style("child").flex_direction, FlexDirection::RowReverse);
+        assert_eq!(style("child").justify_content, JustifyContent::Start);
+        assert_eq!(style("initial").flex_direction, FlexDirection::Row);
+        assert_eq!(style("initial").justify_content, JustifyContent::Right);
     }
 
     #[test]
